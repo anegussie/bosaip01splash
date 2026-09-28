@@ -77,6 +77,35 @@ int check(const char *what, const uint16_t *got, const std::vector<float> &fp32,
   return ok ? 0 : 1;
 }
 
+int checkRotatedEmbedding(MetalBackend &backend, const std::vector<int8_t> &signs, std::mt19937 &rng, Fmt format,
+                          const char *kernel) {
+  constexpr uint32_t vocabulary = 7, hidden = 2 * kBlock;
+  const std::vector<uint8_t> table = makeNative(format, vocabulary, hidden, rng);
+  const std::vector<uint32_t> tokens{3, 0, 6, 3};
+  std::vector<float> fp32(tokens.size() * hidden);
+  std::vector<double> fp64(fp32.size());
+  std::vector<float> row(hidden);
+  for (size_t t = 0; t < tokens.size(); ++t) {
+    rowValues(format, table.data() + size_t{tokens[t]} * rowBytes(format, hidden), hidden, row.data());
+    for (uint32_t b = 0; b < hidden; b += kBlock) {
+      float *f = fp32.data() + t * hidden + b;
+      double *d = fp64.data() + t * hidden + b;
+      for (uint32_t i = 0; i < kBlock; ++i) f[i] = row[b + i], d[i] = row[b + i];
+      butterflies(f);
+      butterflies(d);
+      for (uint32_t i = 0; i < kBlock; ++i)
+        f[i] = f[i] * (1.0f / 32.0f) * float(signs[b + i]), d[i] = d[i] / 32.0 * signs[b + i];
+    }
+  }
+  const MetalBuffer tokenBuffer = upload(backend, tokens), rows = upload(backend, table);
+  const MetalBuffer signBuffer = upload(backend, signs), out = backend.allocateBuffer(fp32.size() * 2);
+  CommandGraph graph;
+  graph.add(kernel, {tokenBuffer, rows, signBuffer, out}, GgufEmbedParams{uint32_t(tokens.size()), vocabulary, hidden},
+            {hidden / kBlock, uint32_t(tokens.size()), 1}, {GGUF_ROTATION_THREADS, 1, 1});
+  static_cast<void>(backend.submitCommand(graph.dispatches()));
+  return check(kernel, static_cast<const uint16_t *>(out.contents()), fp32, fp64);
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -120,34 +149,8 @@ int main(int argc, char **argv) {
         failures += check("gguf_rotate H (D x)", static_cast<const uint16_t *>(out.contents()), fp32, fp64);
       }
 
-      {  // gguf_embed_rotated_pq20: PQ2_0 rows of two blocks, gathered as D (H r).
-        constexpr uint32_t vocabulary = 7, hidden = 2 * kBlock;
-        std::vector<uint8_t> table = makeNative(PQ20, vocabulary, hidden, rng);
-        const std::vector<uint32_t> tokens{3, 0, 6, 3};
-        std::vector<float> fp32(tokens.size() * hidden);
-        std::vector<double> fp64(fp32.size());
-        std::vector<float> row(hidden);
-        for (size_t t = 0; t < tokens.size(); ++t) {
-          rowValues(PQ20, table.data() + size_t{tokens[t]} * rowBytes(PQ20, hidden), hidden, row.data());
-          for (uint32_t b = 0; b < hidden; b += kBlock) {
-            float *f = fp32.data() + t * hidden + b;
-            double *d = fp64.data() + t * hidden + b;
-            for (uint32_t i = 0; i < kBlock; ++i) f[i] = row[b + i], d[i] = row[b + i];
-            butterflies(f);
-            butterflies(d);
-            for (uint32_t i = 0; i < kBlock; ++i)
-              f[i] = f[i] * (1.0f / 32.0f) * float(signs[b + i]), d[i] = d[i] / 32.0 * signs[b + i];
-          }
-        }
-        const MetalBuffer tokenBuffer = upload(backend, tokens), rows = upload(backend, table);
-        const MetalBuffer out = backend.allocateBuffer(fp32.size() * 2);
-        CommandGraph graph;
-        graph.add("gguf_embed_rotated_pq20", {tokenBuffer, rows, signBuffer, out},
-                  GgufEmbedParams{uint32_t(tokens.size()), vocabulary, hidden}, {hidden / kBlock, uint32_t(tokens.size()), 1},
-                  {GGUF_ROTATION_THREADS, 1, 1});
-        static_cast<void>(backend.submitCommand(graph.dispatches()));
-        failures += check("gguf_embed_rotated_pq20 D (H r)", static_cast<const uint16_t *>(out.contents()), fp32, fp64);
-      }
+      failures += checkRotatedEmbedding(backend, signs, rng, PQ20, "gguf_embed_rotated_pq20");
+      failures += checkRotatedEmbedding(backend, signs, rng, PTQ10, "gguf_embed_rotated_ptq10");
     } catch (const std::exception &e) {
       std::cerr << "gguf-rotation: FAIL: " << e.what() << '\n';
       return 1;

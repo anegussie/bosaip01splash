@@ -25,7 +25,7 @@ enum Fmt { Q4K = GGUF_FMT_Q4K, IQ4XS = GGUF_FMT_IQ4XS, IQ4NL = GGUF_FMT_IQ4NL, Q
            Q3K = GGUF_FMT_Q3K, Q80 = GGUF_FMT_Q80, IQ3S = GGUF_FMT_IQ3S, Q2K = GGUF_FMT_Q2K, IQ3XXS = GGUF_FMT_IQ3XXS,
            IQ2XXS = GGUF_FMT_IQ2XXS, IQ2XS = GGUF_FMT_IQ2XS, IQ2S = GGUF_FMT_IQ2S, IQ1S = GGUF_FMT_IQ1S,
            IQ1M = GGUF_FMT_IQ1M, Q40 = GGUF_FMT_Q40, Q41 = GGUF_FMT_Q41, MXFP4 = GGUF_FMT_MXFP4,
-           PQ20 = GGUF_FMT_PQ20, FMT_COUNT = GGUF_FMT_COUNT };
+           PQ20 = GGUF_FMT_PQ20, PTQ10 = GGUF_FMT_PTQ10, FMT_COUNT = GGUF_FMT_COUNT };
 inline const char *fmtName(uint32_t f) { return kQuantFormats[f].name; }
 // The format of kQuantFormats name `name`, FMT_COUNT for none.
 inline Fmt fmtNamed(const std::string &name) {
@@ -65,7 +65,7 @@ std::vector<uint8_t> makeNative(Fmt f, uint32_t N, uint32_t K, std::mt19937 &rng
   const QuantFormat &fi = kQuantFormats[f];
   std::vector<uint8_t> v((size_t)N * rowBytes(f, K));
   for (auto &b : v) b = (uint8_t)rng();
-  const uint32_t off = f == Q6K ? kQ6KD : f == Q3K ? kQ3KD : f == Q2K ? kQ2KD : 0;
+  const uint32_t off = f == Q6K ? kQ6KD : f == Q3K ? kQ3KD : f == Q2K ? kQ2KD : f == PTQ10 ? 26 : 0;
   for (size_t b = 0; b < v.size() / fi.block_bytes; ++b) {
     uint8_t *blk = v.data() + b * fi.block_bytes;
     const uint16_t d = scale();
@@ -93,7 +93,7 @@ inline std::uniform_real_distribution<float> scaleRange(Fmt f) {
     case IQ3S: case IQ3XXS: return std::uniform_real_distribution<float>(0.0001f, 0.0005f);
     case IQ2XXS: case IQ2XS: case IQ2S: return std::uniform_real_distribution<float>(0.0002f, 0.001f);
     case IQ1S: case IQ1M: return std::uniform_real_distribution<float>(0.001f, 0.008f);
-    case PQ20: return std::uniform_real_distribution<float>(0.004f, 0.03f);
+    case PQ20: case PTQ10: return std::uniform_real_distribution<float>(0.004f, 0.03f);
     case FMT_COUNT: break;
   }
   unknownFormat(f);
@@ -267,6 +267,31 @@ inline void groupPack(Fmt f, const uint8_t *row, uint32_t g, float vals[32], uin
       }
       packBits(lo, 2, p0); return;
     }
+    case PTQ10: {
+      const uint32_t block = g / 4, j = g % 4;
+      const uint8_t *ptq = row + block * 28;
+      uint16_t d16; memcpy(&d16, ptq + 26, 2);
+      const auto trit = [&](uint32_t e) {
+        constexpr uint32_t pow3[] = {1, 3, 9, 27, 81};
+        uint32_t q, n;
+        if (e < 80) { n = e / 16; q = ptq[e % 16]; }
+        else if (e < 120) { const uint32_t x = e - 80; n = x / 8; q = ptq[16 + x % 8]; }
+        else { const uint32_t x = e - 120; n = x / 2; q = ptq[24 + x % 2]; }
+        return (((q * pow3[n]) & 255) * 3) >> 8;
+      };
+      for (uint32_t k = 0; k < 32; ++k) {
+        const uint32_t code = trit(32 * j + k);
+        vals[k] = (int(code) - 1) * h2f(d16);
+        lo[quant_slot(k)] = uint8_t(code);
+      }
+      for (uint32_t k = 0; k < 6; ++k) {
+        uint32_t code = 0;
+        for (uint32_t n = 0; n < 5; ++n) code = 3 * code + trit(32 * j + 5 * k + n);
+        p0[k] = uint8_t(code);
+      }
+      p0[6] = uint8_t(3 * trit(32 * j + 30) + trit(32 * j + 31));
+      return;
+    }
     case Q40: case Q41: case MXFP4: {
       const uint8_t *qs = blk + fi.meta_bytes;
       uint16_t d16, m16 = 0; memcpy(&d16, blk, 2); if (f == Q41) memcpy(&m16, blk + 2, 2);
@@ -357,6 +382,7 @@ inline void metaPack(Fmt f, const uint8_t *row, uint32_t unit, uint8_t *dst) {
     case Q4K: case Q5K: case IQ4XS: case IQ4NL: case Q80: case IQ3S: case IQ3XXS: case IQ2XXS: case IQ2XS: case IQ2S:
     case IQ1S: case Q40: case Q41: case MXFP4: case PQ20:
       memcpy(dst, blk, fi.meta_bytes); return;
+    case PTQ10: memcpy(dst, blk + 26, 2); return;
     case Q6K: memcpy(dst, blk + kQ6KScales, 16); memcpy(dst + 16, blk + kQ6KD, 2); dst[18] = dst[19] = 0; return;
     case Q3K: memcpy(dst, blk + kQ3KD, 2); dst[2] = dst[3] = 0; memcpy(dst + 4, blk + kQ3KScales, 12); return;
     case Q2K: memcpy(dst, blk + kQ2KD, 4); memcpy(dst + 4, blk, 16); return;
@@ -406,7 +432,7 @@ inline bool ggmlDequantize(void *ggml, Fmt f, const std::vector<uint8_t> &native
     "dequantize_row_q6_K", "dequantize_row_q3_K", "dequantize_row_q8_0", "dequantize_row_iq3_s",
     "dequantize_row_q2_K", "dequantize_row_iq3_xxs", "dequantize_row_iq2_xxs", "dequantize_row_iq2_xs",
     "dequantize_row_iq2_s", "dequantize_row_iq1_s", "dequantize_row_iq1_m", "dequantize_row_q4_0",
-    "dequantize_row_q4_1", "dequantize_row_mxfp4", "dequantize_row_pq2_0"};
+    "dequantize_row_q4_1", "dequantize_row_mxfp4", "dequantize_row_pq2_0", "dequantize_row_ptq1_0"};
   static_assert(std::size(symbols) == FMT_COUNT, "a GGML dequantize_row_* symbol per format");
   using Dequantize = void (*)(const void *, float *, int64_t);
   auto decode = reinterpret_cast<Dequantize>(dlsym(ggml, symbols[f]));

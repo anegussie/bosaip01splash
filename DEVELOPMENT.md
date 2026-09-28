@@ -528,8 +528,8 @@ and lists every unsupported tensor in one error:
 
 - linears and experts: Q2_K, Q3_K, Q4_K, Q5_K, Q6_K, Q8_0, Q4_0, Q4_1,
   IQ1_S, IQ1_M, IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS, IQ3_S, IQ4_XS, IQ4_NL,
-  MXFP4 or PQ2_0;
-- token embeddings: Q2_K, Q3_K, Q4_K, Q5_K, Q6_K, Q8_0, Q4_0, Q4_1 or PQ2_0;
+  MXFP4, PQ2_0 or PTQ1_0;
+- token embeddings: Q2_K, Q3_K, Q4_K, Q5_K, Q6_K, Q8_0, Q4_0, Q4_1, PQ2_0 or PTQ1_0;
 - norms, the MoE router and shared-expert scalar gate, and the GDN
   convolution, decay and time-step bias: F32;
 - GDN alpha and beta: both Q8_0, both F32 or both BF16, which preparation
@@ -544,6 +544,11 @@ image takes the bits per weight of its GGUF blocks, but for Q3_K's and Q6_K's
 padded meta units (1/16 bit more) and IQ3_S's chunk words (4.06 bits for its
 3.44).
 
+PTQ1_0 is Prism's type 143, 28-byte `block_ptq1_0` for 128 weights. Splash
+repackages its trits into independent 32-weight groups (seven bytes each) and
+stores one FP16 scale per four groups. This preserves the ternary values with
+about 0.391 GiB of prepared-image overhead on the 27B target.
+
 Prism ML's GGUFs, such as `prism-ml/Ternary-Bonsai-2-27B-gguf:PQ2_0`, store
 every projection for rotated inputs: the `prism.hadamard.*` metadata names the
 tensors whose weights multiply H (D x), H the normalized Walsh-Hadamard
@@ -551,7 +556,7 @@ transform of each block of 1024 inputs and D an explicit sign per input, and
 the token table, whose rows are stored as H (D e). The engine runs that one
 form, on dense targets whose rotation names exactly the tensors the planner
 repacks (every quantized projection and the head, and alpha/beta when Q8_0),
-a PQ2_0 token table, and GDN value heads in grouped order (the installer
+a PQ2_0 or PTQ1_0 token table, and GDN value heads in grouped order (the installer
 screens the parameters, `GgufFile` and the planner check the rest).
 A rotated projection rotates its input once into `LinearScratch::rotated`
 (`gguf_rotate`, in fp32 and rounded once to bf16) before its quantized

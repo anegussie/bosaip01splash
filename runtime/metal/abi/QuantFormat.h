@@ -65,7 +65,8 @@
 #define GGUF_FMT_Q41 16u
 #define GGUF_FMT_MXFP4 17u
 #define GGUF_FMT_PQ20 18u
-#define GGUF_FMT_COUNT 19u
+#define GGUF_FMT_PTQ10 19u
+#define GGUF_FMT_COUNT 20u
 
 struct QuantFormat {
   uint32_t ggml_type;      // GGUF tensor type
@@ -98,6 +99,7 @@ QUANT_CONSTANT QuantFormat kQuantFormats[GGUF_FMT_COUNT] = {
     {3, 32, 20, 16, 0, 4, 1, "q41"},      // meta: d, m
     {39, 32, 17, 16, 0, 1, 1, "mxfp4"},   // meta: e
     {142, 128, 34, 8, 0, 2, 4, "pq20"},   // Prism's block_pq2_0, one d per 128 elements; meta: d
+    {143, 128, 28, 7, 0, 2, 4, "ptq10"}, // PTQ1_0, 7 bytes per 32 trits; meta: d per 128 elements
 };
 
 // The format that stores a GGUF tensor type; GGUF_FMT_COUNT when none does.

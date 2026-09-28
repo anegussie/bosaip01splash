@@ -210,12 +210,12 @@ void checkRotation(const std::filesystem::path &directory) {
   // PQ2_0 projections and token table, alpha/beta of type `alphaBeta`, and a
   // rotation that names every quantized tensor but the table, alpha/beta only
   // when `namesAlphaBeta`.
-  const auto planned = [&](uint32_t alphaBeta, bool namesAlphaBeta) {
+  const auto planned = [&](uint32_t alphaBeta, bool namesAlphaBeta, uint32_t quant = model::ggml::kPQ2_0) {
     TensorTypes types{{"ssm_beta.weight", alphaBeta}, {"ssm_alpha.weight", alphaBeta}};
     for (const char *name : {"attn_q.weight", "attn_k.weight", "attn_v.weight", "attn_output.weight", "attn_qkv.weight",
                              "attn_gate.weight", "ssm_out.weight", "ffn_gate.weight", "ffn_up.weight",
                              "ffn_down.weight", "output.weight", "token_embd.weight"})
-      types[name] = model::ggml::kPQ2_0;
+      types[name] = quant;
     const std::vector<Tensor> tensors = targetTensors(g, types);
     std::vector<std::string> weights;
     for (const Tensor &tensor : tensors)
@@ -241,6 +241,8 @@ void checkRotation(const std::filesystem::path &directory) {
   check(!floats.error, "planner plans a rotation of F32 alpha/beta" + (floats.error ? ": " + *floats.error : ""));
   const Plan q8 = planned(model::ggml::kQ8_0, true);
   check(!q8.error, "planner plans a rotation that names Q8_0 alpha/beta" + (q8.error ? ": " + *q8.error : ""));
+  const Plan ptq = planned(model::ggml::kBF16, false, model::ggml::kPTQ1_0);
+  check(!ptq.error, "planner plans PTQ1_0 projections and a rotated token table" + (ptq.error ? ": " + *ptq.error : ""));
   check(names(planned(model::ggml::kQ8_0, false), {"the rotation must name every quantized tensor"}),
         "planner refuses a rotation that leaves out Q8_0 alpha/beta");
 }

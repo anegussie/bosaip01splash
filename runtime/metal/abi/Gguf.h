@@ -88,7 +88,7 @@ static_assert(sizeof(GgufEmbedParams) == 12, "GGUF embedding parameters are 12 b
 inline constexpr bool gguf_embedding_format(uint32_t format) {
   return format == GGUF_FMT_Q4K || format == GGUF_FMT_Q5K || format == GGUF_FMT_Q6K || format == GGUF_FMT_Q3K ||
          format == GGUF_FMT_Q2K || format == GGUF_FMT_Q80 || format == GGUF_FMT_Q40 || format == GGUF_FMT_Q41 ||
-         format == GGUF_FMT_PQ20;
+         format == GGUF_FMT_PQ20 || format == GGUF_FMT_PTQ10;
 }
 
 // Prism ML's input rotation (kernels/shared/gguf_rotation.metal): weights

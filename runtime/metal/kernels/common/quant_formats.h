@@ -438,6 +438,37 @@ struct FmtPQ20 {
   static uint4 codes(Chunk q) { return (uint4(q) >> uint4(0, 4, 8, 12)) & 0x00030003u; }
   static QuantCoef coef(Meta mt, ushort) { return {float2(float(as_type<half>(mt)))}; }
 };
+// PTQ1_0 is repacked losslessly into seven bytes per 32-value group. The
+// independent groups let the common GEMM tiles decode their 32 columns
+// without reading neighboring groups; the shared FP16 scale is per 128.
+constant constexpr uint kPTQ1Pow3[5] = {1, 3, 9, 27, 81};
+struct FmtPTQ10 {
+  QUANT_FORMAT(GGUF_FMT_PTQ10, QuantLinear, 1, 32, false);
+  struct Payload { uint a; ushort b; uchar tail; }; typedef uint4 Chunk; typedef ushort Meta;
+  static Payload load(device uchar *p0, device uchar *) {
+    Payload p;
+    p.a = uint(p0[0]) | (uint(p0[1]) << 8) | (uint(p0[2]) << 16) | (uint(p0[3]) << 24);
+    p.b = ushort(p0[4] | (p0[5] << 8)); p.tail = p0[6]; return p;
+  }
+  static Meta loadMeta(device uchar *m) { return *((device ushort *)m); }
+  static uint trit(Payload p, ushort e) {
+    if (e >= 30) { const uint t = p.tail; return e == 30 ? t / 3 : t % 3; }
+    const uint bi = e / 5;
+    const uint q = bi < 4 ? ((p.a >> (8 * bi)) & 255) : ((p.b >> (8 * (bi - 4))) & 255);
+    return (q / kPTQ1Pow3[4 - (e % 5)]) % 3;
+  }
+  static uint4 chunk(Payload p, ushort c) {
+    uint4 result;
+    for (ushort pair = 0; pair < 4; ++pair) {
+      const ushort e = 4 * c + 2 * (pair & 1) + (pair >= 2 ? 16 : 0);
+      result[pair] = trit(p, e) | (trit(p, e + 1) << 16);
+    }
+    return result;
+  }
+  static Chunk loadChunk(device uchar *p0, device uchar *, ushort c) { return chunk(load(p0, nullptr), c); }
+  static uint4 codes(Chunk q) { return q; }
+  static QuantCoef coef(Meta mt, ushort) { return {float2(float(as_type<half>(mt)))}; }
+};
 
 #undef QUANT_FORMAT
 
@@ -445,7 +476,8 @@ struct FmtPQ20 {
 #define QUANT_FORMATS(X)                                                                                            \
   X(FmtQ4K, q4k) X(FmtIQ4XS, iq4xs) X(FmtIQ4NL, iq4nl) X(FmtQ5K, q5k) X(FmtQ6K, q6k) X(FmtQ3K, q3k) X(FmtQ80, q80) \
   X(FmtIQ3S, iq3s) X(FmtQ2K, q2k) X(FmtIQ3XXS, iq3xxs) X(FmtIQ2XXS, iq2xxs) X(FmtIQ2XS, iq2xs) X(FmtIQ2S, iq2s)      \
-  X(FmtIQ1S, iq1s) X(FmtIQ1M, iq1m) X(FmtQ40, q40) X(FmtQ41, q41) X(FmtMXFP4, mxfp4) X(FmtPQ20, pq20)
+  X(FmtIQ1S, iq1s) X(FmtIQ1M, iq1m) X(FmtQ40, q40) X(FmtQ41, q41) X(FmtMXFP4, mxfp4) X(FmtPQ20, pq20) \
+  X(FmtPTQ10, ptq10)
 
 // Runs body(F()) with the format type of run-time format id `format` (GGUF_FMT_*), for kernels whose tiles pick
 // their tensor, and so its format, at run time. The branch is uniform in a threadgroup. The host passes known ids

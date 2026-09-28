@@ -4,6 +4,7 @@
 #include <metal_stdlib>
 
 using namespace metal;
+constant constexpr uint kPTQ1SourcePow3[5] = {1, 3, 9, 27, 81};
 
 // ---- weight preparation: native GGUF rows -> MDGG0001 planes (metal/abi/QuantFormat.h) ----
 // One thread per (row n, 32-wide K group g) of a chunk the host staged in image order.
@@ -32,6 +33,15 @@ static inline void gguf_copy_native(device const uchar *blk, uint j, constant Qu
   for (uint i = 0; i < f.plane0_bytes; ++i) out0[i] = blk[at0 + f.plane0_bytes * j + i];
   for (uint i = 0; i < f.plane1_bytes; ++i) out1[i] = blk[at1 + f.plane1_bytes * j + i];
   if (j == 0) for (uint i = 0; i < f.meta_bytes; ++i) meta[i] = blk[atMeta + i];
+}
+// Decode one trit from Prism's source PTQ1_0 block. The first 80 and next
+// 40 values use 16- and 8-byte stages; qh stores the final eight values.
+static inline uint gguf_ptq1_trit(device const uchar *blk, uint e) {
+  uint q, n;
+  if (e < 80) { n = e / 16; q = blk[e % 16]; }
+  else if (e < 120) { const uint x = e - 80; n = x / 8; q = blk[16 + x % 8]; }
+  else { const uint x = e - 120; n = x / 2; q = blk[24 + x % 2]; }
+  return (((q * kPTQ1SourcePow3[n]) & 255) * 3) >> 8;
 }
 kernel void gguf_repack(device const uchar *src [[buffer(0)]], device uchar *dst [[buffer(1)]],
                       constant GgufRepackParams &p [[buffer(2)]], uint t [[thread_position_in_grid]]) {
@@ -106,6 +116,16 @@ kernel void gguf_repack(device const uchar *src [[buffer(0)]], device uchar *dst
       for (uint e = 0; e < 32; ++e) lo[quant_slot(e)] = (blk[2 + 8 * j + e / 4] >> (2 * (e % 4))) & 3;
       gguf_store_bits(lo, 2, out0);
       if (j == 0) { meta[0] = blk[0]; meta[1] = blk[1]; }
+      break;
+    }
+    case GGUF_FMT_PTQ10: {
+      for (uint k = 0; k < 6; ++k) {
+        uint q = 0;
+        for (uint n = 0; n < 5; ++n) q = 3 * q + gguf_ptq1_trit(blk, 32 * j + 5 * k + n);
+        out0[k] = uchar(q);
+      }
+      out0[6] = uchar(3 * gguf_ptq1_trit(blk, 32 * j + 30) + gguf_ptq1_trit(blk, 32 * j + 31));
+      if (j == 0) { meta[0] = blk[26]; meta[1] = blk[27]; }
       break;
     }
     case GGUF_FMT_IQ4NL: case GGUF_FMT_Q40: case GGUF_FMT_Q41: case GGUF_FMT_MXFP4: {   // the meta unit, then qs[16]

@@ -6,6 +6,7 @@
 #include <metal_stdlib>
 
 using namespace metal;
+constant constexpr uint kPTQ1RotationPow3[5] = {1, 3, 9, 27, 81};
 
 static_assert(GGUF_ROTATION_BLOCK == 4 * GGUF_ROTATION_THREADS, "a rotation thread holds four values of its block");
 // 1 / sqrt(GGUF_ROTATION_BLOCK), which normalizes the transform.
@@ -72,6 +73,37 @@ kernel void gguf_embed_rotated_pq20(device const uint *tokens [[buffer(0)]], dev
     device const uchar *block = row + (dim / kWeights) * kBytes;
     const half d = as_type<half>(ushort(block[0] | (block[1] << 8)));
     v[i] = float(int((block[2 + l / 4] >> (2 * (l % 4))) & 3) - 1) * float(d);
+  }
+  rotation_butterflies(v, values, tid);
+  for (uint i = 0; i < 4; ++i) {
+    const uint j = tid + i * GGUF_ROTATION_THREADS;
+    output[ulong(group.y) * p.hidden + column + j] = bfloat(values[j] * kRotationScale * float(signs[column + j]));
+  }
+}
+
+// The PTQ1_0 token table is the same 128-value rotated block structure as
+// PQ2_0, with Prism's five-trit byte codec and a 28-byte native block.
+kernel void gguf_embed_rotated_ptq10(device const uint *tokens [[buffer(0)]], device const uchar *table [[buffer(1)]],
+                                     device const char *signs [[buffer(2)]], device bfloat *output [[buffer(3)]],
+                                     constant GgufEmbedParams &p [[buffer(4)]],
+                                     uint2 group [[threadgroup_position_in_grid]],
+                                     uint tid [[thread_index_in_threadgroup]]) {
+  constexpr uint kWeights = 128, kBytes = 28;
+  threadgroup float values[GGUF_ROTATION_BLOCK];
+  const uint token = tokens[group.y] < p.vocabulary ? tokens[group.y] : 0;
+  const uint column = group.x * GGUF_ROTATION_BLOCK;
+  device const uchar *row = table + ulong(token) * (p.hidden / kWeights) * kBytes;
+  float4 v;
+  for (uint i = 0; i < 4; ++i) {
+    const uint dim = column + tid + i * GGUF_ROTATION_THREADS, l = dim % kWeights;
+    device const uchar *block = row + (dim / kWeights) * kBytes;
+    uint q, n;
+    if (l < 80) { n = l / 16; q = block[l % 16]; }
+    else if (l < 120) { const uint x = l - 80; n = x / 8; q = block[16 + x % 8]; }
+    else { const uint x = l - 120; n = x / 2; q = block[24 + x % 2]; }
+    const uint t = (((q * kPTQ1RotationPow3[n]) & 255) * 3) >> 8;
+    const half scale = as_type<half>(ushort(block[26] | (block[27] << 8)));
+    v[i] = float(int(t) - 1) * float(scale);
   }
   rotation_butterflies(v, values, tid);
   for (uint i = 0; i < 4; ++i) {

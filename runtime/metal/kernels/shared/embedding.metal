@@ -1,6 +1,8 @@
 #include "metal/abi/Gguf.h"
 #include "metal/abi/KernelABI.h"
 
+constant constexpr uint kPTQ1EmbedPow3[5] = {1, 3, 9, 27, 81};
+
 template <uint Hidden>
 inline void q4_embedding_impl(device const uint *tokens,
                               device const uchar *weights,
@@ -148,6 +150,21 @@ struct GgufEmbedPQ20 {
     return bfloat(float(int(q) - 1) * float(gguf_half(block, D)));
   }
 };
+// block_ptq1_0: qs[24] | qh[2] | half d. The source's three packing
+// stages decode to contiguous row dimensions in logical tensor order.
+struct GgufEmbedPTQ10 {
+  enum : uint { Weights = 128, Bytes = 28 };
+  __attribute__((always_inline)) static bfloat value(device const uchar *block, uint dim) {
+#pragma clang fp reassociate(off)
+    const uint l = dim % Weights;
+    uint q, n;
+    if (l < 80) { n = l / 16; q = block[l % 16]; }
+    else if (l < 120) { const uint x = l - 80; n = x / 8; q = block[16 + x % 8]; }
+    else { const uint x = l - 120; n = x / 2; q = block[24 + x % 2]; }
+    const uint t = (((q * kPTQ1EmbedPow3[n]) & 255) * 3) >> 8;
+    return bfloat(float(int(t) - 1) * float(gguf_half(block, 26)));
+  }
+};
 // Inlined, with each format's value, so every gather stays one function (the
 // compiler otherwise keeps Q6_K's as a call).
 template <class F>
@@ -177,4 +194,5 @@ GGUF_EMBEDDING_ENTRY(gguf_embed_q2k, GgufEmbedQ2K)
 GGUF_EMBEDDING_ENTRY(gguf_embed_q40, GgufEmbedQ40)
 GGUF_EMBEDDING_ENTRY(gguf_embed_q41, GgufEmbedQ41)
 GGUF_EMBEDDING_ENTRY(gguf_embed_pq20, GgufEmbedPQ20)
+GGUF_EMBEDDING_ENTRY(gguf_embed_ptq10, GgufEmbedPTQ10)
 #undef GGUF_EMBEDDING_ENTRY
