@@ -3283,8 +3283,12 @@ class ServerTest(unittest.TestCase):
             "prompt_tokens": 10240,
             "completion_tokens": 320,
             "metrics": {
+                "prefill": {"tokens": 2_048},
+                "decode": {"tokens": 300},
                 "cache": {"matched_tokens": 8192},
                 "request_latency": {
+                    "start_to_first_token_ms": 2_000,
+                    "first_token_to_done_ms": 3_500,
                     "ttft_ms": 800,
                     "stream_tokens_per_second": 85,
                 },
@@ -3298,7 +3302,8 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(
             output.getvalue(),
             "14:32:08 Done · input 10,240 · cached 8,192 · output 320"
-            " · TTFT 0.8s · 85.0 tok/s\n",
+            " · prefill 2,048/2.00s · PP 1024.0 tok/s"
+            " · decode 300/3.50s · TTFT 0.8s · TPS 85.0 tok/s\n",
         )
 
     def test_console_shows_the_tool_block_signature(self):

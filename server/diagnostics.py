@@ -1,5 +1,6 @@
 """Concise console diagnostics without request-body logging."""
 
+import math
 import sys
 import time
 
@@ -38,10 +39,32 @@ def print_request(record):
     tools = record.get("tools")
     if isinstance(tools, dict) and tools.get("count"):
         parts.append(f"tools {tools['count']}·{tools.get('signature', '')}")
+    prefill = metrics.get("prefill", {})
+    prefill_tokens = prefill.get("tokens")
+    prefill_ms = latency.get("start_to_first_token_ms")
+    if (
+        isinstance(prefill_tokens, int)
+        and isinstance(prefill_ms, (int, float))
+        and math.isfinite(prefill_ms)
+    ):
+        parts.append(
+            f"prefill {prefill_tokens:,}/{prefill_ms / 1000:.2f}s"
+        )
+        if prefill_ms > 0:
+            parts.append(f"PP {prefill_tokens * 1000 / prefill_ms:.1f} tok/s")
+    decode = metrics.get("decode", {})
+    decode_tokens = decode.get("tokens")
+    decode_ms = latency.get("first_token_to_done_ms")
+    if (
+        isinstance(decode_tokens, int)
+        and isinstance(decode_ms, (int, float))
+        and math.isfinite(decode_ms)
+    ):
+        parts.append(f"decode {decode_tokens:,}/{decode_ms / 1000:.2f}s")
     ttft = latency.get("ttft_ms")
     speed = latency.get("stream_tokens_per_second")
     if ttft is not None:
         parts.append(f"TTFT {ttft / 1000:.1f}s")
-    if speed is not None:
-        parts.append(f"{speed:.1f} tok/s")
+    if isinstance(speed, (int, float)) and math.isfinite(speed):
+        parts.append(f"TPS {speed:.1f} tok/s")
     print_status(" · ".join(parts))
