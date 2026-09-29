@@ -492,6 +492,97 @@ void residencyRacesTheHeartbeat(const std::string &metallibPath) {
 }
 
 id<MTLSharedEvent> submissionGate = nil;
+id<MTLSharedEvent> observedUnmapEvent = nil;
+id<MTLSharedEvent> completedUnmapGate = nil;
+uint64_t observedUnmapValue = 0;
+IMP originalObservedSignal = nullptr;
+IMP originalEncoderMemoryQuery = nullptr;
+thread_local bool pauseEncoderMemoryQuery = false;
+std::promise<void> encoderMemoryQueryEntered;
+std::shared_future<void> resumeEncoderMemoryQuery;
+
+void observeUnmapSignal(id queue, SEL selector, id<MTLSharedEvent> event,
+                        uint64_t value) {
+    observedUnmapEvent = event;
+    observedUnmapValue = value;
+    reinterpret_cast<void (*)(id, SEL, id<MTLSharedEvent>, uint64_t)>(
+        originalObservedSignal)(queue, selector, completedUnmapGate, 1);
+}
+
+NSUInteger pauseEncodingMemoryQuery(id device, SEL selector) {
+    if (pauseEncoderMemoryQuery) {
+        pauseEncoderMemoryQuery = false;
+        encoderMemoryQueryEntered.set_value();
+        resumeEncoderMemoryQuery.wait();
+    }
+    return reinterpret_cast<NSUInteger (*)(id, SEL)>(originalEncoderMemoryQuery)(
+        device, selector);
+}
+
+void completedUnmapSurvivesBusyEncoder(const std::string &metallibPath) {
+    MetalBackend backend(metallibPath, 120.0, 500);
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    id<MTL4CommandQueue> queue = [device newMTL4CommandQueue];
+    constexpr uint64_t tile = MetalBackend::kPlacementSparsePageBytes;
+    auto sparse = backend.allocatePlacementSparseBuffer(tile, tile, "completed-unmap");
+    auto heap = backend.allocatePlacementHeap(tile, tile, "completed-unmap-heap");
+    SparseMapping mapping{sparse, 0, tile, 0};
+    auto buffer = backend.allocateBuffer(sizeof(uint32_t));
+    *static_cast<uint32_t *>(buffer.contents()) = 0;
+    const uint32_t count = 1, increment = 7;
+    ComputeDispatch dispatch;
+    dispatch.pipelineName = "test_add_u32";
+    dispatch.buffers = {{0, buffer}};
+    dispatch.bytes = {{1, &count, sizeof(count)}, {2, &increment, sizeof(increment)}};
+    dispatch.threadgroups = {1, 1, 1};
+    dispatch.threadsPerThreadgroup = {1, 1, 1};
+    backend.mapSparse(heap, {&mapping, 1});
+    completedUnmapGate = [device newSharedEvent];
+    {
+        MethodReplacement signal(queue, @selector(signalEvent:value:),
+                                 reinterpret_cast<IMP>(observeUnmapSignal));
+        originalObservedSignal = signal.original;
+        backend.unmapSparse({&mapping, 1}, std::move(heap));
+    }
+    require(observedUnmapEvent &&
+                [completedUnmapGate waitUntilSignaledValue:1 timeoutMS:5000],
+            "test unmap did not complete on the GPU");
+    // Hold publication of completion until encoding has reaped older work
+    // and acquired the real command mutex for its driver telemetry query.
+    std::promise<void> release;
+    resumeEncoderMemoryQuery = release.get_future().share();
+    auto entered = encoderMemoryQueryEntered.get_future();
+    MethodReplacement memory(device, @selector(currentAllocatedSize),
+                             reinterpret_cast<IMP>(pauseEncodingMemoryQuery));
+    originalEncoderMemoryQuery = memory.original;
+    auto encoding = std::async(std::launch::async, [&] {
+        @autoreleasepool {
+            pauseEncoderMemoryQuery = true;
+            auto ticket = backend.submitAsync(dispatch);
+            (void)ticket.wait();
+        }
+    });
+    const bool blocked = entered.wait_for(std::chrono::seconds(5)) ==
+                         std::future_status::ready;
+    observedUnmapEvent.signaledValue = observedUnmapValue;
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
+    const bool pending = backend.sparseUnmapPending();
+    const bool healthy = backend.healthy();
+    release.set_value();
+    try { encoding.get(); } catch (const MetalBackendError &) {}
+    require(blocked, "test did not hold the command encoder mutex");
+    require(pending, "test unmap was reaped before the contended watchdog check");
+    require(healthy,
+            "completed sparse unmap was falsely timed out while the encoder was busy");
+    require(!backend.sparseUnmapPending() && backend.healthy(),
+            "completed unmap did not reap after encoding resumed");
+    require(*static_cast<uint32_t *>(buffer.contents()) == increment,
+            "encoder did not finish after completed-unmap watchdog check");
+    observedUnmapEvent = nil;
+    completedUnmapGate = nil;
+    std::cout << "PASS completed sparse unmap survives busy encoder watchdog check\n";
+}
+
 id<MTLSharedEvent> delayedMappingEvent = nil;
 IMP originalSparseSignal = nullptr;
 void delayMappingSignal(id queue, SEL selector, id<MTLSharedEvent> event, uint64_t value) {
@@ -513,10 +604,12 @@ void backendDeferredSubmission(const std::string &metallibPath) {
     id<MTLCommandBuffer> command = [[device newCommandQueue] commandBuffer];
     constexpr uint64_t tile = MetalBackend::kPlacementSparsePageBytes;
     // Exercise the real submission/ticket path, not just the event helper.
-    for (const std::string mode : {"resume", "stop", "timeout", "teardown-unmap"}) {
+    for (const std::string mode : {"resume", "stop", "timeout", "teardown-unmap",
+                                   "timeout-unmap"}) {
         // "timeout" gives up on the mapping after 500 ms instead of 30 s.
         auto backend = std::make_unique<MetalBackend>(
-            metallibPath, 120.0, mode == "timeout" ? 500 : 30000);
+            metallibPath, 120.0,
+            (mode == "timeout" || mode == "timeout-unmap") ? 500 : 30000);
         auto sparse = backend->allocatePlacementSparseBuffer(tile, tile, "gated-map");
         auto heap = backend->allocatePlacementHeap(tile, tile, "gated-heap");
         SparseMapping mapping{sparse, 0, tile, 0};
@@ -538,8 +631,15 @@ void backendDeferredSubmission(const std::string &metallibPath) {
         }
         require(delayedMappingEvent && delayedMappingEvent.signaledValue < 3,
                 "mapping test gate was not installed");
-        if (mode == "teardown-unmap") {
+        if (mode == "teardown-unmap" || mode == "timeout-unmap") {
             backend->unmapSparse({&mapping, 1}, std::move(heap));
+            if (mode == "timeout-unmap") {
+                std::this_thread::sleep_for(std::chrono::milliseconds(600));
+                require(backend->sparseUnmapPending() && !backend->healthy(),
+                        "genuinely stalled sparse unmap escaped the watchdog");
+                require(backend->memoryStats().sparseResidentBytes >= tile,
+                        "timed-out unmap released backing before GPU completion");
+            }
             // The unmap (event 4) waits on the sparse queue for the withheld
             // mapping event: teardown must return before it completes.
             backend.reset();
@@ -550,6 +650,7 @@ void backendDeferredSubmission(const std::string &metallibPath) {
             delayedMappingEvent.signaledValue = 3;
             require([delayedMappingEvent waitUntilSignaledValue:4 timeoutMS:5000],
                     "unmap ownership did not survive backend teardown");
+            std::cout << "PASS backend deferred submission " << mode << '\n';
             continue;
         }
         std::atomic<unsigned> callbacks{0};
@@ -1434,11 +1535,16 @@ void run(const std::string &metallibPath) {
 
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
-        if (argc != 2) {
-            std::cerr << "usage: metal_backend_test <test.metallib>\n";
+        if (argc != 2 && !(argc == 3 && std::string(argv[2]) == "--unmap-watchdog")) {
+            std::cerr << "usage: metal_backend_test <test.metallib> [--unmap-watchdog]\n";
             return 2;
         }
         try {
+            completedUnmapSurvivesBusyEncoder(argv[1]);
+            if (argc == 3) {
+                backendDeferredSubmission(argv[1]);
+                return 0;
+            }
             completionDoesNotWaitForMemoryTelemetry(argv[1]);
             terminalCommandRecovers(argv[1], false);
             terminalCommandRecovers(argv[1], false, true);

@@ -1198,27 +1198,33 @@ void MetalBackend::unmapSparse(
 bool MetalBackend::sparseUnmapPending() noexcept {
     // Reap opportunistically; a command being encoded on another thread
     // must not stall the caller, which is often the reclaim pacing loop.
-    if (std::unique_lock commandLock(impl_->commandMutex, std::try_to_lock);
-        commandLock.owns_lock()) {
-        static_cast<void>(impl_->reapSparseUnmapsLocked());
-    }
-    if (impl_->pendingUnmapCount.load(std::memory_order_acquire) == 0)
-        return false;
+    std::unique_lock commandLock(impl_->commandMutex, std::try_to_lock);
+    if (!commandLock.owns_lock())
+        return impl_->pendingUnmapCount.load(std::memory_order_acquire) != 0;
+    static_cast<void>(impl_->reapSparseUnmapsLocked());
+    if (!impl_->pendingUnmap) return false;
     // An unmap outstanding for longer than the drain's bounded wait is the
     // same fault the drain would report, observed here without blocking the
     // serving loop: the backend marks itself unhealthy and the supervisor
     // replaces the engine.
-    const double issued =
-        impl_->pendingUnmapIssuedSeconds.load(std::memory_order_relaxed);
-    const double now = std::chrono::duration<double>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
-    if (issued > 0.0 &&
-        (now - issued) * 1000.0 > double(impl_->sparseTimeoutMilliseconds)) {
+    // Keep completion, identity and deadline checks under the same lock.
+    // A busy encoder can delay reaping an already-signaled event; elapsed
+    // time alone must not poison a healthy backend in that case.
+    const double elapsedMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - impl_->pendingUnmap->issued).count();
+    if (elapsedMs > double(impl_->sparseTimeoutMilliseconds)) {
         try {
-            impl_->markUnhealthy(
-                "sparse unmapping exceeded " +
-                std::to_string(impl_->sparseTimeoutMilliseconds) +
-                " ms without completing");
+            // The GPU can complete between reaping and the deadline check.
+            if (impl_->reapSparseUnmapsLocked()) return false;
+            std::ostringstream details;
+            details << "sparse unmapping exceeded "
+                    << impl_->sparseTimeoutMilliseconds
+                    << " ms without completing: event="
+                    << impl_->pendingUnmap->eventValue
+                    << " signaled=" << impl_->sparseEvent.signaledValue
+                    << " pending_map=" << impl_->pendingSparseEventValue
+                    << " elapsed_ms=" << elapsedMs;
+            impl_->markUnhealthy(details.str());
         } catch (...) {
         }
     }
