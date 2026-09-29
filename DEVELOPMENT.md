@@ -104,7 +104,7 @@ loopback, so use a listener that includes loopback when launching agents locally
 | `--max-memory` | Auto | Ceiling on Metal allocations, e.g. `28G`; not combined process RSS. |
 | `--max-context` | Auto | Context limit, up to `256K`, e.g. `100K`. |
 | `--max-cache-disk` | `0` (off) | Session-local SSD cache, e.g. `16G`. See [disk cache](#disk-cache). |
-| `--kv-format` | `int8` | Target KV storage: `int8` or `bf16`. |
+| `--kv-format` | `int8` | Target KV storage: 8-bit `int8` or `bf16`. Q4 KV is not supported. |
 | `--max-image-pixels` | `4194304` | Maximum resized pixels per image. |
 | `--request-timeout` | `1800` | Seconds a request may take from its arrival; a request's own `timeout` can only shorten it. |
 | `--allowed-host` | No extra names | Additional HTTP Host name, e.g. `mymac.local`; repeatable. |
@@ -146,14 +146,19 @@ there.
 Select the target KV format when starting the server:
 
 ```bash
-splash serve --model mlx-community/Qwen3.8-27B-4bit --kv-format bf16
+splash serve --model prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0 \
+  --language-only --max-context 20K --kv-format int8
 ```
 
-BF16 avoids target KV quantization, uses approximately twice the target KV
-memory, and can be slower at long contexts. Model weights are unchanged.
-Restart to switch formats. Omit `--kv-format` or use `--kv-format int8` for the
-default. The [SSD cache](#disk-cache) supports both formats, preserving their
-stored bytes without further quantization; it does not survive a restart.
+The default `int8` format stores target KV at 8 bits per value (Q8-style).
+Splash also supports `bf16`, which avoids target KV quantization, uses
+approximately twice the target KV memory, and can be slower at long contexts.
+Q4 KV storage is not supported. The KV format is independent of the model
+weight quantization: this example keeps the PTQ1_0 model weights and selects
+INT8 KV with a 20K context limit. Restart to switch formats. Omit
+`--kv-format` or use `--kv-format int8` for the default. The
+[SSD cache](#disk-cache) supports both formats, preserving their stored bytes
+without further quantization; it does not survive a restart.
 
 ## API model aliases
 
