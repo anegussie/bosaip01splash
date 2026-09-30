@@ -5,6 +5,7 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <objc/runtime.h>
+#include <IOKit/pwr_mgt/IOPMLib.h>
 
 #include <sys/mman.h>
 #include <unistd.h>
@@ -85,6 +86,56 @@ void requireBackendError(Function &&function, const std::string &message) {
         return;
     }
     fail(message);
+}
+
+size_t idleSleepAssertionCount() {
+    CFDictionaryRef raw = nullptr;
+    const IOReturn result = IOPMCopyAssertionsByProcess(&raw);
+    require(result == kIOReturnSuccess && raw,
+            "could not read power assertions from macOS");
+    NSDictionary *byProcess = CFBridgingRelease(raw);
+    size_t count = 0;
+    for (NSDictionary *assertion in byProcess[@(getpid())]) {
+        if (![assertion[(__bridge NSString *)kIOPMAssertionNameKey]
+                isEqual:@"Splash Metal engine"]) continue;
+        require([assertion[(__bridge NSString *)kIOPMAssertionTypeKey]
+                    isEqual:(__bridge NSString *)kIOPMAssertionTypePreventUserIdleSystemSleep] &&
+                    [assertion[(__bridge NSString *)kIOPMAssertionLevelKey]
+                        unsignedIntValue] == kIOPMAssertionLevelOn,
+                "engine power assertion does not prevent idle system sleep");
+        ++count;
+    }
+    return count;
+}
+
+void awaitIdleSleepAssertions(size_t expected) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (idleSleepAssertionCount() != expected) {
+        require(std::chrono::steady_clock::now() < deadline,
+                "engine power assertion was missing or leaked");
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+}
+
+void idleSleepAssertionLifetime(const std::string &metallibPath) {
+    const size_t baseline = idleSleepAssertionCount();
+    {
+        MetalBackend first(metallibPath);
+        awaitIdleSleepAssertions(baseline + 1);
+        {
+            MetalBackend second(metallibPath);
+            awaitIdleSleepAssertions(baseline + 2);
+        }
+        awaitIdleSleepAssertions(baseline + 1);
+        // Loading fails after the assertion was acquired. Startup failure must
+        // release only its own assertion, preserving the engine still serving.
+        TemporaryMetallib invalid;
+        requireBackendError([&] { MetalBackend failed(invalid.path); },
+                            "empty metallib unexpectedly loaded");
+        awaitIdleSleepAssertions(baseline + 1);
+    }
+    awaitIdleSleepAssertions(baseline);
+    std::cout << "PASS idle sleep assertion lifetime and failed startup cleanup\n";
 }
 
 class MethodReplacement final {
@@ -1540,6 +1591,7 @@ int main(int argc, const char *argv[]) {
             return 2;
         }
         try {
+            idleSleepAssertionLifetime(argv[1]);
             completedUnmapSurvivesBusyEncoder(argv[1]);
             if (argc == 3) {
                 backendDeferredSubmission(argv[1]);

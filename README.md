@@ -36,6 +36,11 @@ splash opencode    # or: splash claude / splash codex / splash hermes / splash p
 ```
 
 Press Ctrl+C in the server terminal to stop Splash.
+
+While the native engine is loaded, Splash prevents automatic idle system
+sleep so inference can continue when you leave the Mac unattended. The
+display can still sleep. Closing the lid or explicitly putting the Mac to
+sleep can still interrupt inference.
 For LM Studio Bionic, follow its [Splash setup guide](https://lmstudio.ai/blog/splash-engine).
 
 ## Use the API

@@ -8,6 +8,7 @@
 #import <Metal/Metal.h>
 
 #include <IOKit/IOKitLib.h>
+#include <IOKit/pwr_mgt/IOPMLib.h>
 #include <dispatch/dispatch.h>
 
 #include <algorithm>
@@ -28,6 +29,37 @@
 
 namespace splash::metal {
 namespace {
+
+// A loaded engine serves work even after the user leaves the display idle.
+// System idle sleep suspends Metal commands and lets their watchdog expire
+// on wake. Hold the assertion through startup, serving and teardown; the
+// display can still sleep and explicit user sleep remains under OS control.
+class IdleSleepAssertion final {
+public:
+    void hold() {
+        if (assertion_ != kIOPMNullAssertionID) return;
+        const IOReturn result = IOPMAssertionCreateWithName(
+            kIOPMAssertionTypePreventUserIdleSystemSleep,
+            kIOPMAssertionLevelOn, CFSTR("Splash Metal engine"), &assertion_);
+        if (result != kIOReturnSuccess) {
+            throw MetalBackendError(
+                "unable to prevent idle system sleep while serving: " +
+                std::to_string(result));
+        }
+    }
+
+    ~IdleSleepAssertion() {
+        if (assertion_ != kIOPMNullAssertionID)
+            (void)IOPMAssertionRelease(assertion_);
+    }
+
+    IdleSleepAssertion() = default;
+    IdleSleepAssertion(const IdleSleepAssertion &) = delete;
+    IdleSleepAssertion &operator=(const IdleSleepAssertion &) = delete;
+
+private:
+    IOPMAssertionID assertion_ = kIOPMNullAssertionID;
+};
 
 // The accelerator entry that backs a Metal device publishes gpu-core-count.
 // The device's registry ID names that entry or a child of it; the first
@@ -480,6 +512,8 @@ struct CommandTicket::State {
 };
 
 struct MetalBackend::Impl {
+    // Declared first so it releases after Metal resources during teardown.
+    IdleSleepAssertion idleSleep;
     std::function<void()> operationGuard;
 
     bool dispatchProfiling = false;
@@ -779,6 +813,7 @@ MetalBackend::MetalBackend(std::string metallibPath, double commandTimeoutSecond
         if (!impl_->device) {
             throw MetalBackendError("Metal device unavailable");
         }
+        impl_->idleSleep.hold();
         impl_->asyncState->device = impl_->device;
         impl_->queue = [impl_->device newCommandQueue];
         if (!impl_->queue) {
