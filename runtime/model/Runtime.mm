@@ -2392,6 +2392,10 @@ Runtime::snapshotToDisk(uint64_t requestId, std::function<void()> completion) {
   return impl_->states.snapshotToDisk(committedStateSlot(requestId), std::move(completion));
 }
 
+uint64_t Runtime::activationBytes() const noexcept {
+  return impl_->states.activationBytes();
+}
+
 uint64_t Runtime::reclaimIdleState() noexcept {
   // One idle buffer per call, so a denied allocation frees only what it
   // needs; rebuildable caches go once the pool is empty.

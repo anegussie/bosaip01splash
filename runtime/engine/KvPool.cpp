@@ -40,12 +40,44 @@ KvPool::KvPool(KvBacking &backing)
   }
 }
 
+uint64_t KvPool::additionalBackingBytes(uint32_t count) const {
+  if (count <= freeResidentPages_ || count > freePageCount())
+    return 0;
+  uint32_t missing = count - freeResidentPages_;
+  uint64_t bytes = 0;
+  std::vector<bool> seen(extents_.size());
+  for (uint32_t page = freeUnbacked_.head; page != noIndex && missing;
+       page = pages_[page].nextFree) {
+    const uint32_t extent = pages_[page].extent;
+    if (seen[extent])
+      continue;
+    seen[extent] = true;
+    const uint32_t extentPages = extents_[extent].pageCount;
+    if (extentPages > std::numeric_limits<uint64_t>::max() / bytesPerPage())
+      throw std::overflow_error("KV backing extent bytes overflow");
+    const uint64_t extentBytes = uint64_t{extentPages} * bytesPerPage();
+    if (extentBytes > std::numeric_limits<uint64_t>::max() - bytes)
+      throw std::overflow_error("KV backing admission overflows");
+    bytes += extentBytes;
+    missing -= std::min(missing, extentPages);
+  }
+  if (missing)
+    throw std::logic_error("free KV lists disagree with backing admission");
+  return bytes;
+}
+
 KvPageAcquisition KvPool::acquirePages(uint32_t count, bool prefixOwner) {
   if (!count)
     return {};
   if (count > freePageCount())
     return {{}, KvPageAcquireFailure::LogicalCapacity};
 
+  const uint64_t backingBytes = additionalBackingBytes(count);
+  if (backingBytes) {
+    const auto admission = backing_.admitBacking(backingBytes);
+    if (!admission)
+      return {{}, KvPageAcquireFailure::PhysicalCapacity, admission.failure, backingBytes};
+  }
   std::vector<uint32_t> selected;
   selected.reserve(count);
   std::vector<uint32_t> newlyResidentExtents;
@@ -81,7 +113,7 @@ KvPageAcquisition KvPool::acquirePages(uint32_t count, bool prefixOwner) {
           setExtentResident(resident, false);
         }
       }
-      return {{}, KvPageAcquireFailure::PhysicalCapacity, mapped.failure};
+      return {{}, KvPageAcquireFailure::PhysicalCapacity, mapped.failure, backingBytes};
     }
     setExtentResident(extent, true);
     newlyResidentExtents.push_back(extent);

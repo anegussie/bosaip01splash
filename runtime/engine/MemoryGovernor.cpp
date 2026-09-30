@@ -209,9 +209,9 @@ MemoryGovernor::tryReserve(uint64_t bytes, metal::AllocationFailure *failure) {
   bool engineFits = !overflows && observed <= limitBytes_ &&
                     requested <= limitBytes_ - observed;
   // Growth leaves the warning margin free above the host's reserve, except
-  // back to the serving footprint: that is what a request is served from,
-  // and a pressure pass that released it must not leave the server unable
-  // to start one while other applications hold the margin.
+  // within the one-request serving allowance: a pressure pass that released
+  // its backing must not leave the server unable to serve the configured
+  // context while other applications hold the margin.
   const bool withinServingFootprint =
       !overflows && observed <= servingFootprintBytes_ &&
       requested <= servingFootprintBytes_ - observed;
@@ -225,9 +225,12 @@ MemoryGovernor::tryReserve(uint64_t bytes, metal::AllocationFailure *failure) {
     hostConstrained_ = true;
   if (!engineFits || !hostFits || (hostHeld() && !withinServingFootprint) ||
       pressure == MemoryPressure::Critical) {
+    lastDeniedBytes_ = requested;
+    lastDeniedHostHeadroomBytes_ = hostRoom;
+    lastDeniedFailure_ = !engineFits ? metal::AllocationFailure::EngineBudget
+                                   : metal::AllocationFailure::HostPressure;
     if (failure)
-      *failure = !engineFits ? metal::AllocationFailure::EngineBudget
-                            : metal::AllocationFailure::HostPressure;
+      *failure = lastDeniedFailure_;
     if (deniedReservations_ != std::numeric_limits<uint64_t>::max()) {
       ++deniedReservations_;
     }
@@ -260,9 +263,13 @@ void MemoryGovernor::setPressure(MemoryPressure pressure) noexcept {
   systemPressure_ = pressure;
 }
 
-void MemoryGovernor::markServingFootprint() noexcept {
+void MemoryGovernor::markServingFootprint(uint64_t additionalServingBytes) noexcept {
   std::lock_guard lock(mutex_);
-  servingFootprintBytes_ = observedResidentBytes(true);
+  const uint64_t observed = observedResidentBytes(true);
+  // Saturate at the existing engine ceiling, including on arithmetic overflow.
+  servingFootprintBytes_ = observed >= limitBytes_ ||
+          additionalServingBytes >= limitBytes_ - observed
+      ? limitBytes_ : observed + additionalServingBytes;
 }
 
 void MemoryGovernor::reclaimed(ReclaimOutcome outcome) noexcept {
@@ -303,6 +310,9 @@ MemoryGovernorSnapshot MemoryGovernor::snapshot() const noexcept {
       systemPressure_,
       growthAllowed,
       hostGrowthAllowed,
+      lastDeniedBytes_,
+      lastDeniedHostHeadroomBytes_,
+      lastDeniedFailure_,
   };
 }
 

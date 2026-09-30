@@ -35,6 +35,7 @@ struct KvPageAcquisition {
   std::vector<uint32_t> pages;
   KvPageAcquireFailure failure = KvPageAcquireFailure::None;
   metal::AllocationFailure allocationFailure = metal::AllocationFailure::None;
+  uint64_t backingBytes = 0;
 
   [[nodiscard]] bool granted() const noexcept {
     return failure == KvPageAcquireFailure::None;
@@ -53,6 +54,9 @@ public:
 
   [[nodiscard]] KvPageAcquisition acquirePages(uint32_t count,
                                                bool prefixOwner);
+  // Physical growth for an acquisition, respecting the same extent order as
+  // acquirePages. A logical shortfall returns zero and is handled by admission.
+  [[nodiscard]] uint64_t additionalBackingBytes(uint32_t count) const;
   void retainPage(uint32_t page, bool prefixOwner);
   void releasePage(uint32_t page, bool prefixOwner);
 

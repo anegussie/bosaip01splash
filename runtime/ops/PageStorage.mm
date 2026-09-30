@@ -163,6 +163,11 @@ std::vector<metal::SparseMapping> PageStorage::mappingsFor(
     return mappings;
 }
 
+metal::AllocationResult PageStorage::admitBacking(uint64_t bytes) {
+    if (!bytes) return true;
+    return admitAllocation_(bytes, [] {});
+}
+
 metal::AllocationResult PageStorage::ensureResident(uint32_t page) {
     Extent &extent = extents_.at(extentIndex(page));
     if (extent.heap) return true;

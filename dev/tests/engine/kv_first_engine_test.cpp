@@ -196,6 +196,8 @@ public:
       uint32_t maximumCells = model::ExecutionLimits::maximumBatchWidth)
       : maximumCells(maximumCells) {}
 
+  uint64_t activationBytes() const noexcept override { return activationNeededBytes; }
+  uint64_t activationNeededBytes = 0;
   StateAdmission begin(const ModelRequest &request) override {
     ++beginAttempts;
     lastBeginId = request.id;
@@ -5160,8 +5162,94 @@ void testRestoreCompletesWhileAConstrainedLaneDecodes() {
           "the restore did not ride the constrained lane's commands");
 }
 
+void testHostPreflightWaitsWithoutRebuildingState() {
+  for (bool recovers : {false, true}) {
+    Backing backing(64);
+    KvPool pool(backing);
+    engine::Cache cache(pool, CacheNamespace{});
+    Executor executor;
+    executor.activationNeededBytes = 350'224'384;
+    Events events;
+    bool available = false;
+    EngineConfig config;
+    config.resourceWaitTimeoutMilliseconds = 1000;
+    config.resourceAdmission = [&](uint64_t bytes) -> metal::AllocationResult {
+      require(bytes == executor.activationNeededBytes, "state admission estimate was inaccurate");
+      return available ? metal::AllocationResult(true)
+                       : metal::AllocationResult(metal::AllocationFailure::HostPressure);
+    };
+    engine::Engine engine(config, cache, executor, events);
+    engine.submit(request(900, {11}));
+    for (double now : {1.0, 101.0, 201.0})
+      static_cast<void>(engine.tick(now));
+    const auto wait = engine.resourceWaitSnapshot(201);
+    require(executor.beginAttempts == 0 && backing.growthAttempts == 0 &&
+                wait.memory == 1 && wait.allocationStage == "request_admission" &&
+                wait.requiredBytes == executor.activationNeededBytes && wait.requestId == 900,
+            "host-denied preflight rebuilt state or omitted diagnostics");
+    if (recovers) {
+      available = true;
+      for (double now = 301; now < 350 && !engine.idle(); ++now)
+        static_cast<void>(engine.tick(now));
+      require(engine.idle() && executor.beginAttempts == 1 && events.completedCount == 1 &&
+                  events.failedCount == 0,
+              "waiting preflight did not recover after host memory returned");
+    } else {
+      static_cast<void>(engine.tick(1001));
+      require(engine.idle() && events.failedCount == 1 && executor.beginAttempts == 0,
+              "preflight retries extended the resource wait deadline");
+    }
+  }
+}
+
+void testResumePreflightIncludesStateAndKv() {
+  Backing backing(256);
+  KvPool pool(backing);
+  engine::Cache cache(pool, CacheNamespace{});
+  Executor executor;
+  executor.activationNeededBytes = 64;
+  executor.deniedSnapshots = 1000;
+  executor.unblockGrowthOnSuspend = false;
+  Events events;
+  bool available = true;
+  uint64_t lastBytes = 0;
+  EngineConfig config;
+  config.resourceAdmission = [&](uint64_t bytes) -> metal::AllocationResult {
+    lastBytes = bytes;
+    return available ? metal::AllocationResult(true)
+                     : metal::AllocationResult(metal::AllocationFailure::HostPressure);
+  };
+  engine::Engine engine(config, cache, executor, events);
+  engine.submit(request(901, std::vector<uint32_t>(4097, 7)));
+  require(engine.tick(1) && engine.commandInFlight(), "resume fixture did not start prefill");
+  require(engine.tick(2), "resume fixture did not finish its first prefill");
+  backing.growthBlocked = true;
+  backing.allocationFailure = metal::AllocationFailure::HostPressure;
+  static_cast<void>(engine.tick(3));
+  require(engine.resourceWaitSnapshot(3).suspended == 1,
+          "resume fixture did not suspend on its next KV growth");
+  available = false;
+  const uint32_t resumes = executor.resumeAttempts;
+  const uint32_t mappings = backing.growthAttempts;
+  for (double now : {103.0, 203.0, 303.0})
+    static_cast<void>(engine.tick(now));
+  require(lastBytes > executor.activationNeededBytes &&
+              executor.resumeAttempts == resumes && backing.growthAttempts == mappings &&
+              engine.resourceWaitSnapshot(303).allocationStage == "request_admission",
+          "resumption rebuilt a lane before its complete KV admission fit");
+  available = true;
+  backing.growthBlocked = false;
+  for (double now = 403; now < 500 && !engine.idle(); ++now)
+    static_cast<void>(engine.tick(now));
+  require(engine.idle() && events.completedCount == 1 && events.failedCount == 0 &&
+              executor.resumeAttempts > resumes && cache.snapshot().activeRequests == 0,
+          "combined preflight did not resume cleanly after memory recovered");
+}
+
 int main() {
   try {
+    testHostPreflightWaitsWithoutRebuildingState();
+    testResumePreflightIncludesStateAndKv();
     testConcurrentColdPrefixesComputeOnce();
     testSharedPrefillRebuildsTheMissingJunctionOnce();
     testSharedPrefillReleasesDifferentJunctionsIndependently();

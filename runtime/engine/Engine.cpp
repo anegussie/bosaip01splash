@@ -332,9 +332,16 @@ ResourceWaitSnapshot Engine::resourceWaitSnapshot(double now) const {
       ++result.memory;
     if (active.suspended)
       ++result.suspended;
-    if (active.resourceWait.startedMilliseconds)
-      result.oldestWaitMilliseconds = std::max(
-          result.oldestWaitMilliseconds, now - *active.resourceWait.startedMilliseconds);
+    if (active.resourceWait.startedMilliseconds) {
+      const double elapsed = now - *active.resourceWait.startedMilliseconds;
+      if (!result.requestId || elapsed > result.oldestWaitMilliseconds) {
+        result.oldestWaitMilliseconds = elapsed;
+        result.requestId = id;
+        result.allocationStage = active.resourceWait.allocationStage;
+        result.requiredBytes = active.resourceWait.requiredBytes;
+        result.allocationFailure = active.resourceWait.allocationFailure;
+      }
+    }
   }
   return result;
 }
@@ -488,6 +495,32 @@ bool Engine::admit(Request &active, double now) {
     scheduler_.waitForPrefix(active.request.id);
     return false;
   }
+  if (config_.resourceAdmission) {
+    const uint64_t workEnd = resuming ? active.resumeKvTargetTokens
+                                      : (lookup.state ? uint64_t{lookup.resumeBoundary()} + 1 : 0);
+    for (;;) {
+      const uint64_t stateBytes = model_.activationBytes();
+      const uint64_t kvBytes = cache_.admissionBackingBytes(lookup, workEnd);
+      if (kvBytes > std::numeric_limits<uint64_t>::max() - stateBytes)
+        throw std::overflow_error("request admission bytes overflow");
+      const uint64_t bytes = stateBytes + kvBytes;
+      const auto admission = bytes ? config_.resourceAdmission(bytes)
+                                   : metal::AllocationResult(true);
+      // Budget refusals still use the existing foreground cache reclaimer.
+      // Host refusals belong to paced pressure reclaim, before any lane or
+      // KV mapping has been rebuilt just to be torn down again.
+      if (admission.failure != metal::AllocationFailure::HostPressure)
+        break;
+      if (reclaimIdleState())
+        continue;
+      scheduler_.waitForResources(active.request.id);
+      deferResourceRetry(active, now,
+                         {.allocationFailure = admission.failure,
+                          .pending = cache_.transfersInFlight() || cache_.releasePending()},
+                         StateFailure::MemoryPressure, "request_admission", bytes);
+      return false;
+    }
+  }
   bool executorStarted = false;
   bool resourcesStarted = false;
   try {
@@ -543,7 +576,8 @@ bool Engine::admit(Request &active, double now) {
         return true;
       }
       scheduler_.waitForResources(active.request.id);
-      deferResourceRetry(active, now, denial, admission.failure);
+      deferResourceRetry(active, now, denial, admission.failure,
+                         "state_activation", model_.activationBytes());
       return false;
     }
     executorStarted = true;
@@ -579,7 +613,8 @@ bool Engine::admit(Request &active, double now) {
         // Release the prefix pin before retrying without its memory footprint.
         active.skipCache = true;
         scheduler_.waitForResources(requestId);
-        deferResourceRetry(active, now, kv.denial);
+        deferResourceRetry(active, now, kv.denial, StateFailure::MemoryPressure,
+                         lookup.state ? "kv_restore" : "kv_growth", kv.allocation.backingBytes);
         return false;
       }
       if (verdict == Verdict::Fail) {
@@ -587,7 +622,8 @@ bool Engine::admit(Request &active, double now) {
         return true;
       }
       scheduler_.waitForResources(requestId);
-      deferResourceRetry(active, now, kv.denial);
+      deferResourceRetry(active, now, kv.denial, StateFailure::MemoryPressure,
+                         lookup.state ? "kv_restore" : "kv_growth", kv.allocation.backingBytes);
       return false;
     }
     active.resourceWait = {};
@@ -723,12 +759,15 @@ bool Engine::resourceRetryReady(const Request &active,
 }
 
 void Engine::deferResourceRetry(Request &active, double now,
-                                const Denial &denial, StateFailure reason) noexcept {
+                                const Denial &denial, StateFailure reason,
+                                std::string_view stage, uint64_t requiredBytes) noexcept {
   auto &wait = active.resourceWait;
   if (!wait.startedMilliseconds)
     wait.startedMilliseconds = now;
   const bool progressed = wait.pending && wait.epoch != resourceEpoch_;
   wait.reason = reason;
+  wait.allocationStage = reason == StateFailure::ConcurrencyLimit ? "concurrency" : stage;
+  wait.requiredBytes = requiredBytes;
   wait.allocationFailure = denial.allocationFailure;
   wait.pending = denial.pending;
   if (reason == StateFailure::ConcurrencyLimit)
@@ -1057,7 +1096,8 @@ Engine::Prepared Engine::prepare(BatchPlan &plan,
   if (std::any_of(denied.begin(), denied.end(),
                   [](const Denied &entry) { return entry.denial.pending; })) {
     for (const Denied &entry : denied)
-      deferResourceRetry(request(entry.requestId), now, entry.denial);
+      deferResourceRetry(request(entry.requestId), now, entry.denial,
+                         StateFailure::MemoryPressure, "kv_growth", entry.admission.backingBytes);
     return Prepared::Waiting;
   }
   const Denied &victim = *std::min_element(
@@ -1086,7 +1126,7 @@ Engine::Prepared Engine::prepare(BatchPlan &plan,
     finishCapacity(request(victim.requestId), victim.admission);
   else
     suspendForGrowth(active, resumeTarget, victim.admission.allocationFailure,
-                     now);
+                     now, active.request.id == victim.requestId ? victim.admission.backingBytes : 0);
   return Prepared::Yielded;
 }
 
@@ -1202,7 +1242,7 @@ CacheReclaimResult Engine::reuseIdleBackingWhilePaused(const TokenAdmission &adm
 }
 
 void Engine::suspendForGrowth(Request &active, uint64_t workEnd,
-                              metal::AllocationFailure failure, double now) {
+                              metal::AllocationFailure failure, double now, uint64_t requiredBytes) {
   if (!active.stateCell || active.suspended) {
     throw std::logic_error("request cannot be suspended for growth");
   }
@@ -1223,7 +1263,8 @@ void Engine::suspendForGrowth(Request &active, uint64_t workEnd,
                       failure != metal::AllocationFailure::HostPressure;
   active.replayTokens = static_cast<uint32_t>(active.exactTokens.size());
   scheduler_.suspendForResources(active.request.id);
-  deferResourceRetry(active, now, {.allocationFailure = failure});
+  deferResourceRetry(active, now, {.allocationFailure = failure},
+                     StateFailure::MemoryPressure, "kv_growth", requiredBytes);
   ++counters_.resourceSuspensions;
 }
 

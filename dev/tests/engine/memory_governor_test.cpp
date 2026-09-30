@@ -241,6 +241,10 @@ void testHostRefusalStartsReclaim() {
               failure == metal::AllocationFailure::HostPressure,
           "a request beyond the host headroom was admitted");
   const MemoryGovernorSnapshot refused = governor.snapshot();
+  require(refused.lastDeniedBytes == stateCell &&
+              refused.lastDeniedHostHeadroomBytes == kGiB + 200 * kMiB &&
+              refused.lastDeniedFailure == metal::AllocationFailure::HostPressure,
+          "denied reservation diagnostics lost the requested bytes or host headroom");
   MemoryPressurePolicy policy;
   const MemoryReclaimDirective directive = policy.update(refused, 0.0, true);
   require(refused.pressure == MemoryPressure::Warning &&

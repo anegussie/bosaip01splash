@@ -120,6 +120,26 @@ full native window with `--max-context 256K`. This is a capacity limit, not a
 guarantee of a fast first token for a long uncached prompt. If the model
 cannot fit, startup prints a memory budget breakdown and stops.
 
+When a request waits for memory, `/status.admission` reports the oldest wait's
+`request_id`, `allocation_stage`, `required_bytes`, and `allocation_reason`.
+`/status.memory_governor.last_denied_bytes`, `last_denied_host_headroom_bytes`,
+and `last_denied_reason` describe the latest governor reservation denial; it
+may come from an optional cache allocation rather than the oldest request.
+A suspended request checks its combined state and KV growth before rebuilding
+its lane. KV admission checks all missing extents before mapping any; physical
+allocations still recheck availability because other applications can consume
+memory after the initial check. Sustained shortages can still end with
+`resource_timeout` without repeatedly mapping and discarding partial backing.
+
+`memory_governor.serving_footprint_bytes` covers one warmed lane and the KV
+backing for the configured context plus speculative scratch, capped by the
+engine limit. Only the warm runway is allocated at startup. Placements within
+this allowance protect the macOS reserve without also demanding the extra
+growth warning margin; critical pressure still refuses them. Previously the
+allowance covered only the runway, so longer requests could remain blocked
+even with enough host headroom for their required backing. `growth available`
+describes the general growth watermark, not approval of a particular request.
+
 `splash pi` adds a `splash` provider to Pi's `models.json` (`splash-<port>` for
 a server on another port), preserving other providers, settings and sessions.
 The browser chat and agent launchers connect to the running server; a model

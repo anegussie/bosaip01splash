@@ -156,6 +156,9 @@ void testCleanRuntimeStatus() {
   governor.hostReserveBytes = 2 * kGiB;
   governor.hostHeadroomBytes = 6 * kGiB;
   governor.growthAllowed = true;
+  governor.lastDeniedBytes = 136314880;
+  governor.lastDeniedHostHeadroomBytes = 800000000;
+  governor.lastDeniedFailure = metal::AllocationFailure::HostPressure;
 
   model::ModelTelemetry executorTelemetry;
   executorTelemetry.stateResidentBytes = 350'224'384;
@@ -197,6 +200,10 @@ void testCleanRuntimeStatus() {
   require(json.find("\"kv\":{\"target_model_sha256\"") != std::string::npos &&
               json.find("\"q8\":{\"target_model_sha256\"") != std::string::npos,
           "INT8 status lost its generic or legacy identity");
+  require(json.find("\"last_denied_bytes\":136314880") != std::string::npos &&
+              json.find("\"last_denied_host_headroom_bytes\":800000000") != std::string::npos &&
+              json.find("\"last_denied_reason\":\"host memory reserve protected\"") != std::string::npos,
+          "last denied allocation diagnostics were not exposed");
   auto bf16Identity = identity;
   bf16Identity.kvLayout = kv::makeLayoutGuard({16, 4, 256, kv::Format::BFloat16}, {});
   const auto bf16Status = runtimeStatusJson(memoryPlan, engine, metal, warmup, audit(memoryPlan),
@@ -487,13 +494,18 @@ void testMemoryPressureTelemetry() {
 
 void testResourceWaitDiagnostics() {
   ResourceWaitSnapshot wait{.memory = 2, .concurrency = 1, .suspended = 1,
-                            .oldestWaitMilliseconds = 1250.0, .draining = true};
+                            .oldestWaitMilliseconds = 1250.0, .draining = true,
+                            .requestId = 42, .allocationStage = "request_admission",
+                            .requiredBytes = 350224384,
+                            .allocationFailure = metal::AllocationFailure::HostPressure};
   const auto memoryPlan = plan();
   const std::string json = runtimeStatusJson(
       memoryPlan, {}, {}, {}, {}, {}, {}, {}, {}, true, {}, wait);
   require(json.find("\"admission\":{\"waiting\":3,\"waiting_memory\":2,"
                     "\"waiting_concurrency\":1,\"suspended\":1,\"draining\":true,"
-                    "\"oldest_wait_ms\":1250}") != std::string::npos,
+                    "\"oldest_wait_ms\":1250,\"request_id\":42,"
+                    "\"allocation_stage\":\"request_admission\",\"required_bytes\":350224384,"
+                    "\"allocation_reason\":\"host memory reserve protected\"}") != std::string::npos,
           "resource wait summary is missing or inaccurate");
   MemoryStatusReporter reporter;
   require(reporter.update({}, true).empty(), "healthy idle engine logged pressure");

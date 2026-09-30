@@ -1,5 +1,6 @@
 #include "ops/PageStorage.hpp"
 #include "engine/MemoryGovernor.hpp"
+#include "engine/KvPool.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -17,6 +18,37 @@ void require(bool condition, const char *message) {
     if (!condition) throw std::runtime_error(message);
 }
 
+void testWholeKvAdmission(metal::MetalBackend &backend) {
+    constexpr kv::Layout layout{16, 4, 256};
+    constexpr uint64_t giB = 1ULL << 30;
+    constexpr uint64_t reserve = 128ULL * 1024 * 1024;
+    constexpr uint64_t extentBytes = 128 * layout.bytesPerModelPage();
+    std::optional<uint64_t> available = reserve + 3 * giB;
+    MemoryGovernor governor(backend, backend.capabilities().recommendedMaxWorkingSetBytes,
+                            reserve, [&available] { return available; });
+    kv::PageStorage storage(backend, governor.allocationAdmission(), layout, 384);
+    KvPool pool(storage);
+    const auto baseline = backend.memoryStats();
+    // There is room for one extra extent, while this acquisition needs two.
+    available = reserve + kHostWarningMarginBytes + extentBytes;
+    for (unsigned retry = 0; retry < 10; ++retry) {
+        const auto acquired = pool.acquirePages(384, false);
+        require(!acquired.granted() && acquired.backingBytes == 2 * extentBytes &&
+                    acquired.allocationFailure == metal::AllocationFailure::HostPressure &&
+                    storage.residentPages() == 128 && pool.freePageCount() == 384 &&
+                    backend.memoryStats().sparseResidentBytes == baseline.sparseResidentBytes &&
+                    !backend.sparseUnmapPending(),
+                "whole KV host denial mapped or unmapped Metal backing");
+    }
+    available = reserve + 3 * giB;
+    const auto acquired = pool.acquirePages(384, false);
+    require(acquired.granted() && storage.residentPages() == 384 &&
+                governor.snapshot().reservedBytes == 0,
+            "complete KV admission did not recover or leaked its reservation");
+    for (uint32_t page : acquired.pages)
+        pool.releasePage(page, false);
+}
+
 void run(const std::string &metallib) {
     constexpr kv::Layout kvLayout{16, 4, 256};
     constexpr kv::Layout compactLayout{10, 2, 256};
@@ -30,6 +62,7 @@ void run(const std::string &metallib) {
     static_assert(compactLayout.sparseMappingBatchPages() == 256);
     static_assert(compactLayout.backingExtentPages() == 512);
     metal::MetalBackend backend(metallib);
+    testWholeKvAdmission(backend);
     auto baseline = backend.memoryStats();
     uint64_t observed = std::max(
         baseline.allocatedBytes, baseline.deviceCurrentAllocatedBytes);

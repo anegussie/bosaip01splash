@@ -30,6 +30,8 @@ struct EngineConfig final {
   // failed allocation and, after a suspension the pause caused, while
   // resident lanes drain; never on the ordinary decode path.
   std::function<bool()> growthPaused;
+  // Check state plus the next KV admission before rebuilding a waiting lane.
+  std::function<metal::AllocationResult(uint64_t)> resourceAdmission;
 };
 
 struct ResourceWaitSnapshot final {
@@ -38,6 +40,10 @@ struct ResourceWaitSnapshot final {
   uint32_t suspended = 0;
   double oldestWaitMilliseconds = 0.0;
   bool draining = false;
+  uint64_t requestId = 0;
+  std::string_view allocationStage = "none";
+  uint64_t requiredBytes = 0;
+  metal::AllocationFailure allocationFailure = metal::AllocationFailure::None;
 };
 
 struct EngineSnapshot final {
@@ -127,6 +133,8 @@ private:
     uint64_t epoch = 0;
     // Memory is on its way back; the limit fires only without progress.
     bool pending = false;
+    std::string_view allocationStage = "none";
+    uint64_t requiredBytes = 0;
   };
 
   struct Request final {
@@ -253,7 +261,7 @@ private:
                                       uint64_t generation, bool reclaimed) const;
   void suspendForGrowth(Request &request, uint64_t workEnd,
                         metal::AllocationFailure failure,
-                        double nowMilliseconds);
+                        double nowMilliseconds, uint64_t requiredBytes = 0);
   [[nodiscard]] bool resourceRetryReady(const Request &request,
                                         double nowMilliseconds) const noexcept;
   // The wait keeps the denial's allocation failure for its timeout message.
@@ -263,7 +271,9 @@ private:
   // progress has been made since the last attempt.
   void deferResourceRetry(Request &request, double nowMilliseconds,
                           const Denial &denial,
-                          StateFailure reason = StateFailure::MemoryPressure) noexcept;
+                          StateFailure reason = StateFailure::MemoryPressure,
+                          std::string_view stage = "kv_growth",
+                          uint64_t requiredBytes = 0) noexcept;
   // The wait limit tick() enforces, or zero while it enforces none: a
   // pending wait that has seen progress waits for its next attempt. The
   // limit restarts whenever a lane submitted before the request has work in

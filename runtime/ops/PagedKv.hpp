@@ -45,6 +45,10 @@ public:
   [[nodiscard]] virtual uint32_t pageCount() const noexcept = 0;
   [[nodiscard]] virtual uint64_t bytesPerPage() const noexcept = 0;
   [[nodiscard]] virtual bool isResident(uint32_t page) const = 0;
+  // Check the complete growth before any extent is mapped. Real storage uses
+  // the same governor as individual allocations; each allocation remains
+  // guarded because host availability can change after this check.
+  [[nodiscard]] virtual metal::AllocationResult admitBacking(uint64_t) { return true; }
   [[nodiscard]] virtual metal::AllocationResult ensureResident(uint32_t page) = 0;
   [[nodiscard]] virtual bool releaseBackingForPage(uint32_t page) = 0;
   [[nodiscard]] virtual uint32_t extentFirstPage(uint32_t page) const = 0;

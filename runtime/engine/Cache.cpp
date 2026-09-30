@@ -300,7 +300,7 @@ TokenAdmission Cache::admitPages(uint32_t count, std::vector<uint32_t> &pages) {
     const uint32_t pending = pendingPages();
     const bool covered = pending > 0 && pending >= missing;
     return {covered ? KvPageAcquireFailure::Pending : acquired.failure,
-            count, pool_.freePageCount(), acquired.allocationFailure};
+            count, pool_.freePageCount(), acquired.allocationFailure, acquired.backingBytes};
   }
   pages = std::move(acquired.pages);
   return {};
@@ -540,6 +540,23 @@ void Cache::releaseUnusedKvBacking() {
 
 // Disk tier: restores and demotions in flight, the quota they draw on, and
 // states promoted back into RAM.
+
+uint64_t Cache::admissionBackingBytes(const CacheLookup &lookup, uint64_t workEnd) const {
+  uint64_t additional = 0;
+  uint64_t restored = 0;
+  if (lookup.state) {
+    const KvCache::Chain chain = kv_.chain(lookup.state->kvBlock());
+    restored = chain.pages.size();
+    additional = std::count(chain.pages.begin(), chain.pages.end(), KvCache::noPage);
+  }
+  const uint64_t workPages = workEnd / KvCache::pageTokens +
+                             (workEnd % KvCache::pageTokens != 0);
+  if (workPages > restored)
+    additional += workPages - restored;
+  if (additional > pool_.freePageCount())
+    return 0;
+  return pool_.additionalBackingBytes(static_cast<uint32_t>(additional));
+}
 
 TokenAdmission Cache::restoreRequest(uint64_t requestId, const CacheLookup &lookup) {
   Request &active = request(requestId);

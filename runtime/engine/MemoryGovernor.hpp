@@ -72,8 +72,8 @@ struct MemoryGovernorSnapshot {
   // Charged against the limit: the backend's resident buffers plus the
   // untracked reserve, or the device's allocation when that is larger.
   uint64_t observedResidentBytes = 0;
-  // The observed resident bytes once warmup released all but one lane's
-  // state and the KV runway (markServingFootprint); zero until then.
+  // One lane's warmed state and configured-context KV backing, bounded by
+  // the engine limit (markServingFootprint); zero until then.
   uint64_t servingFootprintBytes = 0;
   uint64_t reservedBytes = 0;
   uint64_t headroomBytes = 0;
@@ -90,6 +90,9 @@ struct MemoryGovernorSnapshot {
   // Growth back to that footprint needs only the host's reserve, so
   // tryReserve can grant it while this is false.
   bool hostGrowthAllowed = true;
+  uint64_t lastDeniedBytes = 0;
+  uint64_t lastDeniedHostHeadroomBytes = 0;
+  metal::AllocationFailure lastDeniedFailure = metal::AllocationFailure::None;
 };
 
 struct MemoryReclaimDirective {
@@ -194,10 +197,10 @@ public:
   // A pass that releases or waits for memory again, or the host's recovery,
   // ends the waiver.
   void reclaimed(ReclaimOutcome outcome) noexcept;
-  // Records what is resident once warmup has released all but one lane's
-  // state and the KV runway: the footprint a request is served from. Growth
-  // back to it needs only the host's reserve (tryReserve).
-  void markServingFootprint() noexcept;
+  // Records the warmed one-lane footprint plus the KV backing still needed
+  // for its configured context. This is an allowance, not a preallocation;
+  // each placement still protects the host reserve and engine limit.
+  void markServingFootprint(uint64_t additionalServingBytes = 0) noexcept;
   [[nodiscard]] MemoryGovernorSnapshot snapshot() const noexcept;
 
 private:
@@ -225,6 +228,9 @@ private:
   uint64_t reservedBytes_ = 0;
   uint64_t servingFootprintBytes_ = 0;
   uint64_t deniedReservations_ = 0;
+  uint64_t lastDeniedBytes_ = 0;
+  uint64_t lastDeniedHostHeadroomBytes_ = 0;
+  metal::AllocationFailure lastDeniedFailure_ = metal::AllocationFailure::None;
   MemoryPressure systemPressure_ = MemoryPressure::Normal;
   mutable bool hostConstrained_ = false;
   // Reclaim found nothing to release in this episode of host pressure.

@@ -41,6 +41,7 @@ public:
   [[nodiscard]] uint64_t actualAllocatedBytes() const noexcept;
   [[nodiscard]] uint32_t residentPages() const noexcept;
   [[nodiscard]] bool isResident(uint32_t page) const override;
+  [[nodiscard]] metal::AllocationResult admitBacking(uint64_t bytes) override;
   [[nodiscard]] metal::AllocationResult ensureResident(uint32_t page) override;
   // The caller must prove that no active, prefix, reserved, or in-flight
   // reference remains anywhere in this extent. The unmap is asynchronous:

@@ -349,6 +349,12 @@ std::unique_ptr<RuntimeBootstrap> RuntimeBootstrap::start(
         [governor = &resources->memoryGovernor()] {
           return !governor->snapshot().hostGrowthAllowed;
         };
+    config.nativeLoop.engine.resourceAdmission =
+        [governor = &resources->memoryGovernor()](uint64_t bytes) -> metal::AllocationResult {
+          metal::AllocationFailure failure;
+          auto reservation = governor->tryReserve(bytes, &failure);
+          return reservation ? metal::AllocationResult(true) : metal::AllocationResult(failure);
+        };
     nativeLoop = std::make_unique<NativeRuntime>(
         config.nativeLoop, resources->cache(), *modelRuntime,
         std::move(output), std::move(statusProvider), NativeLoopClocks{},
@@ -366,7 +372,8 @@ std::unique_ptr<RuntimeBootstrap> RuntimeBootstrap::start(
   model::RuntimeModel *modelPointer = modelRuntime.get();
   RuntimeBootstrapReport report = requireWarmupAndAnnounce(
       resources->memoryPlan(), *modelRuntime,
-      [resourcesPointer, modelPointer](uint64_t estimatedPeakBytes) {
+      [resourcesPointer, modelPointer,
+       maxContext = config.nativeLoop.engine.maxContext](uint64_t estimatedPeakBytes) {
         resourcesPointer->backend().checkOperation();
         // Audit every attempted warmup before reclaiming idle buffers.
         // Wider batches and cache backing grow on demand after Ready.
@@ -375,7 +382,14 @@ std::unique_ptr<RuntimeBootstrap> RuntimeBootstrap::start(
         // Keep one lane's worth of warm buffers for the first request.
         static_cast<void>(resourcesPointer->stateStorage().releaseIdle(2, 1));
         resourcesPointer->cache().releaseUnusedKvBacking();
-        resourcesPointer->memoryGovernor().markServingFootprint();
+        // The retained runway is smaller than a full configured request.
+        // Count its missing backing without mapping it; otherwise pressure
+        // can permit a short prompt but permanently refuse a longer one.
+        const uint64_t servingTokens = uint64_t{maxContext} +
+            model::ExecutionLimits::speculativeScratchTokens;
+        const uint64_t additionalKvBytes =
+            resourcesPointer->cache().admissionBackingBytes({}, servingTokens);
+        resourcesPointer->memoryGovernor().markServingFootprint(additionalKvBytes);
         return report;
       },
       *nativeLoop);

@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <vector>
@@ -51,6 +52,14 @@ public:
     bool isResident(uint32_t page) const override {
         return resident_.at(extentOf_.at(page));
     }
+    splash::metal::AllocationResult admitBacking(uint64_t bytes) override {
+        lastAdmissionBytes = bytes;
+        return bytes <= availableGrowthBytes
+            ? splash::metal::AllocationResult(true)
+            : splash::metal::AllocationResult(splash::metal::AllocationFailure::HostPressure);
+    }
+    uint64_t lastAdmissionBytes = 0;
+    uint64_t availableGrowthBytes = std::numeric_limits<uint64_t>::max();
     splash::metal::AllocationResult ensureResident(uint32_t page) override {
         uint32_t extent = extentOf_.at(page);
         ++mappingAttempts;
@@ -367,8 +376,51 @@ void testReleaseProgressIncludesAllocationRollback() {
 
 }  // namespace
 
+// A request needing two extents used to map the first and tear it down on
+// every retry. Deny the complete operation without touching resident backing.
+void testWholeGrowthAdmissionAvoidsMappingChurn() {
+    TestBacking backing(12, 4);
+    KvPool pool(backing);
+    backing.availableGrowthBytes = 400;
+    for (unsigned retry = 0; retry < 10; ++retry) {
+        const auto acquired = pool.acquirePages(8, false);
+        require(!acquired.granted() && acquired.backingBytes == 800 &&
+                    acquired.allocationFailure == splash::metal::AllocationFailure::HostPressure,
+                "complete growth did not report its host denial");
+        require(backing.mappingAttempts == 0 && backing.releasedExtents == 0 &&
+                    pool.snapshot().pagesResident == 0 && pool.freePageCount() == 12,
+                "denied preflight churned backing or changed page ownership");
+    }
+    backing.availableGrowthBytes = 800;
+    const auto acquired = pool.acquirePages(8, false);
+    require(acquired.granted() && backing.mappingAttempts == 2 &&
+                pool.snapshot().pagesActive == 8,
+            "growth did not resume when the complete operation fit");
+    for (uint32_t page : acquired.pages)
+        pool.releasePage(page, false);
+    require(pool.freePageCount() == 12, "admission recovery leaked pages");
+}
+
+void testGrowthEstimateUsesResidentPagesAndTrailingExtent() {
+    TestBacking backing({4, 4, 2}, 1);
+    KvPool pool(backing);
+    require(pool.additionalBackingBytes(4) == 0 &&
+                pool.additionalBackingBytes(5) == 400 &&
+                pool.additionalBackingBytes(10) == 600,
+            "growth estimate counted resident backing or rounded the tail incorrectly");
+    backing.availableGrowthBytes = 600;
+    const auto acquired = pool.acquirePages(10, false);
+    require(acquired.granted() && backing.lastAdmissionBytes == 600 &&
+                backing.mappingAttempts == 2,
+            "growth estimate disagreed with extent mapping order");
+    for (uint32_t page : acquired.pages)
+        pool.releasePage(page, false);
+}
+
 int main() {
     try {
+        testWholeGrowthAdmissionAvoidsMappingChurn();
+        testGrowthEstimateUsesResidentPagesAndTrailingExtent();
         testReleaseProgressIncludesAllocationRollback();
         testGrowthPacksResidentExtents();
         testFailedGrowthRollsBackAtomically();

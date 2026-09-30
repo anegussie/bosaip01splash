@@ -518,6 +518,8 @@ public:
   // A denied allocation retries between calls, so it frees only what it
   // needs.
   [[nodiscard]] virtual uint64_t reclaimIdleState() noexcept = 0;
+  // New physical state bytes for one lane after reusing the idle pool.
+  [[nodiscard]] virtual uint64_t activationBytes() const noexcept { return 0; }
   virtual void provideMask(uint64_t requestId,
                            std::span<const uint32_t> words) = 0;
   virtual void end(uint64_t requestId) = 0;

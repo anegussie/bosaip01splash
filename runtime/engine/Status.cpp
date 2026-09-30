@@ -108,7 +108,12 @@ std::string runtimeStatusJson(
       << ",\"waiting_concurrency\":" << resourceWait.concurrency
       << ",\"suspended\":" << resourceWait.suspended
       << ",\"draining\":" << boolean(resourceWait.draining)
-      << ",\"oldest_wait_ms\":" << resourceWait.oldestWaitMilliseconds << "}"
+      << ",\"oldest_wait_ms\":" << resourceWait.oldestWaitMilliseconds
+      << ",\"request_id\":" << resourceWait.requestId
+      << ",\"allocation_stage\":" << json::quote(resourceWait.allocationStage)
+      << ",\"required_bytes\":" << resourceWait.requiredBytes
+      << ",\"allocation_reason\":"
+      << json::quote(metal::allocationFailureName(resourceWait.allocationFailure)) << "}"
       << ",\"identity\":{\"cache\":{"
       << "\"loaded_model_layout_sha256\":"
       << json::quote(cacheIdentity.modelLayoutSha256)
@@ -135,6 +140,10 @@ std::string runtimeStatusJson(
       << ",\"headroom_bytes\":" << memoryGovernor.headroomBytes
       << ",\"growth_allowed\":" << boolean(memoryGovernor.growthAllowed)
       << ",\"denied_reservations\":" << memoryGovernor.deniedReservations
+      << ",\"last_denied_bytes\":" << memoryGovernor.lastDeniedBytes
+      << ",\"last_denied_host_headroom_bytes\":" << memoryGovernor.lastDeniedHostHeadroomBytes
+      << ",\"last_denied_reason\":"
+      << json::quote(metal::allocationFailureName(memoryGovernor.lastDeniedFailure))
       << ",\"system_pressure\":"
       << json::quote(memoryPressureName(memoryGovernor.systemPressure))
       << ",\"host_measurement_valid\":"
