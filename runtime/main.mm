@@ -52,6 +52,7 @@ struct NativeArguments final {
   uint64_t maxMemoryBytes = 0;
   uint64_t maxCacheDiskBytes = 0;
   kv::Format kvFormat = kv::Format::Int8;
+  uint32_t resourceWaitTimeoutSeconds = 30;
 };
 
 // One observer spans bootstrap and serving. The dispatch queue only records
@@ -123,7 +124,7 @@ void printUsage(std::string_view executable) {
       "usage: " + std::string(executable) +
       " serve-native TARGET_DIRECTORY DRAFT_DIRECTORY"
       " MAX_CONTEXT|auto MAX_MEMORY_BYTES|auto [MAX_CACHE_DISK_BYTES]"
-      " [--kv-format int8|bf16]");
+      " [--kv-format int8|bf16] [--resource-wait-timeout SECONDS]");
 }
 
 template <typename T>
@@ -187,18 +188,30 @@ NativeArguments parseArguments(int argc, char **argv) {
   }
   NativeArguments result;
   int next = 6;
-  if (next < argc && std::string_view(argv[next]) != "--kv-format") {
+  if (next < argc && !std::string_view(argv[next]).starts_with("--")) {
     const std::string_view quota(argv[next++]);
     if (quota != "0" && !parsePositive(quota, result.maxCacheDiskBytes))
       throw UsageError("MAX_CACHE_DISK_BYTES must be a nonnegative integer");
   }
-  if (next < argc) {
-    if (argc - next != 2 || std::string_view(argv[next]) != "--kv-format")
-      throw UsageError("expected --kv-format int8 or bf16");
-    const std::string_view format(argv[next + 1]);
-    if (format != "int8" && format != "bf16")
-      throw UsageError("--kv-format requires int8 or bf16");
-    result.kvFormat = format == "int8" ? kv::Format::Int8 : kv::Format::BFloat16;
+  bool seenKvFormat = false;
+  bool seenResourceWait = false;
+  while (next < argc) {
+    const std::string_view option(argv[next++]);
+    if (next == argc)
+      throw UsageError("missing value for " + std::string(option));
+    const std::string_view value(argv[next++]);
+    if (option == "--kv-format" && !seenKvFormat) {
+      seenKvFormat = true;
+      if (value != "int8" && value != "bf16")
+        throw UsageError("--kv-format requires int8 or bf16");
+      result.kvFormat = value == "int8" ? kv::Format::Int8 : kv::Format::BFloat16;
+    } else if (option == "--resource-wait-timeout" && !seenResourceWait) {
+      seenResourceWait = true;
+      if (!parsePositive(value, result.resourceWaitTimeoutSeconds))
+        throw UsageError("--resource-wait-timeout requires a positive integer in seconds");
+    } else {
+      throw UsageError("unknown or repeated option: " + std::string(option));
+    }
   }
   result.modelRoot = requireModelRoot(argv[2], argv[3]);
   result.model = model::inspectModelPackage(result.modelRoot);
@@ -248,6 +261,8 @@ bootstrapConfig(const NativeArguments &arguments) {
   config.resources.maximumCacheDiskBytes = arguments.maxCacheDiskBytes;
   config.resources.kvFormat = arguments.kvFormat;
   config.nativeLoop.engine.maxContext = arguments.maxContext;
+  config.nativeLoop.engine.resourceWaitTimeoutMilliseconds =
+      static_cast<double>(arguments.resourceWaitTimeoutSeconds) * 1000.0;
   config.nativeLoop.engineInstanceId = engineInstanceId();
   config.nativeLoop.maskWordsPerToken = maskWordsPerToken;
   config.protocolLimits.maxTokenBatch =

@@ -270,6 +270,8 @@ def serve(args):
             "--max-context",
             "auto" if args.max_context is None else str(args.max_context),
         ]
+        if getattr(args, "resource_wait_timeout", 30) != 30:
+            command.extend(("--resource-wait-timeout", str(args.resource_wait_timeout)))
         if args.kv_format != "int8":
             command.extend(("--kv-format", args.kv_format))
         for name in args.served_model_name:
@@ -370,6 +372,18 @@ def _parse_port(value):
     if not 1 <= port <= 65535:
         raise argparse.ArgumentTypeError("port must be between 1 and 65535")
     return port
+
+
+def _parse_resource_wait_timeout(value):
+    try:
+        seconds = int(value)
+    except ValueError:
+        seconds = 0
+    if not 1 <= seconds <= 2**32 - 1:
+        raise argparse.ArgumentTypeError(
+            "resource wait timeout must be a positive integer in seconds (at most 4294967295)"
+        )
+    return seconds
 
 
 def _parse_max_cache_disk(value):
@@ -560,6 +574,12 @@ def parse_args(argv=None):
         choices=REASONING_EFFORTS,
         default=os.environ.get("SPLASH_DEFAULT_REASONING_EFFORT"),
         help="Chat/Responses effort when unspecified (default: SPLASH_DEFAULT_REASONING_EFFORT or model template)",
+    )
+    server.add_argument(
+        "--resource-wait-timeout",
+        type=_parse_resource_wait_timeout,
+        default=30,
+        help="seconds to wait for engine resources after suspension (default: 30)",
     )
     server.add_argument(
         "--kv-format",

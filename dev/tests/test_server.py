@@ -3429,6 +3429,19 @@ class ServerTest(unittest.TestCase):
             ):
                 api.parse_args([*required, "--max-cache-disk", invalid])
             self.assertIn("use 0 to disable, or a size such as 5G", error.getvalue())
+        self.assertEqual(args.resource_wait_timeout, 30)
+        self.assertNotIn("--resource-wait-timeout", api._native_command(args))
+        wait_args = api.parse_args(
+            [*required, "--resource-wait-timeout", "60", "--kv-format", "bf16",
+             "--max-cache-disk", "5G"]
+        )
+        self.assertEqual(
+            api._native_command(wait_args)[-5:],
+            [str(5 * 1024**3), "--resource-wait-timeout", "60", "--kv-format", "bf16"],
+        )
+        for invalid in ("0", "-1", "inf", "nan", "1.5", "4294967296"):
+            with mock.patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):
+                api.parse_args([*required, "--resource-wait-timeout", invalid])
         self.assertEqual(args.kv_format, "int8")
         self.assertNotIn("--kv-format", api._native_command(args))
         bf16_args = api.parse_args([*required, "--kv-format", "bf16"])

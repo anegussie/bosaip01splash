@@ -91,6 +91,7 @@ window. To set your own limits or cache options, add these to `splash serve`:
 | `--max-context 100K` | Set the context limit. |
 | `--language-only` | Skip vision; serve text only. |
 | `--kv-format int8` | Use 8-bit KV cache (default). BF16 is also supported; Q4 KV is not. |
+| `--resource-wait-timeout 60` | Wait up to 60 seconds for engine resources after suspension (default: 30). |
 | `--max-cache-disk 16G` | Offload KV cache and GDN states to SSD as needed. Off by default. |
 
 On a Mac you also use for other work, `--max-memory` leaves room for other

@@ -2033,6 +2033,18 @@ def _parse_max_context(value):
     return parsed
 
 
+def _parse_resource_wait_timeout(value):
+    try:
+        seconds = int(value)
+    except ValueError:
+        seconds = 0
+    if not 1 <= seconds <= 2**32 - 1:
+        raise argparse.ArgumentTypeError(
+            "resource wait timeout must be a positive integer in seconds (at most 4294967295)"
+        )
+    return seconds
+
+
 def _parse_max_cache_disk(value):
     if value.strip() == "0":
         return 0
@@ -2128,6 +2140,12 @@ def parse_args(argv=None):
     parser.add_argument("--max-context", type=_parse_max_context, default=None)
     parser.add_argument("--max-memory", type=_parse_max_memory, default=None)
     parser.add_argument(
+        "--resource-wait-timeout",
+        type=_parse_resource_wait_timeout,
+        default=30,
+        help="seconds to wait for engine resources after suspension (default: 30)",
+    )
+    parser.add_argument(
         "--kv-format",
         choices=("int8", "bf16"),
         default="int8",
@@ -2196,6 +2214,8 @@ def _native_command(args):
     ]
     if args.max_cache_disk:
         command.append(str(args.max_cache_disk))
+    if getattr(args, "resource_wait_timeout", 30) != 30:
+        command.extend(("--resource-wait-timeout", str(args.resource_wait_timeout)))
     if args.kv_format != "int8":
         command.extend(("--kv-format", args.kv_format))
     return command

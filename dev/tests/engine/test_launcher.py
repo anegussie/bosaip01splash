@@ -111,6 +111,35 @@ class LauncherTests(unittest.TestCase):
                 launcher.main(base + ["--request-timeout", "3600"])
             execute.assert_called_once()
 
+    def test_resource_wait_timeout_reaches_the_server(self):
+        base = ["serve", "--model", MODEL_ID]
+        # The engine retains its 30-second default.
+        self.assertEqual(launcher.parse_args(base).resource_wait_timeout, 30)
+        self.assertEqual(
+            launcher.parse_args(base + ["--resource-wait-timeout", "60"]).resource_wait_timeout,
+            60,
+        )
+        # The native engine accepts positive uint32 seconds.
+        for value in ("0", "-1", "inf", "nan", "soon", "1.5", "4294967296"):
+            with mock.patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):
+                launcher.parse_args(base + ["--resource-wait-timeout", value])
+
+        def check_exec(binary, argv, environment):
+            self.assertEqual(argv[argv.index("--resource-wait-timeout") + 1], "60")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            with (
+                mock.patch.object(launcher, "RUNTIME_DIR", Path(temporary)),
+                mock.patch.object(launcher.socket, "socket"),
+                mock.patch.object(launcher, "_ensure_installed"),
+                mock.patch.object(
+                    launcher.os, "execve", side_effect=check_exec
+                ) as execute,
+                mock.patch("sys.stdout", io.StringIO()),
+            ):
+                launcher.main(base + ["--resource-wait-timeout", "60"])
+            execute.assert_called_once()
+
     def test_serve_requires_exact_repository_id_before_build(self):
         for arguments in (
             ["serve"],

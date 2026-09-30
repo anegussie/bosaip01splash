@@ -106,6 +106,7 @@ loopback, so use a listener that includes loopback when launching agents locally
 | `--max-cache-disk` | `0` (off) | Session-local SSD cache, e.g. `16G`. See [disk cache](#disk-cache). |
 | `--kv-format` | `int8` | Target KV storage: 8-bit `int8` or `bf16`. Q4 KV is not supported. |
 | `--max-image-pixels` | `4194304` | Maximum resized pixels per image. |
+| `--resource-wait-timeout` | `30` | Positive integer seconds the engine waits for resources after suspension. A longer wait can help transient shortages; sustained pressure still fails with `resource_timeout`. The HTTP request deadline still applies. |
 | `--request-timeout` | `1800` | Seconds a request may take from its arrival; a request's own `timeout` can only shorten it. |
 | `--allowed-host` | No extra names | Additional HTTP Host name, e.g. `mymac.local`; repeatable. |
 | `--api-key` | `SPLASH_API_KEY` or none | Require a bearer token or `x-api-key`. |
