@@ -127,7 +127,6 @@ struct TokenAdmission final {
   uint32_t additionalPages = 0;
   uint32_t availablePages = 0;
   metal::AllocationFailure allocationFailure = metal::AllocationFailure::None;
-  uint64_t backingBytes = 0;
 
   [[nodiscard]] bool granted() const noexcept {
     return failure == TokenAdmissionFailure::None;
@@ -282,9 +281,6 @@ public:
       std::span<const uint32_t> prompt,
       std::span<const ImageSpan> images,
       const CacheProbe *probe = nullptr);
-  // Growth needed to restore a matched prefix and cover the next dispatch.
-  [[nodiscard]] uint64_t admissionBackingBytes(const CacheLookup &lookup,
-                                               uint64_t workEnd) const;
   void recordLookup(const CacheLookup &lookup);
   void promoteState(const CacheLookup &lookup, StateRestore &transfer);
   // Gives the request the matched chain up to its state. Disk-only blocks

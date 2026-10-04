@@ -441,7 +441,6 @@ struct FmtPQ20 {
 // PTQ1_0 is repacked losslessly into seven bytes per 32-value group. The
 // independent groups let the common GEMM tiles decode their 32 columns
 // without reading neighboring groups; the shared FP16 scale is per 128.
-constant constexpr uint kPTQ1Pow3[5] = {1, 3, 9, 27, 81};
 struct FmtPTQ10 {
   QUANT_FORMAT(GGUF_FMT_PTQ10, QuantLinear, 1, 32, false);
   struct Payload { uint a; ushort b; uchar tail; }; typedef uint4 Chunk; typedef ushort Meta;
@@ -455,7 +454,12 @@ struct FmtPTQ10 {
     if (e >= 30) { const uint t = p.tail; return e == 30 ? t / 3 : t % 3; }
     const uint bi = e / 5;
     const uint q = bi < 4 ? ((p.a >> (8 * bi)) & 255) : ((p.b >> (8 * (bi - 4))) & 255);
-    return (q / kPTQ1Pow3[4 - (e % 5)]) % 3;
+    // Constant divisors avoid the compiler's general integer-division
+    // path in the prefill kernel, where it produced intermittent bad MPP
+    // fragments on Apple10. Keep the decoder identical for all tiles.
+    const ushort digit = e % 5;
+    const uint shifted = digit == 0 ? q / 81 : digit == 1 ? q / 27 : digit == 2 ? q / 9 : digit == 3 ? q / 3 : q;
+    return shifted % 3;
   }
   static uint4 chunk(Payload p, ushort c) {
     uint4 result;

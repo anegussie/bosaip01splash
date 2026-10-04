@@ -1,5 +1,4 @@
 #include "StderrLine.hpp"
-#include "engine/MemoryPlan.hpp"
 #include "engine/FdTransport.hpp"
 #include "engine/Bootstrap.hpp"
 #include "engine/Status.hpp"
@@ -16,6 +15,7 @@
 #include <charconv>
 #include <csignal>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <limits.h>
@@ -51,8 +51,13 @@ struct NativeArguments final {
   uint32_t maxContext = 0;
   uint64_t maxMemoryBytes = 0;
   uint64_t maxCacheDiskBytes = 0;
+  // --cache-dir: where the cache tier keeps its files for the next process;
+  // empty for temporary ones.
+  std::filesystem::path persistentCacheRoot;
   kv::Format kvFormat = kv::Format::Int8;
+  double decodeShare = engine::EngineConfig{}.decodeShare;
   uint32_t resourceWaitTimeoutSeconds = 30;
+  uint32_t maxImagePatches = ops::kMaximumImagePatches;
 };
 
 // One observer spans bootstrap and serving. The dispatch queue only records
@@ -122,9 +127,11 @@ private:
 void printUsage(std::string_view executable) {
   writeStderrLine(
       "usage: " + std::string(executable) +
-      " serve-native TARGET_DIRECTORY DRAFT_DIRECTORY"
+      " serve-native MODEL_DIRECTORY"
       " MAX_CONTEXT|auto MAX_MEMORY_BYTES|auto [MAX_CACHE_DISK_BYTES]"
-      " [--kv-format int8|bf16] [--resource-wait-timeout SECONDS]");
+      " [--kv-format int8|bf16] [--decode-share SHARE]"
+      " [--max-image-patches PATCHES] [--cache-dir DIRECTORY]"
+      " [--resource-wait-timeout SECONDS]");
 }
 
 template <typename T>
@@ -156,67 +163,79 @@ uint32_t parseMaxContext(std::string_view value,
   return result;
 }
 
-std::filesystem::path canonicalDirectory(std::string_view argument,
-                                         std::string_view label) {
-  std::error_code error;
-  std::filesystem::path path =
-      std::filesystem::canonical(std::filesystem::path(argument), error);
-  if (error || !std::filesystem::is_directory(path, error) || error) {
-    throw UsageError(std::string(label) + " must name an existing directory");
-  }
-  return path;
+uint32_t parseMaxImagePatches(std::string_view value) {
+  uint32_t result = 0;
+  if (!parsePositive(value, result) || result % 4 ||
+      result > ops::kMaximumImagePatches)
+    throw UsageError("--max-image-patches requires a positive multiple of 4 "
+                     "up to " + std::to_string(ops::kMaximumImagePatches));
+  return result;
 }
 
-std::filesystem::path requireModelRoot(std::string_view targetArgument,
-                                       std::string_view draftArgument) {
-  std::filesystem::path target =
-      canonicalDirectory(targetArgument, "TARGET_DIRECTORY");
-  std::filesystem::path draft =
-      canonicalDirectory(draftArgument, "DRAFT_DIRECTORY");
-  if (target.filename() != "target" || draft.filename() != "draft" ||
-      target.parent_path() != draft.parent_path()) {
-    throw UsageError(
-        "TARGET_DIRECTORY and DRAFT_DIRECTORY must be the target/ and "
-        "draft/ subdirectories of one model root");
+double parseDecodeShare(std::string_view value) {
+  double result = 0.0;
+  const char *end = value.data() + value.size();
+  auto parsed = std::from_chars(value.data(), end, result);
+  if (parsed.ec != std::errc{} || parsed.ptr != end || !std::isfinite(result) ||
+      result < 0.0)
+    throw UsageError("--decode-share requires a nonnegative number");
+  return result;
+}
+
+std::filesystem::path requireModelRoot(std::string_view argument) {
+  std::error_code error;
+  const std::filesystem::path root =
+      std::filesystem::canonical(std::filesystem::path(argument), error);
+  if (error || !std::filesystem::is_directory(root, error))
+    throw UsageError("MODEL_DIRECTORY must name an existing directory");
+  for (const char *role : {"target", "draft"}) {
+    if (!std::filesystem::is_directory(root / role, error))
+      throw UsageError(
+          "MODEL_DIRECTORY must hold the model's target/ and draft/ directories");
   }
-  return target.parent_path();
+  return root;
 }
 
 NativeArguments parseArguments(int argc, char **argv) {
-  if (argc < 6 || std::string_view(argv[1]) != "serve-native") {
+  if (argc < 5 || std::string_view(argv[1]) != "serve-native") {
     throw UsageError("expected the serve-native command");
   }
   NativeArguments result;
-  int next = 6;
+  int next = 5;
   if (next < argc && !std::string_view(argv[next]).starts_with("--")) {
     const std::string_view quota(argv[next++]);
     if (quota != "0" && !parsePositive(quota, result.maxCacheDiskBytes))
       throw UsageError("MAX_CACHE_DISK_BYTES must be a nonnegative integer");
   }
-  bool seenKvFormat = false;
-  bool seenResourceWait = false;
-  while (next < argc) {
-    const std::string_view option(argv[next++]);
-    if (next == argc)
-      throw UsageError("missing value for " + std::string(option));
-    const std::string_view value(argv[next++]);
-    if (option == "--kv-format" && !seenKvFormat) {
-      seenKvFormat = true;
+  // Options follow as --name value pairs; a missing value fails its check.
+  for (; next < argc; next += 2) {
+    const std::string_view option(argv[next]);
+    const std::string_view value(next + 1 < argc ? argv[next + 1] : "");
+    if (option == "--kv-format") {
       if (value != "int8" && value != "bf16")
         throw UsageError("--kv-format requires int8 or bf16");
       result.kvFormat = value == "int8" ? kv::Format::Int8 : kv::Format::BFloat16;
-    } else if (option == "--resource-wait-timeout" && !seenResourceWait) {
-      seenResourceWait = true;
+    } else if (option == "--decode-share") {
+      result.decodeShare = parseDecodeShare(value);
+    } else if (option == "--resource-wait-timeout") {
       if (!parsePositive(value, result.resourceWaitTimeoutSeconds))
         throw UsageError("--resource-wait-timeout requires a positive integer in seconds");
+    } else if (option == "--max-image-patches") {
+      result.maxImagePatches = parseMaxImagePatches(value);
+    } else if (option == "--cache-dir") {
+      if (value.empty())
+        throw UsageError("--cache-dir requires a directory");
+      result.persistentCacheRoot = std::filesystem::absolute(std::filesystem::path(value));
     } else {
-      throw UsageError("unknown or repeated option: " + std::string(option));
+      throw UsageError("unexpected argument " + std::string(option));
     }
   }
-  result.modelRoot = requireModelRoot(argv[2], argv[3]);
+  if (!result.persistentCacheRoot.empty() && !result.maxCacheDiskBytes)
+    throw UsageError("--cache-dir requires a MAX_CACHE_DISK_BYTES quota");
+  result.modelRoot = requireModelRoot(argv[2]);
   result.model = model::inspectModelPackage(result.modelRoot);
-  result.maxContext = parseMaxContext(argv[4], result.model.capabilities);
-  result.maxMemoryBytes = parseMaxMemory(argv[5]);
+  result.maxContext = parseMaxContext(argv[3], result.model.capabilities);
+  result.maxMemoryBytes = parseMaxMemory(argv[4]);
   return result;
 }
 
@@ -238,19 +257,8 @@ std::filesystem::path executablePath() {
   return path;
 }
 
-uint64_t engineInstanceId() {
-  uint64_t process = static_cast<uint64_t>(getpid());
-  uint64_t clock = static_cast<uint64_t>(
-      std::chrono::steady_clock::now().time_since_epoch().count());
-  uint64_t result = (process << 32) ^ clock;
-  return result ? result : 1;
-}
-
 engine::RuntimeBootstrapConfig
 bootstrapConfig(const NativeArguments &arguments) {
-  const model::ModelCapabilities &capabilities = arguments.model.capabilities;
-  const uint32_t maskWordsPerToken =
-      (capabilities.vocabularySize + 31) / 32;
   engine::RuntimeBootstrapConfig config;
   config.resources.metallibPath =
       executablePath().parent_path() / "splash.metallib";
@@ -259,25 +267,21 @@ bootstrapConfig(const NativeArguments &arguments) {
   config.resources.buildId = SPLASH_BUILD_ID;
   config.resources.maximumMemoryBytes = arguments.maxMemoryBytes;
   config.resources.maximumCacheDiskBytes = arguments.maxCacheDiskBytes;
+  config.resources.persistentCacheRoot = arguments.persistentCacheRoot;
   config.resources.kvFormat = arguments.kvFormat;
+  config.resources.maximumImagePatches = arguments.maxImagePatches;
   config.nativeLoop.engine.maxContext = arguments.maxContext;
+  config.nativeLoop.engine.decodeShare = arguments.decodeShare;
   config.nativeLoop.engine.resourceWaitTimeoutMilliseconds =
       static_cast<double>(arguments.resourceWaitTimeoutSeconds) * 1000.0;
-  config.nativeLoop.engineInstanceId = engineInstanceId();
-  config.nativeLoop.maskWordsPerToken = maskWordsPerToken;
-  config.protocolLimits.maxTokenBatch =
-      model::ExecutionLimits::maximumStepTokens;
-  config.protocolLimits.maxSimulationTokens = capabilities.draftQueryRows;
-  config.protocolLimits.maxMaskWords =
-      maskWordsPerToken * (capabilities.draftQueryRows + 1);
   return config;
 }
 
 // SIGTERM, SIGINT and SIGHUP end the transport loop instead of killing the
-// process, so the KV backing is released one extent at a time by the normal
-// destructors. An inherited ignored SIGHUP (nohup) stays ignored, as it does
-// for the server. SIGPIPE is ignored: a closed parent pipe surfaces as EPIPE,
-// which the transport already reports as an I/O failure.
+// process, so the normal destructors run. An inherited ignored SIGHUP (nohup)
+// stays ignored, as it does for the server. SIGPIPE is ignored: a closed
+// parent pipe surfaces as EPIPE, which the transport already reports as an
+// I/O failure.
 std::atomic<engine::FdTransport *> gShutdownTransport{nullptr};
 
 void requestShutdownFromSignal(int) {
@@ -315,26 +319,41 @@ public:
   }
 };
 
+// The time a clean stop gives the newest restore points of a persistent
+// cache to reach the disk before it closes the cache. The server waits
+// longer for the engine to exit (server/runtime.py `_shutdown_grace_seconds`).
+constexpr std::chrono::seconds kFlushBudget{6};
+
+// A clean stop of a persistent cache: the newest restore points reach the
+// disk, then the cache closes. An engine that fails meanwhile writes nothing
+// more, and its cache counts as ending uncleanly.
+void closePersistentCache(engine::FdTransport &transport,
+                          engine::RuntimeBootstrap &bootstrap) {
+  engine::NativeRuntime &loop = bootstrap.nativeLoop();
+  const bool flushed = transport.runFlush(loop, kFlushBudget);
+  if (!loop.engineHealthy()) {
+    writeStderrLine("error: the engine failed while it saved its newest restore points (" +
+                    loop.engineFailure() + ")");
+    return;
+  }
+  if (!flushed)
+    writeStderrLine("Persistent cache: stopping before every newest restore point reached the "
+                    "disk.");
+  if (!bootstrap.resources().closePersistentCache())
+    writeStderrLine("error: the persistent cache did not reach the disk; the next start takes it "
+                    "back on probation.");
+}
+
 int runNative(const NativeArguments &arguments) {
   engine::FdTransport transport(STDIN_FILENO, STDOUT_FILENO);
   ShutdownSignals signals(transport);
   MemoryPressureMonitor pressureMonitor(transport.controlNotifier());
   engine::RuntimeMetrics metrics;
   engine::RuntimeBootstrap *published = nullptr;
-  auto statusProvider = [&]() -> std::string {
-    engine::RuntimeResources &resources = published->resources();
-    // Status can arrive during GPU work; allocation/command boundaries and
-    // the safe-point pressure monitor already refresh the cached sample.
-    metal::MetalBackend &backend = resources.backend();
-    bool healthy = backend.healthy();
-    return engine::runtimeStatusJson(
-        resources.memoryPlan(), published->nativeLoop().snapshot(),
-        backend.memoryStats(), published->report().warmup,
-        published->report().memoryAudit, metrics.snapshot(),
-        published->modelRuntime().telemetry(), resources.cacheIdentity(),
-        resources.memoryGovernor().snapshot(), healthy,
-        healthy ? std::string{} : backend.unhealthyReason(),
-        published->nativeLoop().resourceWaitSnapshot());
+  auto statusProvider = [&] {
+    return published->statusJson(
+        metrics.snapshot(),
+        engine::NativeLoopTiming{transport.maxTickMilliseconds()});
   };
 
   engine::StartupRetryWindow recovery(kStartupMemoryRecoveryTimeout);
@@ -376,44 +395,14 @@ int runNative(const NativeArguments &arguments) {
     return static_cast<int>(engine::NativeProcessExit::CleanEof);
   published = bootstrap.get();
 
-  transport.setControlHandler([&pressureMonitor, published,
-                               memoryReporter = engine::MemoryStatusReporter{},
-                               pressurePolicy =
-                                   engine::MemoryPressurePolicy{}]() mutable {
-    engine::MemoryPressure pressure = pressureMonitor.pressure();
-    engine::RuntimeResources &resources = published->resources();
-    engine::MemoryGovernor &governor = resources.memoryGovernor();
-    governor.setPressure(pressure);
-    const double now = std::chrono::duration<double, std::milli>(
-                           std::chrono::steady_clock::now().time_since_epoch())
-                           .count();
-    static_cast<void>(resources.backend().refreshMemoryStats());
-    const auto memory = governor.snapshot();
-    const engine::ResourceWaitSnapshot wait =
-        published->nativeLoop().resourceWaitSnapshot();
-    const std::string diagnostic =
-        memoryReporter.update(wait, memory.growthAllowed);
-    if (!diagnostic.empty())
-      writeStderrLine(diagnostic);
-    engine::MemoryReclaimDirective directive =
-        pressurePolicy.update(memory, now, wait.memory || wait.suspended);
-    if (!directive.reclaimEmptyKvExtents)
-      return false;
-    const engine::MemoryReclaimResult reclaim =
-        published->nativeLoop().reclaimMemory(directive);
-    pressurePolicy.reclaimed(directive, reclaim);
-    governor.reclaimed(reclaim.outcome);
-    static_cast<void>(resources.backend().refreshMemoryStats());
-    // KV backing is returned one extent at a time, and a target that
-    // transfers held back continues as they land. Ask to run again at the
-    // next command-free point meanwhile, so the rest follows without a
-    // burst of kernel work.
-    return published->nativeLoop().reclaimDeferred() ||
-           reclaim.outcome == engine::ReclaimOutcome::Pending;
+  transport.setControlHandler([&pressureMonitor, published] {
+    return published->controlPass(pressureMonitor.pressure());
   });
   const auto exit = transport.run(bootstrap->nativeLoop());
   switch (exit) {
   case engine::NativeProcessExit::CleanEof:
+    if (bootstrap->resources().cache().persistent())
+      closePersistentCache(transport, *bootstrap);
     break;
   case engine::NativeProcessExit::ProtocolFailure:
     writeStderrLine(
@@ -422,11 +411,22 @@ int runNative(const NativeArguments &arguments) {
   case engine::NativeProcessExit::EngineFailure:
     writeStderrLine(
         "error: native transport stopped after an engine failure (" +
-        bootstrap->nativeLoop().engineFailure() + ")");
+        (transport.failure().empty() ? bootstrap->nativeLoop().engineFailure()
+                                     : transport.failure()) +
+        ")");
+    // A command the backend gave up on may never complete; teardown would
+    // wait for it. The OS and the driver reclaim everything, as after
+    // SIGKILL.
+    if (!bootstrap->resources().backend().healthy()) {
+      writeStderrLine(
+          "error: the Metal backend is unhealthy; exiting without teardown");
+      _exit(static_cast<int>(exit));
+    }
     break;
   case engine::NativeProcessExit::IoFailure:
     writeStderrLine(
-        "error: native transport stopped after an I/O failure");
+        "error: native transport stopped after an I/O failure (" +
+        transport.failure() + ")");
     break;
   }
   return static_cast<int>(exit);

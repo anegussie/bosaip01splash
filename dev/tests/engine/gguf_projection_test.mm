@@ -550,7 +550,10 @@ void prefill(MetalBackend &backend, const Linear &linear) {
     const std::vector<Dot> dots = products(parts, columns, x, kChunks[0]);
     const std::string label = what + " " + epilogueName(epilogue);
     std::vector<uint16_t> tileOutput;  // the first chunk's output on the 128-row tiles
-    for (const uint32_t chunk : kChunks) {
+    // PTQ1's decoder once corrupted MPP fragments intermittently. Reuse
+    // the same operands across dispatches to catch timing-dependent errors.
+    const uint32_t repeats = std::any_of(parts.begin(), parts.end(), [](const Tensor *t) { return t->format == PTQ10; }) ? 8 : 1;
+    for (const uint32_t chunk : kChunks) for (uint32_t repeat = 0; repeat < repeats; ++repeat) {
       const LinearWorkload w = workload(chunk);
       const std::string name = label + " " + std::to_string(chunk) + " rows";
       const Outcome whole = run(backend, linear, Linear::plan(w, kTiles, FloatOutput::BFloat16), p, nullptr,
@@ -736,13 +739,17 @@ void tokenGather(MetalBackend &backend) {
 
 int main(int argc, char **argv) {
   @autoreleasepool {
-    if (argc != 2) {
-      std::cerr << "usage: gguf-projection <production-and-test.metallib>\n";
+    if (argc < 2 || argc > 3 || (argc == 3 && std::string(argv[2]) != "--prefill")) {
+      std::cerr << "usage: gguf-projection <production-and-test.metallib> [--prefill]\n";
       return 2;
     }
     try {
       MetalBackend backend(argv[1]);
       const Linear linear(backend.capabilities());
+      if (argc == 3) {
+        prefill(backend, linear);
+        return failures ? 1 : 0;
+      }
       for (const LinearTile tile : {LinearTile::GgufRegister, LinearTile::GgufStaged}) {
         decodeTile(backend, linear, tile);
         fusedDecode(backend, linear, tile);

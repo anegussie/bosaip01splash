@@ -28,7 +28,8 @@ def print_request(record):
     if outcome == "error":
         suffix = f" · request={record['request_id']}" if "request_id" in record else ""
         print_status(
-            f"Error · {record.get('error_code', 'runtime_error')}{suffix} · frontend_queue={record.get('frontend_queue_ms', 0) / 1000:.3f}s", error=True
+            f"Error · {record.get('error_code', 'runtime_error')}{suffix} · frontend_queue={record.get('frontend_queue_ms', 0) / 1000:.3f}s",
+            error=True,
         )
         return
     metrics = record.get("metrics", {})
@@ -66,7 +67,9 @@ def print_request(record):
     speed = latency.get("stream_tokens_per_second")
     if ttft is not None:
         parts.append(f"TTFT {ttft / 1000:.1f}s")
-        parts.append(f"TTFT_with_frontend_queue {(ttft + record.get('frontend_queue_ms', 0)) / 1000:.1f}s")
+        parts.append(
+            f"TTFT_with_frontend_queue {(ttft + record.get('frontend_queue_ms', 0)) / 1000:.1f}s"
+        )
     if isinstance(speed, (int, float)) and math.isfinite(speed):
         parts.append(f"TPS {speed:.1f} tok/s")
     if "request_id" in record:

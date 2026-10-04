@@ -179,6 +179,18 @@ def parse_api_key(value):
         raise argparse.ArgumentTypeError(str(error)) from None
 
 
+def parse_resource_wait_timeout(value):
+    try:
+        seconds = int(value)
+    except ValueError:
+        seconds = 0
+    if not 1 <= seconds <= 2**32 - 1:
+        raise argparse.ArgumentTypeError(
+            "resource wait timeout must be a positive integer in seconds (at most 4294967295)"
+        )
+    return seconds
+
+
 def parse_reasoning_effort(value):
     if value not in REASONING_EFFORTS:
         raise argparse.ArgumentTypeError(
@@ -213,6 +225,23 @@ class ServeOption:
 
 
 SERVE_OPTIONS = (
+    ServeOption(
+        "--resource-wait-timeout",
+        dict(
+            type=parse_resource_wait_timeout,
+            default=30,
+            help="seconds to wait for engine resources after suspension (default: 30)",
+        ),
+    ),
+    ServeOption(
+        "--max-active-requests",
+        dict(
+            type=int,
+            choices=range(0, 65),
+            default=0,
+            help="FIFO native request concurrency; 1 limits simultaneous model states (0: engine default)",
+        ),
+    ),
     ServeOption(
         "--host",
         dict(

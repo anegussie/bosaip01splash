@@ -33,6 +33,16 @@ def values(flag, accepted, refused, repeatable=False):
 # Every shared option: accepted arguments with the value they parse to, and
 # refused arguments.
 OPTIONS = {
+    "--resource-wait-timeout": values(
+        "--resource-wait-timeout",
+        {"60": 60, "4294967295": 2**32 - 1},
+        ("0", "-1", "1.5", "inf", "nan", "soon", "4294967296"),
+    ),
+    "--max-active-requests": values(
+        "--max-active-requests",
+        {"1": 1, "64": 64},
+        ("-1", "65", "1.5", "many"),
+    ),
     "--host": values(
         "--host", {"0.0.0.0": "0.0.0.0", "mymac.local": "mymac.local"}, ()
     ),

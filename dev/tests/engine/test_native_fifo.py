@@ -91,10 +91,12 @@ class NativeFifoTests(unittest.TestCase):
         second = make_job(2)
         disconnected = threading.Event()
         polls = []
+
         def poll():
             polls.append(1)
             if disconnected.is_set():
                 raise APIError(499, "disconnected", "request_cancelled")
+
         second.queue_poll = poll
         thread = self.queued(second)
         disconnected.set()
@@ -105,20 +107,38 @@ class NativeFifoTests(unittest.TestCase):
         self.assertEqual(len(self.runtime.calls), 1)
 
     def test_queue_poll_does_not_hold_transport_lock(self):
+        self.backend.submit(make_job(1))
         checked = []
         second = make_job(2)
+
         def poll():
             acquired = []
+
             def check():
                 with self.backend.lock:
                     acquired.append(True)
+
             worker = threading.Thread(target=check)
             worker.start()
             worker.join(0.5)
             checked.append(bool(acquired))
+
         second.queue_poll = poll
-        self.backend.submit(second)
-        self.assertEqual(checked, [True])
+        thread = self.queued(second)
+        self.wait(lambda: bool(checked))
+        self.finish(self.runtime.calls[0])
+        thread.join(1)
+        self.assertFalse(thread.is_alive())
+        self.assertTrue(all(checked))
+        self.assertIsNone(second.queue_poll)
+
+    def test_immediate_admission_does_not_poll_http_queue(self):
+        job = make_job(1)
+        polls = []
+        job.queue_poll = lambda: polls.append(True)
+        self.backend.submit(job)
+        self.assertEqual(polls, [])
+        self.assertIsNone(job.queue_poll)
 
     def test_default_preserves_concurrent_submission(self):
         backend = NativeBackend(FakeRuntime(), FakeTokenizer())
