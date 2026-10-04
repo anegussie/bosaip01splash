@@ -127,6 +127,9 @@ class Job:
     # Endpoint-specific metadata carried to the response builder.
     meta: dict | None = None
     latency: RequestLatency | None = None
+    frontend_queue_ms: float = 0.0
+    # HTTP-thread callback; never invoked under the transport lock.
+    queue_poll: object | None = None
 
 
 class CallbackStreamer:
@@ -262,13 +265,22 @@ class NativeBackend:
         wire.FinishReason.CANCELLED: "cancelled",
     }
 
-    def __init__(self, runtime, tokenizer, request_logger=None):
+    def __init__(self, runtime, tokenizer, request_logger=None, max_active_requests=0):
+        if (
+            isinstance(max_active_requests, bool)
+            or not isinstance(max_active_requests, int)
+            or max_active_requests < 0
+        ):
+            raise ValueError("max_active_requests must be a nonnegative integer")
         self.runtime = runtime
         self.tokenizer = tokenizer
         self.request_logger = request_logger
         self.active = {}
         self.closing = False
         self.lock = threading.RLock()
+        self.submission_condition = threading.Condition(self.lock)
+        self.max_active_requests = max_active_requests
+        self.submission_queue = []
         self.status_snapshot = None
         self.status_snapshot_at = None
         self.status_refresh_inflight = False
@@ -429,6 +441,9 @@ class NativeBackend:
                 0.0 if stale_error is None or stale_age_ms is None else stale_age_ms
             ),
         }
+        with self.lock:
+            snapshot["transport"]["max_active_requests"] = self.max_active_requests
+            snapshot["transport"]["frontend_waiting"] = len(self.submission_queue)
         if stale_error is not None:
             snapshot["transport"]["error"] = engine_error or str(stale_error)
         metal = snapshot.get("metal")
@@ -526,12 +541,6 @@ class NativeBackend:
             self.tokenizer, emit, job.stop_sequences, stop_matched
         )
         state = _JobState(job, streamer)
-        try:
-            request = self._generation_request(job)
-        except APIError as error:
-            state.detach()
-            job.events.put(("error", self._api_error(error)))
-            return True
 
         def on_event(call, event):
             with self.lock:
@@ -553,21 +562,18 @@ class NativeBackend:
                 state.terminal_enqueued = True
                 self.terminals.put((state, call))
 
-        with self.lock:
-            if self.closing:
-                state.detach()
-                job.events.put(
-                    (
-                        "error",
-                        APIError(
-                            503,
-                            "server is shutting down",
-                            "server_shutdown",
-                        ),
-                    )
-                )
-                return True
-            self.active[job.request_id] = state
+        try:
+            self._admit_submission(state)
+            # Waiting consumes the original absolute deadline; do not submit
+            # the stale relative deadline prepared before FIFO admission.
+            request = self._generation_request(job)
+        except Exception as error:
+            with self.lock:
+                self._detach_locked(state)
+            error = self._api_error(error)
+            self._record(job, error=error)
+            job.events.put(("error", error))
+            return True
         try:
             recovery_attempt = 0
             while True:
@@ -619,10 +625,44 @@ class NativeBackend:
                 job.events.put(("error", self._api_error(error)))
             return True
 
+    def _admit_submission(self, state):
+        """FIFO native submission, without holding model state for waiters."""
+        job = state.job
+        started = time.monotonic()
+        with self.submission_condition:
+            self.submission_queue.append(job.request_id)
+        try:
+            while True:
+                if job.queue_poll is not None:
+                    job.queue_poll()
+                with self.submission_condition:
+                    if self.closing:
+                        raise APIError(
+                            503, "server is shutting down", "server_shutdown"
+                        )
+                    if job.cancelled.is_set():
+                        raise APIError(
+                            499, "request cancelled while queued", "request_cancelled"
+                        )
+                    remaining = remaining_request_time(job.deadline)
+                    if self.submission_queue[0] == job.request_id and (
+                        not self.max_active_requests
+                        or len(self.active) < self.max_active_requests
+                    ):
+                        self.active[job.request_id] = state
+                        return
+                    self.submission_condition.wait(min(remaining, 0.2))
+        finally:
+            with self.submission_condition:
+                self.submission_queue.remove(job.request_id)
+                job.frontend_queue_ms = (time.monotonic() - started) * 1000.0
+                self.submission_condition.notify_all()
+
     def _detach_locked(self, state):
         state.detach()
         if self.active.get(state.job.request_id) is state:
             del self.active[state.job.request_id]
+        self.submission_condition.notify_all()
 
     def _on_event(self, state, call, event):
         job = state.job
@@ -666,6 +706,7 @@ class NativeBackend:
     def cancel(self, job, timed_out=False):
         call = None
         with self.lock:
+            self.submission_condition.notify_all()
             job.timed_out |= timed_out
             job.cancelled.set()
             state = self.active.get(job.request_id)
@@ -795,6 +836,7 @@ class NativeBackend:
             "outcome": result.reason if result else "error",
             "prompt_tokens": len(job.prompt_tokens),
             "priority": REQUEST_PRIORITY_NAMES[job.priority],
+            "frontend_queue_ms": job.frontend_queue_ms,
         }
         if result:
             record["completion_tokens"] = result.completion_tokens
@@ -816,6 +858,7 @@ class NativeBackend:
             if self.closing:
                 return
             self.closing = True
+            self.submission_condition.notify_all()
             calls = []
             for state in self.active.values():
                 state.shutdown_requested = True

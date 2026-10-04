@@ -665,6 +665,13 @@ class FrontendHandler(BaseHTTPRequestHandler):
             self._body_reservation = None
             job.return_progress = return_progress
             job.latency = RequestLatency(self.app.latencies, started_at)
+            def queue_poll():
+                if self._client_disconnected():
+                    job.cancelled.set()
+                    raise APIError(499, "client disconnected while queued", "request_cancelled")
+                if stream and time.monotonic() - self._last_sse_write >= SSE_KEEPALIVE_SECONDS:
+                    self._sse_keepalive()
+            job.queue_poll = queue_poll
             remaining_request_time(deadline)
             if self._client_disconnected():
                 raise ConnectionResetError("client disconnected before submission")
@@ -2140,6 +2147,13 @@ def parse_args(argv=None):
     parser.add_argument("--max-context", type=_parse_max_context, default=None)
     parser.add_argument("--max-memory", type=_parse_max_memory, default=None)
     parser.add_argument(
+        "--max-active-requests",
+        type=int,
+        choices=range(0, 65),
+        default=0,
+        help="FIFO native request concurrency; 1 avoids competing model states (0: engine default)",
+    )
+    parser.add_argument(
         "--resource-wait-timeout",
         type=_parse_resource_wait_timeout,
         default=30,
@@ -2271,6 +2285,7 @@ def main():
             runtime,
             tokenizer,
             request_logger=print_request,
+            max_active_requests=getattr(args, "max_active_requests", 0),
         )
         if not runtime.wait_ready():
             raise engine_runtime.EngineUnhealthy("native runtime did not become ready")

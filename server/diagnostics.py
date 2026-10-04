@@ -26,7 +26,10 @@ def print_status(message, *, error=False):
 def print_request(record):
     outcome = record["outcome"]
     if outcome == "error":
-        print_status(f"Error · {record.get('error_code', 'runtime_error')}", error=True)
+        suffix = f" · request={record['request_id']}" if "request_id" in record else ""
+        print_status(
+            f"Error · {record.get('error_code', 'runtime_error')}{suffix} · frontend_queue={record.get('frontend_queue_ms', 0) / 1000:.3f}s", error=True
+        )
         return
     metrics = record.get("metrics", {})
     latency = metrics.get("request_latency", {})
@@ -47,9 +50,7 @@ def print_request(record):
         and isinstance(prefill_ms, (int, float))
         and math.isfinite(prefill_ms)
     ):
-        parts.append(
-            f"prefill {prefill_tokens:,}/{prefill_ms / 1000:.2f}s"
-        )
+        parts.append(f"prefill {prefill_tokens:,}/{prefill_ms / 1000:.2f}s")
         if prefill_ms > 0:
             parts.append(f"PP {prefill_tokens * 1000 / prefill_ms:.1f} tok/s")
     decode = metrics.get("decode", {})
@@ -65,6 +66,16 @@ def print_request(record):
     speed = latency.get("stream_tokens_per_second")
     if ttft is not None:
         parts.append(f"TTFT {ttft / 1000:.1f}s")
+        parts.append(f"TTFT_with_frontend_queue {(ttft + record.get('frontend_queue_ms', 0)) / 1000:.1f}s")
     if isinstance(speed, (int, float)) and math.isfinite(speed):
         parts.append(f"TPS {speed:.1f} tok/s")
+    if "request_id" in record:
+        parts.extend((f"request={record['request_id']}", f"finish={outcome}"))
+        parts.append(f"frontend_queue={record.get('frontend_queue_ms', 0) / 1000:.3f}s")
+        queued = latency.get("queue_to_start_ms")
+        if isinstance(queued, (int, float)) and math.isfinite(queued):
+            parts.append(f"native_queue={queued / 1000:.3f}s")
+        wall = latency.get("wall_ms")
+        if isinstance(wall, (int, float)) and math.isfinite(wall):
+            parts.append(f"native_wall={wall / 1000:.3f}s")
     print_status(" · ".join(parts))

@@ -272,6 +272,8 @@ def serve(args):
         ]
         if getattr(args, "resource_wait_timeout", 30) != 30:
             command.extend(("--resource-wait-timeout", str(args.resource_wait_timeout)))
+        if getattr(args, "max_active_requests", 0):
+            command.extend(("--max-active-requests", str(args.max_active_requests)))
         if args.kv_format != "int8":
             command.extend(("--kv-format", args.kv_format))
         for name in args.served_model_name:
@@ -580,6 +582,13 @@ def parse_args(argv=None):
         type=_parse_resource_wait_timeout,
         default=30,
         help="seconds to wait for engine resources after suspension (default: 30)",
+    )
+    server.add_argument(
+        "--max-active-requests",
+        type=int,
+        choices=range(0, 65),
+        default=0,
+        help="FIFO native concurrency; use 1 for low-memory long jobs (0: engine default)",
     )
     server.add_argument(
         "--kv-format",

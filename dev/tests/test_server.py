@@ -1042,6 +1042,8 @@ class ServerTest(unittest.TestCase):
                 "last_crash_trace": None,
                 "status_stale": False,
                 "status_age_ms": 0.0,
+                "max_active_requests": 0,
+                "frontend_waiting": 0,
             },
         )
 
@@ -3303,7 +3305,8 @@ class ServerTest(unittest.TestCase):
             output.getvalue(),
             "14:32:08 Done · input 10,240 · cached 8,192 · output 320"
             " · prefill 2,048/2.00s · PP 1024.0 tok/s"
-            " · decode 300/3.50s · TTFT 0.8s · TPS 85.0 tok/s\n",
+            " · decode 300/3.50s · TTFT 0.8s · TTFT_with_frontend_queue 0.8s · TPS 85.0 tok/s"
+            " · request=123 · finish=stop · frontend_queue=0.000s\n",
         )
 
     def test_console_shows_the_tool_block_signature(self):
@@ -3347,7 +3350,8 @@ class ServerTest(unittest.TestCase):
                 }
             )
         self.assertRegex(
-            errors.getvalue(), r"^\d{2}:\d{2}:\d{2} Error · context_length_exceeded\n$"
+            errors.getvalue(),
+            r"^\d{2}:\d{2}:\d{2} Error · context_length_exceeded · request=123 · frontend_queue=0.000s\n$",
         )
         self.assertEqual(output.getvalue(), "")
 
@@ -3432,8 +3436,15 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(args.resource_wait_timeout, 30)
         self.assertNotIn("--resource-wait-timeout", api._native_command(args))
         wait_args = api.parse_args(
-            [*required, "--resource-wait-timeout", "60", "--kv-format", "bf16",
-             "--max-cache-disk", "5G"]
+            [
+                *required,
+                "--resource-wait-timeout",
+                "60",
+                "--kv-format",
+                "bf16",
+                "--max-cache-disk",
+                "5G",
+            ]
         )
         self.assertEqual(
             api._native_command(wait_args)[-5:],
@@ -3621,7 +3632,10 @@ class ServerTest(unittest.TestCase):
             eager_start=False,
         )
         backend_type.assert_called_once_with(
-            runtime, tokenizer, request_logger=diagnostics.print_request
+            runtime,
+            tokenizer,
+            request_logger=diagnostics.print_request,
+            max_active_requests=0,
         )
         self.assertEqual(app_type.call_args.args[3], 262144)
         self.assertEqual(app_type.call_args.args[6], 4)
@@ -4034,6 +4048,33 @@ class ServerTest(unittest.TestCase):
                 plan.start_release.set()
                 response.read()
                 connection.close()
+
+    def test_fifo_queued_stream_heartbeat_and_disconnect(self):
+        plan = Plan([[4]], block=True)
+        runtime = FakeRuntime(plan)
+        harness = self.harness(runtime, timeout=5)
+        harness.backend.max_active_requests = 1
+        first, first_response = harness.open_stream(
+            "/v1/chat/completions", self.body(stream=True, reasoning_effort="none")
+        )
+        try:
+            with mock.patch.object(api, "SSE_KEEPALIVE_SECONDS", 0.02):
+                second, response = harness.open_stream(
+                    "/v1/chat/completions", self.body(stream=True, reasoning_effort="none")
+                )
+                self.assertEqual(response.readline(), b": splash-keepalive\n")
+                self.assertEqual(len(runtime.calls), 1)
+                response.close()
+                second.close()
+                deadline = time.monotonic() + 2
+                while harness.backend.submission_queue and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertEqual(harness.backend.submission_queue, [])
+                self.assertEqual(len(runtime.calls), 1)
+        finally:
+            plan.release.set()
+            first_response.read()
+            first.close()
 
     def test_responses_stream_heartbeats_before_native_start(self):
         plan = Plan([[4]], before_start=True)

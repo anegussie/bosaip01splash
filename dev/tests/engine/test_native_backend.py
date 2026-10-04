@@ -732,6 +732,8 @@ class NativeBackendContractTests(unittest.TestCase):
                 "last_crash_trace": None,
                 "status_stale": False,
                 "status_age_ms": 0.0,
+                "max_active_requests": 0,
+                "frontend_waiting": 0,
             },
         )
 
