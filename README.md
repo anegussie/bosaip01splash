@@ -100,6 +100,8 @@ window. To set your own limits or cache options, add these to `splash serve`:
 | `--persistent-cache` | Keep the SSD cache across restarts. Off by default. |
 
 Use `--max-memory` to leave room for other applications.
+An explicit `--max-context` also sizes verification attention scratch for
+that context, freeing memory that would otherwise cover the full model window.
 The server listens on localhost without authentication by default. For LAN
 access, authentication, browser apps on other origins, and other options, see
 [server configuration](DEVELOPMENT.md#server-configuration) or

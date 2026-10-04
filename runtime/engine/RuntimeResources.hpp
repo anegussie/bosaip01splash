@@ -80,6 +80,9 @@ void requireLoadedModel(const model::ModelPackage &package);
 struct RuntimeResourcesConfig {
   kv::Format kvFormat = kv::Format::Int8;
   uint32_t prefillChunkTokens = model::ExecutionLimits::defaultPrefillChunkTokens;
+  // Zero retains the automatic context bound; explicit contexts reduce
+  // attention scratch to the histories serving can actually reach.
+  uint32_t maximumContextTokens = 0;
   std::filesystem::path metallibPath;
   std::filesystem::path modelRoot;
   model::ModelDescriptor model;

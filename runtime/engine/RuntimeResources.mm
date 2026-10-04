@@ -256,6 +256,9 @@ RuntimeResources::create(const RuntimeResourcesConfig &config) {
   if (!model::validPrefillChunkTokens(config.prefillChunkTokens))
     throw RuntimeResourcesError(RuntimeResourceStage::Configuration,
                                 "prefill chunk must be a multiple of 128 tokens in [128, 2048]");
+  if (config.maximumContextTokens > kv::kMaximumLogicalTokens)
+    throw RuntimeResourcesError(RuntimeResourceStage::Configuration,
+                                "execution context exceeds the protocol limit");
   if (config.metallibPath.empty() || config.modelRoot.empty() ||
       !kv::validFormat(config.kvFormat) ||
       !config.model.valid() ||
@@ -399,7 +402,9 @@ RuntimeResources::create(const RuntimeResourcesConfig &config) {
 
   // One plan owner is used both before allocation and during encoding. The
   // engine lends it to model execution without inspecting its plans.
-  ops::ExecutionPlans operators(device);
+  ops::ExecutionPlans operators(device, config.maximumContextTokens
+                                          ? config.maximumContextTokens
+                                          : kv::kMaximumLogicalTokens);
   model::ModelMemoryPlan modelMemoryPlan;
   try {
     modelMemoryPlan = model::plannedRuntimeMemory(device, package, operators, config.kvFormat,
@@ -420,7 +425,11 @@ RuntimeResources::create(const RuntimeResourcesConfig &config) {
   };
 
   ModelMemoryProfile modelProfile{
-      package.name(), package.maximumContextTokens(),
+      // This profile's buffers hold the configured context. Do not advertise
+      // a larger capacity just because its KV budget could hold more pages.
+      package.name(), config.maximumContextTokens
+                          ? std::min(config.maximumContextTokens, package.maximumContextTokens())
+                          : package.maximumContextTokens(),
       package.targetKvLayout(config.kvFormat), footprint};
   EngineMemoryPlanResult planResult =
       evaluateEngineMemoryPlan(device, modelProfile, config.maximumMemoryBytes);

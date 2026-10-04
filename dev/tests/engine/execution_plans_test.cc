@@ -264,6 +264,32 @@ void unknownCoreCount() {
 
 void workspaceBounds() {
   const ExecutionPlans plans(device());
+  for (uint32_t context : {4096U, 14336U, 24576U, 32768U, 65536U, kv::kMaximumLogicalTokens}) {
+    const ExecutionPlans bounded(device(), context);
+    const uint32_t historyLimit = std::min(context, kv::kMaximumPhysicalTokens - kv::kVerifyRows);
+    for (const auto &shape : attentionShapes) {
+      const auto capacity = bounded.verifyAttentionWorkspacePerLane(shape.queryHeads, shape.layout);
+      require(capacity.partialsBytes == uint64_t{8} * kv::verifyAttentionSplits(historyLimit) *
+                                          shape.queryHeads * shape.layout.headDimension * sizeof(float),
+              "attention scratch ignored the configured context");
+      for (uint32_t lanes = 1; lanes <= 4; ++lanes) {
+        const std::array<uint32_t, 4> lengths{0, context / 3, context / 2, historyLimit};
+        const auto actual = bounded.verifyAttention(lanes, shape.queryHeads, shape.layout,
+                                                   std::span(lengths).first(lanes));
+        require(actual.workspace.partialsBytes <= capacity.partialsBytes * lanes &&
+                    actual.workspace.statisticsBytes <= capacity.statisticsBytes * lanes,
+                "mixed-history attention exceeded its context-sized arena");
+        const auto unbounded = plans.verifyAttention(lanes, shape.queryHeads, shape.layout,
+                                                     std::span(lengths).first(lanes));
+        require(actual.splits == unbounded.splits && actual.laneSplits == unbounded.laneSplits,
+                "context-sized scratch changed attention arithmetic");
+      }
+      const std::array<uint32_t, 1> beyond{context + 1};
+      rejects([&] { (void)bounded.verifyAttention(1, shape.queryHeads, shape.layout, beyond); });
+    }
+  }
+  rejects([&] { (void)ExecutionPlans(device(), 0); });
+  rejects([&] { (void)ExecutionPlans(device(), kv::kMaximumLogicalTokens + 1); });
   const std::array<uint32_t, 4> histories{31, 32, 2049, std::numeric_limits<uint32_t>::max()};
   rejects([&] { (void)plans.verifyAttention(3, 24, attentionShapes[0].layout, histories); });
   const auto exact =

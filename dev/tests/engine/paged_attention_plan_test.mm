@@ -127,7 +127,7 @@ void checkPlans(uint32_t queryHeads, kv::Layout layout) {
       maximum = std::max(maximum, expected);
     }
     const uint64_t fused =
-        uint64_t{lanes} * 8 * kv::kVerifyMaximumSplits * queryHeads;
+        uint64_t{lanes} * 8 * maximum * queryHeads;
     require(plan.splits == maximum &&
                 plan.workspace.partialsBytes == fused * 256 * 4 &&
                 plan.workspace.statisticsBytes == fused * 2 * 4 &&
@@ -785,6 +785,7 @@ int main(int argc, char **argv) {
         checkVerify(backend, heads, layout, 1023, lanes);
       }
       checkVerify(backend, heads, layout, 16384, 2);
+      checkVerify(backend, heads, layout, 24576, 3);
     }
     std::cout << "paged attention plans: PASS\n";
   } catch (const std::exception &error) {

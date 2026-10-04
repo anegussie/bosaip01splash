@@ -13,7 +13,10 @@ namespace splash::ops {
 // object and production models borrow it; it never changes after creation.
 class ExecutionPlans final {
 public:
-  explicit ExecutionPlans(const DeviceCapabilities &device);
+  // Context bounds allocation only; history still selects the same kernel
+  // partition for a request, independently of batching and capacity.
+  explicit ExecutionPlans(const DeviceCapabilities &device,
+                          uint32_t maximumContextTokens = kv::kMaximumLogicalTokens);
   [[nodiscard]] const Linear &linear() const noexcept { return linear_; }
 
   [[nodiscard]] PrefillAttentionPlan prefillAttention(
@@ -49,6 +52,7 @@ private:
   uint32_t moeRouteWideRows_;
   MoeExpertSimdgroups moeDecodeSimdgroups_ = MoeExpertSimdgroups::Eight;
   uint32_t appleGpuFamily_ = 0;
+  uint32_t maximumHistoryTokens_;
 };
 
 } // namespace splash::ops

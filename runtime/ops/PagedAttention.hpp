@@ -177,7 +177,8 @@ public:
   [[nodiscard]] static PrefillAttentionPlan
   prefillPlan(uint32_t rows, uint32_t queryHeads, kv::Layout layout);
   // historyTokens holds each lane's committed tokens before its verify rows,
-  // one entry per lane.
+  // one entry per lane. Its workspace uses the plan-wide split stride that
+  // the kernels actually address, rather than the protocol's largest stride.
   [[nodiscard]] static VerifyAttentionPlan
   verifyPlan(uint32_t lanes, uint32_t queryHeads, kv::Layout layout,
              std::span<const uint32_t> historyTokens);
@@ -185,12 +186,13 @@ public:
   // The runtime owns allocation, not the selected kernel's workspace layout.
   // Prefill storage covers every sequence length up to maximumRows; sequences
   // in a packed command reuse it serially. Verify storage covers all lanes at
-  // the maximum split count.
+  // the largest split count reachable within maximumHistoryTokens.
   [[nodiscard]] static AttentionWorkspace
   prefillWorkspace(uint32_t maximumRows, uint32_t queryHeads,
                    kv::Layout layout);
   [[nodiscard]] static AttentionWorkspace
-  verifyWorkspace(uint32_t lanes, uint32_t queryHeads, kv::Layout layout);
+  verifyWorkspace(uint32_t lanes, uint32_t queryHeads, kv::Layout layout,
+                  uint32_t maximumHistoryTokens = kv::kMaximumPhysicalTokens - kv::kVerifyRows);
 
   static void
   addPrefillProjection(metal::CommandGraph &graph, metal::MetalBuffer packed,

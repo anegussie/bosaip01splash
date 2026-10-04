@@ -23,10 +23,15 @@ void include(Workspace &bound, const Workspace &required,
 
 } // namespace
 
-ExecutionPlans::ExecutionPlans(const DeviceCapabilities &device)
+ExecutionPlans::ExecutionPlans(const DeviceCapabilities &device, uint32_t maximumContextTokens)
     : linear_(device), moeRouteWideRows_(moeRouteWideRows(plannedGpuCores(device))),
       moeDecodeSimdgroups_(moeDecodeSimdgroups(device.appleGpuFamily)),
-      appleGpuFamily_(device.appleGpuFamily) {}
+      appleGpuFamily_(device.appleGpuFamily),
+      maximumHistoryTokens_(std::min(maximumContextTokens,
+                                     kv::kMaximumPhysicalTokens - kv::kVerifyRows)) {
+  if (!maximumContextTokens || maximumContextTokens > kv::kMaximumLogicalTokens)
+    throw std::invalid_argument("invalid execution context capacity");
+}
 
 PrefillAttentionPlan ExecutionPlans::prefillAttention(
     uint32_t rows, uint32_t queryHeads, kv::Layout layout) const {
@@ -36,6 +41,9 @@ PrefillAttentionPlan ExecutionPlans::prefillAttention(
 VerifyAttentionPlan ExecutionPlans::verifyAttention(
     uint32_t lanes, uint32_t queryHeads, kv::Layout layout,
     std::span<const uint32_t> historyTokens) const {
+  for (uint32_t history : historyTokens)
+    if (history > maximumHistoryTokens_)
+      throw std::invalid_argument("verify history exceeds planned context capacity");
   return PagedAttention::verifyPlan(lanes, queryHeads, layout, historyTokens);
 }
 
@@ -80,7 +88,7 @@ AttentionWorkspace ExecutionPlans::prefillAttentionWorkspace(
 // The verify bound is linear in the lanes: one lane's is every width's share.
 AttentionWorkspace ExecutionPlans::verifyAttentionWorkspacePerLane(
     uint32_t queryHeads, kv::Layout layout) const {
-  return PagedAttention::verifyWorkspace(1, queryHeads, layout);
+  return PagedAttention::verifyWorkspace(1, queryHeads, layout, maximumHistoryTokens_);
 }
 
 // The draft workspace is linear in the lanes: one lane's is every width's

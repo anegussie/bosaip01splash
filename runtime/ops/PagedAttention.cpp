@@ -58,12 +58,10 @@ AttentionWorkspace attentionWorkspace(uint64_t rows, uint32_t headDimension) {
   return {rows * headDimension * sizeof(float), rows * 2 * sizeof(float)};
 }
 
-// Verify scratch is sized once for the maximum split count of every lane, so
-// a lane's history-scaled partition never needs a reallocation.
 AttentionWorkspace verifyWorkspaceBound(uint32_t lanes, uint32_t queryHeads,
-                                        kv::Layout layout) {
+                                        kv::Layout layout, uint32_t splits) {
   return attentionWorkspace(uint64_t{lanes} * kv::kVerifyRows *
-                                kv::kVerifyMaximumSplits * queryHeads,
+                                splits * queryHeads,
                             layout.headDimension);
 }
 
@@ -117,7 +115,7 @@ VerifyAttentionPlan PagedAttention::verifyPlan(
     splits = std::max(splits, laneSplits[lane]);
   }
   return {lanes, laneSplits, splits,
-          verifyWorkspaceBound(lanes, queryHeads, layout),
+          verifyWorkspaceBound(lanes, queryHeads, layout, splits),
           layout.format == kv::Format::BFloat16
               ? pipeline(kernel, "verify_attention_bf16_split",
                          "verify_attention_bf16_split_kv2_g8")
@@ -152,11 +150,15 @@ AttentionWorkspace PagedAttention::prefillWorkspace(
 }
 
 AttentionWorkspace PagedAttention::verifyWorkspace(
-    uint32_t lanes, uint32_t queryHeads, kv::Layout layout) {
+    uint32_t lanes, uint32_t queryHeads, kv::Layout layout,
+    uint32_t maximumHistoryTokens) {
   (void)attentionKernelLayout(queryHeads, layout);
   if (!lanes || lanes > SPLASH_MAXIMUM_BATCH_WIDTH)
     throw std::invalid_argument("invalid attention workspace batch width");
-  return verifyWorkspaceBound(lanes, queryHeads, layout);
+  if (uint64_t{maximumHistoryTokens} + kv::kVerifyRows > kv::kMaximumPhysicalTokens)
+    throw std::invalid_argument("attention workspace history exceeds physical context");
+  return verifyWorkspaceBound(lanes, queryHeads, layout,
+                              kv::verifyAttentionSplits(maximumHistoryTokens));
 }
 
 void PagedAttention::addPrefillProjection(

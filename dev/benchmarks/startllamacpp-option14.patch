@@ -1,0 +1,66 @@
+--- a/startllamacpp.sh
++++ b/startllamacpp.sh
+@@ -10,11 +10,12 @@
+ BONSAI_27B_MODEL="/Users/mymac/.lmstudio/models/prism-ml/Ternary-Bonsai-2-27B-gguf/Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+ SPLASH_BONSAI_MODEL_ID="prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0"
+ SPLASH_BONSAI_ALIAS="bonsai-27b-splash"
+-SPLASH_BONSAI_MAX_CONTEXT="${SPLASH_BONSAI_MAX_CONTEXT:-14K}"
+-SPLASH_BONSAI_OPENCODE_CONTEXT="${SPLASH_BONSAI_OPENCODE_CONTEXT:-12288}"
++SPLASH_BONSAI_MAX_CONTEXT="${SPLASH_BONSAI_MAX_CONTEXT:-24K}"
++SPLASH_BONSAI_OPENCODE_CONTEXT="${SPLASH_BONSAI_OPENCODE_CONTEXT:-22528}"
+ SPLASH_BONSAI_MAX_TOKENS="${SPLASH_BONSAI_MAX_TOKENS:-1024}"
+ SPLASH_BONSAI_MAX_CACHE_DISK="${SPLASH_BONSAI_MAX_CACHE_DISK:-8G}"
+ SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT="${SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT:-60}"
++SPLASH_BONSAI_PREFILL_CHUNK_TOKENS="${SPLASH_BONSAI_PREFILL_CHUNK_TOKENS:-512}"
+ SPLASH_BONSAI_MAX_ACTIVE_REQUESTS="${SPLASH_BONSAI_MAX_ACTIVE_REQUESTS:-1}"
+ SPLASH_BONSAI_STARTUP_RETRY_DELAY="${SPLASH_BONSAI_STARTUP_RETRY_DELAY:-30}"
+ SPLASH_PRESSURE_RESTART_HEADROOM_BYTES="${SPLASH_PRESSURE_RESTART_HEADROOM_BYTES:-1073741824}"
+@@ -136,7 +137,7 @@
+   echo "10) Qwen3.5 9B MLX 4-bit — MTP reasoning${mlx_status}${mlx_mtp_status}"
+   echo "   $((MLX_MTP_CONTEXT / 1024))K context | $((MLX_MTP_MAX_TOKENS / 1024))K output | reasoning on (no separate budget) | native MTP width ${MLX_MTP_DRAFT_BLOCK_SIZE} | Q4 KV | ${mlx_apc_status}"
+   echo "14) Ternary Bonsai 2 27B PTQ1_0 — Splash (downloads on first run)${splash_status}"
+-  echo "   ${SPLASH_BONSAI_MAX_CONTEXT} server / $((SPLASH_BONSAI_OPENCODE_CONTEXT / 1024))K OpenCode context | $((SPLASH_BONSAI_MAX_TOKENS / 1024))K output | INT8 KV | ${SPLASH_BONSAI_MAX_CACHE_DISK} SSD cache | ${SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT}s resource wait"
++  echo "   ${SPLASH_BONSAI_MAX_CONTEXT} server / $((SPLASH_BONSAI_OPENCODE_CONTEXT / 1024))K OpenCode context | $((SPLASH_BONSAI_MAX_TOKENS / 1024))K output | INT8 KV | ${SPLASH_BONSAI_PREFILL_CHUNK_TOKENS}-token prefill chunks | ${SPLASH_BONSAI_MAX_CACHE_DISK} SSD cache | ${SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT}s resource wait"
+   echo "   Watchdog: logs sustained warning/critical pressure; Splash keeps API online and controls admission/recovery"
+   echo "   Source: ${SPLASH_BONSAI_MODEL_ID}"
+   echo "   Monitor: bash /Users/mymac/monitorsplash.sh --once (or --report 24)"
+@@ -1261,12 +1262,17 @@
+       echo "SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT must be 1-4294967295 seconds." >&2
+       exit 1
+     fi
++    if ! [[ "$SPLASH_BONSAI_PREFILL_CHUNK_TOKENS" =~ ^[1-9][0-9]*$ ]] ||
++       (( SPLASH_BONSAI_PREFILL_CHUNK_TOKENS < 128 || SPLASH_BONSAI_PREFILL_CHUNK_TOKENS > 2048 || SPLASH_BONSAI_PREFILL_CHUNK_TOKENS % 128 != 0 )); then
++      echo "SPLASH_BONSAI_PREFILL_CHUNK_TOKENS must be a multiple of 128 in [128, 2048]." >&2
++      exit 1
++    fi
+     if [[ "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" != "1" ]]; then
+       echo "This 16 GB safety profile requires SPLASH_BONSAI_MAX_ACTIVE_REQUESTS=1. Run one OpenCode job at a time." >&2
+       exit 1
+     fi
+-    if (( splash_context_limit > 14336 || SPLASH_BONSAI_OPENCODE_CONTEXT > 12288 )); then
+-      echo "This safety profile caps server context at 14K and OpenCode context at 12288. Smaller contexts are allowed." >&2
++    if (( splash_context_limit > 24576 || SPLASH_BONSAI_OPENCODE_CONTEXT > 22528 )); then
++      echo "This safety profile caps server context at the tested 24K and OpenCode context at 22528. Smaller contexts are allowed." >&2
+       exit 1
+     fi
+     if ! [[ "$SPLASH_BONSAI_STARTUP_RETRY_DELAY" =~ ^[1-9][0-9]*$ ]] || (( SPLASH_BONSAI_STARTUP_RETRY_DELAY > 120 )); then
+@@ -1284,9 +1290,9 @@
+     sync_opencode_splash
+     printf 'Native inference concurrency: %s (FIFO queue across clients; no worker tool-call budget)\n' "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+     printf 'Memory safety: run ONE OpenCode job at a time; multiple chats create queue waits and memory replay. Close unused memory-heavy apps before long jobs.\n' | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+-    printf 'Launcher: model=%s alias=%s binary=%s server_context=%s client_context=%s output=%s reasoning=none kv=int8 cache_disk=%s resource_wait=%ss host=%s port=%s\n' \
++    printf 'Launcher: model=%s alias=%s binary=%s server_context=%s client_context=%s output=%s reasoning=none kv=int8 prefill_chunk=%s cache_disk=%s resource_wait=%ss host=%s port=%s\n' \
+       "$SPLASH_BONSAI_MODEL_ID" "$SPLASH_BONSAI_ALIAS" "$SPLASH_BIN" "$SPLASH_BONSAI_MAX_CONTEXT" \
+-      "$SPLASH_BONSAI_OPENCODE_CONTEXT" "$SPLASH_BONSAI_MAX_TOKENS" "$SPLASH_BONSAI_MAX_CACHE_DISK" "$SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT" "$HOST" "$PORT" |
++      "$SPLASH_BONSAI_OPENCODE_CONTEXT" "$SPLASH_BONSAI_MAX_TOKENS" "$SPLASH_BONSAI_PREFILL_CHUNK_TOKENS" "$SPLASH_BONSAI_MAX_CACHE_DISK" "$SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT" "$HOST" "$PORT" |
+       timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+     # The sampler belongs to this terminal launch and stops when it exits.
+     bash /Users/mymac/monitorsplash.sh --record 600 >>"$SPLASH_RUN_LOG" 2>&1 &
+@@ -1307,6 +1313,7 @@
+         --language-only \
+         --default-reasoning-effort none \
+         --kv-format int8 \
++        --prefill-chunk-tokens "$SPLASH_BONSAI_PREFILL_CHUNK_TOKENS" \
+         --resource-wait-timeout "$SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT" \
+         --max-active-requests "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" \
+         --max-context "$SPLASH_BONSAI_MAX_CONTEXT" \
