@@ -70,7 +70,7 @@ Engine::Engine(EngineConfig config, Cache &cache, model::Model &model,
       resourceWaitTimeoutMilliseconds_(
           testConfig().resourceWaitTimeoutMilliseconds.value_or(config_.resourceWaitTimeoutMilliseconds)),
       cache_(cache), writeBehind_(cache), model_(model), events_(events),
-      scheduler_(config_.decodeShare) {
+      scheduler_(config_.decodeShare, config_.prefillChunkTokens) {
   if (!config_.maxContext || !config_.vocabularySize) {
     throw std::invalid_argument("context and vocabulary sizes must be positive");
   }

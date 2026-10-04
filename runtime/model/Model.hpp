@@ -377,6 +377,10 @@ maskWordsPerToken(uint32_t vocabularySize) noexcept {
 struct ExecutionLimits final {
   static constexpr uint32_t maximumBatchWidth = 4;
   static constexpr uint32_t prefillTokenBudget = 2048;
+  // Runtime chunks may be smaller than the manifest/kernel ceiling. Align
+  // arena capacity to the 128-row projection tiles, including short tails.
+  static constexpr uint32_t defaultPrefillChunkTokens = 512;
+  static constexpr uint32_t prefillChunkAlignment = 128;
   // KV pages startup warmup runs on, from page 0: the runway the engine's KV
   // pool allocates when it is built.
   static constexpr uint32_t warmupKvPages =
@@ -394,6 +398,12 @@ struct ExecutionLimits final {
   static constexpr uint32_t minimumScoreOptions = 2;
   static constexpr uint32_t maximumScoreOptions = 255;
 };
+
+[[nodiscard]] constexpr bool validPrefillChunkTokens(uint32_t tokens) noexcept {
+  return tokens >= ExecutionLimits::prefillChunkAlignment &&
+         tokens <= ExecutionLimits::prefillTokenBudget &&
+         tokens % ExecutionLimits::prefillChunkAlignment == 0;
+}
 
 static_assert(ExecutionLimits::draftQueryRows ==
               ExecutionLimits::draftProposalTokens + 1);

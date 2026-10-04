@@ -79,6 +79,7 @@ void requireLoadedModel(const model::ModelPackage &package);
 
 struct RuntimeResourcesConfig {
   kv::Format kvFormat = kv::Format::Int8;
+  uint32_t prefillChunkTokens = model::ExecutionLimits::defaultPrefillChunkTokens;
   std::filesystem::path metallibPath;
   std::filesystem::path modelRoot;
   model::ModelDescriptor model;
@@ -214,7 +215,8 @@ private:
                    std::unique_ptr<KvPageTier> kvTier,
                    std::unique_ptr<KvPool> kvPool,
                    std::unique_ptr<engine::Cache> cache,
-                   std::optional<uint64_t> hostAvailableAtStart);
+                   std::optional<uint64_t> hostAvailableAtStart,
+                   uint32_t prefillChunkTokens);
   // Takes back the restore points the last process left in a persistent
   // tier (Cache::adopt) and opens its files for this one.
   void adoptPersistentCache();
@@ -233,6 +235,7 @@ private:
   std::unique_ptr<KvPool> kvPool_;
   std::unique_ptr<engine::Cache> cache_;
   std::optional<uint64_t> hostAvailableAtStart_;
+  uint32_t prefillChunkTokens_;
   // Ends a probation once it has lasted, unless the process stops first.
   std::thread probation_;
   std::mutex probationMutex_;

@@ -7,125 +7,127 @@ namespace splash::model {
 std::array<uint64_t, prefillTensorCount>
 prefillTensorBytes(const RuntimeGeometry &geometry,
                    const ops::ExecutionPlans &operators) {
+  const uint32_t prefillRows = geometry.prefillChunkTokens;
+  const uint32_t packedAttentionRows = prefillRows + kLaneCount * (kTileRows - 1);
   std::array<uint64_t, prefillTensorCount> result{};
   auto put = [&](PrefillTensor tensor, uint64_t bytes) {
     auto &size = result[static_cast<uint32_t>(tensor)];
     size = std::max(size, bytes);
   };
   put(PrefillTensor::Hidden0,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} * geometry.target.hiddenSize));
+      bytesFor<uint16_t>(uint64_t{prefillRows} * geometry.target.hiddenSize));
   put(PrefillTensor::Hidden1,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} * geometry.target.hiddenSize));
-  put(PrefillTensor::InputTokens, bytesFor<uint32_t>(kPrefillRows));
+      bytesFor<uint16_t>(uint64_t{prefillRows} * geometry.target.hiddenSize));
+  put(PrefillTensor::InputTokens, bytesFor<uint32_t>(prefillRows));
   put(PrefillTensor::Normalized,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} * geometry.target.hiddenSize));
+      bytesFor<uint16_t>(uint64_t{prefillRows} * geometry.target.hiddenSize));
   put(PrefillTensor::Captured,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} *
+      bytesFor<uint16_t>(uint64_t{prefillRows} *
                          geometry.target.capturedHiddenSize()));
   put(PrefillTensor::GdnPacked,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} *
+      bytesFor<uint16_t>(uint64_t{prefillRows} *
                          geometry.target.packedGdnWidth));
   put(PrefillTensor::GdnQueries,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} *
+      bytesFor<uint16_t>(uint64_t{prefillRows} *
                          geometry.target.gdnKeyWidth()));
   put(PrefillTensor::GdnKeys,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} *
+      bytesFor<uint16_t>(uint64_t{prefillRows} *
                          geometry.target.gdnKeyWidth()));
   put(PrefillTensor::GdnValues,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} *
+      bytesFor<uint16_t>(uint64_t{prefillRows} *
                          geometry.target.attentionWidth));
   put(PrefillTensor::GdnDecay,
-      bytesFor<float>(uint64_t{kPrefillRows} *
+      bytesFor<float>(uint64_t{prefillRows} *
                       geometry.target.gdnValueHeads));
   put(PrefillTensor::GdnBeta,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} *
+      bytesFor<uint16_t>(uint64_t{prefillRows} *
                          geometry.target.gdnValueHeads));
   put(PrefillTensor::Recurrent,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} *
+      bytesFor<uint16_t>(uint64_t{prefillRows} *
                          geometry.target.attentionWidth));
   put(PrefillTensor::GdnHidden,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} *
+      bytesFor<uint16_t>(uint64_t{prefillRows} *
                          geometry.target.attentionWidth));
   put(PrefillTensor::GdnOutput,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} * geometry.target.hiddenSize));
+      bytesFor<uint16_t>(uint64_t{prefillRows} * geometry.target.hiddenSize));
   put(PrefillTensor::GateIntermediate,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} *
+      bytesFor<uint16_t>(uint64_t{prefillRows} *
                          geometry.target.denseIntermediateSize));
   put(PrefillTensor::Intermediate,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} *
+      bytesFor<uint16_t>(uint64_t{prefillRows} *
                          geometry.target.denseIntermediateSize));
   put(PrefillTensor::FullPacked,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} *
+      bytesFor<uint16_t>(uint64_t{prefillRows} *
                          geometry.target.packedFullWidth));
   put(PrefillTensor::FullQueries,
       bytesFor<uint16_t>(uint64_t{geometry.target.attentionQueryHeads} *
-                         kPackedAttentionRows *
+                         packedAttentionRows *
                          geometry.target.attentionHeadDimension));
   put(PrefillTensor::FullAttention,
       bytesFor<uint16_t>(uint64_t{geometry.target.attentionQueryHeads} *
-                         kPackedAttentionRows *
+                         packedAttentionRows *
                          geometry.target.attentionHeadDimension));
   const ops::AttentionWorkspace attentionWorkspace =
       operators.prefillAttentionWorkspace(
-          kPrefillRows, geometry.target.attentionQueryHeads,
+          prefillRows, geometry.target.attentionQueryHeads,
           geometry.target.kvLayout);
   put(PrefillTensor::AttentionPartials, attentionWorkspace.partialsBytes);
   put(PrefillTensor::AttentionStatistics, attentionWorkspace.statisticsBytes);
   put(PrefillTensor::AttentionHidden,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} *
+      bytesFor<uint16_t>(uint64_t{prefillRows} *
                          geometry.target.attentionWidth));
   put(PrefillTensor::AttentionOutput,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} * geometry.target.hiddenSize));
+      bytesFor<uint16_t>(uint64_t{prefillRows} * geometry.target.hiddenSize));
   put(PrefillTensor::ProjectionSums,
-      bytesFor<float>(uint64_t{kPrefillRows} *
+      bytesFor<float>(uint64_t{prefillRows} *
                       geometry.projectionSumsWidth()));
   put(PrefillTensor::DownProjectionSums,
-      bytesFor<float>(uint64_t{kPrefillRows} *
+      bytesFor<float>(uint64_t{prefillRows} *
                       geometry.projectionSumsWidth()));
   // Three rotary axes per row (Qwen3.5 M-RoPE); text rows repeat one value.
   put(PrefillTensor::TargetPositions,
-      bytesFor<uint32_t>(uint64_t{kPrefillRows} * 3));
-  put(PrefillTensor::DraftPositions, bytesFor<uint32_t>(kPrefillRows));
+      bytesFor<uint32_t>(uint64_t{prefillRows} * 3));
+  put(PrefillTensor::DraftPositions, bytesFor<uint32_t>(prefillRows));
   put(PrefillTensor::TargetInverseFrequencies,
       bytesFor<float>(geometry.target.rotaryPairs));
   put(PrefillTensor::DraftInverseFrequencies,
       bytesFor<float>(geometry.draftRotaryPairs()));
   put(PrefillTensor::RopeCos,
-      bytesFor<float>(uint64_t{kPrefillRows} * geometry.target.rotaryPairs));
+      bytesFor<float>(uint64_t{prefillRows} * geometry.target.rotaryPairs));
   put(PrefillTensor::RopeSin,
-      bytesFor<float>(uint64_t{kPrefillRows} * geometry.target.rotaryPairs));
+      bytesFor<float>(uint64_t{prefillRows} * geometry.target.rotaryPairs));
   put(PrefillTensor::ContextProjected,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} * geometry.draft.hiddenSize));
+      bytesFor<uint16_t>(uint64_t{prefillRows} * geometry.draft.hiddenSize));
   put(PrefillTensor::ContextHidden,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} * geometry.draft.hiddenSize));
+      bytesFor<uint16_t>(uint64_t{prefillRows} * geometry.draft.hiddenSize));
   put(PrefillTensor::ContextKv,
-      bytesFor<uint16_t>(uint64_t{kPrefillRows} *
+      bytesFor<uint16_t>(uint64_t{prefillRows} *
                          geometry.draft.contextKvSize()));
   put(PrefillTensor::DraftRopeCos,
-      bytesFor<float>(uint64_t{kPrefillRows} *
+      bytesFor<float>(uint64_t{prefillRows} *
                       geometry.draftRotaryPairs()));
   put(PrefillTensor::DraftRopeSin,
-      bytesFor<float>(uint64_t{kPrefillRows} *
+      bytesFor<float>(uint64_t{prefillRows} *
                       geometry.draftRotaryPairs()));
   put(PrefillTensor::ChunkKeys,
       bytesFor<uint16_t>(uint64_t{geometry.target.attentionKvHeads} *
-                         kPackedAttentionRows *
+                         packedAttentionRows *
                          geometry.target.attentionHeadDimension));
   put(PrefillTensor::ChunkValues,
       bytesFor<uint16_t>(uint64_t{geometry.target.attentionKvHeads} *
-                         kPackedAttentionRows *
+                         packedAttentionRows *
                          geometry.target.attentionHeadDimension));
   // The split partials and counters and the rotated rows of the largest
   // prefill plan.
   for (const auto &projection : geometry.target.prefillProjections) {
-    const ops::LinearScratchSize linear = operators.linear().prefillScratchSize(projection);
+    const ops::LinearScratchSize linear = operators.linear().prefillScratchSize(projection, prefillRows);
     put(PrefillTensor::LinearPartials, linear.partials);
     put(PrefillTensor::LinearCounters, linear.counters);
     put(PrefillTensor::LinearRotated, linear.rotated);
   }
   if (geometry.target.ffnKind == QwenFfnKind::SparseMoe) {
     const ops::MoeWorkspace workspace =
-        operators.moePrefillWorkspace(geometry.target.moeShape(), kPrefillRows);
+        operators.moePrefillWorkspace(geometry.target.moeShape(), prefillRows);
     for (size_t field = 0; field < ops::kMoeScratchFields.size(); ++field)
       put(moeScratchTensor<PrefillTensor>(field),
           workspace.*ops::kMoeScratchFields[field].bytes);

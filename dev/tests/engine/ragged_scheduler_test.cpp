@@ -60,6 +60,55 @@ void awaitFirstMask(engine::Scheduler &scheduler, uint64_t id) {
           "a constrained prompt did not wait for its first mask");
 }
 
+void testConfiguredPrefillChunk() {
+  for (uint32_t chunk = 128; chunk <= 2048; chunk += 128) {
+    Scheduler scheduler(0.0, chunk);
+    scheduler.submit(request(1, 4097));
+    scheduler.resourcesReady(1, 0);
+    uint32_t processed = 0, batches = 0;
+    while (scheduler.phase(1) == Phase::Prefill) {
+      const auto plan = *scheduler.next({});
+      require(plan.kind == WorkKind::Prefill && plan.items.size() == 1 &&
+                  plan.items[0].tokenCount == std::min(chunk, 4097U - processed),
+              "unopposed prefill did not use the configured chunk or final tail");
+      processed += plan.items[0].tokenCount;
+      ++batches;
+      completePrefill(scheduler, plan);
+    }
+    require(processed == 4097 && batches == (4097 + chunk - 1) / chunk,
+            "configured chunks lost or duplicated prompt rows");
+    completeDecode(scheduler, true);
+
+    Scheduler packed(0.0, chunk);
+    for (uint64_t id = 1; id <= 4; ++id) {
+      packed.submit(request(id, 4097));
+      packed.resourcesReady(id, 4096);
+    }
+    const auto plan = *packed.next({});
+    uint32_t rows = 0;
+    for (const auto &item : plan.items) rows += item.tokenCount;
+    require(plan.items.size() == 4 && rows == 4 && rows <= chunk,
+            "configured chunk did not pack cached suffixes correctly");
+    completePrefill(packed, plan);
+
+    Scheduler contended(0.0, chunk);
+    contended.submit(request(1, 20'000));
+    contended.resourcesReady(1, 0);
+    completePrefill(contended, *contended.next({}), 1e9);
+    contended.submit(request(2, 1));
+    contended.resourcesReady(2, 1);
+    completeDecode(contended);
+    require(contended.next({})->items[0].tokenCount == 64,
+            "configured chunk broke the minimum contended slice");
+  }
+  for (uint32_t invalid : {0U, 64U, 129U, 2176U}) {
+    bool rejected = false;
+    try { Scheduler scheduler(0.0, invalid); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "scheduler accepted an invalid prefill chunk");
+  }
+}
+
 void testAdmissionSharesDispatchOrderAndBudget() {
   Scheduler scheduler(0.0);
   scheduler.submit(request(1, 8193));
@@ -1114,6 +1163,7 @@ void testReplayKeepsHeldInitialMask() {
 
 int main() {
   try {
+    testConfiguredPrefillChunk();
     testAdmissionSharesDispatchOrderAndBudget();
     testAdmissionRespectsContendedBudgetAndDecodePriority();
     testHighestRunnablePriority();

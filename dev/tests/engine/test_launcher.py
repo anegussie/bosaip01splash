@@ -16,6 +16,7 @@ from pathlib import Path
 from unittest import mock
 
 from install import launcher
+from server import serve_options
 from server import server as api
 
 MODEL_ID = "community/custom-splash"
@@ -81,6 +82,25 @@ class LauncherTests(unittest.TestCase):
         ):
             os.environ.pop(name, None)
         keep_stop_signals(self)
+
+    def test_prefill_chunk_forwarding(self):
+        for chunk in (128, 512, 1024, 2048):
+            with self.subTest(chunk=chunk):
+                args = launcher.parse_args(
+                    ["serve", "--model", MODEL_ID, "--prefill-chunk-tokens", str(chunk)]
+                )
+                forwarded = serve_options.serve_argv(args)
+                served = api.parse_args(
+                    [
+                        "model",
+                        "--tokenizer",
+                        "tokenizer",
+                        "--model",
+                        MODEL_ID,
+                        *forwarded,
+                    ]
+                )
+                self.assertEqual(served.prefill_chunk_tokens, chunk)
 
     def test_serve_requires_exact_repository_id_before_build(self):
         for arguments in (

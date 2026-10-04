@@ -22,6 +22,12 @@ bool listed(std::span<const uint64_t> ids, uint64_t id) noexcept {
 
 } // namespace
 
+Scheduler::Scheduler(double decodeShare, uint32_t prefillChunkTokens)
+    : decodeShare_(decodeShare), prefillChunkTokens_(prefillChunkTokens) {
+  if (!model::validPrefillChunkTokens(prefillChunkTokens_))
+    throw std::invalid_argument("prefill chunk must be a multiple of 128 tokens in [128, 2048]");
+}
+
 void Scheduler::submit(RequestSpec request) {
   Request state;
   state.spec = std::move(request);
@@ -323,13 +329,13 @@ Scheduler::planPrefill(std::vector<PrefillRequestView> ready) const {
 uint32_t Scheduler::prefillBudget(
     const PrefillRequestView &leader,
     std::span<const PrefillRequestView> ready) const {
-  const uint32_t maximum = model::ExecutionLimits::prefillTokenBudget;
+  const uint32_t maximum = prefillChunkTokens_;
   if (prefillMillisecondsPerToken_ <= 0.0)
     return maximum;
   uint32_t rows = maximum;
   while (rows > kMinimumPrefillRows &&
          rows * prefillMillisecondsPerToken_ > kContendedPrefillMilliseconds)
-    rows /= 2;
+    rows = std::max(kMinimumPrefillRows, rows / 2);
   const uint32_t leaderRemaining =
       leader.request->spec.prefillTokens - leader.promptProcessed;
   const bool leaderFinishing = leaderRemaining <= rows;

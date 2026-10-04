@@ -369,6 +369,16 @@ void testAllNativeWarmupsPrecedeReady() {
           "bootstrap report omitted the real B3 graph");
 }
 
+void testConfiguredPrefillWarmup() {
+  const auto plan = memoryPlan();
+  Harness harness;
+  const auto report = RuntimeBootstrap::requireWarmupAndAnnounce(
+      plan, harness.executor(), [&] { return validActual(plan); }, harness.loop(), 512);
+  require(report.stage == RuntimeBootstrapStage::Ready && harness.loop().ready() &&
+              harness.executor().lastPrefillRows == 512 && report.warmup.maximumPrefillRows == 512,
+          "bootstrap did not warm and report the configured prefill chunk");
+}
+
 RuntimeBootstrapReport warmup(Harness &harness, const EngineMemoryPlan &plan) {
   return RuntimeBootstrap::requireWarmupAndAnnounce(
       plan, harness.executor(), [&] { return validActual(plan); },
@@ -699,6 +709,7 @@ int main() {
     testInstalledManifestBindsExecutionGeometry();
     testRuntimeCacheIdentityReportsTheLoadedModel();
     testAllNativeWarmupsPrecedeReady();
+    testConfiguredPrefillWarmup();
     testBudgetLimitedWarmupKeepsRuntimeConcurrency();
     testOptionalAllocationFailuresAreMemoryLimited();
     testResourceFailureClassificationSurvivesBootstrap();

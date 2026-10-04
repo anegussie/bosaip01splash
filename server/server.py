@@ -1927,6 +1927,8 @@ def _native_command(args):
         )
     if args.kv_format != "int8":
         command.extend(("--kv-format", args.kv_format))
+    if args.prefill_chunk_tokens != serve_options.DEFAULT_PREFILL_CHUNK_TOKENS:
+        command.extend(("--prefill-chunk-tokens", str(args.prefill_chunk_tokens)))
     if args.decode_share is not None:
         command.extend(("--decode-share", str(args.decode_share)))
     if args.resource_wait_timeout != 30:

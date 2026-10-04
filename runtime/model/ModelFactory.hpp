@@ -70,6 +70,7 @@ struct RuntimeContext final {
   kv::PageStorage &kvPages;
   QwenStateStorage &stateStorage;
   const ops::ExecutionPlans &operators;
+  uint32_t prefillChunkTokens = ExecutionLimits::prefillTokenBudget;
 };
 
 // Validates only the interface between independently defined target and draft
@@ -100,7 +101,8 @@ loadModelPackage(metal::MetalBackend &backend,
 plannedRuntimeMemory(const DeviceCapabilities &device,
                      const ModelPackage &package,
                      const ops::ExecutionPlans &operators,
-                     kv::Format format);
+                     kv::Format format,
+                     uint32_t prefillChunkTokens = ExecutionLimits::prefillTokenBudget);
 [[nodiscard]] std::unique_ptr<RuntimeModel>
 createRuntime(RuntimeContext context);
 

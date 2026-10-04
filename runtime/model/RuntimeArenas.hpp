@@ -27,10 +27,7 @@ inline constexpr uint32_t kDecodeRows = ExecutionLimits::targetVerifyRows;
 // layout of metal/abi/Sampling.h.
 inline constexpr uint32_t kSamplingUniformCount = SPLASH_SAMPLING_UNIFORMS;
 inline constexpr uint32_t kDraftProposalTokens = ExecutionLimits::draftProposalTokens;
-inline constexpr uint32_t kPrefillRows = ExecutionLimits::prefillTokenBudget;
 inline constexpr uint32_t kTileRows = kv::kPageTokens;
-inline constexpr uint32_t kPackedAttentionRows =
-    kPrefillRows + kLaneCount * (kTileRows - 1);
 inline constexpr uint32_t kDraftCacheStride = ExecutionLimits::draftContextTokens;
 inline constexpr uint32_t kMaximumPageTableEntries =
     (kv::kMaximumPhysicalTokens + kv::kPageTokens - 1) / kv::kPageTokens;
@@ -38,10 +35,15 @@ inline constexpr uint32_t kMaximumPageTableEntries =
 struct RuntimeGeometry final {
   QwenTargetGeometry target;
   DFlashDraftLayout draft;
+  uint32_t prefillChunkTokens = ExecutionLimits::prefillTokenBudget;
 
   [[nodiscard]] static RuntimeGeometry from(const ModelPackage &package,
-                                            kv::Format format) {
+                                            kv::Format format,
+                                            uint32_t prefillChunkTokens = ExecutionLimits::prefillTokenBudget) {
+    if (!validPrefillChunkTokens(prefillChunkTokens))
+      throw std::invalid_argument("prefill chunk must be a multiple of 128 tokens in [128, 2048]");
     RuntimeGeometry result;
+    result.prefillChunkTokens = prefillChunkTokens;
     result.target = std::visit(
         [](const auto &weights) { return qwenTargetGeometry(weights); },
         package.target);

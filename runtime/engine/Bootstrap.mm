@@ -145,8 +145,11 @@ std::string RuntimeBootstrap::statusJson(const RuntimeMetricsSnapshot &metrics,
 
 RuntimeBootstrapReport RuntimeBootstrap::requireWarmupAndAnnounce(
     const EngineMemoryPlan &memoryPlan, model::RuntimeModel &modelRuntime,
-    ActualMemoryReporter memoryReporter, NativeRuntime &nativeLoop) {
+    ActualMemoryReporter memoryReporter, NativeRuntime &nativeLoop, uint32_t prefillChunkTokens) {
+  if (!model::validPrefillChunkTokens(prefillChunkTokens))
+    throw std::invalid_argument("invalid warmup prefill chunk size");
   RuntimeBootstrapReport report = reportForPlan(memoryPlan);
+  report.warmup.maximumPrefillRows = prefillChunkTokens;
   auto run = [&](RuntimeBootstrapStage stage, WarmupStepStatus &status,
                  auto &&operation, bool optional = false) {
     model::WarmupStepResult result;
@@ -184,9 +187,9 @@ RuntimeBootstrapReport RuntimeBootstrap::requireWarmupAndAnnounce(
   model::WarmupStepResult maximumPrefill =
       run(RuntimeBootstrapStage::MaximumPrefill, report.warmup.maximumPrefill,
           [&] {
-            return modelRuntime.warmupPrefill(model::ExecutionLimits::prefillTokenBudget);
+            return modelRuntime.warmupPrefill(prefillChunkTokens);
           });
-  nativeLoop.observePrefill(model::ExecutionLimits::prefillTokenBudget,
+  nativeLoop.observePrefill(prefillChunkTokens,
                            maximumPrefill.wallSeconds * 1000.0);
   report.warmup.maximumPrefillDetail = maximumPrefill.detail;
   const auto &budget = memoryPlan.breakdown();
@@ -259,6 +262,7 @@ std::unique_ptr<RuntimeBootstrap> RuntimeBootstrap::start(
   }
 
   RuntimeBootstrapReport base = reportForPlan(resources->memoryPlan());
+  config.nativeLoop.engine.prefillChunkTokens = config.resources.prefillChunkTokens;
   const uint32_t automaticContext =
       resources->memoryPlan().maximumContextTokens();
   if (!automaticContext) {
@@ -385,7 +389,7 @@ std::unique_ptr<RuntimeBootstrap> RuntimeBootstrap::start(
         static_cast<void>(resourcesPointer->cache().releaseEmptyExtents(true));
         return report;
       },
-      *nativeLoop);
+      *nativeLoop, config.resources.prefillChunkTokens);
 
   // The per-operation guard RuntimeResources installed is only for startup:
   // once Ready, the engine meets memory pressure between its ticks.

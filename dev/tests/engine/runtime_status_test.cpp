@@ -208,6 +208,15 @@ void testCleanRuntimeStatus() {
                   std::string::npos &&
               json.find("runtime_cache_namespace") == std::string::npos,
           "status lost the cache identity or reported a cache namespace");
+  auto smallerWarmup = warmup;
+  smallerWarmup.maximumPrefillRows = 512;
+  smallerWarmup.maximumPrefillDetail = "packed_rows=512";
+  const auto smallerStatus = runtimeStatusJson(memoryPlan, engine, metal, smallerWarmup,
+      audit(memoryPlan), metrics, executorTelemetry, identity, governor, true, {}, {}, {});
+  require(smallerStatus.find("\"prefill_chunk_tokens\":512") != std::string::npos &&
+              smallerStatus.find("\"prefill_512\"") != std::string::npos &&
+              smallerStatus.find("prefill_2048") == std::string::npos,
+          "status advertised a prefill size other than the configured warmup");
   auto bf16Identity = identity;
   bf16Identity.kvLayout = kv::Layout{16, 4, 256, kv::Format::BFloat16};
   const auto bf16Status = runtimeStatusJson(memoryPlan, engine, metal, warmup, audit(memoryPlan),

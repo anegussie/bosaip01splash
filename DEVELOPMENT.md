@@ -137,6 +137,7 @@ loopback, so use a listener that includes loopback when launching agents locally
 | `--persistent-cache` | Off | Keep the SSD cache across restarts; needs `--max-cache-disk`. See [persistent cache](#persistent-cache). |
 | `--cache-dir` | `~/Library/Caches/Splash/prefix-cache` | Where `--persistent-cache` keeps its files. |
 | `--kv-format` | `int8` | Target KV storage: `int8` or `bf16`. |
+| `--prefill-chunk-tokens` | `512` | Maximum prompt rows per native batch; multiples of 128 from 128 to 2048. Smaller chunks reduce prefill scratch allocation and can reduce prompt throughput. |
 | `--decode-share` | `0.5` | Decode time owed per unit of prefill time while other requests generate. Higher keeps their output faster during a long prompt and slows that prompt; `0` alternates one command each. |
 | `--max-image-pixels` | `4194304` | Maximum resized pixels per image. An image's vision scratch grows with its patches (pixels / 256), to about 600 MiB at the default. |
 | `--request-timeout` | None | Seconds a request may take from its arrival; a request's own `timeout` can only shorten it. |
@@ -1080,10 +1081,12 @@ its output when it runs alone with the same cached prefixes; alongside other
 requests, or with other prefixes cached, it can differ.
 
 Long prefill uses disposable rolling checkpoints every 4096 tokens; none is
-planned within one prefill chunk (2048 tokens) of where the request resumes or
-of its replay boundary. Contended prefill adapts toward a 500 ms slice, keeping
-2048-token chunks for long unopposed work. Without contention, a prompt that
-can finish within one 2048-token chunk ends its chunk at its last row instead
+planned within 2048 tokens of where the request resumes or of its replay
+boundary. This checkpoint spacing retains the compiled prefill ceiling.
+Contended prefill adapts toward a 500 ms slice, capped by the configured
+`--prefill-chunk-tokens` (512 by default), which also sizes prefill arenas
+and startup warmup. Without contention, a prompt that can finish within one
+configured chunk ends its chunk at its last row instead
 of sharing it with a longer prompt. While requests of the same or a higher
 priority decode (a lane waiting for its token mask is owed nothing), each slice
 owes them decode time, `--decode-share` times its own, before the next slice

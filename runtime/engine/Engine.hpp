@@ -42,6 +42,7 @@ struct EngineConfig final {
   // its solo rate through a long prefill, which meanwhile takes 1.5x as long;
   // zero alternates one command of each kind.
   double decodeShare = 0.5;
+  uint32_t prefillChunkTokens = model::ExecutionLimits::prefillTokenBudget;
   double resourceWaitTimeoutMilliseconds = kResourceWaitTimeoutMilliseconds;
   // Host growth admission, supplied by the runtime governor. Queried only
   // while resident lanes drain after a suspension; allocation reads the

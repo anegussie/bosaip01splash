@@ -281,7 +281,8 @@ struct Runtime::Impl {
   explicit Impl(RuntimeContext value)
       : backend(value.backend),
         package(value.package),
-        geometry(RuntimeGeometry::from(value.package, value.kvPages.layout().format)),
+        geometry(RuntimeGeometry::from(value.package, value.kvPages.layout().format,
+                                       value.prefillChunkTokens)),
         operators(value.operators),
         kvPages(value.kvPages),
         states(value.stateStorage),
@@ -708,7 +709,7 @@ struct Runtime::Impl {
         prefillArena->get(PrefillTensor::TargetInverseFrequencies),
         prefillArena->get(PrefillTensor::DraftInverseFrequencies),
         std::move(targetCos), std::move(targetSin), std::move(draftCos),
-        std::move(draftSin), {targetRows, draftRows}, kPrefillRows);
+        std::move(draftSin), {targetRows, draftRows}, geometry.prefillChunkTokens);
   }
 
   // A constrained lane keeps its final prompt row, which prefill leaves at
@@ -1021,7 +1022,7 @@ struct Runtime::Impl {
     for (uint32_t lane = 0; lane < items.size(); ++lane) {
       const ModelBatchItem &item = items[lane];
       Request &entry = request(item.requestId);
-      if (item.tokenCount > kPrefillRows ||
+      if (item.tokenCount > geometry.prefillChunkTokens ||
           item.logicalPosition > entry.promptTokens ||
           item.tokenCount > entry.promptTokens - item.logicalPosition ||
           !entry.resident) {
@@ -1034,7 +1035,7 @@ struct Runtime::Impl {
       }
       if (item.logicalPosition == 0)
         states.clearForColdStart(entry.stateLane);
-      if (item.tokenCount > kPrefillRows - batch.rows) {
+      if (item.tokenCount > geometry.prefillChunkTokens - batch.rows) {
         throw std::invalid_argument("packed prefill exceeds actual-row budget");
       }
       auto captures = activeDraftCaptures(entry, item);
@@ -2428,7 +2429,7 @@ void Runtime::prepareWarmupDecode(uint64_t requestId, uint32_t anchor) {
 
 WarmupStepResult Runtime::warmupPrefill(uint32_t rows) {
   using Clock = std::chrono::steady_clock;
-  if (!rows || rows > kPrefillRows)
+  if (!rows || rows > impl_->geometry.prefillChunkTokens)
     throw std::invalid_argument("invalid prefill warmup row count");
   constexpr uint64_t id = std::numeric_limits<uint64_t>::max() - 100;
   double wallSeconds = 0.0;
@@ -2649,12 +2650,12 @@ ModelTelemetry Runtime::telemetry() const noexcept {
 ModelMemoryPlan plannedRuntimeMemory(const DeviceCapabilities &device,
                                      const ModelPackage &package,
                                      const ops::ExecutionPlans &operators,
-                                     kv::Format format) {
+                                     kv::Format format, uint32_t prefillChunkTokens) {
   requireCompatibleModelPackage(package);
   if (device.appleGpuFamily < DeviceCapabilities::kMinimumAppleGpuFamily) {
     throw std::invalid_argument("model runtime requires Apple tensor BF16");
   }
-  const RuntimeGeometry geometry = RuntimeGeometry::from(package, format);
+  const RuntimeGeometry geometry = RuntimeGeometry::from(package, format, prefillChunkTokens);
   return {package.stateLayout().laneBytes(),
           plannedPrefillBytes(geometry, operators),
           plannedDecodeBytes(geometry, operators)};

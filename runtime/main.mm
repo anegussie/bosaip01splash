@@ -57,6 +57,7 @@ struct NativeArguments final {
   kv::Format kvFormat = kv::Format::Int8;
   double decodeShare = engine::EngineConfig{}.decodeShare;
   uint32_t resourceWaitTimeoutSeconds = 30;
+  uint32_t prefillChunkTokens = model::ExecutionLimits::defaultPrefillChunkTokens;
   uint32_t maxImagePatches = ops::kMaximumImagePatches;
 };
 
@@ -131,7 +132,7 @@ void printUsage(std::string_view executable) {
       " MAX_CONTEXT|auto MAX_MEMORY_BYTES|auto [MAX_CACHE_DISK_BYTES]"
       " [--kv-format int8|bf16] [--decode-share SHARE]"
       " [--max-image-patches PATCHES] [--cache-dir DIRECTORY]"
-      " [--resource-wait-timeout SECONDS]");
+      " [--resource-wait-timeout SECONDS] [--prefill-chunk-tokens TOKENS]");
 }
 
 template <typename T>
@@ -217,6 +218,10 @@ NativeArguments parseArguments(int argc, char **argv) {
       result.kvFormat = value == "int8" ? kv::Format::Int8 : kv::Format::BFloat16;
     } else if (option == "--decode-share") {
       result.decodeShare = parseDecodeShare(value);
+    } else if (option == "--prefill-chunk-tokens") {
+      if (!parsePositive(value, result.prefillChunkTokens) ||
+          !model::validPrefillChunkTokens(result.prefillChunkTokens))
+        throw UsageError("--prefill-chunk-tokens requires a multiple of 128 in [128, 2048]");
     } else if (option == "--resource-wait-timeout") {
       if (!parsePositive(value, result.resourceWaitTimeoutSeconds))
         throw UsageError("--resource-wait-timeout requires a positive integer in seconds");
@@ -269,6 +274,7 @@ bootstrapConfig(const NativeArguments &arguments) {
   config.resources.maximumCacheDiskBytes = arguments.maxCacheDiskBytes;
   config.resources.persistentCacheRoot = arguments.persistentCacheRoot;
   config.resources.kvFormat = arguments.kvFormat;
+  config.resources.prefillChunkTokens = arguments.prefillChunkTokens;
   config.resources.maximumImagePatches = arguments.maxImagePatches;
   config.nativeLoop.engine.maxContext = arguments.maxContext;
   config.nativeLoop.engine.decodeShare = arguments.decodeShare;

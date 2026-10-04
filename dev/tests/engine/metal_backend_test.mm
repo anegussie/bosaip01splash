@@ -45,13 +45,13 @@ using splash::test::ScopedTestConfig;
 using splash::test::sharedBuffer;
 using splash::metal::MetalBuffer;
 
-void prefillScratchLifetimes(const std::string &metallibPath) {
+void prefillScratchLifetimes(const std::string &metallibPath, uint32_t chunk) {
     using namespace splash;
     using namespace splash::model;
     MetalBackend backend(metallibPath);
     ops::ExecutionPlans plans(backend.capabilities());
     const auto package = test::runtimeGeometryPackage<Qwen3_8Weights>();
-    const auto geometry = RuntimeGeometry::from(package, kv::Format::Int8);
+    const auto geometry = RuntimeGeometry::from(package, kv::Format::Int8, chunk);
     PrefillArena arena(backend, geometry, plans);
     DecodeArena decode(backend, geometry, plans, arena);
     metal::CommandGraph graph;
@@ -112,7 +112,7 @@ void prefillScratchLifetimes(const std::string &metallibPath) {
         if (!std::all_of(output, output + words, [&](uint32_t value) { return value == item.expected; }))
             throw std::runtime_error("prefill scratch reuse corrupted a live tensor or reordered GPU phases");
     }
-    std::cout << "PASS prefill scratch lifetimes: " << checks.size() << " GPU checks, arena_bytes=" << arena.bytes() << '\n';
+    std::cout << "PASS prefill scratch lifetimes: " << checks.size() << " GPU checks, chunk_tokens=" << chunk << ", arena_bytes=" << arena.bytes() << '\n';
 }
 
 [[noreturn]] void fail(const std::string &message) {
@@ -1520,7 +1520,8 @@ int main(int argc, const char *argv[]) {
             return 2;
         }
         try {
-            prefillScratchLifetimes(argv[1]);
+            prefillScratchLifetimes(argv[1], 512);
+            prefillScratchLifetimes(argv[1], 2048);
             if (argc == 3) return 0;
             idleSleepAssertionLifetime(argv[1]);
             completionDoesNotWaitForMemoryTelemetry(argv[1]);

@@ -119,7 +119,8 @@ public:
         const EngineMemoryPlan &memoryPlan,
         model::RuntimeModel &modelRuntime,
         ActualMemoryReporter memoryReporter,
-        NativeRuntime &nativeLoop);
+        NativeRuntime &nativeLoop,
+        uint32_t prefillChunkTokens = model::ExecutionLimits::prefillTokenBudget);
 
     RuntimeBootstrap(const RuntimeBootstrap &) = delete;
     RuntimeBootstrap &operator=(const RuntimeBootstrap &) = delete;

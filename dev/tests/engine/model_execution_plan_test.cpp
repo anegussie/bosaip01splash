@@ -140,6 +140,61 @@ void checkPrefillSharing(const model::ModelPackage &package) {
   }
 }
 
+void checkPrefillChunkSizing(const model::ModelPackage &package) {
+  for (uint32_t family : {9U, 10U, 11U}) for (auto format : {kv::Format::Int8, kv::Format::BFloat16}) {
+    DeviceCapabilities device;
+    device.appleGpuFamily = family;
+    device.gpuCoreCount = 8;
+    ops::ExecutionPlans plans(device);
+    const auto maximum = model::RuntimeGeometry::from(package, format);
+    const uint64_t maximumBytes = model::plannedPrefillBytes(maximum, plans);
+    for (uint32_t chunk : {128U, 512U, 1024U, 2048U}) {
+      const auto geometry = model::RuntimeGeometry::from(package, format, chunk);
+      const auto layout = model::planPrefillArena(geometry, plans);
+      require(geometry.prefillChunkTokens == chunk &&
+                  layout.workspaceBytes >= model::sharedDecodeWorkspaceBytes(geometry, plans) &&
+                  model::plannedDecodeBytes(geometry, plans) == model::plannedDecodeBytes(maximum, plans),
+              "configured prefill chunk changed or underallocated decode scratch");
+      require(layout.sizes[uint32_t(model::PrefillTensor::Hidden0)] ==
+                  uint64_t(chunk) * geometry.target.hiddenSize * sizeof(uint16_t),
+              "prefill hidden rows do not follow the configured chunk");
+      require(chunk == 2048 ? layout.bytes == maximumBytes : layout.bytes < maximumBytes,
+              "smaller prefill chunk did not reduce arena memory");
+      for (uint32_t i = 0; i < model::prefillTensorCount; ++i)
+        require(layout.offsets[i] % kHostPageBytes == 0 && layout.offsets[i] <= layout.bytes &&
+                    layout.sizes[i] <= layout.bytes - layout.offsets[i],
+                "configured prefill tensor exceeds arena capacity");
+      auto rotatedGeometry = geometry;
+      uint64_t maximumRotatedBytes = 0;
+      for (auto &shape : rotatedGeometry.target.prefillProjections) {
+        shape.layout = ops::WeightLayout::Block32;
+        shape.rotated = true;
+        const auto scratch = plans.linear().prefillScratchSize(shape, chunk);
+        maximumRotatedBytes = std::max(maximumRotatedBytes, scratch.rotated);
+        require(scratch.rotated == uint64_t(chunk) * shape.inputSize * sizeof(uint16_t),
+                "rotated input scratch did not follow the chunk capacity");
+        // Linear scratch also supports unaligned callers: include the tile
+        // padding required by short tails, even below the runtime minimum.
+        for (uint32_t rows : {1U, 32U, 33U, 129U}) {
+          const uint32_t stored = rows <= 32 ? 32 : ((rows + 127) / 128) * 128;
+          require(plans.linear().prefillScratchSize(shape, rows).rotated ==
+                      uint64_t(stored) * shape.inputSize * sizeof(uint16_t),
+                  "rotated prefill scratch omitted projection tile padding");
+        }
+      }
+      const auto rotatedSizes = model::prefillTensorBytes(rotatedGeometry, plans);
+      require(rotatedSizes[uint32_t(model::PrefillTensor::LinearRotated)] == maximumRotatedBytes,
+              "prefill arena retained the global rotated scratch capacity");
+    }
+  }
+  for (uint32_t invalid : {0U, 64U, 129U, 2176U}) {
+    bool rejected = false;
+    try { static_cast<void>(model::RuntimeGeometry::from(package, kv::Format::Int8, invalid)); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "invalid prefill chunk reached arena sizing");
+  }
+}
+
 // One decode arena serves every lane count, and on Apple10 and later a
 // Split128 plan's partials grow with the rows. The arena must hold every
 // lane's plan of every affine target and draft projection at the measured
@@ -228,6 +283,8 @@ int main() {
     checkLaneScratch(sparse);
     checkPrefillSharing(dense);
     checkPrefillSharing(sparse);
+    checkPrefillChunkSizing(dense);
+    checkPrefillChunkSizing(sparse);
     std::cout << "model execution plans: PASS (two paired geometries)\n";
   } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';

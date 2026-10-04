@@ -250,7 +250,8 @@ public:
   // The scratch of every prefill chunk and epilogue of a projection of
   // `shape`: the split partials and counters of the chunks that run the GGUF
   // staged tile (LinearGguf.cpp), and the rotated rows of a full chunk.
-  [[nodiscard]] LinearScratchSize prefillScratchSize(ProjectionShape shape) const;
+  [[nodiscard]] LinearScratchSize prefillScratchSize(
+      ProjectionShape shape, uint32_t maximumRows = SPLASH_PREFILL_TOKEN_BUDGET) const;
   // The tile of a float projection of `rows` rows into `outputSize` columns
   // on this device (LinearGguf.cpp).
   [[nodiscard]] FloatTile ggufFloatTile(uint32_t rows, uint32_t outputSize) const noexcept;

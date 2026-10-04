@@ -65,6 +65,7 @@ std::string runtimeStatusJson(
   out << std::setprecision(10) << '{' << "\"schema_version\":" << protocol::kStatusSchemaVersion << ','
       << "\"ready\":" << boolean(ready)
       << ",\"maximum_context_tokens\":" << core.maximumContextTokens
+      << ",\"prefill_chunk_tokens\":" << warmup.maximumPrefillRows
       << ",\"memory_pressure\":"
       << json::quote(memoryPressureName(memoryGovernor.pressure))
       << ",\"admission\":{\"waiting\":"
@@ -277,7 +278,7 @@ std::string runtimeStatusJson(
   out << ",\"current_decode_batch\":";
   appendBatch(out, metrics.currentDecodeBatch);
   const std::string prefillName =
-      "prefill_" + std::to_string(SPLASH_PREFILL_TOKEN_BUDGET);
+      "prefill_" + std::to_string(warmup.maximumPrefillRows);
   const std::pair<std::string_view, WarmupStepStatus> warmupSteps[] = {
       {prefillName, warmup.maximumPrefill},
       {"decode_b1", warmup.decodeBatches[0]},

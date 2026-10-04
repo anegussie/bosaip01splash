@@ -20,6 +20,7 @@ REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 MAX_CONTEXT_TOKENS = 262144
 DEFAULT_MAX_REQUEST_BYTES = 128 * 1024 * 1024
 DEFAULT_QUEUE_SIZE = 32
+DEFAULT_PREFILL_CHUNK_TOKENS = 512
 # Where --persistent-cache keeps its files unless --cache-dir says otherwise.
 DEFAULT_CACHE_DIR = Path.home() / "Library/Caches/Splash/prefix-cache"
 _SIZE_UNITS = {
@@ -179,6 +180,18 @@ def parse_api_key(value):
         raise argparse.ArgumentTypeError(str(error)) from None
 
 
+def parse_prefill_chunk_tokens(value):
+    try:
+        tokens = int(value)
+    except ValueError:
+        tokens = 0
+    if not 128 <= tokens <= 2048 or tokens % 128:
+        raise argparse.ArgumentTypeError(
+            "must be a multiple of 128 tokens in [128, 2048]"
+        )
+    return tokens
+
+
 def parse_resource_wait_timeout(value):
     try:
         seconds = int(value)
@@ -225,6 +238,15 @@ class ServeOption:
 
 
 SERVE_OPTIONS = (
+    ServeOption(
+        "--prefill-chunk-tokens",
+        dict(
+            type=parse_prefill_chunk_tokens,
+            default=DEFAULT_PREFILL_CHUNK_TOKENS,
+            help="maximum prompt tokens per native batch, in multiples of 128 up to "
+            "2048 (default: 512); smaller chunks reduce scratch memory",
+        ),
+    ),
     ServeOption(
         "--resource-wait-timeout",
         dict(

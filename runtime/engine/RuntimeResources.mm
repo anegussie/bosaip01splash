@@ -239,7 +239,7 @@ RuntimeResources::RuntimeResources(
     std::unique_ptr<model::QwenStateStorage> stateStorage,
     std::unique_ptr<KvPageTier> kvTier,
     std::unique_ptr<KvPool> kvPool, std::unique_ptr<engine::Cache> cache,
-    std::optional<uint64_t> hostAvailableAtStart)
+    std::optional<uint64_t> hostAvailableAtStart, uint32_t prefillChunkTokens)
     : persistentCache_(std::move(persistentCache)),
       backend_(std::move(backend)), model_(std::move(model)),
       operators_(std::move(operators)),
@@ -248,10 +248,14 @@ RuntimeResources::RuntimeResources(
       memoryGovernor_(std::move(memoryGovernor)), kvPages_(std::move(kvPages)),
       stateStorage_(std::move(stateStorage)), kvTier_(std::move(kvTier)),
       kvPool_(std::move(kvPool)),
-      cache_(std::move(cache)), hostAvailableAtStart_(hostAvailableAtStart) {}
+      cache_(std::move(cache)), hostAvailableAtStart_(hostAvailableAtStart),
+      prefillChunkTokens_(prefillChunkTokens) {}
 
 std::unique_ptr<RuntimeResources>
 RuntimeResources::create(const RuntimeResourcesConfig &config) {
+  if (!model::validPrefillChunkTokens(config.prefillChunkTokens))
+    throw RuntimeResourcesError(RuntimeResourceStage::Configuration,
+                                "prefill chunk must be a multiple of 128 tokens in [128, 2048]");
   if (config.metallibPath.empty() || config.modelRoot.empty() ||
       !kv::validFormat(config.kvFormat) ||
       !config.model.valid() ||
@@ -398,7 +402,8 @@ RuntimeResources::create(const RuntimeResourcesConfig &config) {
   ops::ExecutionPlans operators(device);
   model::ModelMemoryPlan modelMemoryPlan;
   try {
-    modelMemoryPlan = model::plannedRuntimeMemory(device, package, operators, config.kvFormat);
+    modelMemoryPlan = model::plannedRuntimeMemory(device, package, operators, config.kvFormat,
+                                                config.prefillChunkTokens);
   } catch (const std::exception &error) {
     throw RuntimeResourcesError(
         RuntimeResourceStage::MemoryPlanning,
@@ -522,7 +527,7 @@ RuntimeResources::create(const RuntimeResourcesConfig &config) {
         std::move(operators), std::move(memoryPlan), std::move(cacheIdentity),
         std::move(memoryGovernor), std::move(kvPages), std::move(stateStorage),
         std::move(kvTier), std::move(kvPool), std::move(cache),
-        hostAvailableAtStart));
+        hostAvailableAtStart, config.prefillChunkTokens));
     result->adoptPersistentCache();
     return result;
   } catch (const metal::MetalAllocationError &error) {
@@ -634,6 +639,7 @@ model::RuntimeContext RuntimeResources::modelContext() noexcept {
       *kvPages_,
       *stateStorage_,
       operators_,
+      prefillChunkTokens_,
   };
 }
 

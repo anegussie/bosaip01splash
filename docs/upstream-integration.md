@@ -139,3 +139,77 @@ growth paused. The test establishes startup, single-request inference and
 cache reuse on this host, without establishing swap-free operation or a
 61K context capacity from the theoretical planner ceiling. The test server
 was left running because other clients were using it.
+
+
+## Configurable prefill chunks
+
+Serving now defaults to 512 prompt tokens per native batch. The new
+`--prefill-chunk-tokens` option accepts multiples of 128 from 128 through
+2048; `--prefill-chunk-tokens 2048` restores the earlier batch size.
+The launcher, Python frontend and native entry point share this setting.
+Option 14 in `startllamacpp.sh` picks up the smaller default on its next launch.
+
+The setting controls scheduler admission and dispatch, runtime geometry,
+prefill tensor and linear scratch sizing, memory planning, and startup warmup.
+`/status` reports `prefill_chunk_tokens` and names the actual warmup path,
+such as `prefill_512`. Projection tiles still require padded storage for
+short tails. Shared prefill workspace also retains enough room for decode
+replay, so reducing chunks does not shrink every scratch allocation by 75%.
+
+The compiled 2048-token ceiling, model manifests, draft context window and
+checkpoint spacing retain their existing contracts. Long prompts run as
+additional chunks. Smaller chunks can reduce prompt throughput and can
+change floating-point results, as existing adaptive chunking already can.
+
+Regression coverage includes all allowed scheduler chunk sizes, cached
+suffix packing, final tails and the minimum contended slice; dense and MoE
+arena sizing with INT8/BF16 KV on Apple GPU families 9/10/11; rotated
+projection padding; configured warmup/status; and option parsing/forwarding.
+Metal scratch ordering tests exercise both 512 and 2048 rows.
+
+
+### Measured option 14 result
+
+On the same M5 16GB Bonsai PTQ1_0 profile, with INT8 KV, 14K server context,
+one active request and the existing 8G SSD quota:
+
+| Allocation | 2048-token chunk | 512-token chunk |
+| --- | ---: | ---: |
+| Shared prefill arena | 461,897,728 bytes (440.50 MiB) | 259,162,112 bytes (247.16 MiB) |
+| Separate decode arena | 57,180,224 bytes | 57,180,224 bytes |
+| Idle core allocation after reclaim | 8,859,397,184 bytes (8.25 GiB) | 8,656,661,568 bytes (8.06 GiB) |
+
+The prefill change saves 202,735,616 bytes (193.34 MiB). Target/draft weights
+and KV representation are unchanged. The 512-row prefill and B1/B2 decode
+warmups passed, as did composite-state restore. B3/B4 were memory-limited.
+Startup peak was higher than the earlier run because additional optional
+warmups now fit; the table compares the idle core allocation, not peaks or
+combined process RSS. Host pressure still reached warning.
+
+Five real requests passed with healthy Metal and zero failed requests:
+
+| Request | Result |
+| --- | --- |
+| Short arithmetic, 26 prompt tokens | Correct answer; 0.47 s. |
+| Cold 3971-token prompt | Correct final-record answer; 21.07 s. |
+| Repeat of that prompt | Correct answer; 3936 cached tokens; 0.68 s. |
+| Streaming generation | Correct count from 1 through 20; complete SSE terminator. |
+| Cold 12,254-token prompt | Correct final-record answer; no cached tokens; 69.28 s. |
+
+These are functional smoke timings, not a controlled throughput comparison.
+The test server was stopped after checking that it was idle; port 1235,
+its native engine and its monitor were confirmed closed.
+
+
+Validation for this prefill change:
+
+- Full native CPU suite: passed.
+- Full native Metal suite with shader validation: passed.
+- Final rebuilt Metal scratch-ordering check: 279 checks at each of 512
+  and 2048 rows, passed.
+- Python engine discovery: 813 tests, passed with 7 optional tests skipped.
+- Server and launcher suites: 257 tests, passed.
+- Shared-option parity and forwarding suite: passed, including every allowed
+  chunk size and invalid values; native invalid-value CLI checks also passed.
+- Architecture, full Python lint/format, compilation, build identity and
+  diff checks: passed.

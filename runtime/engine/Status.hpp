@@ -29,11 +29,12 @@ struct RuntimeCacheIdentity;
 enum class WarmupStepStatus { Pending, Complete, MemoryLimited };
 
 struct WarmupReport {
+  uint32_t maximumPrefillRows = model::ExecutionLimits::prefillTokenBudget;
   WarmupStepStatus maximumPrefill = WarmupStepStatus::Pending;
   std::array<WarmupStepStatus, model::ExecutionLimits::maximumBatchWidth>
       decodeBatches{};
   WarmupStepStatus compositeStateRestore = WarmupStepStatus::Pending;
-  // Exact executor-selected kernel geometry for the fixed 2048-row path.
+  // Exact executor-selected kernel geometry for the configured chunk size.
   std::string maximumPrefillDetail;
 };
 

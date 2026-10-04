@@ -33,6 +33,11 @@ def values(flag, accepted, refused, repeatable=False):
 # Every shared option: accepted arguments with the value they parse to, and
 # refused arguments.
 OPTIONS = {
+    "--prefill-chunk-tokens": values(
+        "--prefill-chunk-tokens",
+        {str(tokens): tokens for tokens in range(128, 2049, 128)},
+        ("0", "64", "129", "2049", "-128", "1.5", "many"),
+    ),
     "--resource-wait-timeout": values(
         "--resource-wait-timeout",
         {"60": 60, "4294967295": 2**32 - 1},

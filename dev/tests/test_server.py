@@ -527,6 +527,7 @@ def main_args(**overrides):
             "cache_dir": None,
             "decode_share": None,
             "resource_wait_timeout": 30,
+            "prefill_chunk_tokens": 512,
             "max_active_requests": 0,
             "max_image_pixels": images.MAX_PIXELS,
             "request_timeout": None,
@@ -3507,6 +3508,34 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(len(lines), 8 * 300)
         for line in lines:
             self.assertRegex(line, r"^\d{2}:\d{2}:\d{2} worker \d line \d+$")
+
+    def test_prefill_chunk_options_reach_native(self):
+        required = [
+            "model",
+            "--tokenizer",
+            "tokenizer",
+            "--model",
+            "community/custom-splash",
+        ]
+        defaults = api.parse_args(required)
+        self.assertEqual(defaults.prefill_chunk_tokens, 512)
+        self.assertNotIn("--prefill-chunk-tokens", api._native_command(defaults))
+        for chunk in (128, 512, 1024, 2048):
+            with self.subTest(chunk=chunk):
+                args = api.parse_args([*required, "--prefill-chunk-tokens", str(chunk)])
+                self.assertEqual(args.prefill_chunk_tokens, chunk)
+                command = api._native_command(args)
+                if chunk != 512:
+                    self.assertEqual(
+                        command[command.index("--prefill-chunk-tokens") + 1], str(chunk)
+                    )
+        for chunk in ("0", "64", "129", "2049", "-128", "invalid"):
+            with (
+                self.subTest(chunk=chunk),
+                mock.patch("sys.stderr"),
+                self.assertRaises(SystemExit),
+            ):
+                api.parse_args([*required, "--prefill-chunk-tokens", chunk])
 
     def test_server_requires_explicit_model_and_paths(self):
         model = "community/custom-splash"
