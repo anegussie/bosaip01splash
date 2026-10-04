@@ -299,7 +299,7 @@ struct Runtime::Impl {
           "model runtime resources do not match the loaded package");
     }
     prefillArena = std::make_unique<PrefillArena>(backend, geometry, operators);
-    decodeArena = std::make_unique<DecodeArena>(backend, geometry, operators);
+    decodeArena = std::make_unique<DecodeArena>(backend, geometry, operators, *prefillArena);
     penaltyTable = decodeArena->packed(DecodeTensor::PenaltyState, kLaneCount);
     preparePolicyPipelines();
   }

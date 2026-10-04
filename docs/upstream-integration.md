@@ -71,7 +71,71 @@ make -j4 all test-engine-cpu test-engine-metal
 git diff --check
 ```
 
-These gates exercise real Metal kernels with shader validation and HTTP
-contracts with controlled native backends. They do not establish real-model
-throughput or long-context memory capacity. Full-model inference needs the
-separate model-specific smoke and release gates described in DEVELOPMENT.md.
+The integration gates exercise real Metal kernels with shader validation and
+HTTP contracts with controlled native backends. The model-specific smoke run
+below additionally exercises the installed PTQ1_0 model. These checks do not
+establish general throughput or every model's long-context capacity; see the
+separate release gates in DEVELOPMENT.md.
+
+## Option 14 startup repair
+
+The zero-deficit memory plan in the reported log described the engine budget.
+Startup separately refused the live host-memory admission for model arenas.
+Native EOF followed that refusal. Reproducing through the user's launcher
+confirmed the same failure with 14K context, INT8 KV and an 8G SSD cache.
+
+Two changes allow this profile to start with the measured host headroom:
+
+- Prefill mixer, FFN and draft-context scratch share storage across their
+  disjoint lifetimes. Hidden, capture, rotary, linear scratch and the mixer
+  residual remain separate. Decode attention partials and replay buffers
+  borrow the phase workspace after prefill retires. The engine allows one
+  pending batch, including its mask/commit tail, at a time. Sampling buffers,
+  penalties and page tables retain separate storage.
+- Resource assembly and warmup check essential allocations against the live
+  macOS reserve and engine budget. They do not require the additional 1 GiB
+  warning margin for optional idle cache growth. Arena admission also reserves
+  the first lane's state requirement before allocation. Missing host telemetry
+  and critical pressure refuse startup. Startup mode clears before serving;
+  the existing cache-growth and request-serving policies resume.
+
+For this installed Bonsai PTQ1_0 model, allocated scratch changed as follows.
+Decode's borrowed workspace is charged once in the prefill category.
+
+| Category | Before | After |
+| --- | ---: | ---: |
+| Prefill allocation | 801.19 MiB | 440.50 MiB |
+| Separate decode allocation | 238.45 MiB | 54.53 MiB |
+| Total scratch | 1,039.64 MiB | 495.03 MiB |
+
+After the repair, the complete native CPU suite and architecture checks pass.
+Planner tests cover dense/sparse targets, Apple GPU families 9/10/11 and both
+KV formats. The focused Metal test passes 279 GPU ordering and preservation
+checks with shader validation. The complete Metal suite above passed during
+integration, before this additional memory-layout change.
+
+Live launcher smoke used the user's normal settings:
+
+```sh
+bash /Users/mymac/startllamacpp.sh --direct 14
+```
+
+The server reached Ready at `http://127.0.0.1:1235`. `/health`, `/v1/models`
+and `/status` passed. The warmup memory audit was valid, Metal remained healthy,
+and the test requests succeeded:
+
+| Request | Result |
+| --- | --- |
+| Short arithmetic, 26 prompt tokens | Correct answer; 1.13 s. |
+| Two-chunk prefill, 3,971 prompt tokens | Correct final-record answer; 19.79 s. |
+| Repeat of that prompt | Correct answer; 3,936 cached tokens; 0.66 s. |
+| Streaming decode | Correct count from 1 through 20 and complete SSE terminator. |
+| Client-context prompt, 12,251 tokens | Correct final-record answer; 3,936 cached tokens; 46.80 s. |
+
+The live profile limits native concurrency to one. Required 2,048-row prefill
+and B1 decode warmups passed; optional B2/B3/B4 and composite-state-restore
+warmups were memory-limited. Host pressure reached warning and optional cache
+growth paused. The test establishes startup, single-request inference and
+cache reuse on this host, without establishing swap-free operation or a
+61K context capacity from the theoretical planner ceiling. The test server
+was left running because other clients were using it.

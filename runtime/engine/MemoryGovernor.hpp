@@ -170,6 +170,11 @@ public:
   // service needs the bytes (setServing), inside the warning margin or while
   // it holds for the recovery margin.
   [[nodiscard]] metal::AllocationAdmission allocationAdmission() noexcept;
+  // Required startup memory must fit above the protected host reserve.
+  // The extra warning/recovery margins are for optional growth. Startup
+  // still enforces total reservations, critical pressure and the engine limit.
+  // Covers resource assembly and warmup, then is cleared before Ready.
+  void setStarting(bool starting) noexcept { starting_ = starting; }
   // Marks the reservations that follow as memory a request in service needs,
   // until it is cleared. The host's margins do not refuse those: holding
   // them back would strand the request and the memory it already has, while
@@ -233,6 +238,7 @@ private:
   uint64_t untrackedReserveBytes_ = 0;
   uint64_t reservedBytes_ = 0;
   bool serving_ = false;
+  bool starting_ = false;
   uint64_t deniedReservations_ = 0;
   MemoryPressure systemPressure_ = MemoryPressure::Normal;
   mutable bool hostConstrained_ = false;

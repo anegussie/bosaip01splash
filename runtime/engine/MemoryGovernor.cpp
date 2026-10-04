@@ -182,17 +182,19 @@ MemoryGovernor::tryReserve(uint64_t bytes, metal::AllocationFailure &failure) {
                     requested <= limitBytes_ - observed;
   // Growth leaves the warning margin free above the host's reserve and waits
   // for the recovery margin once the host has run short, unless a request
-  // in service needs it (setServing).
+  // in service needs it (setServing). Essential startup allocations instead
+  // check their complete reservation against the protected host reserve.
   const uint64_t hostRoom = hostHeadroomBytes(hostAvailable, 0);
   const bool hostRoomFits =
       requested <= hostRoom && hostRoom - requested >= kHostWarningMarginBytes;
   // A request that only the host headroom refuses waits for host memory
   // while the idle headroom may still clear the margin. Hold host pressure
   // so the paced reclaim frees toward the recovery margin for it.
-  if (engineFits && !serving_ && !hostRoomFits)
+  if (engineFits && !starting_ && !serving_ && !hostRoomFits)
     hostConstrained_ = true;
   const bool hostRefuses = pressure == MemoryPressure::Critical ||
-                           (!serving_ && (!hostRoomFits || hostHeld()));
+                           (starting_ ? requested > hostRoom
+                                    : !serving_ && (!hostRoomFits || hostHeld()));
   if (hostRefuses || !engineFits) {
     // The host's refusal lifts with its pressure, the limit's only once
     // memory is freed: a refusal they share is the host's.

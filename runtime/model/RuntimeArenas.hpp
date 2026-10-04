@@ -141,22 +141,37 @@ prefillTensorBytes(const RuntimeGeometry &geometry,
 [[nodiscard]] uint64_t plannedPrefillBytes(const RuntimeGeometry &geometry,
                                            const ops::ExecutionPlans &operators);
 
+// Mixer, FFN and draft-context scratch have disjoint lifetimes in the
+// ordered prefill graph. Persistent hidden/capture/rotary buffers and the
+// mixer residual remain separate from this shared workspace.
+enum class PrefillLifetime : uint32_t {
+  Persistent, Gdn, Attention, Ffn, DraftContext, MixerResidual, Count
+};
+[[nodiscard]] PrefillLifetime prefillLifetime(PrefillTensor tensor) noexcept;
+struct PrefillArenaLayout {
+  std::array<uint64_t, prefillTensorCount> sizes{};
+  std::array<uint64_t, prefillTensorCount> offsets{};
+  uint64_t bytes = 0;
+  uint64_t workspaceOffset = 0;
+  uint64_t workspaceBytes = 0;
+};
+[[nodiscard]] PrefillArenaLayout planPrefillArena(const RuntimeGeometry &geometry,
+                                                const ops::ExecutionPlans &operators);
+
 class PrefillArena final {
 public:
   PrefillArena(metal::MetalBackend &backend, const RuntimeGeometry &geometry,
-                const ops::ExecutionPlans &operators)
-      : bytes_(plannedPrefillBytes(geometry, operators)) {
-    const auto sizes = prefillTensorBytes(geometry, operators);
+                const ops::ExecutionPlans &operators) {
+    const auto layout = planPrefillArena(geometry, operators);
+    bytes_ = layout.bytes;
+    const auto &sizes = layout.sizes;
     base_ = backend.allocateBuffer(bytes_, metal::BufferStorage::Shared,
                                    "qwen-shared-prefill");
-    uint64_t cursor = 0;
+    workspace_ = backend.view(base_, layout.workspaceOffset, layout.workspaceBytes);
     for (uint32_t index = 0; index < sizes.size(); ++index) {
       if (sizes[index])
-        tensors_[index] = backend.view(base_, cursor, sizes[index]);
-      cursor += alignUp(sizes[index]);
+        tensors_[index] = backend.view(base_, layout.offsets[index], sizes[index]);
     }
-    if (cursor != bytes_)
-      throw std::logic_error("prefill arena mismatch");
     auto *target = static_cast<float *>(
         get(PrefillTensor::TargetInverseFrequencies).contents());
     auto *draft = static_cast<float *>(
@@ -188,9 +203,14 @@ public:
     return scratch;
   }
   [[nodiscard]] uint64_t bytes() const noexcept { return bytes_; }
+  // Engine retires each batch before starting another. Decode attention and
+  // replay scratch can borrow this workspace; initial prefill sampling uses
+  // separate decode buffers and never reads these borrowed tensors.
+  [[nodiscard]] metal::MetalBuffer workspace() const { return workspace_; }
 
 private:
   metal::MetalBuffer base_;
+  metal::MetalBuffer workspace_;
   std::array<metal::MetalBuffer, prefillTensorCount> tensors_{};
   uint64_t bytes_ = 0;
 };
@@ -289,9 +309,18 @@ constexpr bool isLayerMajorTensor(DecodeTensor tensor) noexcept {
   return isGdnLayerTensor(tensor) || isAttentionLayerTensor(tensor);
 }
 
+constexpr bool isSharedDecodeTensor(DecodeTensor tensor) noexcept {
+  return isLayerMajorTensor(tensor) || tensor == DecodeTensor::AttentionPartials ||
+         tensor == DecodeTensor::AttentionStatistics;
+}
+
 [[nodiscard]] std::array<uint64_t, decodeTensorCount>
 decodeTensorBytes(const RuntimeGeometry &geometry,
                   const ops::ExecutionPlans &operators);
+// Attention partials and replay storage are used only during decode, after
+// prefill's phase scratch has retired. Charge their storage to prefill once.
+[[nodiscard]] uint64_t sharedDecodeWorkspaceBytes(const RuntimeGeometry &geometry,
+                                                const ops::ExecutionPlans &operators);
 // A decode tensor is one packed M32 allocation.  B1/B2/B3/B4 are prefixes
 // containing 8/16/24/32 rows. Lanes are never separated by arena-alignment
 // holes; only whole tensor boundaries are aligned.
@@ -303,28 +332,33 @@ decodeTensorBytes(const RuntimeGeometry &geometry,
 class DecodeArena final {
 public:
   DecodeArena(metal::MetalBackend &backend, RuntimeGeometry geometry,
-               const ops::ExecutionPlans &operators)
+               const ops::ExecutionPlans &operators, const PrefillArena &prefill)
       : backend_(backend), geometry_(std::move(geometry)) {
     const uint64_t baseBytes = decodeArenaBaseBytes(geometry_, operators);
     auto sizes = decodeTensorBytes(geometry_, operators);
     base_ = backend_.allocateBuffer(baseBytes, metal::BufferStorage::Shared,
                                     "qwen-shared-decode");
+    sharedBase_ = prefill.workspace();
+    if (sharedBase_.sizeBytes() < sharedDecodeWorkspaceBytes(geometry_, operators))
+      throw std::logic_error("shared decode workspace is too small");
     uint64_t cursor = 0;
+    uint64_t sharedCursor = 0;
     for (uint32_t tensor = 0; tensor < sizes.size(); ++tensor) {
       uint64_t stride = sizes[tensor];
-      offsets_[tensor] = cursor;
       sizes_[tensor] = sizes[tensor];
       const DecodeTensor kind = static_cast<DecodeTensor>(tensor);
+      uint64_t &offset = isSharedDecodeTensor(kind) ? sharedCursor : cursor;
+      offsets_[tensor] = offset;
       if (sizes[tensor] && !isLayerMajorTensor(kind)) {
         for (uint32_t lane = 0; lane < kLaneCount; ++lane) {
           tensors_[lane][tensor] = backend_.view(
-              base_, cursor + uint64_t{lane} * stride, sizes[tensor]);
+              baseFor(kind), offset + uint64_t{lane} * stride, sizes[tensor]);
         }
       }
-      cursor +=
+      offset +=
           alignUp(checkedMultiply(stride, kLaneCount, "decode tensor"));
     }
-    if (cursor != baseBytes)
+    if (cursor != baseBytes || sharedCursor != sharedDecodeWorkspaceBytes(geometry_, operators))
       throw std::logic_error("decode arena mismatch");
     // Sampled rows' draws return their arrival counts to zero; they start
     // there.
@@ -378,7 +412,7 @@ public:
     // both, so no dummy allocation is needed for the inactive operator.
     if (!sizes_[index])
       return {};
-    return backend_.view(base_, offsets_[index],
+    return backend_.view(baseFor(tensor), offsets_[index],
                          uint64_t{lanes} * sizes_[index]);
   }
 
@@ -422,7 +456,7 @@ public:
     if (!isGdnLayerTensor(base))
       throw std::invalid_argument("tensor is not GDN replay scratch");
     const uint32_t index = static_cast<uint32_t>(base);
-    return backend_.view(base_, offsets_[index], sizes_[index] * kLaneCount);
+    return backend_.view(baseFor(base), offsets_[index], sizes_[index] * kLaneCount);
   }
 
   [[nodiscard]] metal::MetalBuffer attentionBatchSlice(DecodeTensor base,
@@ -439,6 +473,9 @@ public:
   [[nodiscard]] uint64_t bytes() const noexcept { return bytes_; }
 
 private:
+  [[nodiscard]] metal::MetalBuffer baseFor(DecodeTensor tensor) const {
+    return isSharedDecodeTensor(tensor) ? sharedBase_ : base_;
+  }
   // A layer-major tensor holds one stride per lane for each of its `layers`
   // layers, layer by layer; the planner sized it as layers x stride, so the
   // stride is recovered here, not supplied.
@@ -446,13 +483,14 @@ private:
                                                    uint32_t layer, uint32_t lanes) const {
     const uint32_t index = static_cast<uint32_t>(base);
     const uint64_t stride = sizes_[index] / layers;
-    return backend_.view(base_, offsets_[index] + uint64_t{layer} * kLaneCount * stride,
+    return backend_.view(baseFor(base), offsets_[index] + uint64_t{layer} * kLaneCount * stride,
                          uint64_t{lanes} * stride);
   }
 
   metal::MetalBackend &backend_;
   RuntimeGeometry geometry_;
   metal::MetalBuffer base_;
+  metal::MetalBuffer sharedBase_;
   std::array<std::array<metal::MetalBuffer, decodeTensorCount>, kLaneCount> tensors_{};
   std::array<uint64_t, decodeTensorCount> offsets_{};
   std::array<uint64_t, decodeTensorCount> sizes_{};

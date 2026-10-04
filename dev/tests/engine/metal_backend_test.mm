@@ -2,6 +2,9 @@
 #include "../../../runtime/metal/MetalBackend.hpp"
 #include "ScopedTestConfig.hpp"
 #include "TestBuffers.hpp"
+#include "TestRuntimeGeometry.hpp"
+#include "model/RuntimeArenas.hpp"
+#include "metal/CommandGraph.hpp"
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -10,6 +13,7 @@
 
 #include <unistd.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -40,6 +44,76 @@ using splash::metal::MetalBackendError;
 using splash::test::ScopedTestConfig;
 using splash::test::sharedBuffer;
 using splash::metal::MetalBuffer;
+
+void prefillScratchLifetimes(const std::string &metallibPath) {
+    using namespace splash;
+    using namespace splash::model;
+    MetalBackend backend(metallibPath);
+    ops::ExecutionPlans plans(backend.capabilities());
+    const auto package = test::runtimeGeometryPackage<Qwen3_8Weights>();
+    const auto geometry = RuntimeGeometry::from(package, kv::Format::Int8);
+    PrefillArena arena(backend, geometry, plans);
+    DecodeArena decode(backend, geometry, plans, arena);
+    metal::CommandGraph graph;
+    constexpr uint32_t words = 8;
+    struct Check { MetalBuffer output; uint32_t expected; };
+    std::vector<Check> checks;
+    const auto writeBuffer = [&](MetalBuffer buffer, uint32_t value) {
+        auto input = sharedBuffer(backend, words * sizeof(uint32_t));
+        std::fill_n(static_cast<uint32_t *>(input.contents()), words, value);
+        graph.add("test_copy_u32", {input, buffer}, words, {1, 1, 1}, {words, 1, 1});
+    };
+    const auto checkBuffer = [&](MetalBuffer buffer, uint32_t value) {
+        auto output = sharedBuffer(backend, words * sizeof(uint32_t));
+        graph.add("test_copy_u32", {buffer, output}, words, {1, 1, 1}, {words, 1, 1});
+        checks.push_back({output, value});
+    };
+    const auto write = [&](PrefillTensor tensor, uint32_t value) { writeBuffer(arena.get(tensor), value); };
+    const auto check = [&](PrefillTensor tensor, uint32_t value) { checkBuffer(arena.get(tensor), value); };
+    std::vector<PrefillTensor> persistent;
+    for (uint32_t i = 0; i < prefillTensorCount; ++i) {
+        const auto tensor = PrefillTensor(i);
+        if (arena.get(tensor).sizeBytes() >= words * sizeof(uint32_t) &&
+            (prefillLifetime(tensor) == PrefillLifetime::Persistent || tensor == PrefillTensor::GdnOutput)) {
+            persistent.push_back(tensor);
+            write(tensor, 1000 + i);
+        }
+    }
+    for (uint32_t round = 0; round < 8; ++round) {
+        for (auto phase : {PrefillLifetime::Gdn, PrefillLifetime::Ffn, PrefillLifetime::Attention,
+                           PrefillLifetime::Ffn, PrefillLifetime::DraftContext}) {
+            for (uint32_t i = 0; i < prefillTensorCount; ++i)
+                if (prefillLifetime(PrefillTensor(i)) == phase && arena.get(PrefillTensor(i)).sizeBytes() >= words * sizeof(uint32_t))
+                    write(PrefillTensor(i), 2000 + round * 100 + i);
+            for (uint32_t i = 0; i < prefillTensorCount; ++i)
+                if (prefillLifetime(PrefillTensor(i)) == phase && arena.get(PrefillTensor(i)).sizeBytes() >= words * sizeof(uint32_t))
+                    check(PrefillTensor(i), 2000 + round * 100 + i);
+        }
+        // A decode batch follows the prefill batch, and its replay buffers
+        // remain separate from each other while borrowing the same workspace.
+        std::vector<MetalBuffer> borrowed;
+        for (uint32_t i = 0; i < decodeTensorCount; ++i) {
+            const auto tensor = DecodeTensor(i);
+            if (!isSharedDecodeTensor(tensor)) continue;
+            const auto buffer = isGdnLayerTensor(tensor) ? decode.gdnStorage(tensor) :
+                isAttentionLayerTensor(tensor) ? decode.attentionBatchSlice(tensor, 0, kLaneCount) :
+                decode.packed(tensor, kLaneCount);
+            borrowed.push_back(buffer);
+            writeBuffer(buffer, 5000 + round * 100 + i);
+        }
+        size_t index = 0;
+        for (uint32_t i = 0; i < decodeTensorCount; ++i)
+            if (isSharedDecodeTensor(DecodeTensor(i))) checkBuffer(borrowed.at(index++), 5000 + round * 100 + i);
+    }
+    for (auto tensor : persistent) check(tensor, 1000 + uint32_t(tensor));
+    (void)backend.submitCommand(graph.dispatches());
+    for (const auto &item : checks) {
+        const auto *output = static_cast<const uint32_t *>(item.output.contents());
+        if (!std::all_of(output, output + words, [&](uint32_t value) { return value == item.expected; }))
+            throw std::runtime_error("prefill scratch reuse corrupted a live tensor or reordered GPU phases");
+    }
+    std::cout << "PASS prefill scratch lifetimes: " << checks.size() << " GPU checks, arena_bytes=" << arena.bytes() << '\n';
+}
 
 [[noreturn]] void fail(const std::string &message) {
     std::cerr << "FAIL: " << message << '\n';
@@ -1441,11 +1515,13 @@ void run(const std::string &metallibPath) {
 
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
-        if (argc != 2) {
-            std::cerr << "usage: metal_backend_test <test.metallib>\n";
+        if (argc < 2 || argc > 3 || (argc == 3 && std::string(argv[2]) != "--prefill")) {
+            std::cerr << "usage: metal_backend_test <test.metallib> [--prefill]\n";
             return 2;
         }
         try {
+            prefillScratchLifetimes(argv[1]);
+            if (argc == 3) return 0;
             idleSleepAssertionLifetime(argv[1]);
             completionDoesNotWaitForMemoryTelemetry(argv[1]);
             terminalCommandRecovers(argv[1], false);

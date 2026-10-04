@@ -133,13 +133,85 @@ prefillTensorBytes(const RuntimeGeometry &geometry,
   return result;
 }
 
+PrefillLifetime prefillLifetime(PrefillTensor tensor) noexcept {
+  switch (tensor) {
+  case PrefillTensor::GdnPacked:
+  case PrefillTensor::GdnQueries:
+  case PrefillTensor::GdnKeys:
+  case PrefillTensor::GdnValues:
+  case PrefillTensor::GdnDecay:
+  case PrefillTensor::GdnBeta:
+  case PrefillTensor::Recurrent:
+  case PrefillTensor::GdnHidden:
+    return PrefillLifetime::Gdn;
+  case PrefillTensor::FullPacked:
+  case PrefillTensor::FullQueries:
+  case PrefillTensor::FullAttention:
+  case PrefillTensor::AttentionPartials:
+  case PrefillTensor::AttentionStatistics:
+  case PrefillTensor::AttentionHidden:
+  case PrefillTensor::ChunkKeys:
+  case PrefillTensor::ChunkValues:
+    return PrefillLifetime::Attention;
+  case PrefillTensor::GateIntermediate:
+  case PrefillTensor::Intermediate:
+  case PrefillTensor::DownProjectionSums:
+    return PrefillLifetime::Ffn;
+  case PrefillTensor::ContextProjected:
+  case PrefillTensor::ContextHidden:
+  case PrefillTensor::ContextKv:
+    return PrefillLifetime::DraftContext;
+  case PrefillTensor::GdnOutput:
+  case PrefillTensor::AttentionOutput:
+    return PrefillLifetime::MixerResidual;
+  default:
+    if (tensor >= PrefillTensor::MoeScratch && tensor <= PrefillTensor::MoeScratchLast)
+      return PrefillLifetime::Ffn;
+    return PrefillLifetime::Persistent;
+  }
+}
+
+PrefillArenaLayout planPrefillArena(const RuntimeGeometry &geometry,
+                                  const ops::ExecutionPlans &operators) {
+  PrefillArenaLayout layout;
+  layout.sizes = prefillTensorBytes(geometry, operators);
+  std::array<uint64_t, uint32_t(PrefillLifetime::Count)> spans{};
+  for (uint32_t i = 0; i < prefillTensorCount; ++i) {
+    const auto lifetime = prefillLifetime(PrefillTensor(i));
+    auto &span = spans[uint32_t(lifetime)];
+    if (lifetime == PrefillLifetime::MixerResidual) {
+      // Only one mixer runs in a layer; its output remains live through FFN.
+      layout.offsets[i] = 0;
+      span = std::max(span, alignUp(layout.sizes[i]));
+    } else {
+      layout.offsets[i] = span;
+      span = checkedAdd(span, alignUp(layout.sizes[i]), "prefill lifetime");
+    }
+  }
+  const uint64_t persistent = spans[uint32_t(PrefillLifetime::Persistent)];
+  const uint64_t residual = spans[uint32_t(PrefillLifetime::MixerResidual)];
+  const uint64_t scratchBase = checkedAdd(persistent, residual, "prefill workspace offset");
+  uint64_t scratch = 0;
+  for (const auto lifetime : {PrefillLifetime::Gdn, PrefillLifetime::Attention,
+                              PrefillLifetime::Ffn, PrefillLifetime::DraftContext})
+    scratch = std::max(scratch, spans[uint32_t(lifetime)]);
+  scratch = std::max(scratch, sharedDecodeWorkspaceBytes(geometry, operators));
+  for (uint32_t i = 0; i < prefillTensorCount; ++i) {
+    const auto lifetime = prefillLifetime(PrefillTensor(i));
+    if (lifetime != PrefillLifetime::Persistent)
+      layout.offsets[i] = checkedAdd(layout.offsets[i],
+          lifetime == PrefillLifetime::MixerResidual ? persistent : scratchBase,
+          "prefill tensor offset");
+  }
+  layout.bytes = checkedAdd(scratchBase, scratch, "prefill arena");
+  layout.workspaceOffset = scratchBase;
+  layout.workspaceBytes = scratch;
+  return layout;
+}
+
 uint64_t plannedPrefillBytes(const RuntimeGeometry &geometry,
                             const ops::ExecutionPlans &operators) {
-  uint64_t bytes = 0;
-  for (uint64_t value : prefillTensorBytes(geometry, operators)) {
-    bytes = checkedAdd(bytes, alignUp(value), "prefill arena");
-  }
-  return bytes;
+  return planPrefillArena(geometry, operators).bytes;
 }
 
 static uint64_t gdnPackedStride(const RuntimeGeometry &geometry) noexcept {
@@ -313,11 +385,25 @@ decodeTensorBytes(const RuntimeGeometry &geometry,
 uint64_t decodeArenaBaseBytes(const RuntimeGeometry &geometry,
                              const ops::ExecutionPlans &operators) {
   uint64_t bytes = 0;
-  for (uint64_t value : decodeTensorBytes(geometry, operators)) {
+  const auto sizes = decodeTensorBytes(geometry, operators);
+  for (uint32_t i = 0; i < decodeTensorCount; ++i) {
+    if (isSharedDecodeTensor(DecodeTensor(i))) continue;
+    const uint64_t value = sizes[i];
     bytes = checkedAdd(
         bytes, alignUp(checkedMultiply(value, kLaneCount, "decode tensor")),
         "decode arena");
   }
+  return bytes;
+}
+
+uint64_t sharedDecodeWorkspaceBytes(const RuntimeGeometry &geometry,
+                                  const ops::ExecutionPlans &operators) {
+  uint64_t bytes = 0;
+  const auto sizes = decodeTensorBytes(geometry, operators);
+  for (uint32_t i = 0; i < decodeTensorCount; ++i)
+    if (isSharedDecodeTensor(DecodeTensor(i)))
+      bytes = checkedAdd(bytes, alignUp(checkedMultiply(sizes[i], kLaneCount, "shared decode tensor")),
+                         "shared decode workspace");
   return bytes;
 }
 

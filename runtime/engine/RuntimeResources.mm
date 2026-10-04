@@ -447,6 +447,7 @@ RuntimeResources::create(const RuntimeResourcesConfig &config) {
     auto memoryGovernor = std::make_unique<MemoryGovernor>(
         *backend, budget.hardBudgetBytes, hostReserveBytes, hostAvailableMemory,
         budget.pipelineReserveBytes + budget.runtimeOverheadReserveBytes);
+    memoryGovernor->setStarting(true);
     if (config.memoryPressure)
       memoryGovernor->setPressure(config.memoryPressure());
     logStartup("Kernel policy for GPU family ", device.appleGpuFamily,

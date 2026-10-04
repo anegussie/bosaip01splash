@@ -302,14 +302,17 @@ std::unique_ptr<RuntimeBootstrap> RuntimeBootstrap::start(
 
   std::unique_ptr<model::RuntimeModel> modelRuntime;
   try {
-    // The plan's fixed bytes already proved the arenas' sum fits.
+    // Required arenas and one lane must fit above the live macOS reserve.
+    // The KV runway and disk staging are already allocated by resources.
+    // Reserve the lane too, so creating the arenas cannot leave warmup
+    // without its minimum state; only the arenas are allocated here.
     const auto &budget = resources->memoryPlan().breakdown();
     // Admission reports a refusal by its failure alone. One raised while the
     // runtime allocates keeps its own message, which says what to do.
     std::string refusal;
     const metal::AllocationResult arenas =
         resources->memoryGovernor().allocationAdmission()(
-            budget.sharedPrefillBytes + budget.sharedDecodeBytes, [&] {
+            budget.sharedPrefillBytes + budget.sharedDecodeBytes + budget.laneStateBytes, [&] {
               try {
                 modelRuntime = model::createRuntime(resources->modelContext());
               } catch (const metal::MetalAllocationError &error) {
@@ -318,11 +321,21 @@ std::unique_ptr<RuntimeBootstrap> RuntimeBootstrap::start(
               }
             });
     if (!arenas) {
-      throw metal::MetalAllocationError(
-          refusal.empty() ? std::string("unable to admit model arenas: ") +
-                                metal::allocationFailureName(arenas.failure)
-                          : refusal,
-          arenas.failure);
+      if (refusal.empty()) {
+        const auto host = resources->memoryGovernor().snapshot();
+        std::ostringstream detail;
+        detail << "unable to admit model arenas: " << metal::allocationFailureName(arenas.failure)
+               << "; required arenas and first-lane state "
+               << (budget.sharedPrefillBytes + budget.sharedDecodeBytes + budget.laneStateBytes) / kMiB
+               << " MiB, live reclaimable host memory " << host.hostAvailableBytes / kMiB
+               << " MiB, protected for macOS " << host.hostReserveBytes / kMiB
+               << " MiB, system pressure " << memoryPressureName(host.systemPressure)
+               << (arenas.failure == metal::AllocationFailure::HostPressure
+                       ? "; close memory-heavy applications and retry"
+                       : "; check the engine memory limit and allocation footprint");
+        refusal = detail.str();
+      }
+      throw metal::MetalAllocationError(refusal, arenas.failure);
     }
   } catch (const metal::MetalAllocationError &error) {
     base.resourceFailure = resourceAllocationFailure(error.failure());
@@ -377,6 +390,7 @@ std::unique_ptr<RuntimeBootstrap> RuntimeBootstrap::start(
   // The per-operation guard RuntimeResources installed is only for startup:
   // once Ready, the engine meets memory pressure between its ticks.
   resources->backend().setOperationGuard({});
+  resources->memoryGovernor().setStarting(false);
   resources->beginServing();
   return std::unique_ptr<RuntimeBootstrap>(
       new RuntimeBootstrap(std::move(resources), std::move(modelRuntime),

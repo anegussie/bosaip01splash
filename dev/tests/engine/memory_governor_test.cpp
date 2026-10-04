@@ -573,6 +573,47 @@ void testRequestInServiceGrowsThroughHostPressure() {
           "the mark of a request in service outlived it");
 }
 
+void testStartupAllocationsProtectTheHostReserve() {
+  test::metalStatistics() = {};
+  metal::MetalBackend backend("unused");
+  std::optional<uint64_t> available = 2 * kGiB + kGiB / 2;
+  MemoryGovernor governor(backend, 4 * kGiB, 2 * kGiB, [&] { return available; }, 0);
+  const auto startup = governor.allocationAdmission();
+  require(!admit(governor, 200 * kMiB), "idle cache growth consumed its warning margin");
+  governor.setStarting(true);
+  bool ran = false;
+  const auto required = startup(200 * kMiB, [&] {
+    ran = true;
+    require(governor.snapshot().hostHeadroomBytes == kGiB / 2 - 200 * kMiB,
+            "startup did not reserve its full request");
+    require(!startup(400 * kMiB, [] {}), "nested startup allocations consumed the host reserve");
+  });
+  require(required && ran, "essential startup memory was refused by idle-cache hysteresis");
+  governor.setStarting(false);
+  require(!admit(governor, 200 * kMiB), "startup admission relaxed later cache growth");
+  governor.setStarting(true);
+  require(!startup(kGiB / 2 + 1, [] {}), "startup consumed protected host memory");
+  governor.setServing(true);
+  require(!startup(kGiB / 2 + 1, [] {}), "a serving mark bypassed the startup host reserve");
+  governor.setServing(false);
+  governor.setPressure(MemoryPressure::Critical);
+  require(!startup(1, [] {}), "startup ignored critical pressure");
+  governor.setPressure(MemoryPressure::Normal);
+  available = std::nullopt;
+  require(!startup(1, [] {}), "startup ignored unavailable host telemetry");
+  available = 10 * kGiB;
+  const auto oversized = startup(4 * kGiB + 1, [] {});
+  require(!oversized && oversized.failure == metal::AllocationFailure::EngineBudget,
+          "startup exceeded the engine budget");
+  try {
+    startup(200 * kMiB, [] { throw std::runtime_error("allocation failed"); });
+    throw std::runtime_error("startup swallowed allocator failure");
+  } catch (const std::runtime_error &error) {
+    require(std::string(error.what()) == "allocation failed", "startup changed allocator failure");
+  }
+  require(static_cast<bool>(startup(4 * kGiB, [] {})), "failed startup leaked its reservation");
+}
+
 } // namespace
 
 int main() {
@@ -588,6 +629,7 @@ int main() {
     testPolicyContinuesHeldBackTarget();
     testExhaustedReclaimWaivesTheHold();
     testRequestInServiceGrowsThroughHostPressure();
+    testStartupAllocationsProtectTheHostReserve();
     std::cout << "memory governor tests passed\n";
     return EXIT_SUCCESS;
   } catch (const std::exception &error) {
