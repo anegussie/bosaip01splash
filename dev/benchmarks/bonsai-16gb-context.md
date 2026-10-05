@@ -105,3 +105,37 @@ For the final near-full-window workload, use `--records 1024 --output-tokens
 Validation: full native CPU suite, 262 server/launcher/options tests, INT8 and
 BF16 Metal attention reference checks with shader validation (both supported
 head geometries and B1-B4), runtime resource checks, and build identity check.
+
+## Launcher follow-up: reuse prefixes after restart
+
+Option 14 now keeps its SSD prefix cache across clean restarts by default,
+under `~/Library/Caches/Splash/bonsai-option14`. The 8 GiB quota, 24K server
+context, 512-token chunk, INT8 KV and single active request remain the defaults.
+Set `SPLASH_BONSAI_PERSISTENT_CACHE=0` for a temporary cache, or
+`SPLASH_BONSAI_MAX_CACHE_DISK=0` to disable the disk tier.
+
+Client context defaults to `auto`, resolving to server context minus 2,048
+tokens (22K at the default). For example, setting only
+`SPLASH_BONSAI_MAX_CONTEXT=16K` selects a 14K client window. Smaller windows
+also reduce the compaction history reserve. Explicit client overrides remain
+supported within the tested 22K cap. Startup retries are bounded: two retries
+after the first attempt, with 30 seconds between attempts, only for startup
+memory admission failures. Numeric overrides reject overflow before launching
+or changing client configuration. INT/TERM/HUP stop the owned server and
+monitors and drain shutdown logs so cache persistence can finish.
+
+On the same Mac, a fresh persistent-cache directory and a 4,892-token prompt
+with 96 output tokens took **27.22s** cold. After a clean server restart, the
+identical request reused **4,864 tokens** and took **3.16s**. Request prefill
+fell from **24.62s to 0.48s**; decode remained **35.9 tok/s**. These times
+exclude server startup. Both answers were correct, both native runtimes had
+zero failed requests and healthy Metal, and both temporary servers stopped.
+This single pair verifies restart reuse, not a general compute-speed gain.
+Measurements are in [bonsai-option14-persistence.json](bonsai-option14-persistence.json).
+
+Seven focused launcher tests passed, covering default flags/client limits,
+smaller contexts, cache opt-out, invalid and overflowing settings, bounded
+memory retries, runtime errors without retries, and signal/shutdown logging.
+Run these with `python3 dev/benchmarks/test_bonsai_launcher.py` on macOS;
+`OPTION14_LAUNCHER` can select another launcher path. The tests use a mock
+server and temporary client settings.
