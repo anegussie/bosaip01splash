@@ -84,7 +84,10 @@ inline void gguf_staged_steps(device bfloat *input, device uchar *w0, device uch
       const uint item = thread_index + it * Threads; if (item >= Items) break;
       const uint col = item % Cols, gi = item / Cols, g = step * GPS + gi, unit = g / F::MetaGroups; const ushort j = g % F::MetaGroups;
       if (unit != hdr_unit[it]) { hdr[it] = F::loadMeta(tmeta + (ulong(unit) * QUANT_TILE_ROWS + col) * F::MetaBytes); hdr_unit[it] = unit; }
-      dequant32<F>(packed[0][it], hdr[it], j, tl, buf + col * KS + gi * 32);
+      if constexpr (F::Id == GGUF_FMT_PTQ10 && Threads == 32)
+        dequant32<FmtPTQ10Lookup>(packed[0][it], hdr[it], j, tl, buf + col * KS + gi * 32);
+      else
+        dequant32<F>(packed[0][it], hdr[it], j, tl, buf + col * KS + gi * 32);
     }
     if constexpr (Threads == 32) simdgroup_barrier(mem_flags::mem_threadgroup);
     else threadgroup_barrier(mem_flags::mem_threadgroup);

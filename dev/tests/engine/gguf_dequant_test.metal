@@ -21,4 +21,5 @@ kernel void gguf_test_dequant_##name(device uchar *w0 [[buffer(0)]], \
 }
 
 QUANT_FORMATS(DEQUANT_TEST)
+DEQUANT_TEST(FmtPTQ10Lookup, ptq10_lookup)
 #undef DEQUANT_TEST

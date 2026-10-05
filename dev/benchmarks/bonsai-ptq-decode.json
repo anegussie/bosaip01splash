@@ -1,0 +1,85 @@
+{
+  "measured_date": "2026-10-05",
+  "device": {
+    "device_name": "Apple M5",
+    "macos_version": "26.5.2",
+    "apple_gpu_family": 10,
+    "gpu_core_count": 8,
+    "physical_memory_bytes": 17179869184,
+    "recommended_max_working_set_bytes": 12713115648,
+    "max_buffer_length_bytes": 9534832640,
+    "max_threadgroup_memory_bytes": 32768,
+    "max_threadgroup_width": 1024,
+    "has_unified_memory": true
+  },
+  "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+  "settings": {
+    "server_context": 24576,
+    "prefill_chunk": 512,
+    "kv_format": "int8",
+    "active_requests": 1,
+    "temperature": 0.7,
+    "top_p": 0.8,
+    "top_k": 20,
+    "seed": 42
+  },
+  "review_workload": {
+    "prompt_tokens": 3715,
+    "output_tokens": 384,
+    "samples_per_build": 2
+  },
+  "baseline": {
+    "build_id": "src-c7953fb2d3a3a5096c53fa6d3f9861537d70bd5fb1ea2e9e1f4059e6aac36227",
+    "decode_tokens": 762,
+    "decode_ms": 53258.581,
+    "decode_tps": 14.307553556486983,
+    "drafted_tokens": 1680,
+    "accepted_tokens": 528,
+    "allocated_bytes": 8730373184,
+    "peak_bytes": 8791900160
+  },
+  "candidate": {
+    "build_id": "src-20656440f49058922d7b4c8541c370702efcf868aacb095a51b8cc3061b08cb2",
+    "decode_tokens": 762,
+    "decode_ms": 45588.306,
+    "decode_tps": 16.714812785541977,
+    "drafted_tokens": 1680,
+    "accepted_tokens": 528,
+    "allocated_bytes": 8730373184,
+    "peak_bytes": 8791900160
+  },
+  "function_tasks": [
+    {
+      "task": "merge_intervals",
+      "before_tps": 33.85606992125818,
+      "after_tps": 43.35309832802149,
+      "speedup_percent": 28.051183816820192,
+      "outputs_identical": true,
+      "all_correct": true
+    },
+    {
+      "task": "stable_unique",
+      "before_tps": 23.39191652953093,
+      "after_tps": 30.903559231864772,
+      "speedup_percent": 32.11213024315826,
+      "outputs_identical": true,
+      "all_correct": true
+    },
+    {
+      "task": "chunked",
+      "before_tps": 24.652734077598335,
+      "after_tps": 32.191889088412594,
+      "speedup_percent": 30.581415380069355,
+      "outputs_identical": true,
+      "all_correct": true
+    }
+  ],
+  "review_speedup_percent": 16.825093259661795,
+  "review_outputs_identical": true,
+  "limitations": [
+    "Small synthetic workloads; two samples per build and mode, no randomized thermal control.",
+    "Initial function baseline had client queue overlap; compare response-specific timings.",
+    "Whole-model review comparisons use decode time; cold versus cached total request time is not a speed comparison.",
+    "Reported Metal buffer allocation is not process RSS or system swap."
+  ]
+}

@@ -211,7 +211,10 @@ class Prompt:
     response_schema: dict | bool | None = None
     response_validator: object = None
     preserve_thinking: bool | None = None
-    # Template variables from the request, which outrank Splash's own.
+    # The request's own chat_template_kwargs enable_thinking, which outranks
+    # its reasoning effort (template_options); None where it sets none.
+    enable_thinking: bool | None = None
+    # Its other template variables, which outrank Splash's own.
     template_kwargs: dict = field(default_factory=dict)
 
 
@@ -787,6 +790,12 @@ class Frontend:
             raise APIError(400, "chat_template_kwargs must be an object")
         elif reserved := sorted(RESERVED_TEMPLATE_KWARGS & template_kwargs.keys()):
             raise APIError(400, f"chat_template_kwargs cannot set {reserved[0]}")
+        template_kwargs = dict(template_kwargs)
+        enable_thinking = template_kwargs.pop("enable_thinking", None)
+        if enable_thinking is not None and not isinstance(enable_thinking, bool):
+            raise APIError(
+                400, "chat_template_kwargs enable_thinking must be a boolean"
+            )
         messages = template_messages(
             normalize_messages(
                 body.get("messages"), vision=self.vision, deadline=deadline
@@ -809,6 +818,7 @@ class Frontend:
             response_schema,
             response_validator,
             preserve_thinking,
+            enable_thinking,
             template_kwargs,
         )
 
@@ -835,6 +845,7 @@ class Frontend:
                 preserve_thinking=prompt.preserve_thinking,
                 tools=prompt.tools,
                 add_generation_prompt=add_generation_prompt,
+                enable_thinking=prompt.enable_thinking,
             ),
             **prompt.template_kwargs,
         }
@@ -938,12 +949,18 @@ class Frontend:
             raise APIError(
                 400, "stop cannot be combined with tools or structured output"
             )
-        # Tools and structured output generate under a grammar, which decides
-        # where the output ends.
-        constrained = bool(tools) or response_schema is not None
+        # Constrained tool calls and structured output generate under a
+        # grammar, which decides where the output ends; tools beside a
+        # response schema share one.
+        tool_constrained = tool_policy is not None and (
+            tool_policy.constrained or response_schema is not None
+        )
+        constrained = tool_constrained or response_schema is not None
         if options.ignore_eos and constrained:
             raise APIError(
-                400, "ignore_eos cannot be combined with tools or structured output"
+                400,
+                "ignore_eos cannot be combined with constrained tool calls, "
+                "tool_choice none or structured output",
             )
         rendered = self._render_prompt(prompt, deadline)
         prompt_tokens, prepared_images = rendered.tokens, rendered.images
@@ -952,13 +969,13 @@ class Frontend:
         remaining_request_time(deadline)
         if constrained:
             with self.latencies.measure("grammar"):
-                if tools:
+                if tool_constrained:
                     constraint = self.constraint_factory.create(
                         tool_grammar(tool_policy, thinking, response_schema),
                         timeout=remaining_request_time(deadline),
                         prefixes=lambda: self._call_openings(tool_policy, thinking),
                     )
-                elif response_schema is not None:
+                else:
                     constraint = self.constraint_factory.create(
                         json_grammar(response_schema, thinking),
                         timeout=remaining_request_time(deadline),
@@ -1007,9 +1024,9 @@ class Frontend:
         )
 
     def _call_openings(self, policy, thinking):
-        """The tokens that begin each callable tool's call. Its parameter
-        names are all possible next, so a tool with more of them than the
-        parser admits fails there."""
+        """The tokens that begin each strict tool's call. Its parameter names
+        may come next, so a tool with more of them than the parser admits
+        fails there."""
         reasoning = [THINK_END_TOKEN_ID] if thinking else []
         return [
             (
@@ -1020,6 +1037,7 @@ class Frontend:
                 f"tool {name} has too many parameters to constrain",
             )
             for name in policy.schemas
+            if name in policy.strict
         ]
 
     def _generation_options(self, body):

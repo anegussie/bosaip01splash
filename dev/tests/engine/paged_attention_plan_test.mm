@@ -519,6 +519,35 @@ std::vector<uint16_t> run(metal::MetalBackend &backend, Case &data, bool testBou
              backend.view(statistics, 0, statistics.sizeBytes() - 4));
     });
     require(shortGraph.empty(), "undersized statistic scratch partially encoded a graph");
+    // Query/output staging reaches only the active rows of the last KV head.
+    // Trim at that boundary rather than at the end of its padded allocation.
+    const uint64_t activeRows = prefill ? (data.rows + 7) / 8 * 8 : kv::kVerifyRows;
+    const uint64_t stagingBytes =
+        ((uint64_t{data.lanes} * data.layout.kvHeads - 1) * data.stride + activeRows) *
+        (data.queryHeads / data.layout.kvHeads) * data.layout.headDimension * 2;
+    auto checkRows = [&](metal::MetalBuffer query, metal::MetalBuffer result) {
+      if constexpr (prefill) {
+        ops::PagedAttention::addPrefill(shortGraph, data.layer, query, result,
+                                       partials, statistics, data.tables[0], data.stores[0], plan);
+      } else {
+        ops::PagedVerifyBuffers buffers{data.keys, data.values, query,
+                                       partials, statistics, result, data.tables};
+        ops::PagedAttention::addVerify(shortGraph, data.layer, buffers,
+                                      std::span(data.stores).first(plan.lanes), plan);
+      }
+    };
+    rejects([&] { checkRows(backend.view(data.queries, 0, stagingBytes - 1), output); });
+    require(shortGraph.empty(), "undersized query partially encoded a graph");
+    rejects([&] { checkRows(data.queries, backend.view(output, 0, stagingBytes - 1)); });
+    require(shortGraph.empty(), "undersized output partially encoded a graph");
+    const auto table = data.tables[data.lanes - 1];
+    const auto &chunk = data.stores[data.lanes - 1];
+    const uint64_t tableBytes =
+        uint64_t{(chunk.committed_tokens + chunk.chunk_tokens + 31) / 32} * sizeof(SplashKvPage);
+    data.tables[data.lanes - 1] = backend.view(table, 0, tableBytes - 1);
+    rejects([&] { checkRows(data.queries, output); });
+    require(shortGraph.empty(), "undersized page table partially encoded a graph");
+    data.tables[data.lanes - 1] = table;
   }
   metal::CommandGraph graph;
   if constexpr (prefill)

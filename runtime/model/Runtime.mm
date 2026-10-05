@@ -1,4 +1,5 @@
 #include "model/Runtime.hpp"
+#include "AwakeClock.hpp"
 #include "model/QwenState.hpp"
 #include "model/QwenTarget.hpp"
 #include "model/RuntimeArenas.hpp"
@@ -1748,7 +1749,7 @@ struct Runtime::Impl {
         const CommandTiming forward = command_.wait();
         addTiming(forward);
         targetForwardGpuSeconds_ += forward.gpuSeconds;
-        maskWaitStarted_ = std::chrono::steady_clock::now();
+        maskWaitStarted_ = AwakeClock::now();
         stage_ = Stage::WaitingMask;
       }
 
@@ -1760,8 +1761,7 @@ struct Runtime::Impl {
         }
         if (masksReady) {
           maskWaitSeconds_ +=
-              std::chrono::duration<double>(std::chrono::steady_clock::now() -
-                                            *maskWaitStarted_)
+              std::chrono::duration<double>(AwakeClock::now() - *maskWaitStarted_)
                   .count();
           maskWaitStarted_.reset();
           std::array<Request *, kLaneCount> entries{};
@@ -1865,7 +1865,7 @@ struct Runtime::Impl {
     std::array<bool, kLaneCount> abandoned_{};
     double targetForwardGpuSeconds_ = 0.0;
     double maskWaitSeconds_ = 0.0;
-    std::optional<std::chrono::steady_clock::time_point> maskWaitStarted_;
+    std::optional<AwakeClock::time_point> maskWaitStarted_;
     std::function<void()> wake_;
   };
 };
@@ -2428,7 +2428,6 @@ void Runtime::prepareWarmupDecode(uint64_t requestId, uint32_t anchor) {
 }
 
 WarmupStepResult Runtime::warmupPrefill(uint32_t rows) {
-  using Clock = std::chrono::steady_clock;
   if (!rows || rows > impl_->geometry.prefillChunkTokens)
     throw std::invalid_argument("invalid prefill warmup row count");
   constexpr uint64_t id = std::numeric_limits<uint64_t>::max() - 100;
@@ -2449,9 +2448,9 @@ WarmupStepResult Runtime::warmupPrefill(uint32_t rows) {
                    .decodeStage = DecodeStage::Regular};
     ModelBatchItem item = warmupItem(id, 0, rows, pages);
     item.inputTokens = request.prompt;
-    const auto phaseStart = Clock::now();
+    const auto phaseStart = AwakeClock::now();
     auto result = prefill(plan, std::span<const ModelBatchItem>(&item, 1));
-    wallSeconds = std::chrono::duration<double>(Clock::now() - phaseStart).count();
+    wallSeconds = std::chrono::duration<double>(AwakeClock::now() - phaseStart).count();
     requireLanesSucceeded(result);
     if (result.size() != 1 || result[0].consumedPromptTokens != rows) {
       throw std::runtime_error("prefill warmup result mismatch");
@@ -2469,7 +2468,6 @@ WarmupStepResult Runtime::warmupPrefill(uint32_t rows) {
 }
 
 WarmupStepResult Runtime::warmupDecodeBatch(uint32_t width) {
-  using Clock = std::chrono::steady_clock;
   if (!width || width > kLaneCount) {
     throw std::invalid_argument("invalid decode warmup width");
   }
@@ -2508,9 +2506,9 @@ WarmupStepResult Runtime::warmupDecodeBatch(uint32_t width) {
       plan.items.push_back({firstId + lane, 0});
       items.push_back(warmupItem(firstId + lane, 1, 0, pages[lane]));
     }
-    const auto phaseStart = Clock::now();
+    const auto phaseStart = AwakeClock::now();
     auto decoded = decode(plan, items);
-    wallSeconds = std::chrono::duration<double>(Clock::now() - phaseStart).count();
+    wallSeconds = std::chrono::duration<double>(AwakeClock::now() - phaseStart).count();
     requireLanesSucceeded(decoded);
     bool committedEveryLane = decoded.size() == width;
     for (uint32_t lane = 0; committedEveryLane && lane < width; ++lane) {

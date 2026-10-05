@@ -441,6 +441,27 @@ struct FmtPQ20 {
 // PTQ1_0 is repacked losslessly into seven bytes per 32-value group. The
 // independent groups let the common GEMM tiles decode their 32 columns
 // without reading neighboring groups; the shared FP16 scale is per 128.
+// Five base-3 digits packed as two-bit codes, most significant digit first.
+// A 512-byte constant lookup replaces per-weight division in PTQ1_0 decode
+// staging, retaining the seven-byte prepared group layout.
+constant ushort quant_ptq10_digits[256] = {
+  0, 256, 512, 64, 320, 576, 128, 384, 640, 16, 272, 528, 80, 336, 592, 144,
+  400, 656, 32, 288, 544, 96, 352, 608, 160, 416, 672, 4, 260, 516, 68, 324,
+  580, 132, 388, 644, 20, 276, 532, 84, 340, 596, 148, 404, 660, 36, 292, 548,
+  100, 356, 612, 164, 420, 676, 8, 264, 520, 72, 328, 584, 136, 392, 648, 24,
+  280, 536, 88, 344, 600, 152, 408, 664, 40, 296, 552, 104, 360, 616, 168, 424,
+  680, 1, 257, 513, 65, 321, 577, 129, 385, 641, 17, 273, 529, 81, 337, 593,
+  145, 401, 657, 33, 289, 545, 97, 353, 609, 161, 417, 673, 5, 261, 517, 69,
+  325, 581, 133, 389, 645, 21, 277, 533, 85, 341, 597, 149, 405, 661, 37, 293,
+  549, 101, 357, 613, 165, 421, 677, 9, 265, 521, 73, 329, 585, 137, 393, 649,
+  25, 281, 537, 89, 345, 601, 153, 409, 665, 41, 297, 553, 105, 361, 617, 169,
+  425, 681, 2, 258, 514, 66, 322, 578, 130, 386, 642, 18, 274, 530, 82, 338,
+  594, 146, 402, 658, 34, 290, 546, 98, 354, 610, 162, 418, 674, 6, 262, 518,
+  70, 326, 582, 134, 390, 646, 22, 278, 534, 86, 342, 598, 150, 406, 662, 38,
+  294, 550, 102, 358, 614, 166, 422, 678, 10, 266, 522, 74, 330, 586, 138, 394,
+  650, 26, 282, 538, 90, 346, 602, 154, 410, 666, 42, 298, 554, 106, 362, 618,
+  170, 426, 682, 0, 256, 512, 64, 320, 576, 128, 384, 640, 16, 272, 528, 80,
+};
 struct FmtPTQ10 {
   QUANT_FORMAT(GGUF_FMT_PTQ10, QuantLinear, 1, 32, false);
   struct Payload { uint a; ushort b; uchar tail; }; typedef uint4 Chunk; typedef ushort Meta;
@@ -472,6 +493,34 @@ struct FmtPTQ10 {
   static Chunk loadChunk(device uchar *p0, device uchar *, ushort c) { return chunk(load(p0, nullptr), c); }
   static uint4 codes(Chunk q) { return q; }
   static QuantCoef coef(Meta mt, ushort) { return {float2(float(as_type<half>(mt)))}; }
+};
+// Decode-only lookup. The shared 128-row prefill stage keeps the integer
+// decoder above: this lookup's generated MPP prefill code failed numerical
+// bounds on Apple10 even though its standalone dequantized values matched.
+struct FmtPTQ10Lookup {
+  QUANT_FORMAT(GGUF_FMT_PTQ10, QuantLinear, 1, 32, false);
+  typedef FmtPTQ10::Payload Payload;
+  typedef FmtPTQ10::Chunk Chunk;
+  typedef FmtPTQ10::Meta Meta;
+  static Payload load(device uchar *p0, device uchar *p1) { return FmtPTQ10::load(p0, p1); }
+  static Meta loadMeta(device uchar *m) { return FmtPTQ10::loadMeta(m); }
+  static uint4 codes(Chunk q) { return q; }
+  static QuantCoef coef(Meta mt, ushort j) { return FmtPTQ10::coef(mt, j); }
+  static uint trit(Payload p, ushort e) {
+    if (e >= 30) { const uint t = p.tail; return e == 30 ? t / 3 : t % 3; }
+    const uint bi = e / 5;
+    const uint q = bi < 4 ? ((p.a >> (8 * bi)) & 255) : ((p.b >> (8 * (bi - 4))) & 255);
+    return (quant_ptq10_digits[q] >> (2 * (e % 5))) & 3u;
+  }
+  static Chunk chunk(Payload p, ushort c) {
+    uint4 result;
+#pragma unroll
+    for (ushort pair = 0; pair < 4; ++pair) {
+      const ushort e = 4 * c + 2 * (pair & 1) + (pair >= 2 ? 16 : 0);
+      result[pair] = trit(p, e) | (trit(p, e + 1) << 16);
+    }
+    return result;
+  }
 };
 
 #undef QUANT_FORMAT
