@@ -78,7 +78,7 @@ void requireStartupHeadroom(
 // The format of a persistent cache's files and of what its copies hold. A
 // change to either, such as a fix to a kernel that writes KV or state, bumps
 // it, so that no start takes back copies of the old one.
-constexpr uint32_t kPersistentCacheFormat = 1;
+constexpr uint32_t kPersistentCacheFormat = 2;
 // How long a start waits for the cache directory another process holds: one
 // that is closing has finished its flush, or been stopped by the server, by
 // then (server/runtime.py `_shutdown_grace_seconds`).
@@ -224,7 +224,8 @@ std::string persistentCacheNamespace(const RuntimeCacheIdentity &identity,
             << gdn.convolutionChannels << ' ' << gdn.recurrentGroups << ' ' << gdn.recurrentRows
             << ' ' << gdn.recurrentColumns << '\n'
             << "draft " << draft.layers << ' ' << draft.kvHeads << ' ' << draft.headDimension << ' '
-            << SPLASH_DRAFT_SLIDING_WINDOW << '\n';
+            << SPLASH_DRAFT_SLIDING_WINDOW << '\n'
+            << "context " << draft.contextWidth << " q4 " << SPLASH_DRAFT_CONTEXT_GROUP << '\n';
   // 128 bits name it.
   return model::weightDigest(canonical.str()).substr(0, 32);
 }

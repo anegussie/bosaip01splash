@@ -425,27 +425,60 @@ StateSamples sampleCommittedState(const metal::MetalBackend &backend,
     result.emplace_back("draft_key_" + std::to_string(layer), std::move(keySamples));
     result.emplace_back("draft_value_" + std::to_string(layer), std::move(valueSamples));
   }
+  // The context window's rows of the rings' positions, byte for byte: a
+  // restore copies the window and computes the rings from it again.
+  if (lengths.draftLength && lengths.hasCurrentContextWindow()) {
+    const auto *bytes = static_cast<const uint8_t *>(states.window(lane).contents());
+    const uint64_t codeBytes = layout.contextWidth / 2;
+    const uint64_t groupBytes = uint64_t{layout.contextWidth} / SPLASH_DRAFT_CONTEXT_GROUP * 4;
+    const uint64_t rowBytes = codeBytes + groupBytes;
+    const uint64_t total = uint64_t{lengths.draftLength} * rowBytes;
+    std::vector<float> samples;
+    for (uint64_t index = 0; index < total; index += std::max<uint64_t>(1, total / 65536)) {
+      const uint64_t slot = (lengths.draftBase + index / rowBytes) % window;
+      const uint64_t offset = index % rowBytes;
+      samples.push_back(bytes[offset < codeBytes
+                                  ? slot * codeBytes + offset
+                                  : draft_context_codes_bytes(layout.contextWidth) +
+                                        slot * groupBytes + (offset - codeBytes)]);
+    }
+    result.emplace_back("context_window", std::move(samples));
+  }
   return result;
 }
 
+// Exact compares every tensor bit for bit, but for `restoredRings` the
+// draft rings, which a restore computed again from the 4-bit context window:
+// they must stay close to the rings computed from the rows themselves.
+// Otherwise it reports the drift of the tensors both sides sampled; a lane
+// past its prompt has no current context window to sample.
 void compareCommittedSamples(const StateSamples &before,
-                              const StateSamples &after, bool exact) {
-  require(before.size() == after.size(), "preemption state sample shape changed");
-  for (size_t tensor = 0; tensor < before.size(); ++tensor) {
-    const auto &[name, values] = before[tensor];
-    require(values.size() == after[tensor].second.size(),
-            "preemption tensor sample shape changed");
-    if (exact) {
-      require(values == after[tensor].second,
+                              const StateSamples &after, bool exact,
+                              bool restoredRings = false) {
+  if (exact)
+    require(before.size() == after.size(), "preemption state sample shape changed");
+  for (const auto &[name, values] : before) {
+    const auto other = std::ranges::find(after, name, &StateSamples::value_type::first);
+    if (other == after.end()) {
+      require(!exact, "preemption state sample shape changed: " + name);
+      continue;
+    }
+    const std::vector<float> &compared = other->second;
+    require(values.size() == compared.size(), "preemption tensor sample shape changed");
+    const bool rebuilt = restoredRings && name.starts_with("draft_");
+    if (exact && !rebuilt) {
+      require(values == compared,
               "regenerated state differs from independent teacher forcing: " + name);
       continue;
     }
     SimilarityAccumulator comparison;
     for (size_t index = 0; index < values.size(); ++index)
-      comparison.add(values[index], after[tensor].second[index]);
+      comparison.add(values[index], compared[index]);
     const Similarity result = comparison.result();
-    std::cout << "preemption_state " << name << " cosine=" << result.cosine
-              << " maximum_absolute=" << result.maximumAbsolute << '\n';
+    std::cout << (rebuilt ? "restored_ring " : "preemption_state ") << name
+              << " cosine=" << result.cosine << " maximum_absolute=" << result.maximumAbsolute << '\n';
+    if (rebuilt)
+      require(result.cosine >= 0.99, "rings computed again from the context window drifted: " + name);
   }
 }
 
@@ -777,8 +810,9 @@ void requireRepeatedImagePlacements(model::Runtime &executor,
                std::span<const uint32_t>(prompt).subspan(64), pages, false);
   require(executor.telemetry().imageEncodes == encodes + 2,
           "prefix restore discarded data for a later image placement");
+  // The checkpoint's rows come back into the rings from the context window.
   compareCommittedSamples(
-      expected, sampleCommittedState(backend, states, *restored.lane), true);
+      expected, sampleCommittedState(backend, states, *restored.lane), true, true);
   executor.end(request.id);
   checkpoint.reset();
   while (executor.reclaimIdleState(false, IdleMemory::BuffersThenCaches)) {

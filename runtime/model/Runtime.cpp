@@ -153,6 +153,14 @@ ops::LinearScratch prefillScratch(const PrefillArena &arena) {
           .rotated = arena.get(PrefillTensor::LinearRotated)};
 }
 
+// A prefill arena's tensors as the draft's context prefill reads them.
+DFlashPrefillBuffers draftPrefillBuffers(const PrefillArena &arena) {
+  return {arena.get(PrefillTensor::Captured), prefillScratch(arena),
+          arena.get(PrefillTensor::ContextProjected), arena.get(PrefillTensor::ContextHidden),
+          arena.get(PrefillTensor::ContextKv), arena.get(PrefillTensor::DraftRopeCos),
+          arena.get(PrefillTensor::DraftRopeSin)};
+}
+
 // A prefill arena's tensors as the target's prefill reads them.
 QwenTargetPrefillBuffers prefillBuffers(const PrefillArena &arena) {
   QwenTargetPrefillBuffers buffers;
@@ -260,6 +268,14 @@ struct Runtime::Impl {
     uint64_t rngCounter = 0;
     DecodeStage decodeStage = DecodeStage::Regular;
     std::optional<DraftContextPlan> draftContextPlan;
+    // The draft rings a restore left to compute from its context window:
+    // positions [begin, begin + rows), in the request's next prefill chunk,
+    // whose commit clears it.
+    struct DraftRebuild final {
+      uint32_t begin = 0;
+      uint32_t rows = 0;
+    };
+    std::optional<DraftRebuild> draftRebuild;
     std::vector<ImageState> images;
     // What its activation took from a cached state: the images that end
     // there were left out (ModelRequest::restoredTokens).
@@ -796,10 +812,12 @@ struct Runtime::Impl {
 
   // The lengths after the draft ring takes rows [begin, end) at target
   // length targetTokens. Unless `reset` starts a new window there, the rows
-  // continue the ring, which must hold rows ending at `begin`.
+  // continue the ring, which must hold rows ending at `begin`. A prefill
+  // capture also keeps the rows' context in the window (`windowed`), which
+  // stays current if it was; decode commits leave it behind.
   static QwenLogicalLengths
   advanceDraftContext(const QwenLogicalLengths &previous, uint64_t targetTokens,
-                      uint64_t begin, uint64_t end, bool reset) {
+                      uint64_t begin, uint64_t end, bool reset, bool windowed) {
     if (!reset && (!previous.draftLength || previous.draftEnd() != begin))
       throw std::logic_error("draft capture does not continue the draft ring");
     const uint64_t combined = (reset ? 0 : previous.draftLength) + (end - begin);
@@ -808,6 +826,8 @@ struct Runtime::Impl {
     next.draftLength =
         static_cast<uint32_t>(std::min<uint64_t>(combined, kDraftCacheStride));
     next.draftBase = end - next.draftLength;
+    if (windowed && (reset || previous.hasCurrentContextWindow()))
+      next.windowEnd = end;
     return next;
   }
 
@@ -1156,11 +1176,21 @@ struct Runtime::Impl {
     return batch;
   }
 
+  // Computes a restored lane's draft rings from its context window.
+  void addDraftRebuild(CommandGraph &graph, uint32_t lane,
+                       const Request::DraftRebuild &rebuild) const {
+    auto p = [&](PrefillTensor tensor) { return prefillArena->get(tensor); };
+    ops::RoPE::addDraftRangeTables(graph, p(PrefillTensor::DraftInverseFrequencies),
+                                   p(PrefillTensor::DraftRopeCos), p(PrefillTensor::DraftRopeSin),
+                                   rebuild.rows, rebuild.begin, kPrefillRows);
+    draftModel.addContextRebuild(graph, draftPrefillBuffers(*prefillArena), states.window(lane),
+                                 states.draft(lane), rebuild.rows, rebuild.begin);
+  }
+
   void addRaggedDraftContext(CommandGraph &graph,
                              const RaggedPrefillBatch &batch) {
     if (!batch.capturedRows)
       return;
-    auto p = [&](PrefillTensor tensor) { return prefillArena->get(tensor); };
     std::array<DFlashPrefillSpan, kLaneCount * 2> spans{};
     uint32_t spanCount = 0;
     for (const RaggedPrefillSequence &sequence : batch.sequences) {
@@ -1170,15 +1200,11 @@ struct Runtime::Impl {
         span.rows = capture.absoluteEnd - capture.absoluteBegin;
         span.startPosition = capture.absoluteBegin;
         span.ring = states.draft(sequence.entry->stateLane);
+        span.window = states.window(sequence.entry->stateLane);
       }
     }
-    draftModel.addContextPrefill(
-        graph,
-        {p(PrefillTensor::Captured), prefillScratch(*prefillArena),
-         p(PrefillTensor::ContextProjected), p(PrefillTensor::ContextHidden),
-         p(PrefillTensor::ContextKv), p(PrefillTensor::DraftRopeCos),
-         p(PrefillTensor::DraftRopeSin)},
-        batch.capturedRows, std::span(spans).first(spanCount));
+    draftModel.addContextPrefill(graph, draftPrefillBuffers(*prefillArena), batch.capturedRows,
+                                 std::span(spans).first(spanCount));
   }
 
   // Returns each lane's draft captures, indexed like `entries`.
@@ -1188,6 +1214,12 @@ struct Runtime::Impl {
                            std::array<Request *, kLaneCount> &entries) {
     RaggedPrefillBatch batch = prepareRaggedPrefill(items, entries);
     auto p = [&](PrefillTensor tensor) { return prefillArena->get(tensor); };
+
+    // A restored lane's rings first: they pass through the context buffers
+    // and the draft RoPE tables before this chunk's rows do.
+    for (const RaggedPrefillSequence &sequence : batch.sequences)
+      if (const auto &rebuild = sequence.entry->draftRebuild)
+        addDraftRebuild(graph, sequence.entry->stateLane, *rebuild);
 
     addRopeTables(graph, p(PrefillTensor::TargetPositions), batch.rows,
                   p(PrefillTensor::DraftPositions), batch.capturedRows,
@@ -1689,7 +1721,7 @@ struct Runtime::Impl {
           entry.stateLane,
           advanceDraftContext(states.metadata(entry.stateLane).lengths,
                               nextLength, items[lane].logicalPosition,
-                              nextLength, false));
+                              nextLength, false, false));
       entry.generatedTokens += laneResult.retained;
       commitSelected(entry, {targetTokens, laneResult.retained});
       entry.maskWords.clear();
@@ -1936,6 +1968,7 @@ void Runtime::suspend(uint64_t requestId) {
   impl_->pageTableBindings[entry.stateLane] = {};
   impl_->releaseImages(entry);
   entry.draftContextPlan.reset();
+  entry.draftRebuild.reset();
   entry.replayingGeneration |= entry.promptComplete;
   entry.promptComplete = false;
   entry.resident = false;
@@ -2043,6 +2076,10 @@ void Runtime::finishRestore(uint64_t requestId, uint32_t restoredPrefixLength,
     entry.pendingToken.reset();
   }
   entry.draftContextPlan.reset();
+  entry.draftRebuild.reset();
+  if (restoreDraftState)
+    entry.draftRebuild = Impl::Request::DraftRebuild{
+        static_cast<uint32_t>(lengths.draftBase), lengths.draftLength};
 }
 
 void Runtime::setDraftContextPlan(uint64_t requestId, DraftContextPlan plan) {
@@ -2172,13 +2209,14 @@ Runtime::prefillAsync(const BatchPlan &plan,
         }
       }
       impl->states.swapParity(entry.stateLane);
+      entry.draftRebuild.reset();
       QwenLogicalLengths lengths = impl->states.metadata(entry.stateLane).lengths;
       lengths.targetTokens = nextLength;
       for (const DispatchDraftCaptureSpan &capture : captures[lane]) {
         lengths = Impl::advanceDraftContext(lengths, nextLength,
                                             capture.absoluteBegin,
                                             capture.absoluteEnd,
-                                            capture.resetDraftState);
+                                            capture.resetDraftState, true);
         impl->counters.draftContextRowsActive += capture.activeRows;
         impl->counters.draftContextRowsMaterialization +=
             capture.materializationRows;
@@ -2276,6 +2314,8 @@ Runtime::decodeAsync(const BatchPlan &plan,
     }
     if (!entry.pendingToken)
       throw std::logic_error("decode request has no current anchor");
+    if (entry.draftRebuild)
+      throw std::logic_error("a restored lane computes its draft rings in a prefill chunk");
     const uint32_t remaining = entry.maxNewTokens - entry.generatedTokens;
     if (!remaining)
       throw std::logic_error("completed request was decoded");
@@ -2689,6 +2729,7 @@ ModelTelemetry Runtime::telemetry() const noexcept {
   result.stateAllocatedBytes = impl_->states.actualAllocatedBytes();
   result.idleGdnCells = impl_->states.idleCells();
   result.idleDraftRings = impl_->states.idleRings();
+  result.idleContextWindows = impl_->states.idleWindows();
   result.visionArenaBytes = impl_->vision ? impl_->vision->arenaBytes() : 0;
   result.embeddingCacheBytes = impl_->embeddingCacheBytes;
   result.stateHeldImageBytes = impl_->heldRowsBytes(false);

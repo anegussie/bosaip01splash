@@ -160,6 +160,7 @@ std::string runtimeStatusJson(
       << ",\"active_lanes\":" << resources.activeRequests
       << ",\"idle_gdn_cells\":" << executorTelemetry.idleGdnCells
       << ",\"idle_draft_rings\":" << executorTelemetry.idleDraftRings
+      << ",\"idle_context_windows\":" << executorTelemetry.idleContextWindows
       << ",\"publications\":" << state.publications
       << ",\"evictions\":" << state.evictions
       << ",\"checkpoint_entries\":" << state.checkpointEntries

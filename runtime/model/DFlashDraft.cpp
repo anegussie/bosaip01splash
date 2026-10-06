@@ -86,6 +86,25 @@ DFlashDraftRing::~DFlashDraftRing() {
   tracker_->bytes.fetch_sub(actualAllocatedBytes_, std::memory_order_relaxed);
 }
 
+DFlashContextWindow::DFlashContextWindow(
+    metal::MetalBackend &backend, std::shared_ptr<StateAllocationTracker> tracker,
+    DraftStateLayout layout, std::string_view label)
+    : tracker_(std::move(tracker)) {
+  if (!tracker_)
+    throw std::invalid_argument("draft state allocation tracker is empty");
+  const uint64_t before = backend.memoryStats().allocatedBytes;
+  buffer_ = backend.allocateBuffer(layout.windowBytes(), metal::BufferStorage::Shared, label);
+  actualAllocatedBytes_ =
+      metal::allocationDelta(before, backend.memoryStats().allocatedBytes);
+  if (actualAllocatedBytes_ < layout.windowBytes())
+    throw std::logic_error("context window allocation is below declared bytes");
+  tracker_->bytes.fetch_add(actualAllocatedBytes_, std::memory_order_relaxed);
+}
+
+DFlashContextWindow::~DFlashContextWindow() {
+  tracker_->bytes.fetch_sub(actualAllocatedBytes_, std::memory_order_relaxed);
+}
+
 DFlashDraft::DFlashDraft(const DFlashDraftWeights &weights,
                          metal::MetalBackend &backend,
                          const ops::ExecutionPlans &operators)
@@ -116,7 +135,34 @@ void DFlashDraft::addContextPrefill(
                                  buffers.projected, rows, buffers.linearScratch);
   ops::Normalization::addRms(graph, buffers.projected, weights_.hiddenNorm, buffers.hidden, layout.hiddenSize,
                              rows);
+  const uint64_t rowBytes = uint64_t{layout.hiddenSize} * sizeof(uint16_t);
+  for (const DFlashPrefillSpan &span : spans)
+    ops::DraftAttention::addWindowStore(
+        graph, backend_.view(buffers.hidden, span.compactRow * rowBytes, span.rows * rowBytes),
+        span.window, span.rows, span.startPosition, layout.hiddenSize);
+  addContextKv(graph, buffers, rows, spans);
+}
 
+void DFlashDraft::addContextRebuild(metal::CommandGraph &graph,
+                                    DFlashPrefillBuffers buffers,
+                                    const metal::MetalBuffer &window,
+                                    std::span<const DFlashDraftRingLayer> ring,
+                                    uint32_t rows, uint32_t startPosition) const {
+  static_assert(ExecutionLimits::draftContextTokens <= ExecutionLimits::prefillTokenBudget,
+                "a whole draft window passes through buffers of one prefill chunk's rows");
+  const DFlashDraftLayout &layout = weights_.layout;
+  if (!rows || rows > ExecutionLimits::draftContextTokens || ring.size() != layout.layers)
+    throw std::invalid_argument("invalid draft context rebuild");
+  ops::DraftAttention::addWindowLoad(graph, window, buffers.hidden, rows, startPosition,
+                                     layout.hiddenSize);
+  const DFlashPrefillSpan span{0, rows, startPosition, ring, window};
+  addContextKv(graph, buffers, rows, {&span, 1});
+}
+
+void DFlashDraft::addContextKv(metal::CommandGraph &graph,
+                               const DFlashPrefillBuffers &buffers, uint32_t rows,
+                               std::span<const DFlashPrefillSpan> spans) const {
+  const DFlashDraftLayout &layout = weights_.layout;
   for (uint32_t layer = 0; layer < layout.layers; ++layer) {
     operators_.linear().addPrefill(graph, buffers.hidden, contextKvProjections_[layer], buffers.contextKv, rows,
                                    buffers.linearScratch);

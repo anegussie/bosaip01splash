@@ -157,6 +157,7 @@ void testCleanRuntimeStatus(const char *goldenPath) {
   executorTelemetry.stateAllocatedBytes = 350'224'384;
   executorTelemetry.idleGdnCells = 1;
   executorTelemetry.idleDraftRings = 2;
+  executorTelemetry.idleContextWindows = 3;
   executorTelemetry.targetPrefillRows = 10000;
   executorTelemetry.draftContextRowsActive = 2048;
   executorTelemetry.draftContextRowsMaterialization = 31;
@@ -290,7 +291,7 @@ void testCleanRuntimeStatus(const char *goldenPath) {
               json.find("\"reserved_bytes\"") == std::string::npos,
           "status reported a governor field nothing reads");
   require(json.find("\"allocated_bytes\":350224384") != std::string::npos &&
-              json.find("\"idle_gdn_cells\":1,\"idle_draft_rings\":2,") !=
+              json.find("\"idle_gdn_cells\":1,\"idle_draft_rings\":2,\"idle_context_windows\":3,") !=
                   std::string::npos &&
               json.find("\"active_lanes\":") != std::string::npos &&
               json.find("\"cell_ceiling\"") == std::string::npos &&
