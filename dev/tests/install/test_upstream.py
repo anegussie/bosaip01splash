@@ -636,6 +636,42 @@ class UpstreamTest(unittest.TestCase):
             ):
                 self.prepare(selection(self.root, model, language_only=False))
 
+    def test_a_tower_in_a_shard_of_its_own_is_not_the_targets(self):
+        # OptiQ keeps the tower in a subdirectory shard: the target links the
+        # text shards alone, and only serving images needs the tower's shard.
+        shards = {
+            "vision_tower.blocks.0.attn.qkv.weight": "optiq/optiq_vision.safetensors",
+            "language_model.model.embed_tokens.weight": "model-00001-of-00002.safetensors",
+            "language_model.lm_head.weight": "model-00002-of-00002.safetensors",
+        }
+
+        def target(root):
+            mlx_target(root, DENSE)
+            (root / "model.safetensors").unlink()
+            (root / "model.safetensors.index.json").write_text(
+                json.dumps({"weight_map": shards})
+            )
+            for name in set(shards.values()):
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
+                (root / name).write_text(name)
+            (root / "preprocessor_config.json").write_text(json.dumps(PROCESSOR))
+
+        fake = fake_hub(self, self.cache)
+        fake.publish(MODEL, "a" * 40, target)
+        chosen = selection(self.root)
+        self.prepare(chosen)
+        self.assertEqual(
+            sorted(p.name for p in (chosen.link / "target").iterdir()),
+            [
+                "config.json",
+                "model-00001-of-00002.safetensors",
+                "model-00002-of-00002.safetensors",
+            ],
+        )
+        self.assertNotIn(f"{MODEL}/optiq/optiq_vision.safetensors", fake.downloads)
+        with self.assertRaisesRegex(models.ModelError, "missing or unsupported shards"):
+            self.prepare(selection(self.root, language_only=False))
+
     def test_a_shard_name_read_as_a_glob_is_never_downloaded(self):
         def target(root):
             mlx_target(root, DENSE)

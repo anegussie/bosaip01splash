@@ -36,6 +36,8 @@ TOKENIZER_FILES = (
     "added_tokens.json",
     "special_tokens_map.json",
 )
+# The name prefix of an MLX checkpoint's vision tower tensors.
+VISION_TOWER = "vision_tower."
 
 
 @dataclass(frozen=True)
@@ -230,7 +232,7 @@ def _mlx_target(repo, language_only):
     vision_format = "none"
     if not language_only:
         _validate_processor(models.read_json(repo.file("preprocessor_config.json")))
-        shards = _weight_files(repo, "vision_tower.")
+        shards = _weight_files(repo, VISION_TOWER)
         if not shards:
             raise models.ModelError(
                 f"{repo.name} has no vision tower; use --language-only to serve text only"
@@ -239,12 +241,16 @@ def _mlx_target(repo, language_only):
         check_model("mlx-affine", vision_format, config)
         files["vision/config.json"] = "config.json"
         files |= {"vision/" + n: n for n in shards}
-    files |= {"target/" + n: n for n in _weight_files(repo)}
+    # The target's shards: those holding a tensor other than the tower's. A
+    # tower in a shard of its own is not the target's (an OptiQ checkpoint
+    # keeps it in a subdirectory).
+    files |= {"target/" + n: n for n in _weight_files(repo, exclude=VISION_TOWER)}
     return Target("mlx-affine", vision_format, config, None, family, files)
 
 
-def _weight_files(repo, prefix=""):
-    """The checkpoint's shards holding a tensor whose name starts with prefix."""
+def _weight_files(repo, prefix="", exclude=None):
+    """The checkpoint's shards holding a tensor whose name starts with prefix,
+    and not with exclude."""
     if "model.safetensors.index.json" in repo.files:
         index = models.read_json(repo.file("model.safetensors.index.json"))
         weights = index.get("weight_map")
@@ -252,7 +258,12 @@ def _weight_files(repo, prefix=""):
             raise models.ModelError("invalid safetensors shard index")
         if not all(isinstance(name, str) for name in weights.values()):
             raise models.ModelError("invalid safetensors shard filename")
-        names = {file for tensor, file in weights.items() if tensor.startswith(prefix)}
+        names = {
+            file
+            for tensor, file in weights.items()
+            if tensor.startswith(prefix)
+            and not (exclude and tensor.startswith(exclude))
+        }
     elif "model.safetensors" in repo.files:
         # One file: its header says whether it holds such a tensor.
         holds = not prefix or any(

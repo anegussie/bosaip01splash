@@ -1146,8 +1146,10 @@ Quantized MLX towers, deepstack projectors and mmproj tensors the tower does not
 use are rejected.
 
 `--language-only` links and loads no vision weights and removes them from
-memory accounting. It skips a GGUF's mmproj download; MLX vision tensors share
-shards with the language model, which download in full. The native Ready event
+memory accounting. It skips a GGUF's mmproj download and an MLX shard that
+holds only the tower (OptiQ keeps the tower in a subdirectory shard of its own);
+vision tensors in the language model's shards download with them. The native
+Ready event
 announces vision only when the model loaded it. Without it, image and PDF input
 fails with a 400 naming the modality. Every API shape converts its media to
 image and file parts, and message normalization, the one place that accepts or
