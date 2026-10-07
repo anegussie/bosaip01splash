@@ -183,34 +183,6 @@ void requireLayerTypes(NSArray *types, const QwenTargetDimensions &target,
   }
 }
 
-// A package records the execution geometry it was published with. Its draft
-// was trained for blocks of draft_query_rows rows, the anchor and
-// draft_proposal_tokens proposals, over draft_sliding_window context tokens,
-// which the draft kernels are built for. The batch width, prefill budget, KV
-// page and verify rows it records were that runtime's choices; this runtime
-// makes its own.
-void validateExecutionGeometry(NSDictionary *manifest) {
-  requireNumbers(requireObject(manifest, @"execution_geometry",
-                               "model execution geometry"),
-                 "package", "execution_geometry",
-                 {{"draft_proposal_tokens", ExecutionLimits::draftProposalTokens},
-                  {"draft_query_rows", ExecutionLimits::draftQueryRows},
-                  {"draft_sliding_window", ExecutionLimits::draftContextTokens}});
-}
-
-void validateCommonFormat(NSDictionary *format, std::string_view targetMagic) {
-  requireNumbers(format, "package", "format",
-                 {{"section_alignment_bytes", kWeightFileAlignment}});
-  requireEqual(requireString(format, @"target_layer_magic",
-                             "target_layer_magic"),
-               targetMagic, "package", "target_layer_magic");
-  requireEqual(requireString(format, @"draft_layer_magic",
-                             "draft_layer_magic"),
-               kDFlashLayerMagic, "package", "draft_layer_magic");
-  requireEqual(requireString(format, @"vision_magic", "vision_magic"),
-               kVisionMagic, "package", "vision_magic");
-}
-
 // Each family's native window, which its config's max_position_embeddings
 // states, fits the runtime's KV ceiling.
 static_assert(Qwen3_8Layout{}.maximumContextTokens <= kv::kMaximumLogicalTokens &&
@@ -229,93 +201,6 @@ ModelDescriptor qwen36Descriptor(std::string name, TargetSource targetSource,
   return makeModelDescriptor(std::move(name), Qwen3_6MoeLayout{},
                              kQwen3_6MoeDraftLayout, kQwen3_6MoeVisionLayout,
                              targetSource, visionSource);
-}
-
-void validateTokenizer(const std::filesystem::path &root,
-                       const ModelDescriptor &descriptor,
-                       std::string_view expectedTextModelType) {
-  NSDictionary *config = readObject(root / "tokenizer" / "config.json",
-                                    "tokenizer model config");
-  NSDictionary *text =
-      requireObject(config, @"text_config", "text model config");
-  requireEqual(requireString(text, @"model_type", "text model type"),
-               expectedTextModelType, "package", "text model type");
-  requireNumbers(
-      text, "package", "tokenizer text config",
-      {{"hidden_size",
-        std::visit([](const auto &layout) { return layout.hiddenSize; },
-                   descriptor.target)},
-       {"vocab_size", descriptor.capabilities.vocabularySize},
-       {"max_position_embeddings",
-        descriptor.capabilities.maximumContextTokens}});
-}
-
-void validateQwen38(NSDictionary *manifest,
-                    const std::filesystem::path &root,
-                    const ModelDescriptor &descriptor) {
-  requireNumbers(manifest, "package", "manifest", {{"schema_version", 3}});
-  NSDictionary *format =
-      requireObject(manifest, @"format", "model weight format");
-  requireNumbers(format, "package", "format",
-                 {{"q4_bits", 4},
-                  {"q4_group_size", kQ4GroupElements},
-                  {"q4_storage_n", kQ4StorageN}});
-  validateCommonFormat(format, Qwen3_8Layout::layerMagic);
-  validateTokenizer(root, descriptor, "qwen3_5_text");
-}
-
-void validateQwen36(NSDictionary *manifest,
-                    const std::filesystem::path &root,
-                    const ModelDescriptor &descriptor) {
-  requireNumbers(manifest, "package", "manifest", {{"schema_version", 4}});
-  NSDictionary *format =
-      requireObject(manifest, @"format", "model weight format");
-  requireNumbers(format, "package", "format",
-                 {{"q4_bits", 4},
-                  {"q8_bits", 8},
-                  {"quant_group_size", kQ4GroupElements},
-                  {"storage_n", kQ4StorageN}});
-  validateCommonFormat(format, Qwen3_6MoeLayout::layerMagic);
-
-  const auto &targetLayout = std::get<Qwen3_6MoeLayout>(descriptor.target);
-  NSDictionary *target =
-      requireObject(manifest, @"target", "target declaration");
-  requireEqual(requireString(target, @"architecture", "target architecture"),
-               "qwen3_5_moe", "package", "target architecture");
-  requireNumbers(target, "package", "target",
-                 {{"layers", targetLayout.layers},
-                  {"hidden_size", targetLayout.hiddenSize},
-                  {"vocabulary_size", targetLayout.vocabularySize},
-                  {"gdn_actual_width", targetLayout.actualGdnWidth()},
-                  {"gdn_packed_width", targetLayout.packedGdnWidth},
-                  {"attention_packed_width", targetLayout.packedFullWidth},
-                  {"experts", targetLayout.experts},
-                  {"experts_per_token", targetLayout.expertsPerToken},
-                  {"moe_intermediate_size", targetLayout.expertIntermediateSize},
-                  {"shared_expert_intermediate_size",
-                   targetLayout.expertIntermediateSize}});
-  requireLayerTypes(requireArray(target, @"layer_types", "target layer_types"),
-                    targetLayout, @"attention", @"gdn", "package", "target layer_types");
-
-  const DFlashDraftLayout &draftLayout = descriptor.draft;
-  NSDictionary *draft =
-      requireObject(manifest, @"draft", "draft declaration");
-  requireEqual(requireString(draft, @"architecture", "draft architecture"),
-               "DFlash2DraftModel", "package", "draft architecture");
-  requireNumbers(draft, "package", "draft",
-                 {{"layers", draftLayout.layers},
-                  {"hidden_size", draftLayout.hiddenSize},
-                  {"intermediate_size", draftLayout.intermediateSize},
-                  {"sliding_window", ExecutionLimits::draftContextTokens},
-                  {"block_size", ExecutionLimits::draftQueryRows},
-                  {"dynamic_conv_group_size", SPLASH_DRAFT_CONVOLUTION_GROUP},
-                  {"dynamic_conv_kernel_size", SPLASH_DRAFT_CONVOLUTION_TAPS},
-                  {"selector_rank", draftLayout.selectorRank},
-                  {"selector_top_k", SPLASH_DRAFT_CANDIDATES}});
-  requireNumbers(requireArray(draft, @"target_capture_layers",
-                              "draft target_capture_layers"),
-                 targetLayout.hiddenCaptureLayers, "package", "draft target_capture_layers");
-  validateTokenizer(root, descriptor, "qwen3_5_moe_text");
 }
 
 // The name errors give an upstream target's source.
@@ -563,21 +448,6 @@ GgufMetadata readGgufMetadata(const std::filesystem::path &path) {
   return metadata;
 }
 
-ModelDescriptor inspectSourceModel(const std::filesystem::path &root) {
-  std::string sourceIdentity;
-  NSDictionary *record = readObject(root / "model.json", "resolved model", &sourceIdentity);
-  requireNumbers(record, "assembly", "model record", {{"version", 1}});
-  std::string name = requireString(record, @"model", "model name");
-  const std::string targetFormat = requireString(record, @"target_format", "target format");
-  const std::string visionFormat = requireString(record, @"vision_format", "vision format");
-  NSDictionary *config = readObject(root / "config.json", "upstream model config");
-  NSDictionary *draft = readObject(root / "draft" / "config.json", "draft config");
-  ModelDescriptor result = describeSourceModel(std::move(name), targetFormat, visionFormat, config, draft);
-  result.sourceIdentity = std::move(sourceIdentity);
-  if (!result.valid()) throw std::invalid_argument("incompatible target and draft model");
-  return result;
-}
-
 } // namespace
 
 ModelDescriptor makeModelDescriptor(std::string name, TargetLayout target,
@@ -627,28 +497,18 @@ bool ModelDescriptor::valid() const noexcept {
 
 ModelDescriptor inspectModelRoot(const std::filesystem::path &root) {
   @autoreleasepool {
-    if (std::filesystem::exists(root / "model.json")) return inspectSourceModel(root);
     std::string sourceIdentity;
-    NSDictionary *manifest = readObject(root / "manifest.json", "model manifest", &sourceIdentity);
-    validateExecutionGeometry(manifest);
-    const std::string model = requireString(manifest, @"model", "model name");
-    const std::string format = requireString(
-        requireObject(manifest, @"format", "model weight format"),
-        @"name", "weight format");
-    ModelDescriptor descriptor;
-    if (format == "splash-packed-q4") {
-      descriptor = qwen38Descriptor(model, TargetSource::Package, VisionSource::Package);
-      validateQwen38(manifest, root, descriptor);
-    } else if (format == "splash-packed-q4-moe") {
-      descriptor = qwen36Descriptor(model, TargetSource::Package, VisionSource::Package);
-      validateQwen36(manifest, root, descriptor);
-    } else {
-      throw std::invalid_argument("unsupported weight format: " + format);
-    }
-    descriptor.sourceIdentity = std::move(sourceIdentity);
-    if (!descriptor.valid())
-      throw std::logic_error("built-in model descriptor is inconsistent");
-    return descriptor;
+    NSDictionary *record = readObject(root / "model.json", "resolved model", &sourceIdentity);
+    requireNumbers(record, "assembly", "model record", {{"version", 1}});
+    std::string name = requireString(record, @"model", "model name");
+    const std::string targetFormat = requireString(record, @"target_format", "target format");
+    const std::string visionFormat = requireString(record, @"vision_format", "vision format");
+    NSDictionary *config = readObject(root / "config.json", "upstream model config");
+    NSDictionary *draft = readObject(root / "draft" / "config.json", "draft config");
+    ModelDescriptor result = describeSourceModel(std::move(name), targetFormat, visionFormat, config, draft);
+    result.sourceIdentity = std::move(sourceIdentity);
+    if (!result.valid()) throw std::invalid_argument("incompatible target and draft model");
+    return result;
   }
 }
 

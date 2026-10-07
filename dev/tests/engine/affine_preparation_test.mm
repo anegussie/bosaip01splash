@@ -137,10 +137,10 @@ int main(int argc, char **argv) {
           check(loader.model());
         });
         writeEveryByte(root, model::draftCheckpointImages(layout));
-        // The draft reads the images as it reads a package's files.
+        // The draft loader reads the images.
         model::WeightImages images(backend, "fixture");
         model::DraftCheckpointLoader files(images, root, layout);
-        const model::DFlashDraftWeights draft = model::loadDFlashDraftWeights(backend, std::ref(files), layout);
+        const model::DFlashDraftWeights draft = model::loadDFlashDraftWeights(backend, files, layout);
         const auto affine = [](const ops::Projection &p, uint32_t n, uint32_t k) {
           return p.layout() == ops::WeightLayout::Affine64 && p.outputSize == n && p.inputSize == k;
         };
@@ -205,8 +205,7 @@ int main(int argc, char **argv) {
       // heads.
       const auto inconsistent = [&](const model::Qwen3_8Layout &broken) {
         try {
-          static_cast<void>(model::loadQwen3_8Weights(
-              backend, broken, model::PackageTargetFiles<model::Qwen3_8Layout>{images, root, broken}));
+          static_cast<void>(model::loadQwen3_8Weights(backend, broken, files));
         } catch (const model::WeightStoreError &error) {
           return std::string_view(error.what()) == "Qwen target layout is inconsistent";
         }

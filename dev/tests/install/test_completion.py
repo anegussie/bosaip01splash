@@ -102,16 +102,16 @@ class CompletionTests(unittest.TestCase):
         for model in (*OFFICIAL, LOCAL[0]):
             model_root = models / model
             model_root.mkdir(parents=True, exist_ok=True)
-            (model_root / "manifest.json").write_text("{}")
+            (model_root / "model.json").write_text("{}")
         linked = self.root / (name + " external model")
         linked.mkdir()
-        (linked / "manifest.json").write_text("{}")
+        (linked / "model.json").write_text("{}")
         (models / LOCAL[1]).unlink(missing_ok=True)
         (models / LOCAL[1]).symlink_to(linked, target_is_directory=True)
         (models / "community/broken-link").unlink(missing_ok=True)
         (models / "community/broken-link").symlink_to(self.root / "missing")
         (models / "community/incomplete").mkdir(exist_ok=True)
-        (models / "community/directory-manifest/manifest.json").mkdir(
+        (models / "community/directory-record/model.json").mkdir(
             parents=True, exist_ok=True
         )
         # Upstream installations link assemblies that record model.json.
@@ -139,7 +139,7 @@ class CompletionTests(unittest.TestCase):
         ):
             path = models / invalid
             path.mkdir(parents=True, exist_ok=True)
-            (path / "manifest.json").write_text("{}")
+            (path / "model.json").write_text("{}")
         return root, directory
 
     def run_helper(self, directory, prefix=""):

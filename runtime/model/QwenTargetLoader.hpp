@@ -5,7 +5,6 @@
 #include "model/QwenHybridLayout.hpp"
 #include "model/QwenTarget.hpp"
 #include "model/QwenTargetFiles.hpp"
-#include "model/WeightImages.hpp"
 #include "model/WeightStore.hpp"
 #include "ops/GDN.hpp"
 #include "ops/Linear.hpp"
@@ -13,19 +12,16 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <filesystem>
 #include <functional>
 #include <initializer_list>
-#include <string>
 #include <string_view>
 #include <variant>
 
 namespace splash::model {
 
 // How a target's files store its tensors; loadQwenTarget pairs each source's
-// files with their format. Affine files, from a package or written from MLX,
-// hold every projection, a fused one too, as one affine Q4 tensor, and bf16
-// norms.
+// files with their format. Affine files, written from MLX, hold every
+// projection, a fused one too, as one affine Q4 tensor, and bf16 norms.
 struct AffineTargetFormat final {
   static constexpr ops::GdnHeadOrder gdnOutputOrder = ops::GdnHeadOrder::Grouped;
 
@@ -82,28 +78,8 @@ template <class Format>
                                              const QwenTargetDimensions &target,
                                              bool fullAttention);
 
-// Loads the files of a package's target directory: one per hybrid layer,
-// head.bin and embedding.bin.
-template <class Layout> struct PackageTargetFiles final {
-  WeightImages &images;
-  std::filesystem::path directory;
-  const Layout &layout;
-  [[nodiscard]] WeightFile layer(uint32_t index) const {
-    const std::string filename = "layer-" + std::to_string(index) + ".bin";
-    return images.load(packageImage(directory / filename, "target/" + filename, Layout::layerMagic, index,
-                                    layout.isFullAttentionLayer(index) ? 1U : 0U));
-  }
-  [[nodiscard]] WeightFile head() const {
-    return images.load(packageImage(directory / "head.bin", "target/head.bin", Layout::headMagic, layout.layers, 2));
-  }
-  [[nodiscard]] WeightFile embedding() const {
-    return images.load(packageImage(directory / "embedding.bin", "target/embedding.bin", kEmbeddingMagic,
-                                    layout.vocabularySize, layout.hiddenSize));
-  }
-};
-
-// Reads a target through the files of its images, packaged or written from
-// an upstream source, in their format: per layer the input norm, mixer,
+// Reads a target through the files of its images, written from an upstream
+// source, in their format: per layer the input norm, mixer,
 // post-attention norm and the architecture's FFN through readFfn, then the
 // head and the token embedding. Weights is the architecture's weight struct.
 template <class Weights, class Layout, class Files, class Format, class ReadFfn>
@@ -189,16 +165,14 @@ template <class Layout> void requireQwenLayout(const Layout &layout) {
 // format.
 template <class Weights, class Layout, class ReadFfn>
 [[nodiscard]] Weights
-loadQwenTarget(metal::MetalBackend &backend, const Layout &layout, const QwenTargetFiles<Layout> &files,
+loadQwenTarget(metal::MetalBackend &backend, const Layout &layout, const QwenTargetFiles &files,
                ReadFfn readFfn) {
   requireQwenLayout(layout);
   if (const auto *gguf = std::get_if<std::reference_wrapper<GgufTargetLoader>>(&files))
     return readQwenTargetWeights<Weights>(backend, layout, gguf->get(), BlockTargetFormat{}, readFfn);
-  const AffineTargetFormat affine{};
-  if (const auto *mlx = std::get_if<std::reference_wrapper<AffineTargetLoader>>(&files))
-    return readQwenTargetWeights<Weights>(backend, layout, mlx->get(), affine, readFfn);
-  return readQwenTargetWeights<Weights>(backend, layout, std::get<PackageTargetFiles<Layout>>(files), affine,
-                                        readFfn);
+  return readQwenTargetWeights<Weights>(
+      backend, layout, std::get<std::reference_wrapper<AffineTargetLoader>>(files).get(), AffineTargetFormat{},
+      readFfn);
 }
 
 } // namespace splash::model

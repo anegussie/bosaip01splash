@@ -29,7 +29,7 @@ from dev.tests.installer_fixtures import (
     pins,
     selection,
 )
-from install import assembly, families, hub, legacy, models, paths, upstream
+from install import assembly, families, hub, models, paths, upstream
 
 # The engine's refusal of a model of no family Splash serves, naming what
 # tells it apart.
@@ -239,7 +239,7 @@ class UpstreamTest(unittest.TestCase):
             self.assertEqual(fake.requests, [(model, None)])
             self.assertEqual(fake.downloads, [f"{model}/config.json"])
 
-    def test_only_a_splash_manifest_makes_a_legacy_package(self):
+    def test_only_a_splash_manifest_is_refused_as_a_package(self):
         def target(root):
             mlx_target(root, DENSE)
             (root / "manifest.json").write_text(json.dumps({"name": "a tool's file"}))
@@ -255,41 +255,19 @@ class UpstreamTest(unittest.TestCase):
                 (p / "manifest.json").write_text(json.dumps(package)),
             ),
         )
-        packaged = selection(self.root, "someone/package", language_only=False)
-        with mock.patch.object(legacy, "prepare") as install_package:
-            self.prepare(selection(self.root))
-            self.prepare(packaged)
-        install_package.assert_called_once_with(packaged)
+        self.prepare(selection(self.root))
         self.assertEqual(
             assembly.verify(selection(self.root).link)["sources"]["target"]["revision"],
             "b" * 40,
         )
-
-    def test_a_package_rejects_source_options(self):
-        fake = FakeHub(self, self.cache)
-        fake.publish(
-            "someone/package",
-            "c" * 40,
-            lambda p: (
-                p.mkdir(parents=True),
-                (p / "manifest.json").write_text(
-                    json.dumps({"format": {"name": "splash-packed-q4"}})
-                ),
-            ),
-        )
-        for options in ({"revision": "c" * 40}, {"language_only": True}):
-            with (
-                self.subTest(options=options),
-                self.assertRaisesRegex(models.ModelError, "require an upstream"),
-            ):
-                self.prepare(
-                    selection(
-                        self.root,
-                        "someone/package",
-                        **{"language_only": False} | options,
-                    )
-                )
-        self.assertEqual(fake.downloads, ["someone/package/manifest.json"])
+        with self.assertRaisesRegex(
+            models.ModelError,
+            "someone/package is a Splash package, which Splash no longer loads; "
+            "serve its MLX model instead: splash serve --model "
+            "mlx-community/Qwen3.8-27B-4bit",
+        ):
+            self.prepare(selection(self.root, "someone/package", language_only=False))
+        self.assertFalse(selection(self.root, "someone/package").link.exists())
 
     def test_only_mlx_affine_quantization_is_accepted(self):
         def target(quantization):

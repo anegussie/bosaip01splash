@@ -77,6 +77,6 @@ using Qwen3_6MoeWeights = QwenTargetWeights<Qwen3_6MoeLayout, Qwen3_6MoeLayerWei
 
 [[nodiscard]] Qwen3_6MoeWeights
 loadQwen3_6MoeWeights(metal::MetalBackend &backend, Qwen3_6MoeLayout layout,
-                      const QwenTargetFiles<Qwen3_6MoeLayout> &files);
+                      const QwenTargetFiles &files);
 
 } // namespace splash::model

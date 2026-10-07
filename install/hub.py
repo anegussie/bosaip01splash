@@ -90,9 +90,7 @@ def snapshot_commit(path: Path, repo_id: str) -> str:
         or path.parent.parent.name != folder_name(repo_id)
         or not models.is_hex_digest(path.name, 40)
     ):
-        raise models.ModelError(
-            "installed package is not a snapshot of the requested Hub repository"
-        )
+        raise models.ModelError(f"{path} is not a snapshot of {repo_id} in a Hub cache")
     return path.name
 
 

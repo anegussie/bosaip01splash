@@ -27,9 +27,9 @@ Splash identifies the model from its own metadata and pairs the DFlash2 draft
 trained for it. The first serve sets up Python dependencies and downloads the
 model and its draft; each start loads the weights into memory
 ([Weight loading](#weight-loading)) and follows the model's revision
-([Revisions](#revisions)). Legacy Splash packages remain loadable
-([Legacy Splash packages](#legacy-splash-packages)). Public repositories need
-no login; private or gated ones need `HF_TOKEN` or `hf auth login`. Ctrl+C
+([Revisions](#revisions)). Splash packages, the prebuilt format of earlier
+releases, are no longer loaded ([Splash packages](#splash-packages)). Public
+repositories need no login; private or gated ones need `HF_TOKEN` or `hf auth login`. Ctrl+C
 stops serving, and a second Ctrl+C stops the engine at once; stop before
 upgrading.
 
@@ -1095,12 +1095,10 @@ configuration with the target's (its `model-check`), so a draft of another
 architecture never replaces one that loads. Native loading validates the
 configuration against the target again and loads the draft like a target
 ([Weight loading](#weight-loading)):
-`DraftCheckpointLoader` (`DraftCheckpoint.cpp`) plans the images of a Splash
-package's draft files, `layer-<N>.bin` and `model.bin`, and
-`AffinePreparation` quantizes each projection to 4 bits in groups of 64 as
-MLX's affine quantization rounds it and copies every other tensor as stored.
-For both families the images are byte for byte the Q4 drafts of the Splash
-packages.
+`DraftCheckpointLoader` (`DraftCheckpoint.cpp`) plans the draft's images, one
+per layer and one for the rest, and `AffinePreparation` quantizes each
+projection to 4 bits in groups of 64 as MLX's affine quantization rounds it and
+copies every other tensor as stored.
 
 ### Vision
 
@@ -1115,12 +1113,12 @@ GGUF's `clip.vision` metadata) must describe the one preprocessing Splash
 implements (`server/images.py`); it is checked before any weight download and
 not installed.
 
-Both sources are written into an image laid out as a package's
-`vision/model.bin`, which the one BF16 vision operator reads: BF16 tensors are
+Both sources are written into one image, which the one BF16 vision operator
+reads: BF16 tensors are
 copied, and F32 or F16 tensors are converted under the exact-BF16 rule of
 [weight loading](#weight-loading).
 Unsloth's mmproj stores its 1-D tensors, patch embedding and position table as
-F32, all of them BF16-exact, and loads byte-identical to the package's file.
+F32, all of them BF16-exact, and loads byte-identical to the MLX tower.
 Quantized MLX towers, deepstack projectors and mmproj tensors the tower does not
 use are rejected.
 
@@ -1191,21 +1189,15 @@ Every request, including image placeholder, token-count and judgment
 startup; tokenizer files and the tokenizer object are unchanged. The probe's
 upstream fixtures are in `dev/tests/fixtures/chat_templates/`.
 
-### Legacy Splash packages
+### Splash packages
 
 Splash packages, such as `incoai/Qwen3.8-27B-Splash`, are the prebuilt format
-that predates upstream loading, and `--model` still accepts them. They contain
-`manifest.json`, the `target/`, `draft/` and `vision/` weight files and
-`tokenizer/`; the manifest lists artifact paths, sizes and SHA-256 hashes.
-Qwen3.8-27B packages use schema 3 / `splash-packed-q4`, Qwen3.6-35B-A3B
-packages schema 4 / `splash-packed-q4-moe`. Compatible community fine-tunes may
-use any nonempty manifest model name. Native loading validates geometry, tensor
-sizes, binary headers, tokenizer and target/draft compatibility, and reads the
-weight files into memory as they are. `install/legacy.py` installs a package
-as a selection link to its verified Hub snapshot, pinned like an assembly's
-sources. An installed package starts without a Hub request. A package has no
-variants, so a `:VARIANT` suffix is rejected, and `--revision`,
-`--language-only` and `--draft-model` require an upstream model ID.
+of earlier releases, which Splash no longer loads. A `--model` that names one,
+installed or on the Hub, stops and names the MLX model of its family to serve
+instead: `mlx-community/Qwen3.8-27B-4bit` or
+`mlx-community/Qwen3.6-35B-A3B-4bit`, which load the packages' weights byte for
+byte but for the 27B's GDN decay vectors, each within a float ULP. A package is
+recognized by its `manifest.json`, which names the package format.
 
 ## Internals
 
@@ -1260,7 +1252,7 @@ Hub snapshots, published atomically. The other installer modules each own one
 part: `hub.py` the sources, the Hub cache and its pins; `assembly.py` the
 assembly layout, its build, verification and garbage collection, and the
 metadata derived from a GGUF; `families.py` each family's draft repository;
-`legacy.py` Splash packages; and `models.py` model IDs, selections, the
+and `models.py` model IDs, selections, the
 installation lock, the command line (`install/models.py --model ID
 prepare|verify|link`, where `link` prints the selection link) and running the
 engine's checks. Since the installer checks a model with the engine, a source
@@ -1307,25 +1299,24 @@ never rewrites upstream files.
 ### Weight loading
 
 Every start writes a model's target, draft and vision tensors into weight
-images in memory, in the layouts the kernels read: an MLX target, the DFlash2
-draft and any vision tower in the layouts of a Splash package's files, which run
-the same kernels, and a GGUF target in the `MDGG0001` layout of the GGUF
-kernels. Each source adapter is a loader, which validates the source's metadata
+images in memory, in the layouts the kernels read: an MLX target and the
+DFlash2 draft in the affine Q4 layout of the affine kernels, any vision tower in
+the BF16 layout of the vision operator, and a GGUF target in the `MDGG0001`
+layout of the GGUF kernels. Each source adapter is a loader, which validates the source's metadata
 and plans its images, and a writer: `AffineTargetLoader` (`AffineTarget.cpp`)
 and `AffinePreparation` for an MLX target, `DraftCheckpointLoader`
 (`DraftCheckpoint.cpp`) and `AffinePreparation` for the draft,
 `GgufTargetLoader` (`GgufTarget.cpp`, planned by `GgufImage.cpp`) and
 `GgufPreparation` for a GGUF target, `VisionLoader` and `VisionPreparation` for
-an MLX or GGUF vision tower. A package's files are read as they are
-(`packageImage`). `AffinePreparation` reorders an MLX target's codes, scales and
+an MLX or GGUF vision tower. `AffinePreparation` reorders an MLX target's codes, scales and
 biases into 256-row tiles without requantization, quantizes the draft's BF16
 projections into the same tiles ([Drafts](#drafts)) and computes GDN decay as
-`float(-exp(double(A_log)))`, which may differ by one float ULP in this small
-vector from packages produced with MLX's float exponential. `GgufPreparation`
+`float(-exp(double(A_log)))`, which may differ by one float ULP from MLX's
+float exponential. `GgufPreparation`
 repacks GGUF blocks ([GGUF targets](#gguf-targets)).
 
 Loading never rounds a target or vision weight, and rounds the draft's
-projections only as the packages' drafts are rounded. A tensor it converts to
+projections only as MLX's affine quantization does ([Drafts](#drafts)). A tensor it converts to
 BF16 (vision tensors stored as F32 or F16, a GGUF's convolution taps and
 time-step bias) must be exactly representable in BF16; otherwise loading fails,
 naming the tensor and, for a vision tensor, its file. The hashes of the images
@@ -1361,8 +1352,8 @@ staging bound, splitting rows wider than it into column chunks, and runs the
 F32 sections are copied in bounded steps.
 
 Each image's record (`WeightFileRecord`) names what it was written from: the
-SHA-256 of the record of every source file's digest, an assembly's `model.json`
-or a package's `manifest.json`, which the installer verifies at every start
+SHA-256 of the record of every source file's digest, the assembly's
+`model.json`, which the installer verifies at every start
 (`ModelDescriptor::sourceIdentity`). The weight manifest fingerprints `/status`
 reports (`loaded_model_layout_sha256`, `target_model_sha256`) cover it, so
 models of one layout from different sources never share a fingerprint.
@@ -1389,9 +1380,9 @@ after the images, and the restore loads it again in one tick more, after the
 last image (`ReleasableMemory`).
 
 `loadQwenTarget` (`QwenTargetLoader.hpp`) reads a target's images
-(`QwenTargetFiles`: a package's files, or the images
-`AffineTargetLoader` or `GgufTargetLoader` plans) through the format that
-stores them. `AffineTargetFormat`, for package and MLX images, reads every
+(`QwenTargetFiles`: the images `AffineTargetLoader` or `GgufTargetLoader`
+plans) through the format that stores them. `AffineTargetFormat`, for MLX
+images, reads every
 projection, a fused one too, as one affine Q4 tensor and the norms as bf16.
 `BlockTargetFormat`, for GGUF images, reads each GGUF tensor as one
 block-quantized `QuantizedSegment` (a fused projection's tensors in output
@@ -2039,14 +2030,14 @@ evicted during a phase only print a warning.
 `benchmark-backend`, `benchmark-decode-profile` and `tune-kernels` take `MODEL`
 the same way. The models they are run with, one per family and source format:
 
-| Family | MLX | GGUF | Splash package |
-| --- | --- | --- | --- |
-| Qwen3.8-27B | `mlx-community/Qwen3.8-27B-4bit` | `unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_M` | `incoai/Qwen3.8-27B-Splash` |
-| Qwen3.6-35B-A3B | `mlx-community/Qwen3.6-35B-A3B-4bit` | `unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_M` | `incoai/Qwen3.6-35B-A3B-Splash` |
+| Family | MLX | GGUF |
+| --- | --- | --- |
+| Qwen3.8-27B | `mlx-community/Qwen3.8-27B-4bit` | `unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_M` |
+| Qwen3.6-35B-A3B | `mlx-community/Qwen3.6-35B-A3B-4bit` | `unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_M` |
 
-The source formats load differently: an MLX target is written into a package's
-layout, a GGUF target into its own layout for the GGUF projection and MoE
-kernels, and a package's files are read as they are.
+The source formats load differently: an MLX target is written into the affine
+layout of the affine kernels, a GGUF target into its own layout for the GGUF
+projection and MoE kernels.
 
 On a 24 GB Mac, `test-agent-real` stops a client's workflow at macOS's warning
 memory pressure, which the smaller GGUF variants such a Mac uses can reach under
@@ -2056,12 +2047,6 @@ no production memory guard: the weights, and then what the runtime
 allocates as it runs, must fit in what macOS has available above its reserve,
 so it stops, naming what it needs, while other programs hold that memory. With
 only desktop applications open, a 24 GB Mac runs it for those variants.
-
-`make check-native-build` builds the affine source oracle and `weight-digests` so
-they cannot break unnoticed. No target runs the oracle, as it needs real
-models: after `make all build/engine-tests/affine-source-oracle`, pass it
-`build/splash.metallib`, an installed MLX model's `target` directory and the
-matching installed package to compare every byte of their images.
 
 Compare performance on the same idle Mac with the same model and workload.
 `make tune-kernels MODEL=...` measures each projection key of the installed
@@ -2082,10 +2067,7 @@ family (an Apple9 M3 and an Apple10 M5) against a retained baseline build,
 `engine-tests/backend-benchmark` and, for a build that loads the weights into
 memory (1.2.0 and later), `engine-tests/weight-digests`. `release-check` fails
 without it. The baseline must load the model: it is the previous release's
-build when that loads the model. The legacy package can always be compared with
-1.0.2, as below; Splash 1.0.x loads only Splash packages and has no
-`weight-digests`, so the package's weight images are not compared with it. From
-a clean checkout:
+build when that loads the model. From a clean checkout:
 
 ```sh
 make check test-sanitizers                      # once, model-free, on one Mac
@@ -2094,7 +2076,6 @@ make install release-check MODEL=mlx-community/Qwen3.8-27B-4bit REVISION=<commit
 make install release-check MODEL=unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_M LANGUAGE_ONLY=1 REVISION=<commit> BASELINE=...
 make install release-check MODEL=mlx-community/Qwen3.6-35B-A3B-4bit REVISION=<commit> BASELINE=...
 make install release-check MODEL=unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_M REVISION=<commit> BASELINE=...
-make install release-check MODEL=incoai/Qwen3.8-27B-Splash BASELINE=../splash-1.0.2
 make install verify-models MODEL=mlx-community/Qwen3.6-35B-A3B-4bit
 make test-agent-real MODEL=mlx-community/Qwen3.6-35B-A3B-4bit REVISION=<commit> AGENT_SCENARIO=smoke AGENT_CLIENTS=...
 ```
@@ -2111,7 +2092,7 @@ the other. Per model, `release-check`:
   (`HF_ENDPOINT=http://127.0.0.1:9`) and with an empty `HF_HUB_CACHE`: each
   restart must start the same assembly within 10 seconds, name the Hub's
   reason on one line when it asked the Hub ([Revisions](#revisions)), and
-  download nothing; a legacy package is not restarted. It then hashes the
+  download nothing. It then hashes the
   sources and records in `weights.json` the component, size and SHA-256 of
   every weight image the installation loads (`verify-models`);
 - runs the HTTP smoke, which for a text-only installation checks the 400s

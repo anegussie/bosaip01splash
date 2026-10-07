@@ -20,8 +20,7 @@ inline constexpr uint64_t kWeightFileAlignment = 16 * 1024;
 // The rows of an affine projection's storage tile.
 inline constexpr uint32_t kQ4StorageN = SPLASH_AFFINE_TILE_ROWS;
 
-// A vision tower's image, a package's vision/model.bin or one written from an
-// upstream source.
+// A vision tower's image, written from an upstream source.
 inline constexpr std::string_view kVisionMagic = "MDFV0001";
 
 // offset rounded up to the next section boundary.

@@ -11,6 +11,7 @@
 #include "TestChecks.hpp"
 #include "TestFiles.hpp"
 #include "model/ModelDescriptor.hpp"
+#include "model/WeightStore.hpp"
 
 #include <filesystem>
 #include <initializer_list>
@@ -89,6 +90,11 @@ void testFamilies(const std::filesystem::path &fixtures) {
               denseDescriptor.targetSource == model::TargetSource::Mlx && !denseDescriptor.hasVision() &&
               denseDescriptor.draft == model::kQwen3_8DraftLayout,
           "an MLX Qwen3.8-27B made another descriptor");
+  // The sources' identity is the digest of the record naming them.
+  require(denseDescriptor.sourceIdentity == model::weightDigest(dense.record) &&
+              inspect(dense.with(&SourceModel::record, "community/fine-tune", "community/other"))
+                      .sourceIdentity != denseDescriptor.sourceIdentity,
+          "the sources' identity is not the digest of the record naming them");
   require(inspect(dense.with(&SourceModel::record, R"("none")", R"("safetensors")")).visionSource ==
               model::VisionSource::Mlx,
           "an MLX Qwen3.8-27B with its vision tower made another descriptor");
@@ -120,8 +126,7 @@ void testFamilies(const std::filesystem::path &fixtures) {
 }
 
 // A descriptor states where its weights come from: one that leaves either
-// source unset, which draftFromCheckpoint and hasVision would read as a
-// checkpoint draft and a vision tower, is not valid.
+// source unset, which hasVision would read as a vision tower, is not valid.
 void testSources() {
   const auto described = [](model::TargetSource target, model::VisionSource vision) {
     return model::makeModelDescriptor("sources", model::Qwen3_8Layout{}, model::kQwen3_8DraftLayout,

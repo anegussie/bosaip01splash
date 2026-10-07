@@ -24,7 +24,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import assembly, families, gguf, hub, legacy, models
+from . import assembly, families, gguf, hub, models
 
 # The tokenizer files an MLX target may supply, linked when present.
 TOKENIZER_FILES = (
@@ -311,12 +311,13 @@ def prepare(selection):
     decides when none is made). The installed assembly of those commits
     starts; a new commit is installed and published atomically; when the Hub
     cannot answer, or a new commit cannot be installed, the verified
-    installation starts instead. A legacy Splash package is installed by
-    legacy.prepare."""
+    installation starts instead. A Splash package, installed or on the Hub,
+    is refused (models.refuse_package)."""
     kind = models.installation_kind(selection.link)
     if kind == models.PACKAGE:
-        legacy.prepare(selection)
-        return
+        models.refuse_package(
+            selection.model, models.read_json(selection.link / "manifest.json")
+        )
     installed = None
     if kind == models.ASSEMBLY:
         try:
@@ -330,22 +331,14 @@ def prepare(selection):
         installation=selection.link,
         installed=installed_commit,
     )
-    if installed is None and _is_legacy_package(target, selection.model):
-        legacy.prepare(selection)
-    elif installed is not None and target.revision == installed_commit:
+    if installed is None and "manifest.json" in target.files:
+        with hub.as_model_errors(f"cannot install {selection.model}"):
+            manifest = models.read_json(target.file("manifest.json"))
+        models.refuse_package(selection.model, manifest)
+    if installed is not None and target.revision == installed_commit:
         _start_installed(selection, target, installed)
     else:
         _install_commit(selection, target, installed)
-
-
-def _is_legacy_package(repo, model):
-    """Whether the target repository is a legacy Splash package, whose
-    manifest.json names a package format."""
-    if "manifest.json" not in repo.files:
-        return False
-    with hub.as_model_errors(f"cannot install {model}"):
-        manifest = models.read_json(repo.file("manifest.json"))
-    return legacy.is_package_manifest(manifest)
 
 
 def _start_installed(selection, target, installed):

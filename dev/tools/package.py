@@ -28,7 +28,6 @@ INSTALL_FILES = (
     "hub.py",
     "families.py",
     "assembly.py",
-    "legacy.py",
     "upstream.py",
     "gguf.py",
     "catalog.py",
