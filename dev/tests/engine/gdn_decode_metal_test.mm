@@ -606,7 +606,7 @@ std::string caseName(const char *test, const GdnShape &shape, uint32_t lanes, Li
 
 void fusedPreparation(MetalBackend &backend, const GdnShape &shape, uint32_t lanes, LinearInput layout,
                       bool float32) {
-  const std::string what = caseName("fused GDN", shape, lanes, layout);
+  const std::string what = caseName(float32 ? "fused GDN, F32 norms," : "fused GDN, bf16 norms,", shape, lanes, layout);
   Fixture fixture(backend, shape, lanes, float32);
   const PreparedTables tables(backend, layout, shape.valueHeads * shape.headDimension, lanes);
   CommandGraph reference;
@@ -977,13 +977,17 @@ int main(int argc, char **argv) {
         bufferExtents(backend, shape, LinearInput::Table64, false, lanes);
         bufferExtents(backend, shape, LinearInput::Table16, true, lanes);
       }
-    // Table64 feeds the affine models, whose norms are bf16; Table16 a GGUF's, whose norms are F32.
+    // Table64 feeds the affine images, whose norms are bf16; Table16 the block images, whose norms are F32 (a
+    // GGUF's, in tiled head order) or bf16 (an MLX target's, grouped).
     for (LinearInput layout : {LinearInput::Table64, LinearInput::Table16})
       for (const GdnShape &shape : kShapes)
         for (uint32_t lanes = 1; lanes <= kMaxLanes; ++lanes) {
           fusedPreparation(backend, shape, lanes, layout, layout == LinearInput::Table16);
           tiledHeadOrder(backend, shape, lanes, layout, layout == LinearInput::Table16);
         }
+    for (const GdnShape &shape : kShapes)
+      for (uint32_t lanes = 1; lanes <= kMaxLanes; ++lanes)
+        fusedPreparation(backend, shape, lanes, LinearInput::Table16, false);
     // A GGUF's out-projection on the staged tile reads the tiled rows plain.
     for (const GdnShape &shape : kShapes)
       for (uint32_t lanes = 1; lanes <= kMaxLanes; ++lanes)

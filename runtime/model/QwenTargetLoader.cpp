@@ -55,7 +55,7 @@ QwenMixerWeights readQwenMixer(WeightFile &file, const Format &format,
   gdn.mixerNorm = format.norm(file, target.gdnHeadDimension, "gdn-norm");
   gdn.outputProjection =
       format.projection(file, target.hiddenSize, target.attentionWidth, "gdn-output");
-  gdn.outputHeadOrder = Format::gdnOutputOrder;
+  gdn.outputHeadOrder = format.gdnOutputOrder;
   return gdn;
 }
 

@@ -10,10 +10,12 @@ namespace splash::model {
 // files.
 class AffineTargetLoader;
 class GgufTargetLoader;
+class MlxTargetLoader;
 
-// The files a target is read from: the images a loader writes from an MLX or
-// GGUF source.
+// The files a target is read from: the images a loader writes from an MLX
+// source (affine images, or block images in its MLX formats) or a GGUF.
 using QwenTargetFiles =
-    std::variant<std::reference_wrapper<AffineTargetLoader>, std::reference_wrapper<GgufTargetLoader>>;
+    std::variant<std::reference_wrapper<AffineTargetLoader>, std::reference_wrapper<GgufTargetLoader>,
+                 std::reference_wrapper<MlxTargetLoader>>;
 
 } // namespace splash::model

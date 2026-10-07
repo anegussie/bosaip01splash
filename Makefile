@@ -272,6 +272,8 @@ ENGINE_CPP_SOURCES := \
 	runtime/model/GgufFile.cpp \
 	runtime/model/GgufImage.cpp \
 	runtime/model/GgufTarget.cpp \
+	runtime/model/MlxImage.cpp \
+	runtime/model/MlxTarget.cpp \
 	runtime/model/AffineTarget.cpp \
 	runtime/model/AffinePreparation.cpp \
 	runtime/model/DraftCheckpoint.cpp \

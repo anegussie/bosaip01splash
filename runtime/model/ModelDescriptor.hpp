@@ -37,6 +37,12 @@ struct ModelDescriptor final {
   // Container selection belongs to loading; runtime dispatch follows each weight.
   TargetSource targetSource{};
   VisionSource visionSource{};
+  // Whether an MLX target loads as the affine images, whose projections, token
+  // table and head are 4-bit and whose MoE router and shared-expert gate are
+  // 8-bit in groups of kQ4GroupElements (affineTargetImages), or else as
+  // block images in its MLX formats (model/MlxImage.hpp), as its config's
+  // quantization decides (inspectModelRoot).
+  bool affineImages = true;
   // The SHA-256 of the record that names the digest of every source file,
   // an assembly's model.json, which the installer verifies at every start
   // (inspectModelRoot): what every image is written from

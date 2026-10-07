@@ -7,6 +7,7 @@
 
 #import <Foundation/Foundation.h>
 
+#include <cmath>
 #include <cstdint>
 #include <initializer_list>
 #include <span>
@@ -14,6 +15,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <tuple>
 #include <utility>
 
 namespace splash::model {
@@ -121,6 +123,14 @@ void requireNumber(id value, double expected, std::string_view source,
     throw std::invalid_argument(std::string(label) + " mismatch: " + std::string(source) +
                                 " " + number.description.UTF8String + ", runtime " +
                                 @(expected).description.UTF8String);
+}
+
+// A whole number from 0 to 2^32 - 1, which may be written as a float.
+uint32_t requireWhole(id value, std::string_view label) {
+  const double number = requireNumber(value, label).doubleValue;
+  if (!(number >= 0 && number <= UINT32_MAX) || number != std::floor(number))
+    throw std::invalid_argument(std::string(label) + " must be a whole number");
+  return static_cast<uint32_t>(number);
 }
 
 // A key and the number it must hold.
@@ -280,29 +290,48 @@ void validateTextConfig(NSDictionary *text, const QwenTargetDimensions &target, 
 }
 
 // An MLX target's quantization, the "quantization" object of its config.json:
-// every module its images read as affine weights (affineTargetImages) in the
-// bits each image keeps it in, in groups of kQ4GroupElements and in MLX's
-// affine mode, as the module's own entry states them or else the object does.
+// each module its images read quantized (affineTargetImages) in a format the
+// block kernels hold (metal/abi/QuantFormat.h), as MLX loads it: a module's
+// own entry, whose mode is MLX's default, affine, unless it names another, or
+// else the object. Whether the affine images hold the target: every module in
+// the bits they keep it in, affine, in groups of kQ4GroupElements. The block
+// images read each module's format from its tensors, as MLX does
+// (model/MlxImage.hpp).
 template <class Layout>
-void validateQuantization(NSDictionary *config, const Layout &layout) {
+bool readQuantization(NSDictionary *config, const Layout &layout) {
   // A checkpoint without it holds BF16 weights, or another method's that a
   // transformers quantization_config states (GPTQ, AWQ, ...).
   NSDictionary *quantization = config[@"quantization"];
   if (![quantization isKindOfClass:[NSDictionary class]])
-    throw std::invalid_argument("this model requires an MLX affine 4-bit/group-64 checkpoint or a supported GGUF");
+    throw std::invalid_argument(
+        "this model requires an MLX checkpoint (affine 2, 3, 4, 5, 6 or 8 bits in groups of 32, 64 or 128, or "
+        "mxfp4) or a supported GGUF");
+  // Mode, bits and group size of an entry, or of the object.
+  const auto read = [](NSDictionary *entry, NSString *mode, const std::string &label) {
+    if (![mode isKindOfClass:[NSString class]]) throw std::invalid_argument(label + " mode must be a string");
+    const uint32_t bits = requireWhole(entry[@"bits"], label + " bits");
+    const uint32_t group = requireWhole(entry[@"group_size"], label + " group_size");
+    const bool affine = [mode isEqual:@"affine"];
+    if (affine ? quant_affine_format_of(bits, group) == GGUF_FMT_COUNT
+               : ![mode isEqual:@"mxfp4"] || bits != 4 || group != 32)
+      throw std::invalid_argument(label + " is " + mode.UTF8String + " " + std::to_string(bits) +
+                                  "-bit in groups of " + std::to_string(group) +
+                                  "; MLX weights load as affine 2, 3, 4, 5, 6 or 8 bits in groups of 32, 64 or "
+                                  "128, or as mxfp4");
+    return std::tuple{affine, bits, group};
+  };
+  const auto defaults = read(quantization, quantization[@"mode"] ?: @"affine", "quantization");
+  bool affineImages = true;
   for (const affine::Image &image : affineTargetImages(layout))
-    for (const auto &[module, bits] : image.quantized) {
-      const std::string label = "quantization " + module;
-      id entry = quantization[@(module.c_str())] ?: quantization;
-      if (![entry isKindOfClass:[NSDictionary class]])
+    for (const auto &[name, bits] : image.quantized) {
+      const std::string label = "quantization " + name;
+      id entry = quantization[@(name.c_str())];
+      if (entry && ![entry isKindOfClass:[NSDictionary class]])
         throw std::invalid_argument(label + " must be an object");
-      requireNumber(entry[@"bits"] ?: quantization[@"bits"], bits, "MLX", label + " bits");
-      requireNumber(entry[@"group_size"] ?: quantization[@"group_size"], kQ4GroupElements, "MLX",
-                    label + " group_size");
-      id mode = entry[@"mode"] ?: quantization[@"mode"];
-      if (mode && ![mode isEqual:@"affine"])
-        throw std::invalid_argument(label + " mode must be affine");
+      const auto [affine, moduleBits, group] = entry ? read(entry, entry[@"mode"] ?: @"affine", label) : defaults;
+      affineImages = affineImages && affine && moduleBits == bits && group == kQ4GroupElements;
     }
+  return affineImages;
 }
 
 // A DFlash2 checkpoint's config: the draft's layout; the block, window,
@@ -401,7 +430,7 @@ ModelDescriptor describeSourceModel(std::string name, std::string_view targetFor
                                : qwen38Descriptor(std::move(name), targetSource, visionSource);
   std::visit([&](const auto &layout) {
     validateTextConfig(text, layout, layout.family, result.targetSource);
-    if (result.targetSource == TargetSource::Mlx) validateQuantization(config, layout);
+    if (result.targetSource == TargetSource::Mlx) result.affineImages = readQuantization(config, layout);
     if (draft) validateDraftConfig(draft, result.draft, layout.maskToken, layout.hiddenCaptureLayers);
   }, result.target);
   if (result.hasVision())
