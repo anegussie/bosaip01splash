@@ -104,7 +104,7 @@ int checkRotatedEmbedding(MetalBackend &backend, const std::vector<int8_t> &sign
   CommandGraph graph;
   graph.add(kernel, {tokenBuffer, rows, signBuffer, out}, GgufEmbedParams{uint32_t(tokens.size()), vocabulary, hidden},
             {hidden / kBlock, uint32_t(tokens.size()), 1}, {GGUF_ROTATION_THREADS, 1, 1});
-  static_cast<void>(backend.submitCommand(graph.dispatches()));
+  static_cast<void>(backend.submitCommandAsync(graph.dispatches()).wait());
   return check(kernel, static_cast<const uint16_t *>(out.contents()), fp32, fp64);
 }
 
@@ -147,7 +147,7 @@ int main(int argc, char **argv) {
         CommandGraph graph;
         graph.add("gguf_rotate", {in, signBuffer, out}, GgufRotationParams{width}, {width / kBlock, rows, 1},
                   {GGUF_ROTATION_THREADS, 1, 1});
-        static_cast<void>(backend.submitCommand(graph.dispatches()));
+        static_cast<void>(backend.submitCommandAsync(graph.dispatches()).wait());
         failures += check("gguf_rotate H (D x)", static_cast<const uint16_t *>(out.contents()), fp32, fp64);
       }
 

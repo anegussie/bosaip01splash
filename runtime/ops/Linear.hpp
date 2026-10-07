@@ -6,6 +6,7 @@
 #include "ops/Weights.hpp"
 
 #include <algorithm>
+#include <array>
 #include <compare>
 #include <cstdint>
 #include <span>
@@ -18,6 +19,12 @@ namespace splash::ops {
 // kernel's fp32 instance is "<name>_f32".
 [[nodiscard]] inline std::string kernelInstance(std::string_view name, FloatOutput destination) {
   return std::string(name) + (destination == FloatOutput::Float32 ? "_f32" : "");
+}
+// The instance of prefill residual kernel `name` that reads a view of the
+// leading inputs of wider weight rows (Projection::leadingInputs):
+// "<name>_leading_inputs".
+[[nodiscard]] inline std::string leadingInputsInstance(std::string_view name) {
+  return std::string(name) + "_leading_inputs";
 }
 // The tile of a float projection (kernels/shared/gguf_float.metal): fp32
 // simdgroup MMA on the weights as stored, or the neural accelerator's bf16
@@ -37,28 +44,35 @@ struct LinearMatrix final {
 };
 
 // Throws unless `projection` is an affine projection of `matrix` whose planes
-// hold all of its Q4 weights, scales and biases.
+// hold all of its Q4 weights, scales and biases, in rows of its
+// planeInputSize() inputs.
 void requireAffineProjection(const Projection &projection, LinearMatrix matrix);
+// Throws unless the planes of the quantized `segment` hold every tile of its
+// outputSize x inputSize weights (metal/abi/QuantFormat.h), naming them
+// "<what> plane0", "<what> plane1" and "<what> meta": in rows of
+// `planeInputs` inputs, of which it is a view of the leading ones
+// (Projection::leadingInputs), or of its inputSize when that is 0.
+void requireSegmentPlanes(const QuantizedSegment &segment, std::string_view what, uint32_t planeInputs = 0);
 
 enum class LinearPhase : uint8_t { Prefill, Decode };
 enum class LinearEpilogue : uint8_t { None, Residual, GateUp, UpWithGate };
-// Compute tiles over the StorageN=256 packing. Paired tiles pipeline two
+// Compute tiles over the affine storage tiles. Paired tiles pipeline two
 // quant groups of one lane. Split128 is the N128 tile with K split across
 // `splits` threadgroups, grid (column tiles, splits), every lane's rows in each
 // tile; the last threadgroup of a tile to finish reduces the fp32 partial sums
 // before the bf16 rounding. Paired256 is the four-simdgroup N256 paired tile.
-// Simdgroup uses bf16 8x8 matrix operations and an explicit activation/split
+// Q4Register is the register tile on bf16 8x8 matrix operations (Apple9),
+// over an activation table and with optional K splits in an explicit
 // workspace.
 // The GGUF tiles run 64 columns per threadgroup. The staged tiles, GgufStaged
 // and GgufPrefill, dequantize GGUF weights into threadgroup memory for
 // matmul2d. GgufStaged: the two-simdgroup staged tile of 8, 16 or 32 rows
 // (decode, and prefill chunks of up to 32 rows), each simdgroup staging its
 // own columns, with optional K splits. GgufPrefill: the 128-row shared-stage
-// prefill tile. GgufRegister is the exact register tile on bf16 8x8 matrix
-// operations (Apple9): every request lane in one threadgroup, optional K
-// splits.
+// prefill tile. GgufRegister is Q4Register's twin over GGUF weights, exact:
+// every request lane in one threadgroup, optional K splits.
 enum class LinearTile : uint8_t {
-  N128, N256, Paired128, Split128, Paired256, Simdgroup, GgufStaged, GgufPrefill, GgufRegister
+  N128, N256, Paired128, Split128, Paired256, Q4Register, GgufStaged, GgufPrefill, GgufRegister
 };
 // The decode tiles hold at most a full decode batch; GGUF prefill chunks of up
 // to this many rows run the staged tile (Linear::ggufBaseline).
@@ -90,7 +104,7 @@ struct LinearConfig final {
   // four). The GGUF tiles fix their threadgroups in their kernels
   // (GGUF_*_THREADS) and leave this at its default.
   LinearSimdgroups simdgroups = LinearSimdgroups::Eight;
-  // Cross-threadgroup K partitions for Split128, Simdgroup, GgufStaged and
+  // Cross-threadgroup K partitions for Split128, Q4Register, GgufStaged and
   // GgufRegister, a power of two up to kMaximumSplits (Split128 takes at
   // least two); all other tiles use one.
   uint32_t splits = 1;
@@ -104,7 +118,7 @@ struct LinearConfig final {
 // Reused serially within one decode command stream. Counters are zeroed at
 // allocation and restored by each completed split dispatch. Never share this
 // workspace between concurrent command streams. Within a batched dispatch of
-// the Simdgroup tile, each eight-row tile owns disjoint input, sums, partials
+// the Q4Register tile, each eight-row tile owns disjoint input, sums, partials
 // and counters; Split128 holds every row of the step in each tile.
 struct LinearScratch final {
   metal::MetalBuffer input;
@@ -114,6 +128,20 @@ struct LinearScratch final {
   // The bf16 input rows a rotated projection's quantized segments read
   // (ProjectionShape::rotated), sized by decode/prefillScratchSize(shape).rotated.
   metal::MetalBuffer rotated{};
+};
+// One layer's SwiGLU projections, affine Q4 or quantized GGUF tensors:
+// down(silu(gate x) * up x).
+struct SwiGluProjections final {
+  const Projection *gate = nullptr;
+  const Projection *up = nullptr;
+  const Projection *down = nullptr;
+};
+// A prefill chunk's buffers of its dense FFN: the normalized rows and their
+// Q4 sums, gate's output, the intermediate rows and their Q4 sums, and the
+// linear scratch.
+struct PrefillFfnBuffers final {
+  metal::MetalBuffer normalized, sums, gateScratch, intermediate, downSums;
+  LinearScratch scratch;
 };
 struct LinearScratchSize final {
   uint64_t input = 0, sums = 0, partials = 0, counters = 0, rotated = 0;
@@ -134,8 +162,8 @@ struct LinearScratchSize final {
 // alongside its ordinary output.
 enum class LinearInput : uint8_t {
   Plain,    // bf16 [rows][K]
-  Table64,  // affine simdgroup table, one sum per 64 inputs (kernels/common/q4_sgmatrix.h)
-  Table16,  // GGUF simdgroup table, sums per 16 and 32 inputs (kernels/common/gguf_sgmatrix.h)
+  Table64,  // Q4Register's table, one sum per 64 inputs (kernels/common/q4_sgmatrix.h)
+  Table16,  // GgufRegister's table, sums per 16 and 32 inputs (kernels/common/gguf_sgmatrix.h)
 };
 // Scratch bytes a producer writes for `rows` rows of `width` inputs.
 [[nodiscard]] constexpr uint64_t tableBytes(uint32_t width, uint64_t rows) noexcept {
@@ -168,7 +196,7 @@ public:
   // persistent decode tile, every column tile otherwise.
   [[nodiscard]] uint32_t groups() const noexcept;
   [[nodiscard]] uint32_t threadsPerThreadgroup() const noexcept;
-  [[nodiscard]] bool usesSimdgroup() const noexcept;
+  [[nodiscard]] bool usesQ4Register() const noexcept;
   // The layout the producer of this plan's input writes. A rotated
   // projection prepares its table from the rotated rows itself
   // (LinearGguf.cpp), so its producer writes plain rows.
@@ -221,9 +249,18 @@ inline constexpr uint32_t kAssumedGpuCores = 32;
 [[nodiscard]] constexpr uint32_t plannedGpuCores(const DeviceCapabilities &device) noexcept {
   return device.gpuCoreCount ? device.gpuCoreCount : kAssumedGpuCores;
 }
+// The GPU family classes kernel policy tells apart: Apple9 (family 9: M3,
+// M4), whose matrix operations share the FP32 pipe, and Apple10 (family 10
+// and later: M5, M6), whose cores each hold a neural accelerator. Startup
+// refuses families below 9.
+enum class GpuFamilyClass : uint8_t { Apple9, Apple10 };
+[[nodiscard]] constexpr GpuFamilyClass gpuFamilyClass(uint32_t appleGpuFamily) noexcept {
+  return appleGpuFamily >= 10 ? GpuFamilyClass::Apple10 : GpuFamilyClass::Apple9;
+}
 
 // Owns projection pipeline selection and dispatch for both weight layouts.
-// Device policy uses GPU family, core count and workload tile counts.
+// Device policy uses the GPU family class, core count and workload tile
+// counts.
 class Linear final {
 public:
   explicit Linear(const DeviceCapabilities &device) noexcept;
@@ -279,12 +316,20 @@ public:
   void addPrefillResidual(metal::CommandGraph &graph, metal::MetalBuffer input, const Projection &projection,
                           metal::MetalBuffer residual, metal::MetalBuffer output, metal::MetalBuffer sums,
                           uint32_t rows, LinearScratch scratch) const;
+  // output = residual + down(silu(gate x) * up x) of `rows` normalized rows,
+  // whose Q4 sums the norm wrote.
+  void addPrefillSwiGlu(metal::CommandGraph &graph, const SwiGluProjections &ffn, const PrefillFfnBuffers &buffers,
+                        metal::MetalBuffer residual, metal::MetalBuffer output, uint32_t rows) const;
 
 private:
   // The device's configuration of the workload; a block plan's tile may follow the formats of the projections it
   // runs.
   [[nodiscard]] LinearConfig baseline(LinearWorkload workload,
                                       std::span<const Projection *const> projections = {}) const;
+  // The partials and counters a dispatch of `splits` K partitions binds: the
+  // scratch's, or for one partition, which reads neither, the output.
+  [[nodiscard]] static std::array<metal::MetalBuffer, 2> splitScratch(const LinearBuffers &buffers,
+                                                                      uint32_t splits);
   // GGUF policy and dispatch (LinearGguf.cpp). Block plans are not tuned.
   [[nodiscard]] LinearConfig ggufBaseline(LinearWorkload workload,
                                           std::span<const Projection *const> projections) const;
@@ -303,7 +348,7 @@ private:
                        const Projection *gate) const;
   void addGgufFloatSegments(metal::CommandGraph &graph, const LinearBuffers &buffers,
                             const Projection &projection, const LinearPlan &plan) const;
-  uint32_t appleGpuFamily_ = 0;
+  GpuFamilyClass family_;
   uint32_t gpuCores_ = 0;
 };
 

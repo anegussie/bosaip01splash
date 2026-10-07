@@ -9,17 +9,12 @@ namespace splash::test {
 
 // Sized projections without weight buffers, for arena and operator planning.
 template <class Weights>
-model::ModelPackage runtimeGeometryPackage() {
-  model::ModelPackage result;
+model::LoadedModel runtimeGeometryPackage() {
+  model::LoadedModel result;
   Weights target;
-  model::DFlashDraftLayout draft;
-  if constexpr (std::is_same_v<Weights, model::Qwen3_6MoeWeights>) {
-    draft.layers = 6;
-    draft.hiddenSize = 2048;
-    draft.dynamicSize = 512;
-    draft.intermediateSize = 6144;
-    draft.targetHiddenSize = target.layout.capturedHiddenSize();
-  }
+  const model::DFlashDraftLayout draft = std::is_same_v<Weights, model::Qwen3_6MoeWeights>
+                                             ? model::kQwen3_6MoeDraftLayout
+                                             : model::kQwen3_8DraftLayout;
   const auto projection = [](uint32_t n, uint32_t k) {
     return ops::Projection(n, k, ops::AffineWeights{});
   };
@@ -48,7 +43,8 @@ model::ModelPackage runtimeGeometryPackage() {
   ops::VisionLayout vision;
   vision.outputHiddenSize = target.layout.hiddenSize;
   result.descriptor = model::makeModelDescriptor(
-      "operator workspace test", target.layout, draft, vision);
+      "operator workspace test", target.layout, draft, vision,
+      model::TargetSource::Package, model::VisionSource::Package);
   result.target = std::move(target);
   result.draft.layout = draft;
   return result;

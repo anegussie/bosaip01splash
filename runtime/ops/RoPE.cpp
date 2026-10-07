@@ -33,8 +33,8 @@ void RoPE::addTables(
   requireBytes(draftCosine, draftTable, "draft RoPE cosine");
   requireBytes(draftSine, draftTable, "draft RoPE sine");
   const uint64_t elements =
-      std::max<uint64_t>(uint64_t{rows.target_rows} * 32,
-                         uint64_t{rows.draft_rows} * 64);
+      std::max<uint64_t>(uint64_t{rows.target_rows} * SPLASH_TARGET_ROPE_PAIRS,
+                         uint64_t{rows.draft_rows} * SPLASH_DRAFT_ROPE_PAIRS);
   graph.add("rope_build_tables",
             {std::move(targetPositions), std::move(draftPositions),
              std::move(targetInverseFrequencies),

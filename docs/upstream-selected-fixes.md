@@ -1,5 +1,8 @@
 # Selected upstream fixes on splashmain
 
+This records the selective 2026-10-05 port. The full 2026-10-07 integration is
+documented in [the upstream merge validation](upstream-merge-2026-10-07.md).
+
 Integrated on 2026-10-05 against local base `13dafc9`, using upstream
 `35c828c` as the comparison point. This is a selective port of the fixes below;
 the complete upstream refactoring and optional idle-release changes are not

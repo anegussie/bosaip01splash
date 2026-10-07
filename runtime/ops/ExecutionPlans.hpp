@@ -30,7 +30,7 @@ public:
   [[nodiscard]] MoePlan moeDecode(MoeShape shape, uint32_t lanes) const;
 
   // Bounds cover every row count up to the requested maximum, not just that
-  // one. Packed decode arenas use a per-lane stride of
+  // one. Decode arenas use a per-lane stride of
   // max_B ceil(requiredBytes(B)/B), independently for each scratch field.
   [[nodiscard]] AttentionWorkspace prefillAttentionWorkspace(
       uint32_t maximumRows, uint32_t queryHeads, kv::Layout layout) const;
@@ -50,8 +50,7 @@ private:
 
   Linear linear_;
   uint32_t moeRouteWideRows_;
-  MoeExpertSimdgroups moeDecodeSimdgroups_ = MoeExpertSimdgroups::Eight;
-  uint32_t appleGpuFamily_ = 0;
+  GpuFamilyClass family_;
   uint32_t maximumHistoryTokens_;
 };
 

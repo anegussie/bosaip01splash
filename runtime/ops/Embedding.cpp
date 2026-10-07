@@ -4,6 +4,7 @@
 #include "metal/abi/Embedding.h"
 #include "metal/abi/ExecutionGeometry.h"
 #include "metal/abi/Gguf.h"
+#include "ops/BufferExtent.hpp"
 
 #include <stdexcept>
 #include <string>
@@ -22,9 +23,8 @@ void Embedding::add(metal::CommandGraph &graph, metal::MetalBuffer tokens,
   if (!rows || !table.outputSize || !table.inputSize)
     throw std::invalid_argument("invalid Q4 embedding shape");
   // Both gathers read `rows` token ids and write `rows` bf16 rows of the table's width.
-  if (tokens.sizeBytes() < uint64_t{rows} * sizeof(uint32_t) ||
-      output.sizeBytes() < uint64_t{rows} * table.inputSize * sizeof(uint16_t))
-    throw std::invalid_argument("embedding buffers are smaller than the gathered rows");
+  requireBytes(tokens, uint64_t{rows} * sizeof(uint32_t), "embedding token");
+  requireBytes(output, uint64_t{rows} * table.inputSize * sizeof(uint16_t), "embedding output");
   if (table.layout() == WeightLayout::Block32) {
     const NativeRows &native = table.blocks();
     // Every token's row of native blocks (kernels/shared/embedding.metal).
@@ -37,9 +37,9 @@ void Embedding::add(metal::CommandGraph &graph, metal::MetalBuffer tokens,
     if (table.rotation) {
       // One threadgroup per rotation block of a row, which gathers the block
       // and inverts its rotation in fp32 (kernels/shared/gguf_rotation.metal).
-      if ((native.formatId != GGUF_FMT_PQ20 && native.formatId != GGUF_FMT_PTQ10) || table.inputSize % GGUF_ROTATION_BLOCK ||
-          table.rotation.signs.sizeBytes() < table.inputSize)
+      if ((native.formatId != GGUF_FMT_PQ20 && native.formatId != GGUF_FMT_PTQ10) || table.inputSize % GGUF_ROTATION_BLOCK)
         throw std::invalid_argument("a rotated token table takes a supported ternary format, whole rotation blocks and their signs");
+      requireBytes(table.rotation.signs, table.inputSize, "embedding rotation sign");
       const char *kernel = native.formatId == GGUF_FMT_PQ20 ? "gguf_embed_rotated_pq20" : "gguf_embed_rotated_ptq10";
       graph.add(kernel, {std::move(tokens), native.rows, table.rotation.signs, std::move(output)},
                 params, {table.inputSize / GGUF_ROTATION_BLOCK, rows, 1}, {GGUF_ROTATION_THREADS, 1, 1});

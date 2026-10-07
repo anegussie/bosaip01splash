@@ -2,6 +2,7 @@
 
 #include "ops/BufferExtent.hpp"
 #include "metal/abi/Sampling.h"
+#include "ops/BufferExtent.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -98,9 +99,9 @@ void Sampling::addPenalties(metal::CommandGraph &graph,
     if (!penalties.active())
       continue;
     // The kernel indexes the whole table by this row.
-    if (lane >= table.rows.size() ||
-        (uint64_t{table.rows[lane]} + 1) * rowBytes > table.words.sizeBytes())
+    if (lane >= table.rows.size())
       throw std::invalid_argument("penalized lane has no penalty table row");
+    requireBytes(table.words, (uint64_t{table.rows[lane]} + 1) * rowBytes, "penalty table");
     const uint32_t entry = params.entries++;
     params.logits_lane[entry] = lane;
     params.table_row[entry] = table.rows[lane];
@@ -115,9 +116,6 @@ void Sampling::addPenalties(metal::CommandGraph &graph,
     return;
   // Entries follow the lanes, so the last one's lane is the highest.
   const uint64_t lanes = uint64_t{params.logits_lane[params.entries - 1]} + 1;
-  requireBytes(buffers.logits,
-               ((lanes - 1) * SPLASH_TARGET_VERIFY_ROWS + rowOffset + params.rows) * vocabulary_ * sizeof(float),
-               "sampling logits");
   if (verify)
     requireBytes(buffers.inputTokens, lanes * SPLASH_TARGET_VERIFY_ROWS * sizeof(uint32_t), "verify input token");
   const metal::DispatchSize groups{
@@ -194,12 +192,16 @@ TargetSamplingParams Sampling::selection(std::span<const SamplingPolicy> policie
   }
   // Selected row s is row s % rows of lane s / rows (metal/abi/Sampling.h),
   // and the kernels of a lane's policy reach that lane's rows: each buffer
-  // holds the rows up to the last lane that reads it.
+  // holds the rows up to the last lane that reads it, a workspace the
+  // workspace() of those rows.
   const uint64_t lanes = policies.size();
   const uint64_t greedyLanes = std::bit_width(((uint32_t{1} << lanes) - 1) & ~params.sampling_mask);
   const uint64_t sampledLanes = std::bit_width(params.sampling_mask);
   const uint64_t constrainedLanes = std::bit_width(params.constrained_mask);
-  const uint64_t greedyRows = greedyLanes * rows.rows, sampledRows = sampledLanes * rows.rows;
+  const auto rowsWorkspace = [&](uint64_t policyLanes) {
+    return policyLanes ? workspace(static_cast<uint32_t>(policyLanes * rows.rows)) : SamplingWorkspace{};
+  };
+  const SamplingWorkspace greedy = rowsWorkspace(greedyLanes), sampled = rowsWorkspace(sampledLanes);
   requireBytes(buffers.logits,
                ((lanes - 1) * SPLASH_TARGET_VERIFY_ROWS + rows.logitsRow + rows.rows) * vocabulary_ * sizeof(float),
                "sampling logits");
@@ -209,14 +211,12 @@ TargetSamplingParams Sampling::selection(std::span<const SamplingPolicy> policie
                      sizeof(uint32_t),
                  "constraint mask");
   requireBytes(buffers.outputTokens, lanes * rows.rows * sizeof(uint32_t), "sampled token");
-  requireBytes(buffers.argmaxValues, greedyRows * kTargetShards * sizeof(float), "argmax value");
-  requireBytes(buffers.argmaxIndices, greedyRows * kTargetShards * sizeof(uint32_t), "argmax index");
-  requireBytes(buffers.partialMasses, sampledRows * kTargetShards * sizeof(TargetShardMass), "sampling mass");
-  requireBytes(buffers.vocabularyRows, sampledRows * sizeof(TargetVocabularyRow), "sampling vocabulary row");
-  requireBytes(buffers.vocabularyRanges,
-               sampledRows * SPLASH_TARGET_VOCABULARY_RANGES * sizeof(TargetVocabularyRange),
-               "sampling vocabulary range");
-  requireBytes(buffers.vocabularyArrivals, sampledRows * sizeof(uint32_t), "sampling arrival");
+  requireBytes(buffers.argmaxValues, greedy.argmaxValuesBytes, "argmax value");
+  requireBytes(buffers.argmaxIndices, greedy.argmaxIndicesBytes, "argmax index");
+  requireBytes(buffers.partialMasses, sampled.partialMassesBytes, "sampling mass");
+  requireBytes(buffers.vocabularyRows, sampled.vocabularyRowsBytes, "sampling vocabulary row");
+  requireBytes(buffers.vocabularyRanges, sampled.vocabularyRangesBytes, "sampling vocabulary range");
+  requireBytes(buffers.vocabularyArrivals, sampled.vocabularyArrivalsBytes, "sampling arrival");
   if (sampledLanes) {
     const uint64_t last = sampledLanes - 1, drafted = std::min(rows.rows, rows.draftedRows);
     requireBytes(buffers.uniforms, (last * SPLASH_SAMPLING_UNIFORMS + rows.uniform + 1) * sizeof(float),

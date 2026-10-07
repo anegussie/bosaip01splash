@@ -115,7 +115,7 @@ public:
   explicit Sampling(uint32_t vocabulary);
 
   // Exact scratch/output bytes for the fixed precompiled sampling ABI.
-  // Counts may cover one lane or a packed batch; the operator owns sharding.
+  // Counts may cover one lane or a batch of lanes; the operator owns sharding.
   [[nodiscard]] static SamplingWorkspace workspace(uint32_t rows);
 
   // A penalized request's penalty words (metal/abi/Sampling.h), rebuilt
@@ -174,7 +174,8 @@ private:
   // Penalizes the row at rowOffset of each penalized lane or, for verify,
   // all its rows, each also counting the draft tokens its context adds.
   // Policies come from validated requests (Model.hpp
-  // SamplingParameters::validationError).
+  // SamplingParameters::validationError). It follows selection(), whose
+  // check of every lane's logits covers those it rewrites.
   void addPenalties(metal::CommandGraph &graph,
                     std::span<const SamplingPolicy> policies,
                     const SamplingBuffers &buffers, const PenaltyTable &table,
