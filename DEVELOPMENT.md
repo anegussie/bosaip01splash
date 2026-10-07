@@ -899,6 +899,7 @@ Proxy consumers can use these fields; additional fields may be added:
 | `metrics.decode_cycle_ms` | Total engine time of the decode commands, each from the previous command's completion (or its plan after idleness) to its own: the GPU command plus the host work between commands |
 | `loop.max_tick_ms` | Longest control pass and engine step of the native loop. A reader thread keeps reading requests meanwhile, so a request frame whose write stalls 5 s after it started fails the engine only when the process stopped reading; while requests are pending the server asks for status every 10 s and fails an engine whose loop does not answer within 30 s. |
 | `maximum_context_tokens` | Declared context limit; available memory may limit admission |
+| `thermal_state` | The Mac's thermal state as macOS reports it: `nominal`, `fair`, `serious` or `critical`. From `serious` on, macOS may lower the CPU's and GPU's clocks, and prefill and decode slow down; readiness ignores it. The engine samples it twice a second and logs each change (`Thermal state: fair → serious`) |
 | `vision`, `input_modalities` | Whether image and PDF input is accepted; `false` and `["text"]` after `--language-only` |
 | `chat_template.later_system` | `native`, `patched` or `unsupported`: how system messages after the first render (per name for named templates) |
 | `transport.recovering`, `transport.stopped`, `transport.error` | The engine is restarting, or Splash stopped restarting it after repeated failures; `error` names its failure, the last failed restart, or why restarts stopped |
@@ -913,8 +914,8 @@ until the pressure lifts.
 
 `GET /metrics` exports in Prometheus text format the `requests`,
 `memory_actual` and `metrics` fields above, the status's scheduler, KV, cache,
-admission and image counts, and readiness and memory pressure; the table's
-other fields are in `/status` alone.
+admission and image counts, and readiness, memory pressure and thermal state;
+the table's other fields are in `/status` alone.
 `splash_kv_free_allocated_pages` counts free pages of allocated extents, not
 remaining capacity; memory headroom is `splash_memory_headroom_bytes`. Consumers
 should tolerate missing native fields while the engine is unavailable, and
