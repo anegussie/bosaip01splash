@@ -621,7 +621,7 @@ def _anthropic_system_text(value, label):
     return "".join(parts) or None
 
 
-def _anthropic_content(value, label):
+def _anthropic_content(value, label, *, allow_tool_references=False):
     """Text for plain Anthropic content; canonical parts in document order when
     its blocks carry images or documents. User messages and tool results share
     it, so the template places each image where the author put it."""
@@ -634,6 +634,18 @@ def _anthropic_content(value, label):
         kind = block.get("type") if isinstance(block, dict) else None
         if kind == "text" and isinstance(block.get("text"), str):
             parts.append({"type": "text", "text": block["text"]})
+        elif kind == "tool_reference" and allow_tool_references:
+            name = block.get("tool_name")
+            if (
+                not isinstance(name, str)
+                or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", name) is None
+            ):
+                raise APIError(
+                    400, "tool_reference.tool_name must match [A-Za-z0-9_-]{1,128}"
+                )
+            # Tool schemas already reach the model through the request's tools.
+            # Keep the search result visible without duplicating definitions.
+            parts.append({"type": "text", "text": f"\nAvailable tool: {name}\n"})
         elif kind == "image":
             source = block.get("source")
             if (
@@ -912,7 +924,9 @@ def _anthropic_tool_result(block):
         raise APIError(400, "invalid Anthropic tool_result block")
     if not isinstance(block.get("is_error", False), bool):
         raise APIError(400, "tool_result.is_error must be a boolean")
-    content = _anthropic_content(block.get("content", ""), "tool_result")
+    content = _anthropic_content(
+        block.get("content", ""), "tool_result", allow_tool_references=True
+    )
     if block.get("is_error"):
         failed = "Tool execution failed:\n"
         content = (
