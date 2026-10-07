@@ -1461,8 +1461,10 @@ decode faster on the staged tile there, which a projection all of whose segments
 takes wherever the tile holds its lanes' rows unpadded. On Apple10 (M5) the staged tile
 (`LinearTile::GgufStaged`) runs the kernels of `runtime/metal/kernels/shared/gguf_linear.metal`,
 which dequantize each weight once to half in threadgroup memory (`kernels/common/gguf_staged.h`)
-for MPP `matmul2d`, the neural accelerator's path, on bf16 activations; a step of three request
-lanes runs the 32-row tile over four lanes of storage. Prefill runs the staged kernels on both
+for MPP `matmul2d`, the neural accelerator's path, on bf16 activations. A step's weights, and
+its meta unit when it enters a new one, load while the previous step's matmul runs
+(`gguf_staged_steps`): their DRAM round trips overlap a matmul. A step of three request lanes
+runs the 32-row tile over four lanes of storage. Prefill runs the staged kernels on both
 families: the 128-row prefill tile (`LinearTile::GgufPrefill`), and the staged tile for chunks of
 up to 32 rows. Every projection splits its K across threadgroups by one rule (`decodeSplits`: each
 tile's tiers of threadgroups per core and inputs per partition, from measured occupancy, Apple9's
