@@ -1,5 +1,4 @@
 #include "ModelFactory.hpp"
-#include "model/AffineTarget.hpp"
 #include "model/DraftCheckpoint.hpp"
 #include "model/GgufTarget.hpp"
 #include "model/MlxTarget.hpp"
@@ -76,11 +75,7 @@ LoadedModel loadModel(metal::MetalBackend &backend,
         const std::filesystem::path directory = root / "target";
         switch (result.descriptor.targetSource) {
         case TargetSource::Mlx: {
-          if (!result.descriptor.affineImages) {
-            MlxTargetLoader loader(backend, images, directory, layout);
-            return readTarget(backend, layout, std::ref(loader));
-          }
-          AffineTargetLoader loader(images, directory, layout);
+          MlxTargetLoader loader(backend, images, directory, layout);
           return readTarget(backend, layout, std::ref(loader));
         }
         case TargetSource::Gguf: {
@@ -113,11 +108,9 @@ uint64_t modelWeightBytes(const std::filesystem::path &root, const ModelDescript
     bytes = std::visit(
         [&](const auto &layout) { return imageBytes(gguf::planImages(file, layout)); },
         descriptor.target);
-  } else if (!descriptor.affineImages) {
+  } else {
     bytes = std::visit([&](const auto &layout) { return mlxTargetImageBytes(root / "target", layout); },
                        descriptor.target);
-  } else {
-    bytes = std::visit([](const auto &layout) { return imageBytes(affineTargetImages(layout)); }, descriptor.target);
   }
   bytes += imageBytes(draftCheckpointImages(descriptor.draft));
   if (descriptor.hasVision())

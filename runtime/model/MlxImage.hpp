@@ -1,7 +1,6 @@
 #pragma once
 
-// Plans the images of an MLX target that the affine images do not hold
-// (ModelDescriptor::affineImages): the sections a GGUF target's images hold
+// Plans the images of an MLX target: the sections a GGUF target's images hold
 // (model/GgufImage.hpp), in their order, which writeGgufImage writes from the
 // checkpoint's tensors and BlockTargetFormat reads with bf16 norms and the GDN
 // value heads grouped, as MLX keeps them. Every quantized tensor keeps the

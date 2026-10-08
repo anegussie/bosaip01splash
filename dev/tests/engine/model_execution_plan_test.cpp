@@ -189,6 +189,17 @@ void checkGdnWidths() {
   withoutGates.packedGdnWidth = shipped.convolutionDimension + shipped.attentionWidth;
   rejects([&] { sizeArenas(withoutGates); }, "invalid model runtime geometry",
           "packed GDN rows without the gates reached arena sizing");
+  // The dense layout is checked like the sparse one: its capture layers and
+  // its convolution width against its GDN heads.
+  const model::Qwen3_8Layout dense;
+  model::requireQwenLayout(dense);
+  auto capturePastLastLayer = dense;
+  capturePastLastLayer.hiddenCaptureLayers.back() = dense.layers;
+  auto convolutionMismatch = dense;
+  convolutionMismatch.convolutionDimension += dense.gdnHeadDimension;
+  for (const model::Qwen3_8Layout &broken : {capturePastLastLayer, convolutionMismatch})
+    rejects([&] { model::requireQwenLayout(broken); }, "Qwen target layout is inconsistent",
+            "an inconsistent dense layout was accepted");
 }
 
 } // namespace

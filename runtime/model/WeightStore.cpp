@@ -143,21 +143,6 @@ ops::Projection readAffineProjection(WeightFile &file, uint32_t outputSize, uint
     return {outputSize, inputSize, ops::AffineWeights{planes[0], planes[1], planes[2]}};
 }
 
-ops::EmbeddingWeights readAffineEmbedding(WeightFile &file,
-                                             uint32_t outputSize,
-                                             uint32_t inputSize,
-                                             std::string_view label) {
-    const uint64_t elements = q4Elements(outputSize, inputSize);
-    const std::string prefix(label);
-    // Braced initializers read the sections in file order.
-    return {outputSize, inputSize,
-            ops::AffineWeights{
-                file.section(elements / 2, prefix + "-weights"),
-                file.section(elements / 32, prefix + "-scales"),
-                file.section(elements / 32, prefix + "-biases"),
-            }};
-}
-
 ops::NormWeights readNorm(WeightFile &file, uint32_t width, bool float32,
                           std::string_view label) {
     ops::NormWeights norm{{}, float32};
@@ -225,33 +210,6 @@ ops::EmbeddingWeights readBlockEmbedding(WeightFile &file, uint32_t outputSize, 
         throw WeightStoreError("GGUF embedding rows are not native GGUF blocks: " + std::string(label));
     return {outputSize, inputSize,
             ops::NativeRows(file.section(d.plane0Bytes, std::string(label) + "-native"), format)};
-}
-
-ops::Q8Projection readAffineQ8Projection(WeightFile &file, uint32_t outputSize, uint32_t inputSize,
-                                         std::string_view label) {
-    validateQ4Layout(outputSize, inputSize);
-    const uint64_t elements = q4Elements(outputSize, inputSize);
-    const std::vector<metal::MetalBuffer> planes = file.split({elements, elements / 32, elements / 32}, label);
-    return {{planes[0], planes[1], planes[2]}, outputSize, inputSize};
-}
-
-ops::ExpertProjection
-readAffineExpertProjection(WeightFile &file, uint32_t experts,
-                           uint32_t outputSize, uint32_t inputSize,
-                           std::string_view label) {
-    if (!experts)
-        throw WeightStoreError("expert projection requires experts");
-    validateQ4Layout(outputSize, inputSize);
-    const uint64_t stride = q4PackedBytes(outputSize, inputSize);
-    return {
-        file.section(checkedMultiply<WeightStoreError>(experts, stride,
-                                                       "expert Q4 slab bytes"),
-                     label),
-        experts,
-        outputSize,
-        inputSize,
-        stride,
-    };
 }
 
 std::string weightManifestFingerprint(

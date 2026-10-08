@@ -8,7 +8,7 @@
 - `gguf_images`: every image `gguf-preparation` writes from its dense and MoE
   GGUF fixtures.
 - `affine_images`: every image `run_affine_preparation.py` writes from its
-  dense and MoE checkpoints and its DFlash2 draft checkpoint.
+  DFlash2 draft checkpoint.
 - `vision_image`: the image written from every `run_vision_preparation.py`
   tower.
 
@@ -16,8 +16,9 @@ An image hash fails on any change of the image's bytes. When a change means
 to change them:
 
 1. Change the independent oracles to the intended bytes: the serialized
-   `expected` images in `fixture()` of `run_affine_preparation.py` and
-   `run_vision_preparation.py`, and for GGUF the CPU reference planes
+   `expected` images in `draft_fixture()` of `run_affine_preparation.py`
+   and `fixture()` of `run_vision_preparation.py`, and for GGUF the CPU
+   reference planes
    (`GgufFormatReference.hpp`) and the expected sections
    `gguf_preparation_test.mm` builds from its sources. Both Python drivers
    compare every image with their oracle before they report its

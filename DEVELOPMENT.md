@@ -1045,10 +1045,8 @@ its code `q`, packed little-endian in `.weight`'s 32-bit words at every width;
 an mxfp4 weight is an E2M1 code times its group's power of two, a uint8 scale,
 which is GGUF's MXFP4.
 
-A target quantized as mlx-community's 4-bit releases are (projections affine
-4-bit in groups of 64, a MoE's router and shared-expert gate 8-bit) loads into
-the affine Q4 images of the affine kernels. Any other loads into the `MDGG0001`
-images a GGUF target's do (`MlxTargetLoader`, [Weight loading](#weight-loading)):
+An MLX target loads into the `MDGG0001` images a GGUF target's do
+(`MlxTargetLoader`, [Weight loading](#weight-loading)):
 each quantized tensor in the format mlx-lm infers from its tensors, an affine
 `af<bits>g<group>` format of `runtime/metal/abi/QuantFormat.h` or MXFP4, at the
 checkpoint's bits per weight; projections and experts as block planes, the
@@ -1324,24 +1322,22 @@ never rewrites upstream files.
 ### Weight loading
 
 Every start writes a model's target, draft and vision tensors into weight
-images in memory, in the layouts the kernels read: an MLX 4-bit target and the
-DFlash2 draft in the affine Q4 layout of the affine kernels, any vision tower in
-the BF16 layout of the vision operator, and a GGUF target and any other MLX
-target in the `MDGG0001` layout of the GGUF kernels ([MLX
-targets](#mlx-targets)). Each source adapter is a loader, which validates the
-source's metadata and plans its images, and a writer: `AffineTargetLoader`
-(`AffineTarget.cpp`) and `AffinePreparation` for an MLX 4-bit target,
+images in memory, in the layouts the kernels read: the DFlash2 draft in the
+affine Q4 layout of the affine kernels, any vision tower in the BF16 layout of
+the vision operator, and an MLX or GGUF target in the `MDGG0001` layout of the
+GGUF kernels ([MLX targets](#mlx-targets)). Each source adapter is a loader,
+which validates the source's metadata and plans its images, and a writer:
 `MlxTargetLoader` (`MlxTarget.cpp`, planned by `MlxImage.cpp`) and
-`GgufPreparation` for any other MLX target, `DraftCheckpointLoader`
+`GgufPreparation` for an MLX target, `DraftCheckpointLoader`
 (`DraftCheckpoint.cpp`) and `AffinePreparation` for the draft,
 `GgufTargetLoader` (`GgufTarget.cpp`, planned by `GgufImage.cpp`) and
 `GgufPreparation` for a GGUF target, `VisionLoader` and `VisionPreparation` for
-an MLX or GGUF vision tower. `AffinePreparation` reorders an MLX target's codes, scales and
-biases into 256-row tiles without requantization, quantizes the draft's BF16
-projections into the same tiles ([Drafts](#drafts)) and computes GDN decay as
+an MLX or GGUF vision tower. `AffinePreparation` quantizes the draft's BF16
+projections into 256-row tiles ([Drafts](#drafts)). `GgufPreparation` repacks
+GGUF blocks ([GGUF targets](#gguf-targets)) and MLX tensors without
+requantization, and computes an MLX target's GDN decay as
 `float(-exp(double(A_log)))`, which may differ by one float ULP from MLX's
-float exponential. `GgufPreparation`
-repacks GGUF blocks ([GGUF targets](#gguf-targets)) and MLX tensors.
+float exponential.
 
 Loading never rounds a target or vision weight but in the F32 values of an MLX
 target's quantized router, shared-expert gate or GDN alpha and beta ([MLX
@@ -1410,15 +1406,12 @@ after the images, and the restore loads it again in one tick more, after the
 last image (`ReleasableMemory`).
 
 `loadQwenTarget` (`QwenTargetLoader.hpp`) reads a target's images
-(`QwenTargetFiles`: the images `AffineTargetLoader`, `MlxTargetLoader` or
-`GgufTargetLoader` plans) through the format that stores them.
-`AffineTargetFormat`, for affine images, reads every
-projection, a fused one too, as one affine Q4 tensor and the norms as bf16.
-`BlockTargetFormat`, for `MDGG0001` images, reads each tensor as one
-block-quantized `QuantizedSegment` (a fused projection's tensors in output
-column order), the norms as F32 (bf16 for an MLX target), and keeps the GDN
-output projection's input in the source's value-head order, llama.cpp's tiled
-or MLX's grouped. Both Qwen families share one layout
+(`QwenTargetFiles`: the images `MlxTargetLoader` or `GgufTargetLoader` plans)
+through `BlockTargetFormat`, which reads each tensor as one block-quantized
+`QuantizedSegment` (a fused projection's tensors in output column order), the
+norms as F32 (bf16 for an MLX target), and keeps the GDN output projection's
+input in the source's value-head order, llama.cpp's tiled or MLX's grouped.
+Both Qwen families share one layout
 (`QwenHybridLayout`) and its validator.
 
 Operator plans use each projection's physical layout, `Affine64` or `Block32`,
@@ -2078,9 +2071,8 @@ the same way. The models they are run with, one per family and source format:
 | Qwen3.8-27B | `mlx-community/Qwen3.8-27B-4bit` | `unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_M` |
 | Qwen3.6-35B-A3B | `mlx-community/Qwen3.6-35B-A3B-4bit` | `unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_M` |
 
-The source formats load differently: an MLX target is written into the affine
-layout of the affine kernels, a GGUF target into its own layout for the GGUF
-projection and MoE kernels.
+Both source formats load into the block layout of the GGUF projection and MoE
+kernels, an MLX target in its MLX formats, a GGUF target in its GGUF ones.
 
 On a 24 GB Mac, `test-agent-real` stops a client's workflow at macOS's warning
 memory pressure, which the smaller GGUF variants such a Mac uses can reach under

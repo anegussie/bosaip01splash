@@ -342,28 +342,36 @@ void testGgufImageLayout(MetalBackend &backend, const std::filesystem::path &roo
             refusal, "token gather past its buffers was accepted");
 }
 
-// A synthetic installed model of small layouts loads every role, accounts
-// each image's bytes and fingerprints what it loaded.
-void testSyntheticModel(MetalBackend &backend,
-                        const std::filesystem::path &root) {
-    Qwen3_8Layout target;
+// The small layouts the synthetic models load: a target of every projection
+// in whole 256-row tiles of a multiple of 256 inputs, as block images hold
+// them, its draft and a vision tower. A MoE target keeps its family's 256
+// experts, 8 per token.
+template <class Layout = Qwen3_8Layout> Layout syntheticTarget() {
+    Layout target;
     target.layers = 4;
     target.hiddenSize = 256;
     target.vocabularySize = 256;
-    target.packedGdnWidth = 512;
-    target.packedFullWidth = 256;
-    target.convolutionDimension = 192;
-    target.gdnKeyHeads = 1;
-    target.gdnValueHeads = 1;
+    target.convolutionDimension = 512;
+    target.gdnKeyHeads = 2;
+    target.gdnValueHeads = 4;
     target.gdnHeadDimension = 64;
-    target.attentionWidth = 64;
-    target.intermediateSize = 256;
-    target.attentionQueryHeads = 1;
-    target.attentionKvHeads = 1;
+    target.attentionWidth = 256;
+    target.packedGdnWidth = 1024;
+    target.attentionQueryHeads = 4;
+    target.attentionKvHeads = 4;
     target.attentionHeadDimension = 64;
+    target.packedFullWidth = 1024;
+    // The dense FFN, or each expert and the shared expert, 256 wide.
+    if (target.ffnKind == splash::model::QwenFfnKind::SparseMoe)
+        target.expertIntermediateSize = 256;
+    else
+        target.intermediateSize = 256;
     target.fullAttentionPeriod = 4;
     target.hiddenCaptureLayers.fill(target.layers - 1);
+    return target;
+}
 
+template <class Layout> DFlashDraftLayout syntheticDraft(const Layout &target) {
     DFlashDraftLayout draft;
     draft.layers = 2;
     draft.hiddenSize = 256;
@@ -377,7 +385,10 @@ void testSyntheticModel(MetalBackend &backend,
     draft.targetHiddenSize = target.capturedHiddenSize();
     draft.selectorRank = 256;
     draft.kvHeads = 1;
+    return draft;
+}
 
+VisionLayout syntheticVision() {
     VisionLayout vision;
     vision.depth = 2;
     vision.hiddenSize = 128;
@@ -389,7 +400,16 @@ void testSyntheticModel(MetalBackend &backend,
     vision.heads = 2;
     vision.headDimension = 64;
     vision.positionGridSide = 4;
+    return vision;
+}
 
+// A synthetic installed model of small layouts loads every role, accounts
+// each image's bytes and fingerprints what it loaded.
+void testSyntheticModel(MetalBackend &backend,
+                        const std::filesystem::path &root) {
+    const Qwen3_8Layout target = syntheticTarget();
+    const DFlashDraftLayout draft = syntheticDraft(target);
+    const VisionLayout vision = syntheticVision();
     SyntheticAccounting expected =
         writeSyntheticModel(root, target, draft, vision);
     uint64_t baseline = backend.memoryStats().allocatedBytes;
@@ -509,80 +529,28 @@ void testSyntheticModel(MetalBackend &backend,
 
 }  // namespace
 
-// A target of Layout whose every projection takes whole 256-row tiles of a
-// multiple of 256 inputs: four layers, the last of them full attention.
-template <class Layout> Layout blockTarget() {
-    Layout target;
-    target.layers = 4;
-    target.hiddenSize = 256;
-    target.vocabularySize = 256;
-    target.convolutionDimension = 512;
-    target.gdnKeyHeads = 2;
-    target.gdnValueHeads = 4;
-    target.gdnHeadDimension = 64;
-    target.attentionWidth = 256;
-    target.packedGdnWidth = 1024;
-    target.attentionQueryHeads = 4;
-    target.attentionKvHeads = 4;
-    target.attentionHeadDimension = 64;
-    target.packedFullWidth = 1024;
-    target.fullAttentionPeriod = 4;
-    target.hiddenCaptureLayers.fill(target.layers - 1);
-    return target;
-}
-
-// Writes an MLX model of target, its target checkpoint holding tensors, under
-// root and loads it as block images, with the bytes modelWeightBytes plans
-// for it.
+// Writes an MLX model of target under root, its target checkpoint holding
+// tensors and its draft the synthetic one, and returns the descriptor that
+// loads it as block images.
 template <class Layout>
-std::pair<splash::model::LoadedModel, uint64_t> loadBlockModel(MetalBackend &backend,
-                                                               const std::filesystem::path &root,
-                                                               const Layout &target,
-                                                               const std::vector<SyntheticTensor> &tensors) {
-    DFlashDraftLayout draft;
-    draft.layers = 2;
-    draft.hiddenSize = 256;
-    draft.vocabularySize = 256;
-    draft.dynamicSize = 256;
-    draft.qkvSize = 256;
-    draft.attentionSize = 128;
-    draft.intermediateSize = 256;
-    draft.attentionHeadDimension = 64;
-    draft.rotaryTheta = 10'000'000.0F;
-    draft.targetHiddenSize = target.capturedHiddenSize();
-    draft.selectorRank = 256;
-    draft.kvHeads = 1;
-
-    VisionLayout vision;
-    vision.depth = 2;
-    vision.hiddenSize = 128;
-    vision.patchDimension = 1536;
-    vision.intermediateSize = 200;
-    vision.paddedIntermediateSize = 256;
-    vision.mergedHiddenSize = 512;
-    vision.outputHiddenSize = 256;
-    vision.heads = 2;
-    vision.headDimension = 64;
-    vision.positionGridSide = 4;
-
+ModelDescriptor writeBlockModel(const std::filesystem::path &root, const Layout &target,
+                                const std::vector<SyntheticTensor> &tensors) {
+    const DFlashDraftLayout draft = syntheticDraft(target);
     splash::test::writeSyntheticShard(root / "target" / "model.safetensors", tensors);
     splash::test::writeSyntheticShard(root / "draft" / "model.safetensors",
                                       splash::test::imageTensors(splash::model::draftCheckpointImages(draft)));
-    ModelDescriptor descriptor =
-        makeModelDescriptor("Qwen block loader", target, draft, vision, TargetSource::Mlx, VisionSource::None);
+    ModelDescriptor descriptor = makeModelDescriptor("Qwen block loader", target, draft, syntheticVision(),
+                                                     TargetSource::Mlx, VisionSource::None);
     descriptor.sourceIdentity = "sources";
-    descriptor.affineImages = false;
-    const uint64_t planned = splash::model::modelWeightBytes(root, descriptor);
-    return {loadModel(backend, root, descriptor), planned};
+    return descriptor;
 }
 
-// An MLX target in formats other than the affine images' loads as block
-// images: each quantized module in the format of its tensors, GDN alpha and
-// beta of two formats as F32, bf16 norms and grouped GDN value heads, and
-// modelWeightBytes plans the bytes it loads.
+// An MLX target loads as block images: each quantized module in the format of
+// its tensors, GDN alpha and beta of two formats as F32, bf16 norms and
+// grouped GDN value heads, and modelWeightBytes plans the bytes it loads. A
+// raw checkpoint, whose convolution mlx-lm has not sanitized, is refused.
 void testSyntheticBlockModel(MetalBackend &backend, const std::filesystem::path &root) {
-    auto target = blockTarget<Qwen3_8Layout>();
-    target.intermediateSize = 256;
+    const Qwen3_8Layout target = syntheticTarget();
     // Bits and group size by module, every MLX affine bit width and group size among them.
     const std::map<std::string_view, std::pair<uint32_t, uint32_t>> formats{
         {"in_proj_qkv", {3, 32}}, {"in_proj_z", {5, 128}}, {"in_proj_b", {4, 64}}, {"in_proj_a", {8, 64}},
@@ -596,8 +564,10 @@ void testSyntheticBlockModel(MetalBackend &backend, const std::filesystem::path 
         const auto [bits, group] = formats.at(name);
         return quant_affine_format_of(bits, group);
     };
-    const auto [model, planned] =
-        loadBlockModel(backend, root, target, splash::test::mlxTargetTensors(target, bitsAndGroup));
+    const ModelDescriptor descriptor =
+        writeBlockModel(root, target, splash::test::mlxTargetTensors(target, bitsAndGroup));
+    const uint64_t planned = splash::model::modelWeightBytes(root, descriptor);
+    auto model = loadModel(backend, root, descriptor);
     const auto &weights = std::get<Qwen3_8Weights>(model.target);
     const auto segmentFormats = [](const splash::ops::Projection &projection) {
         std::vector<uint32_t> result;
@@ -625,19 +595,23 @@ void testSyntheticBlockModel(MetalBackend &backend, const std::filesystem::path 
             "a block FFN, head or token table did not keep its module's format");
     require(declaredBytes(weights.files) + declaredBytes(model.draft.files) == planned,
             "modelWeightBytes is not what an MLX block target loads");
+
+    std::vector<splash::test::SyntheticTensor> raw = splash::test::mlxTargetTensors(target, bitsAndGroup);
+    for (splash::test::SyntheticTensor &tensor : raw)
+        if (tensor.name.ends_with("conv1d.weight")) tensor.shape = {tensor.shape[0], 1, tensor.shape[1]};
+    splash::test::writeSyntheticShard(root / "target" / "model.safetensors", raw);
+    rejects([&] { static_cast<void>(loadModel(backend, root, descriptor)); },
+            "source tensor type or shape does not match: "
+            "language_model.model.layers.0.linear_attn.conv1d.weight",
+            "a raw checkpoint's convolution was accepted");
 }
 
-// An MLX MoE target as block images: the experts in mixed formats, the routed
-// down projection mxfp4, and the 8-bit affine router and bf16 shared-expert
-// gate as the F32 values the block MoE reads; modelWeightBytes plans the
-// bytes it loads.
+// An MLX MoE target loads as block images: the experts in mixed formats, the
+// routed down projection mxfp4, and the 8-bit affine router and bf16
+// shared-expert gate as the F32 values the block MoE reads; modelWeightBytes
+// plans the bytes it loads.
 void testSyntheticBlockMoeModel(MetalBackend &backend, const std::filesystem::path &root) {
-    auto target = blockTarget<Qwen3_6MoeLayout>();
-    // The checkpoint's tensors are planned from the affine images, whose
-    // router takes whole 256-row tiles.
-    target.experts = 256;
-    target.expertsPerToken = 8;
-    target.expertIntermediateSize = 256;
+    const auto target = syntheticTarget<Qwen3_6MoeLayout>();
     // Bits and group size of each FFN module (mxfp4's for the routed down
     // projection); the others 4-bit in groups of 64.
     const std::map<std::string_view, std::pair<uint32_t, uint32_t>> formats{
@@ -667,7 +641,9 @@ void testSyntheticBlockMoeModel(MetalBackend &backend, const std::filesystem::pa
         if (tensor.name.ends_with("shared_expert_gate.weight"))
             tensor = {tensor.name, "BF16", {1, target.hiddenSize}};
     }
-    const auto [model, planned] = loadBlockModel(backend, root, target, tensors);
+    const ModelDescriptor descriptor = writeBlockModel(root, target, tensors);
+    const uint64_t planned = splash::model::modelWeightBytes(root, descriptor);
+    const auto model = loadModel(backend, root, descriptor);
     const auto &weights = std::get<Qwen3_6MoeWeights>(model.target);
     const auto format = [&](std::string_view name) {
         const auto [bits, group] = formats.at(name);
@@ -701,9 +677,9 @@ int main(int argc, const char *argv[]) {
         TempDirectory temporary;
         testWeightImages(backend, temporary.path());
         testGgufImageLayout(backend, temporary.path());
-        testSyntheticModel(backend, temporary.path() / "model");
         // Block images are repacked by the production library's kernel.
         MetalBackend production(argv[2]);
+        testSyntheticModel(production, temporary.path() / "model");
         testSyntheticBlockModel(production, temporary.path() / "block-model");
         testSyntheticBlockMoeModel(production, temporary.path() / "block-moe-model");
         std::cout << "PASS model-loading\n";

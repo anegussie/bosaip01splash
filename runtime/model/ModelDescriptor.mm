@@ -1,5 +1,4 @@
 #include "ModelDescriptor.hpp"
-#include "AffineTarget.hpp"
 #include "GgufImage.hpp"
 #include "WeightStore.hpp"
 #include "metal/abi/DraftAttention.h"
@@ -15,7 +14,6 @@
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <tuple>
 #include <utility>
 
 namespace splash::model {
@@ -290,15 +288,14 @@ void validateTextConfig(NSDictionary *text, const QwenTargetDimensions &target, 
 }
 
 // An MLX target's quantization, the "quantization" object of its config.json:
-// each module its images read quantized (affineTargetImages) in a format the
-// block kernels hold (metal/abi/QuantFormat.h), as MLX loads it: a module's
-// own entry, whose mode is MLX's default, affine, unless it names another, or
-// else the object. Whether the affine images hold the target: every module in
-// the bits they keep it in, affine, in groups of kQ4GroupElements. The block
-// images read each module's format from its tensors, as MLX does
-// (model/MlxImage.hpp).
-template <class Layout>
-bool readQuantization(NSDictionary *config, const Layout &layout) {
+// the object and each module's own entry name a format the block kernels hold
+// (metal/abi/QuantFormat.h), as MLX loads it: an entry's mode is MLX's
+// default, affine, unless it names another. The object states its bits and
+// group size; a module's entry that omits either takes its mode's default, as
+// MLX's to_quantized does: affine 4 bits in groups of 64, mxfp4 4 bits in
+// groups of 32. The images read each module's format from its tensors, as MLX
+// does (model/MlxImage.hpp).
+void requireQuantization(NSDictionary *config) {
   // A checkpoint without it holds BF16 weights, or another method's that a
   // transformers quantization_config states (GPTQ, AWQ, ...).
   NSDictionary *quantization = config[@"quantization"];
@@ -306,11 +303,7 @@ bool readQuantization(NSDictionary *config, const Layout &layout) {
     throw std::invalid_argument(
         "this model requires an MLX checkpoint (affine 2, 3, 4, 5, 6 or 8 bits in groups of 32, 64 or 128, or "
         "mxfp4) or a supported GGUF");
-  // Mode, bits and group size of an entry, or of the object. A module's entry
-  // that omits bits or group_size takes its mode's default, as MLX's
-  // to_quantized does: affine 4 bits in groups of 64, mxfp4 4 bits in groups
-  // of 32.
-  const auto read = [](NSDictionary *entry, const std::string &label, bool module) {
+  const auto require = [](NSDictionary *entry, const std::string &label, bool module) {
     NSString *mode = entry[@"mode"] ?: @"affine";
     if (![mode isKindOfClass:[NSString class]]) throw std::invalid_argument(label + " mode must be a string");
     const bool affine = [mode isEqual:@"affine"];
@@ -324,20 +317,12 @@ bool readQuantization(NSDictionary *config, const Layout &layout) {
                                   "-bit in groups of " + std::to_string(group) +
                                   "; MLX weights load as affine 2, 3, 4, 5, 6 or 8 bits in groups of 32, 64 or "
                                   "128, or as mxfp4");
-    return std::tuple{affine, bits, group};
   };
-  const auto defaults = read(quantization, "quantization", false);
-  bool affineImages = true;
-  for (const affine::Image &image : affineTargetImages(layout))
-    for (const auto &[name, bits] : image.quantized) {
-      const std::string label = "quantization " + name;
-      id entry = quantization[@(name.c_str())];
-      if (entry && ![entry isKindOfClass:[NSDictionary class]])
-        throw std::invalid_argument(label + " must be an object");
-      const auto [affine, moduleBits, group] = entry ? read(entry, label, true) : defaults;
-      affineImages = affineImages && affine && moduleBits == bits && group == kQ4GroupElements;
-    }
-  return affineImages;
+  require(quantization, "quantization", false);
+  // A module's entry is an object; the object's other values are its own.
+  for (NSString *module in quantization)
+    if ([quantization[module] isKindOfClass:[NSDictionary class]])
+      require(quantization[module], "quantization " + std::string(module.UTF8String ?: ""), true);
 }
 
 // A DFlash2 checkpoint's config: the draft's layout; the block, window,
@@ -436,7 +421,7 @@ ModelDescriptor describeSourceModel(std::string name, std::string_view targetFor
                                : qwen38Descriptor(std::move(name), targetSource, visionSource);
   std::visit([&](const auto &layout) {
     validateTextConfig(text, layout, layout.family, result.targetSource);
-    if (result.targetSource == TargetSource::Mlx) result.affineImages = readQuantization(config, layout);
+    if (result.targetSource == TargetSource::Mlx) requireQuantization(config);
     if (draft) validateDraftConfig(draft, result.draft, layout.maskToken, layout.hiddenCaptureLayers);
   }, result.target);
   if (result.hasVision())

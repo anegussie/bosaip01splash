@@ -7,17 +7,17 @@
 
 #include "TestChecks.hpp"
 #include "model/AffinePreparation.hpp"
-#include "model/AffineTarget.hpp"
 #include "model/DFlashDraft.hpp"
 #include "model/DraftCheckpoint.hpp"
+#include "model/MlxTarget.hpp"
 #include "model/VisionLoader.hpp"
 #include "ops/Vision.hpp"
 
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace splash::test {
@@ -74,26 +74,70 @@ inline std::vector<SyntheticTensor> imageTensors(const std::vector<model::affine
   return result;
 }
 
-// The tensors of an MLX target of layout whose quantized modules each carry
-// the bits and group size quantization(module) gives, as MLX packs them: the
-// affine images' tensors (in 4 or 8 bits, groups of kQ4GroupElements) with
-// each quantized module's codes, scales and biases reshaped.
+// The tensors of an MLX target of layout as mlx-lm saves it, which
+// model/MlxImage.cpp reads: bf16 norms, convolution, A_log and dt_bias, and
+// each quantized module's codes, scales and biases in the bits and group size
+// quantization(module) gives, as MLX packs them.
 template <class Layout, class Quantization>
 std::vector<SyntheticTensor> mlxTargetTensors(const Layout &layout, Quantization quantization) {
-  const std::vector<model::affine::Image> images = model::affineTargetImages(layout);
-  std::vector<SyntheticTensor> tensors = imageTensors(images);
-  std::map<std::string, uint64_t> columns; // of each quantized module, from its scales
-  for (const SyntheticTensor &tensor : tensors)
-    if (tensor.name.ends_with(".scales"))
-      columns[tensor.name.substr(0, tensor.name.size() - 7)] = tensor.shape.back() * model::kQ4GroupElements;
-  for (SyntheticTensor &tensor : tensors) {
-    const size_t dot = tensor.name.rfind('.');
-    const auto module = columns.find(tensor.name.substr(0, dot));
-    if (module == columns.end()) continue;
-    const auto [bits, group] = quantization(module->first);
-    tensor.shape.back() = tensor.name.ends_with(".weight") ? module->second * bits / 32 : module->second / group;
+  std::vector<SyntheticTensor> result;
+  const auto bfloat16 = [&](const std::string &name, std::vector<uint64_t> shape) {
+    result.push_back({name, "BF16", std::move(shape)});
+  };
+  const auto quantized = [&](const std::string &module, uint64_t rows, uint64_t columns, uint64_t experts = 1) {
+    const auto [bits, group] = quantization(module);
+    const auto shape = [&](uint64_t last) {
+      return experts > 1 ? std::vector<uint64_t>{experts, rows, last} : std::vector<uint64_t>{rows, last};
+    };
+    result.push_back({module + ".weight", "U32", shape(columns * bits / 32)});
+    bfloat16(module + ".scales", shape(columns / group));
+    bfloat16(module + ".biases", shape(columns / group));
+  };
+  const uint64_t hidden = layout.hiddenSize;
+  for (uint32_t layer = 0; layer < layout.layers; ++layer) {
+    const std::string prefix = "language_model.model.layers." + std::to_string(layer) + ".";
+    bfloat16(prefix + "input_layernorm.weight", {hidden});
+    if (layout.isFullAttentionLayer(layer)) {
+      const std::string attention = prefix + "self_attn.";
+      const uint64_t kv = uint64_t{layout.attentionKvHeads} * layout.attentionHeadDimension;
+      quantized(attention + "q_proj", 2ull * layout.attentionWidth, hidden);
+      quantized(attention + "k_proj", kv, hidden);
+      quantized(attention + "v_proj", kv, hidden);
+      bfloat16(attention + "q_norm.weight", {layout.attentionHeadDimension});
+      bfloat16(attention + "k_norm.weight", {layout.attentionHeadDimension});
+      quantized(attention + "o_proj", hidden, layout.attentionWidth);
+    } else {
+      const std::string gdn = prefix + "linear_attn.";
+      quantized(gdn + "in_proj_qkv", layout.convolutionDimension, hidden);
+      quantized(gdn + "in_proj_z", layout.attentionWidth, hidden);
+      quantized(gdn + "in_proj_b", layout.gdnValueHeads, hidden);
+      quantized(gdn + "in_proj_a", layout.gdnValueHeads, hidden);
+      bfloat16(gdn + "conv1d.weight", {layout.convolutionDimension, model::kGdnConvolutionTaps, 1});
+      bfloat16(gdn + "A_log", {layout.gdnValueHeads});
+      bfloat16(gdn + "dt_bias", {layout.gdnValueHeads});
+      bfloat16(gdn + "norm.weight", {layout.gdnHeadDimension});
+      quantized(gdn + "out_proj", hidden, layout.attentionWidth);
+    }
+    bfloat16(prefix + "post_attention_layernorm.weight", {hidden});
+    const std::string mlp = prefix + "mlp.";
+    const auto ffn = [&](const std::string &projections, uint64_t width, uint64_t experts) {
+      quantized(projections + "gate_proj", width, hidden, experts);
+      quantized(projections + "up_proj", width, hidden, experts);
+      quantized(projections + "down_proj", hidden, width, experts);
+    };
+    if (layout.ffnKind == model::QwenFfnKind::SparseMoe) {
+      quantized(mlp + "gate", layout.experts, hidden);
+      ffn(mlp + "switch_mlp.", layout.expertIntermediateSize, layout.experts);
+      ffn(mlp + "shared_expert.", layout.expertIntermediateSize, 1);
+      quantized(mlp + "shared_expert_gate", 1, hidden);
+    } else {
+      ffn(mlp, layout.intermediateSize, 1);
+    }
   }
-  return tensors;
+  bfloat16("language_model.model.norm.weight", {hidden});
+  quantized("language_model.lm_head", layout.vocabularySize, hidden);
+  quantized("language_model.model.embed_tokens", layout.vocabularySize, hidden);
+  return result;
 }
 
 // The MLX vision tower's tensors of layout, as model/VisionLoader.cpp reads
@@ -137,24 +181,34 @@ struct SyntheticAccounting final {
   uint64_t visionBytes = 0;
 };
 
-// Writes an installed MLX model of these layouts under root: its target,
-// DFlash2 draft and vision tower. Returns the bytes of the images it loads
-// into.
+// Writes the target/ and draft/ checkpoints of an installed MLX model of these
+// layouts under root, which weight planning reads before any image loads
+// (modelWeightBytes): the target 4-bit in groups of 64 with a MoE's router and
+// shared-expert gate 8-bit, as mlx-community's 4-bit releases keep them, and
+// the DFlash2 draft.
+template <class Layout>
+void writeSyntheticCheckpoints(const std::filesystem::path &root, const Layout &target,
+                               const model::DFlashDraftLayout &draft) {
+  const auto releaseBits = [](const std::string &module) {
+    return module.ends_with(".gate") || module.ends_with("shared_expert_gate") ? std::pair{8u, 64u}
+                                                                                : std::pair{4u, 64u};
+  };
+  writeSyntheticShard(root / "target" / "model.safetensors", mlxTargetTensors(target, releaseBits));
+  writeSyntheticShard(root / "draft" / "model.safetensors", imageTensors(model::draftCheckpointImages(draft)));
+}
+
+// Writes an installed MLX model of these layouts under root: its checkpoints
+// (writeSyntheticCheckpoints) and vision tower. Returns the bytes of the
+// images it loads into.
 template <class Layout>
 SyntheticAccounting writeSyntheticModel(const std::filesystem::path &root, const Layout &target,
                                         const model::DFlashDraftLayout &draft,
                                         const ops::VisionLayout &vision) {
-  const std::vector<model::affine::Image> targetImages = model::affineTargetImages(target);
-  const std::vector<model::affine::Image> draftImages = model::draftCheckpointImages(draft);
-  writeSyntheticShard(root / "target" / "model.safetensors", imageTensors(targetImages));
-  writeSyntheticShard(root / "draft" / "model.safetensors", imageTensors(draftImages));
+  writeSyntheticCheckpoints(root, target, draft);
   writeSyntheticShard(root / "vision" / "model.safetensors", visionTensors(vision));
-  const auto bytes = [](const std::vector<model::affine::Image> &images) {
-    uint64_t total = 0;
-    for (const model::affine::Image &image : images) total += image.bytes;
-    return total;
-  };
-  return {bytes(targetImages), bytes(draftImages), model::visionImageBytes(vision)};
+  uint64_t draftBytes = 0;
+  for (const model::affine::Image &image : model::draftCheckpointImages(draft)) draftBytes += image.bytes;
+  return {model::mlxTargetImageBytes(root / "target", target), draftBytes, model::visionImageBytes(vision)};
 }
 
 } // namespace splash::test

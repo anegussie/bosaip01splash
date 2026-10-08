@@ -101,21 +101,6 @@ readAffineProjection(WeightFile &file, uint32_t outputSize, uint32_t inputSize,
 [[nodiscard]] ops::EmbeddingWeights readBlockEmbedding(WeightFile &file, uint32_t outputSize,
                                                        uint32_t inputSize, std::string_view label);
 
-// Embedding weights, scales and biases are independently aligned sections
-// so token gather can bind each table directly.
-[[nodiscard]] ops::EmbeddingWeights
-readAffineEmbedding(WeightFile &file, uint32_t outputSize,
-                           uint32_t inputSize, std::string_view label);
-
-[[nodiscard]] ops::Q8Projection
-readAffineQ8Projection(WeightFile &file, uint32_t outputSize, uint32_t inputSize,
-                       std::string_view label);
-
-[[nodiscard]] ops::ExpertProjection
-readAffineExpertProjection(WeightFile &file, uint32_t experts,
-                           uint32_t outputSize, uint32_t inputSize,
-                           std::string_view label);
-
 [[nodiscard]] std::string
 weightManifestFingerprint(std::span<const WeightFileRecord> records);
 
