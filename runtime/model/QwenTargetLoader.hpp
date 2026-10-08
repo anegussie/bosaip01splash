@@ -102,8 +102,9 @@ readQwenTargetWeights(metal::MetalBackend &backend, const Layout &layout, Files 
   return result;
 }
 
-// Throws unless every dimension of a family's layout is set, the dimensions
-// agree with each other and every projection fits the Q4 storage tiles.
+// Throws unless every dimension of a family's layout is set and the
+// dimensions agree with each other. The image planners hold each tensor to
+// whole plane tiles.
 template <class Layout> void requireQwenLayout(const Layout &layout) {
   const auto zero = [](auto... dimensions) { return ((dimensions == 0) || ...); };
   const bool dense = layout.ffnKind == QwenFfnKind::Dense;
@@ -127,12 +128,6 @@ template <class Layout> void requireQwenLayout(const Layout &layout) {
       std::ranges::any_of(layout.hiddenCaptureLayers, [&](uint32_t layer) { return layer >= layout.layers; }) ||
       !layout.kvLayout().valid() || !layout.gdnStateLayout().valid())
     throw WeightStoreError("Qwen target layout is inconsistent");
-  validateQ4Layout(layout.packedGdnWidth, layout.hiddenSize);
-  validateQ4Layout(layout.packedFullWidth, layout.hiddenSize);
-  validateQ4Layout(layout.hiddenSize, layout.attentionWidth);
-  validateQ4Layout(ffnWidth, layout.hiddenSize);
-  validateQ4Layout(layout.hiddenSize, ffnWidth);
-  validateQ4Layout(layout.vocabularySize, layout.hiddenSize);
 }
 
 // Checks the layout and loads a target from its files. The architecture

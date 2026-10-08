@@ -61,15 +61,11 @@ using splash::ops::MoeBuffers;
 using splash::ops::MoeConfig;
 using splash::ops::MoeScratch;
 using splash::ops::MoeScratchField;
-using splash::ops::kAssumedGpuCores;
 using splash::ops::kMoeScratchFields;
-using splash::ops::MoeExpertSimdgroups;
 using splash::ops::MoeExpertTile;
 using splash::ops::MoeGgufTile;
 using splash::ops::MoePlan;
 using splash::ops::MoeShape;
-using splash::ops::MoeWeights;
-using splash::ops::moeRouteWideRows;
 using splash::ops::LinearEpilogue;
 using splash::ops::LinearMatrix;
 using splash::ops::LinearPhase;
@@ -79,7 +75,6 @@ using splash::ops::LinearScratchSize;
 using splash::ops::Linear;
 using splash::ops::PreparedInput;
 using splash::ops::Projection;
-using splash::ops::WeightLayout;
 using namespace gguf_reference;
 
 // K = 1024 on the hidden side (16 spans, four 256-input coefficient units)
@@ -325,8 +320,7 @@ int floatSegments(MetalBackend &backend, uint32_t floatColumns) {
     };
     const LinearMatrix matrix{N, K};
     for (uint32_t lanes = 1; lanes <= 4; ++lanes) {
-      const LinearPlan plan = linear.plan({matrix, lanes * 8, LinearPhase::Decode, LinearEpilogue::None, WeightLayout::Block32},
-                                          full);
+      const LinearPlan plan = linear.plan({matrix, lanes * 8, LinearPhase::Decode, LinearEpilogue::None}, full);
       const LinearScratch scratch = scratchFor(plan);
       check(lanes * 8, plan.storageRows(), "decode B" + std::to_string(lanes),
             [&](CommandGraph &graph, MetalBuffer input, const Projection &p, MetalBuffer output) {
@@ -335,12 +329,11 @@ int floatSegments(MetalBackend &backend, uint32_t floatColumns) {
             });
     }
     for (const uint32_t rows : {1u, 24u, 33u, 263u}) {
-      const LinearPlan plan =
-          linear.plan({matrix, rows, LinearPhase::Prefill, LinearEpilogue::None, WeightLayout::Block32}, full);
+      const LinearPlan plan = linear.plan({matrix, rows, LinearPhase::Prefill, LinearEpilogue::None}, full);
       const LinearScratch scratch = scratchFor(plan);
       check(rows, plan.storageRows(), "prefill rows=" + std::to_string(rows),
             [&](CommandGraph &graph, MetalBuffer input, const Projection &p, MetalBuffer output) {
-              linear.addPrefill(graph, input, p, output, {}, rows, scratch);
+              linear.addPrefill(graph, input, p, output, rows, scratch);
             });
     }
   }
@@ -395,7 +388,7 @@ struct Model {
   Tensor router, sharedGate;
   std::array<Tensor, 3> routed;   // gate, up, down: experts * N rows
   std::array<Tensor, 3> shared;
-  MoeWeights weights;
+  BlockMoeWeights weights;
   std::array<Fmt, 6> formats{};
 };
 
@@ -640,22 +633,20 @@ std::vector<uint16_t> runPlan(MetalBackend &backend, const Model &m, Buffers &b,
 // gate's fp32 weights.
 void bufferExtents(MetalBackend &backend) {
   const Model m = makeModel(backend, 0, false);
-  const MoeShape shape{kHidden, kExperts, kTopK, kIntermediate, WeightLayout::Block32};
+  const MoeShape shape{kHidden, kExperts, kTopK, kIntermediate};
   Buffers b;
   b.moe.input = zeros(backend, uint64_t{kMaximumRows} * kHidden * 2, "moe-input");
   b.moe.residual = zeros(backend, uint64_t{kMaximumRows} * kHidden * 2, "moe-residual");
   b.moe.output = zeros(backend, uint64_t{kMaximumRows} * kHidden * 2, "moe-output");
   for (const MoePlan &plan :
-       {MoE::decodePlan(shape, 4,
-                        MoeConfig{MoeExpertTile::M8, moeRouteWideRows(kAssumedGpuCores), MoeExpertSimdgroups::Eight,
-                                  MoeGgufTile::Register}),
+       {MoE::decodePlan(shape, 4, MoeConfig{.expertTile = MoeExpertTile::M8, .ggufTile = MoeGgufTile::Register}),
         MoE::prefillPlan(shape, 33, MoeConfig{MoeExpertTile::M32})}) {
     allocate(backend, b, plan);
     splash::test::requireMoeExtents(backend, b.moe, m.weights, plan);
   }
   const MoePlan plan = MoE::prefillPlan(shape, 33, MoeConfig{MoeExpertTile::M32});
   allocate(backend, b, plan);
-  const BlockMoeWeights &blocks = m.weights.blocks();
+  const BlockMoeWeights &blocks = m.weights;
   // A weight buffer of the block that `with` puts in its place.
   const auto requireWeightExtent = [&](const MetalBuffer &buffer, uint64_t bytes, uint64_t element,
                                        const std::string &name, const auto &with) {
@@ -696,7 +687,7 @@ int moe(MetalBackend &backend) {
   b.moe.input = bfloatBuffer(backend, b.input, "moe-input");
   b.moe.residual = bfloatBuffer(backend, b.residual, "moe-residual");
   b.moe.output = zeros(backend, uint64_t{kMaximumRows} * kHidden * 2, "moe-output");
-  const MoeShape shape{kHidden, kExperts, kTopK, kIntermediate, WeightLayout::Block32};
+  const MoeShape shape{kHidden, kExperts, kTopK, kIntermediate};
   for (int f = 0; f < FMT_COUNT; ++f)
     for (const bool oneGateUp : {false, true}) {
       const Model m = makeModel(backend, f, oneGateUp);
@@ -711,7 +702,7 @@ int moe(MetalBackend &backend) {
         for (uint32_t lanes = 4; lanes >= 1; --lanes) {
           const MoePlan plan = MoE::decodePlan(
               shape, lanes,
-              MoeConfig{MoeExpertTile::M8, moeRouteWideRows(kAssumedGpuCores), MoeExpertSimdgroups::Eight, tile});
+              MoeConfig{.expertTile = MoeExpertTile::M8, .ggufTile = tile});
           const std::string label = formats + (tile == MoeGgufTile::Register ? " register" : " staged") + " decode B" +
                                     std::to_string(lanes);
           const std::vector<uint16_t> rows =
@@ -728,7 +719,7 @@ int moe(MetalBackend &backend) {
         for (const uint32_t chunk : {kMaximumRows, 27u, 9u}) {
           const MoePlan plan = MoE::prefillPlan(
               shape, chunk,
-              MoeConfig{MoeExpertTile::M8, moeRouteWideRows(kAssumedGpuCores), MoeExpertSimdgroups::Eight, tile});
+              MoeConfig{.expertTile = MoeExpertTile::M8, .ggufTile = tile});
           const std::string label = formats + (tile == MoeGgufTile::Register ? " register" : " staged") + " prefill rows=" +
                                     std::to_string(chunk);
           const std::vector<uint16_t> rows =

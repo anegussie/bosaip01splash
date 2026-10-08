@@ -76,12 +76,6 @@ prefillTensorBytes(const RuntimeGeometry &geometry,
                          geometry.target.attentionWidth));
   put(PrefillTensor::AttentionOutput,
       bytesFor<uint16_t>(uint64_t{kPrefillRows} * geometry.target.hiddenSize));
-  put(PrefillTensor::ProjectionSums,
-      bytesFor<float>(uint64_t{kPrefillRows} *
-                      geometry.projectionSumsWidth()));
-  put(PrefillTensor::DownProjectionSums,
-      bytesFor<float>(uint64_t{kPrefillRows} *
-                      geometry.projectionSumsWidth()));
   // Three rotary axes per row (Qwen3.5 M-RoPE); text rows repeat one value.
   put(PrefillTensor::TargetPositions,
       bytesFor<uint32_t>(uint64_t{kPrefillRows} * 3));
@@ -119,8 +113,8 @@ prefillTensorBytes(const RuntimeGeometry &geometry,
   // prefill plan, the draft's context projections' too.
   const auto &draft = geometry.draft;
   std::vector<ops::ProjectionShape> prefillProjections = geometry.target.prefillProjections;
-  prefillProjections.push_back({draft.hiddenSize, draft.targetHiddenSize, ops::WeightLayout::Block32});
-  prefillProjections.push_back({draft.contextKvSize(), draft.hiddenSize, ops::WeightLayout::Block32});
+  prefillProjections.push_back({draft.hiddenSize, draft.targetHiddenSize});
+  prefillProjections.push_back({draft.contextKvSize(), draft.hiddenSize});
   for (const auto &projection : prefillProjections) {
     const ops::LinearScratchSize linear = operators.linear().prefillScratchSize(projection);
     put(PrefillTensor::LinearPartials, linear.partials);
@@ -331,12 +325,11 @@ ops::LinearScratchSize DecodeArena::linearScratchSize(
   ops::LinearScratchSize result;
   // Includes the vocabulary head shared with the draft.
   for (const auto &p : geometry.target.decodeProjections) result.include(operators.linear().decodeScratchSize(p));
-  constexpr ops::WeightLayout block = ops::WeightLayout::Block32;
-  for (const ops::ProjectionShape shape : {ops::ProjectionShape{d.dynamicSize, d.hiddenSize, block},
-       {d.qkvSize, d.hiddenSize, block}, {d.contextKvSize(), d.hiddenSize, block},
-       {d.hiddenSize, d.attentionSize, block},
-       {d.intermediateSize, d.hiddenSize, block}, {d.hiddenSize, d.intermediateSize, block},
-       {d.selectorRank, d.hiddenSize, block}, {d.hiddenSize, d.targetHiddenSize, block}})
+  for (const ops::ProjectionShape shape : {ops::ProjectionShape{d.dynamicSize, d.hiddenSize},
+       {d.qkvSize, d.hiddenSize}, {d.contextKvSize(), d.hiddenSize},
+       {d.hiddenSize, d.attentionSize},
+       {d.intermediateSize, d.hiddenSize}, {d.hiddenSize, d.intermediateSize},
+       {d.selectorRank, d.hiddenSize}, {d.hiddenSize, d.targetHiddenSize}})
     result.include(operators.linear().decodeScratchSize(shape));
   return result;
 }
@@ -346,7 +339,7 @@ uint64_t plannedDecodeBytes(const RuntimeGeometry &geometry,
   return checkedAdd(decodeArenaBaseBytes(geometry, operators),
                     checkedAdd(DecodeArena::gateScratchBytes(geometry, operators),
                                DecodeArena::linearScratchSize(geometry, operators).bytes(),
-                               "Q4 decode scratch"),
+                               "linear decode scratch"),
                     "planned gate scratch");
 }
 

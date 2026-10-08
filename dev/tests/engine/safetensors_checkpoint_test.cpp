@@ -29,7 +29,7 @@ constexpr auto valid = R"({"a":{"dtype":"U32","shape":[2,2],"data_offsets":[0,16
 }
 int main() {
   try {
-    const splash::test::TemporaryDirectory directory("splash-affine-checkpoint");
+    const splash::test::TemporaryDirectory directory("splash-safetensors-checkpoint");
     const std::filesystem::path &root = directory.path();
     shard(root / "model.safetensors", valid);
     SafetensorsCheckpoint source(root);
@@ -67,7 +67,7 @@ int main() {
     shard(root / "model.safetensors", valid, 8);
     rejects([&] { SafetensorsCheckpoint invalid(root); }, "safetensors data range is invalid",
             "truncated tensor accepted");
-    std::cout << "affine checkpoint: bounded reads, metadata, written and malformed sources PASS\n";
+    std::cout << "safetensors checkpoint: bounded reads, metadata, written and malformed sources PASS\n";
   } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';
     return 1;

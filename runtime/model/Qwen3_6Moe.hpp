@@ -68,7 +68,7 @@ struct Qwen3_6MoeLayerWeights final {
   ops::NormWeights inputNorm;
   QwenMixerWeights mixer;
   ops::NormWeights postAttentionNorm;
-  ops::MoeWeights ffn;
+  ops::BlockMoeWeights ffn;
 };
 
 using Qwen3_6MoeWeights = QwenTargetWeights<Qwen3_6MoeLayout, Qwen3_6MoeLayerWeights>;

@@ -113,12 +113,12 @@ void DFlashDraft::addContextPrefill(
       throw std::invalid_argument("draft prefill ring layer mismatch");
   }
   operators_.linear().addPrefill(graph, buffers.capturedTargetHidden, weights_.contextProjection,
-                                 buffers.projected, {}, rows, buffers.linearScratch);
+                                 buffers.projected, rows, buffers.linearScratch);
   ops::Normalization::addRms(graph, buffers.projected, weights_.hiddenNorm, buffers.hidden, layout.hiddenSize,
                              rows);
 
   for (uint32_t layer = 0; layer < layout.layers; ++layer) {
-    operators_.linear().addPrefill(graph, buffers.hidden, contextKvProjections_[layer], buffers.contextKv, {}, rows,
+    operators_.linear().addPrefill(graph, buffers.hidden, contextKvProjections_[layer], buffers.contextKv, rows,
                                    buffers.linearScratch);
     for (const DFlashPrefillSpan &span : spans) {
       const uint64_t kvOffset =

@@ -115,8 +115,8 @@ bool apple9Stages(LinearWorkload w, std::span<const Projection *const> projectio
 // for a quantized segment, whose planes hold its tiles, 8 for a float one
 // (addGgufFloat; F32 alpha/beta are 96 columns on the 27B); the columns past
 // the last segment are padding no kernel writes. A fused projection keeps the
-// layout's sizes: the 35B GGUF's packed GDN row is 12544 columns (the affine
-// layout's), its qkv|z|alpha-beta segments 12352.
+// layout's sizes: the 35B GGUF's packed GDN row is the layout's 12544
+// columns, its qkv|z|alpha-beta segments 12352.
 void requireSegments(const Projection &p, LinearMatrix matrix) {
   if (p.outputSize != matrix.outputSize || p.inputSize != matrix.inputSize)
     throw std::invalid_argument("block projection does not match plan");
@@ -189,12 +189,12 @@ void addDecodeTensor(const LinearBuffers &b, LinearEpilogue epilogue, const Quan
 
 } // namespace
 
-void LinearPlan::requireBlockConfiguration() const {
+void LinearPlan::requireConfiguration() const {
   const uint32_t k = workload_.matrix.inputSize;
   const LinearConfig &c = config_;
   const bool decode = workload_.phase == LinearPhase::Decode;
-  if (c.simdgroups != LinearConfig{}.simdgroups)
-    throw std::invalid_argument("the GGUF tiles fix their threadgroups and take the default simdgroups");
+  if (c.spread && c.tile != LinearTile::GgufStaged)
+    throw std::invalid_argument("only the staged block tile spreads its walks");
   if (c.tile == LinearTile::GgufRegister) {
     // Split boundaries fall on 256-input coefficient units.
     if (!decode || !c.validSplits() || k / 256 < c.splits)
@@ -213,14 +213,14 @@ void LinearPlan::requireBlockConfiguration() const {
     throw std::invalid_argument("the staged block tile runs prefill chunks of up to 32 rows");
 }
 
-uint32_t LinearPlan::blockStorageRows() const noexcept {
+uint32_t LinearPlan::storageRows() const noexcept {
   if (config_.tile == LinearTile::GgufRegister) return workload_.rows;
   if (config_.tile == LinearTile::GgufPrefill)
     return (workload_.rows + GGUF_PREFILL_ROWS - 1) / GGUF_PREFILL_ROWS * GGUF_PREFILL_ROWS;
   return stagedTileRows(workload_.rows);
 }
 
-LinearScratchSize LinearPlan::blockScratchSize() const noexcept {
+LinearScratchSize LinearPlan::scratchSize() const noexcept {
   const auto [n, k] = workload_.matrix;
   // Register tile: the Table16 table and sums, and split, [lane][split][row]
   // [column] partials and one counter per 64-column tile, which covers every
@@ -229,14 +229,14 @@ LinearScratchSize LinearPlan::blockScratchSize() const noexcept {
     const uint64_t rows = workload_.rows;
     return {tableBytes(k, rows), tableSumsBytes(LinearInput::Table16, k, rows),
             config_.splits > 1 ? config_.splits * rows * n * sizeof(float) : 0,
-            config_.splits > 1 ? uint64_t{n / tileColumns()} * sizeof(uint32_t) : 0};
+            config_.splits > 1 ? uint64_t{n / GGUF_TILE_COLUMNS} * sizeof(uint32_t) : 0};
   }
   // Staged split-K: [split][row][column] fp32 partials over the tile's rows
   // and one counter per 64-column tile (a tile covers every row of the
   // dispatch). The prefill tile never splits.
   return config_.splits > 1
       ? LinearScratchSize{0, 0, uint64_t{config_.splits} * storageRows() * n * sizeof(float),
-                          uint64_t{n / tileColumns()} * sizeof(uint32_t)}
+                          uint64_t{n / GGUF_TILE_COLUMNS} * sizeof(uint32_t)}
       : LinearScratchSize{};
 }
 
@@ -275,7 +275,7 @@ LinearConfig Linear::ggufBaseline(LinearWorkload w, std::span<const Projection *
 
 LinearScratchSize Linear::ggufDecodeScratchSize(LinearWorkload w) const {
   const auto [n, k] = w.matrix;
-  LinearScratchSize size = LinearPlan(w, baseline(w)).scratchSize();
+  LinearScratchSize size = LinearPlan(w, ggufBaseline(w)).scratchSize();
   if (family_ == GpuFamilyClass::Apple9) size.include(LinearPlan(w, stagedDecode(n, k, gpuCores_, family_)).scratchSize());
   return size;
 }
@@ -326,13 +326,6 @@ void Linear::addGguf(metal::CommandGraph &graph, const LinearBuffers &b,
   case LinearTile::GgufRegister: addGgufRegister(graph, b, p, plan, gate); break;
   case LinearTile::GgufStaged: addGgufStaged(graph, b, p, plan, gate); break;
   case LinearTile::GgufPrefill: addGgufPrefill(graph, b, p, plan); break;
-  // A block plan runs only the GGUF tiles (LinearPlan's constructor).
-  case LinearTile::N128:
-  case LinearTile::N256:
-  case LinearTile::Paired128:
-  case LinearTile::Split128:
-  case LinearTile::Paired256:
-  case LinearTile::Q4Register: break;
   }
 }
 

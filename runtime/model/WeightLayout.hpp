@@ -3,8 +3,6 @@
 // Layout constants of the weight files: preparation writes them, the weight
 // store reads them.
 
-#include "metal/abi/Linear.h"
-
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -13,12 +11,9 @@
 
 namespace splash::model {
 
-inline constexpr uint32_t kQ4GroupElements = 64;
 inline constexpr uint64_t kBFloat16Bytes = 2;
 
 inline constexpr uint64_t kWeightFileAlignment = 16 * 1024;
-// The rows of an affine projection's storage tile.
-inline constexpr uint32_t kQ4StorageN = SPLASH_AFFINE_TILE_ROWS;
 
 // A vision tower's image, written from an upstream source.
 inline constexpr std::string_view kVisionMagic = "MDFV0001";

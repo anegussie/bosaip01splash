@@ -27,7 +27,7 @@ model::LoadedModel loadedModel() {
                                              ? model::kQwen3_6MoeDraftLayout
                                              : model::kQwen3_8DraftLayout;
   const auto projection = [](uint32_t n, uint32_t k) {
-    return ops::Projection(n, k, ops::AffineWeights{});
+    return ops::Projection(n, k, ops::BlockWeights{{ops::QuantizedSegment::planes(GGUF_FMT_Q4K, n, k, {}, {}, {})}});
   };
   const auto &layout = target.layout;
   target.logitsProjection = projection(layout.vocabularySize, layout.hiddenSize);
@@ -61,25 +61,25 @@ model::LoadedModel loadedModel() {
   return result;
 }
 
-void checkMixedLayouts() {
-  auto mixed = loadedModel<model::Qwen3_8Weights>();
-  auto &target = std::get<model::Qwen3_8Weights>(mixed.target);
-  auto &up = target.layers.front().upProjection;
-  up = ops::Projection(up.outputSize, up.inputSize,
-                       ops::BlockWeights{{ops::QuantizedSegment::planes(GGUF_FMT_Q4K, up.outputSize,
-                                                                        up.inputSize, {}, {}, {})}});
+// A layer's gate and up projections run as one gate/up plan, so their shapes
+// must match. The vocabulary head reserves workspace only in decode, and the
+// arenas hold a gate/up layer's decode and short-prefill plans.
+void checkGateUpLayers() {
+  auto dense = loadedModel<model::Qwen3_8Weights>();
+  auto &target = std::get<model::Qwen3_8Weights>(dense.target);
+  const ops::Projection up = target.layers.front().upProjection;
+  target.layers.front().upProjection = ops::Projection(
+      up.outputSize, up.inputSize + 256,
+      ops::BlockWeights{{ops::QuantizedSegment::planes(GGUF_FMT_Q4K, up.outputSize, up.inputSize + 256, {}, {}, {})}});
   rejects([&] { static_cast<void>(model::qwenTargetGeometry(target)); },
-          "fused gate/up projections must have matching shapes and layouts",
-          "incompatible fused gate/up layouts reached execution");
-  target.layers.front().gateProjection = up;
-  require(target.logitsProjection.layout() == ops::WeightLayout::Affine64,
-          "mixed fixture must keep an affine vocabulary head");
+          "fused gate/up projections must have matching shapes", "mismatched fused gate/up shapes reached execution");
+  target.layers.front().upProjection = up;
   for (uint32_t family : {9U, 10U, 11U}) {
     DeviceCapabilities device;
     device.appleGpuFamily = family;
     device.gpuCoreCount = 16;
     ops::ExecutionPlans plans(device);
-    const auto geometry = model::RuntimeGeometry::from(mixed, kv::Format::Int8);
+    const auto geometry = model::RuntimeGeometry::from(dense, kv::Format::Int8);
     const auto head = target.logitsProjection.shape();
     const auto containsHead = [&](const auto &shapes) {
       return std::find(shapes.begin(), shapes.end(), head) != shapes.end();
@@ -94,9 +94,9 @@ void checkMixedLayouts() {
       const auto required = plan.scratchSize();
       require(scratch.input >= required.input && scratch.sums >= required.sums &&
                   scratch.partials >= required.partials && scratch.counters >= required.counters,
-              "affine head hid a block-quantized layer's scratch requirement");
+              "the decode arena is below a gate/up layer's scratch");
       require(model::DecodeArena::gateScratchBytes(geometry, plans) >= plan.gateScratchBytes(),
-              "mixed gate/up workspace is too small");
+              "the gate/up workspace is too small");
     }
     const auto sizes = model::prefillTensorBytes(geometry, plans);
     for (uint32_t rows : {1U, 8U, 17U, 32U}) {
@@ -104,29 +104,14 @@ void checkMixedLayouts() {
           ops::LinearPhase::Prefill, ops::LinearEpilogue::None}, up).scratchSize();
       require(sizes[uint32_t(model::PrefillTensor::LinearPartials)] >= required.partials &&
                   sizes[uint32_t(model::PrefillTensor::LinearCounters)] >= required.counters,
-              "mixed short-prefill split scratch is too small");
+              "the short-prefill split scratch is too small");
     }
   }
-  // Every MoE block of a target shares one layout, which the geometry's one
-  // MoE shape records: no source mixes them.
-  auto sparse = loadedModel<model::Qwen3_6MoeWeights>();
-  auto &moe = std::get<model::Qwen3_6MoeWeights>(sparse.target);
-  require(model::qwenTargetGeometry(moe).moeShape().weightLayout == ops::WeightLayout::Affine64,
-          "the MoE shape lost the blocks' layout");
-  for (auto &layer : moe.layers) layer.ffn = ops::BlockMoeWeights{};
-  require(model::qwenTargetGeometry(moe).moeShape().weightLayout == ops::WeightLayout::Block32 &&
-              moe.logitsProjection.layout() == ops::WeightLayout::Affine64,
-          "the MoE shape must follow the expert layers, not the head");
-  moe.layers.back().ffn = ops::AffineMoeWeights{};
-  rejects([&] { static_cast<void>(model::qwenTargetGeometry(moe)); },
-          "the MoE blocks of a target must share one weight layout",
-          "a target mixing MoE layouts reached execution");
 }
 
-// One decode arena serves every lane count, and on Apple10 and later a
-// Split128 plan's partials grow with the rows. The arena must hold every
-// lane's plan of every affine target and draft projection at the measured
-// core counts.
+// One decode arena serves every lane count, and a staged plan's partials
+// grow with its rows. The arena must hold every lane's plan of every target
+// and draft projection at the measured core counts.
 void checkLaneScratch(const model::LoadedModel &loaded) {
   const auto geometry = model::RuntimeGeometry::from(loaded, kv::Format::Int8);
   const auto &d = geometry.draft;
@@ -135,9 +120,8 @@ void checkLaneScratch(const model::LoadedModel &loaded) {
       {d.hiddenSize, d.attentionSize},
       {d.intermediateSize, d.hiddenSize}, {d.hiddenSize, d.intermediateSize},
       {d.selectorRank, d.hiddenSize}, {d.hiddenSize, d.targetHiddenSize}};
-  for (const auto &p : geometry.target.decodeProjections)
-    if (p.layout == ops::WeightLayout::Affine64) matrices.push_back({p.outputSize, p.inputSize});
-  for (uint32_t family : {10U, 11U})
+  for (const auto &p : geometry.target.decodeProjections) matrices.push_back({p.outputSize, p.inputSize});
+  for (uint32_t family : {9U, 10U, 11U})
     for (uint32_t cores : {12U, 20U, 40U}) {
       DeviceCapabilities device;
       device.appleGpuFamily = family;
@@ -150,8 +134,9 @@ void checkLaneScratch(const model::LoadedModel &loaded) {
                                 ops::LinearEpilogue::GateUp}) {
             const auto need = plans.linear().plan({matrix, lanes * model::kDecodeRows,
                 ops::LinearPhase::Decode, epilogue}).scratchSize();
-            require(scratch.partials >= need.partials && scratch.counters >= need.counters,
-                    "decode arena scratch below a lane's affine plan");
+            require(scratch.input >= need.input && scratch.sums >= need.sums && scratch.partials >= need.partials &&
+                        scratch.counters >= need.counters,
+                    "decode arena scratch below a lane's plan");
           }
     }
 }
@@ -208,7 +193,7 @@ int main() {
   try {
     checkUnsizedProjection();
     checkGdnWidths();
-    checkMixedLayouts();
+    checkGateUpLayers();
     const auto dense = loadedModel<model::Qwen3_8Weights>();
     const auto sparse = loadedModel<model::Qwen3_6MoeWeights>();
     checkLaneScratch(dense);

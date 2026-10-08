@@ -1384,7 +1384,7 @@ reports (`loaded_model_layout_sha256`, `target_model_sha256`) cover it, so
 models of one layout from different sources never share a fingerprint.
 
 Runtime admission counts the images exactly once (`modelWeightBytes`, which
-`tune-kernels` and the runtime oracle use too). Before loading, startup refuses
+the runtime oracle uses too). Before loading, startup refuses
 a model whose images, with the pipeline and runtime reserves, one lane's state,
 the KV runway and any disk tier state staging, exceed the hard budget, so a
 model that can never fit is not loaded.
@@ -1413,24 +1413,13 @@ input in the source's value-head order, llama.cpp's tiled or MLX's grouped.
 Both Qwen families share one layout
 (`QwenHybridLayout`) and its validator.
 
-Operator plans use each projection's physical layout, `Affine64` or `Block32`,
-independently of the source container. `Projection`, `MoeWeights` and
-`EmbeddingWeights` (`runtime/ops/Weights.hpp`, `MoE.hpp`) hold either layout
-and represent different operator contracts. Arena sizing collects each
-projection's actual layout and reserves the vocabulary head only for decode.
+Every source loads into block planes: `Projection`, `BlockMoeWeights` and
+`EmbeddingWeights` (`runtime/ops/Weights.hpp`, `MoE.hpp`) hold them whatever
+the source container, and represent different operator contracts. Arena
+sizing collects each projection's shape and reserves the vocabulary head only
+for decode.
 
 ### Kernels
-
-Affine Q4 decode (`runtime/ops/Linear.cpp`) runs MPP tiles on Apple10 and later
-(the M6 reports family 11 and runs the same rules) and bf16 simdgroup matrix
-tiles on Apple9. On Apple10 a projection with at most two N128 tiles per core
-runs that tile over two, four or eight K partitions (`LinearTile::Split128`,
-`kernels/decode/linear_q4_grid_split.metal`), the most whose split grid still
-fits four 256-thread threadgroups per core; the last partition of each tile
-adds the fp32 partials in split order, so the sums do not depend on
-scheduling. The split count depends on the grid per core, never on the batch
-width, so a request's sums are the same alone and batched. Every other
-projection keeps the sequential tiles (`dev/benchmarks/device-policy.md`).
 
 Every tensor keeps its stored format: the F32 norm multipliers, GDN decay, the
 MoE router and shared-expert scalar gate, and GDN alpha/beta when a file
@@ -1489,11 +1478,10 @@ leading inputs of wider rows), the register ones `gguf_decode_sg_<format>_l<lane
 experts `moe_expert_gguf_m<rows>_<e>` and `moe_expert_gguf_sg_<e>`, with gate and up in one pass
 `moe_expert_gguf_m<rows>_gate_up`; the fused projections run
 `gguf_decode_fused_m<rows>` and `gguf_decode_sg_fused_l<lanes>`. The norm, GDN and
-attention-gate variants that also write a register kernel's input table carry `table64` (the
-affine Q4 kernel's) or `table16` (the GGUF one's) in their names. The epilogue kinds of both GGUF
-families are in `kernels/common/gguf_tile.h`, the SiLU and sigmoid every kernel shares in
-`kernels/common/activation.h`, and the MMA helpers every register kernel uses, affine, GGUF or
-fp32, in `kernels/common/sgmatrix.h`.
+attention-gate variants that also write the register kernels' input table carry `table16` in
+their names. The epilogue kinds of both GGUF families are in `kernels/common/gguf_tile.h`, the
+SiLU and sigmoid every kernel shares in `kernels/common/activation.h`, and the MMA helpers every
+register kernel uses, GGUF or fp32, in `kernels/common/sgmatrix.h`.
 
 The ABIs are in `runtime/metal/abi/Gguf.h`, which also defines the tile geometry the kernels
 and `LinearGguf.cpp` share, and `MoE.h`; the image formats in
@@ -1530,19 +1518,8 @@ projection (up to three fused formats and widths, then `K` and an optional epilo
 decode tiles at one to four lanes and every K split, and marks the device policy's pick, or, with
 a trailing `prefill=R[,R...]` after the epilogue and the round count, one format's 128-row
 prefill tile at each chunk of `R` rows (more than 32);
-`make benchmark-gguf-moe` times one MoE layer at the 35B shape, GGUF against affine Q4, on the
-device's plans and the other GGUF tile.
-
-Two more time the affine Q4 kernels on synthetic weights, with no model. `make benchmark-decode`
-times the N128, N256 and paired N128 decode tiles on eight simdgroups, plain and with the residual
-and gate/up epilogues each takes, at 8 to 32 rows, on the 27B's projection shapes, its draft's
-context projection and the LM head, over a range of threadgroup counts, and prints each one's time
-and effective bandwidth. It leaves out the other decode tiles the device policy chooses: Apple9's
-register tile (`LinearTile::Q4Register`), Apple10's `Split128` and paired N256 tiles, and N128 on
-four simdgroups at 24 rows. `make benchmark-prefill` times the prefill tiles the device policy
-chooses among (N128 and N256 on eight simdgroups, N128 on four), with their residual and gated
-epilogues, on the 27B's and 35B's projection shapes at 17 to 2,048 rows: the measurements behind
-the Apple9 prefill rule in `runtime/ops/Linear.cpp`.
+`make benchmark-gguf-moe` times one MoE layer at the 35B shape on the device's plans and the
+other GGUF tile.
 
 ### Neural Engine prefill
 
@@ -1561,7 +1538,7 @@ and writing one set of surfaces sized for 2048 rows. The ANE service holds
 memory for a loaded program's intermediate values, which its functions share:
 13 programs of one function each held it 13 times (3.25 GB at the M6's share,
 against 0.67 GB for the one program). The GPU requantizes the
-ANE's weights from the Q4 or GGUF planes one layer ahead into double-buffered
+ANE's weights from the block planes one layer ahead into double-buffered
 IOSurfaces and adds the ANE's partial down projection to its own. Shared
 events order each evaluation between the GPU's packing and that join inside
 the one prefill command (`metal::EventStep`); each signal ends a Metal command
@@ -1701,7 +1678,7 @@ line of text and the breaker on timings it is given, also under the sanitizers,
 and `ane-ffn-startup`, each outcome of a start on a model it plays, a
 remembered calibration among them, and the automatic context, the same in each
 where the split may run. `make test-engine-metal` runs `ane-ffn`: its kernels
-against CPU references for affine Q4 and every GGUF format under shader
+against CPU references for every image format under shader
 validation, then, without it, the split's memory and its output against the GPU
 alone, the same output once its program is unloaded and loaded again, a chunk's
 rows on the GPU alone as a full chunk's, `verify()` of every function and of a
@@ -2061,8 +2038,8 @@ that compacts the conversation, whose summary request and the request after it
 share only the system prompt and tools. Replay points of unfinished requests
 evicted during a phase only print a warning.
 
-`benchmark-backend`, `benchmark-decode-profile` and `tune-kernels` take `MODEL`
-the same way. The models they are run with, one per family and source format:
+`benchmark-backend` and `benchmark-decode-profile` take `MODEL` the same way.
+The models they are run with, one per family and source format:
 
 | Family | MLX | GGUF |
 | --- | --- | --- |
@@ -2082,15 +2059,8 @@ so it stops, naming what it needs, while other programs hold that memory. With
 only desktop applications open, a 24 GB Mac runs it for those variants.
 
 Compare performance on the same idle Mac with the same model and workload.
-`make tune-kernels MODEL=...` measures each projection key of the installed
-model on this Mac: the policy default in `runtime/ops` against the tile
-configurations that won an earlier run (`dev/tuning/LinearTuning.hpp`). It
-prints, per key, the winning configuration with its paired GPU and wall-time
-gain, or that the default is kept; it changes no default and saves no profile.
-For a GGUF model it measures only the draft's projections, and says so in its
-header, since the device policy alone plans block projections
-([GGUF targets](#gguf-targets)). Keep generated reports, profiles, local paths
-and experiment notes out of the source tree and commits.
+Keep generated reports, profiles, local paths and experiment notes out of the
+source tree and commits.
 
 ### Release check
 

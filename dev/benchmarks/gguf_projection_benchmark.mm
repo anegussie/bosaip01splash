@@ -126,13 +126,13 @@ int main(int argc, char **argv) {
       const Linear linear(backend.capabilities());
       std::vector<Case> cases;
       for (const uint32_t rows : prefillRows) {
-        const LinearWorkload w{{N, K}, rows, LinearPhase::Prefill, epilogue, WeightLayout::Block32};
+        const LinearWorkload w{{N, K}, rows, LinearPhase::Prefill, epilogue};
         const LinearConfig config{.tile = LinearTile::GgufPrefill};
         cases.push_back({"R" + std::to_string(rows), "prefill128", Linear::plan(w, config, FloatOutput::BFloat16),
                          config == linear.plan(w, ring.front()).configuration(), {}});
       }
       for (uint32_t lanes = 1; lanes <= kMaximumLanes && !prefill; ++lanes) {
-        const LinearWorkload w{{N, K}, lanes * kLaneRows, LinearPhase::Decode, epilogue, WeightLayout::Block32};
+        const LinearWorkload w{{N, K}, lanes * kLaneRows, LinearPhase::Decode, epilogue};
         const LinearConfig policy = linear.plan(w, ring.front()).configuration();
         for (const LinearTile tile : {LinearTile::GgufRegister, LinearTile::GgufStaged})
           for (uint32_t splits = 1; splits <= LinearConfig::kMaximumSplits; splits *= 2) {

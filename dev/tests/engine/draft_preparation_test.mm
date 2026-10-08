@@ -119,8 +119,8 @@ int main(int argc, char **argv) {
       // The draft loader reads every projection as one af4g64 segment of the
       // layout's sizes.
       const auto projection = [](const ops::Projection &p, uint32_t n, uint32_t k) {
-        return p.layout() == ops::WeightLayout::Block32 && p.outputSize == n && p.inputSize == k &&
-               p.blocks().segments.size() == 1 && p.blocks().segments.front().formatId == GGUF_FMT_AF4G64;
+        return p.outputSize == n && p.inputSize == k && p.blocks().segments.size() == 1 &&
+               p.blocks().segments.front().formatId == GGUF_FMT_AF4G64;
       };
       bool read = draft.layers.size() == layout.layers && draft.files.size() == layout.layers + 1 &&
                   projection(draft.contextProjection, layout.hiddenSize, layout.targetHiddenSize) &&

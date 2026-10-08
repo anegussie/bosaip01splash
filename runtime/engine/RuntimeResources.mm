@@ -131,11 +131,9 @@ PersistentCacheFiles openPersistentCache(const std::filesystem::path &root,
 std::string calibrationKey(std::span<const ops::SwiGluProjections> layers) {
   std::string key = "ane-ffn calibration";
   for (const ops::SwiGluProjections &layer : layers)
-    for (const ops::Projection *projection : {layer.gate, layer.up, layer.down}) {
-      const bool affine = projection->layout() == ops::WeightLayout::Affine64;
-      key += " " + std::to_string(projection->outputSize) + "x" + std::to_string(projection->inputSize) + ":" +
-             (affine ? "a" : "g" + std::to_string(projection->blocks().segments.front().formatId));
-    }
+    for (const ops::Projection *projection : {layer.gate, layer.up, layer.down})
+      key += " " + std::to_string(projection->outputSize) + "x" + std::to_string(projection->inputSize) + ":g" +
+             std::to_string(projection->blocks().segments.front().formatId);
   return key;
 }
 

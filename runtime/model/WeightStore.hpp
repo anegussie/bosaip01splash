@@ -72,10 +72,6 @@ private:
   std::unique_ptr<Impl> impl_;
 };
 
-[[nodiscard]] uint64_t q4PackedBytes(uint32_t outputSize,
-                                     uint32_t inputSize);
-void validateQ4Layout(uint32_t outputSize, uint32_t inputSize);
-
 // A norm of `width` multipliers: F32 when `float32` (a GGUF image keeps its
 // norms as the GGUF stores them), bf16 otherwise.
 [[nodiscard]] ops::NormWeights readNorm(WeightFile &file, uint32_t width,

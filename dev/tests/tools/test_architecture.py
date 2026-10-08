@@ -348,13 +348,13 @@ class ArchitectureTests(unittest.TestCase):
             root = Path(temporary)
             source = root / "runtime/ops/Linear.cpp"
             source.parent.mkdir(parents=True)
-            source.write_text('#include "tuning/Measurement.hpp"\n')
+            source.write_text('#include "tuning/LinearNumerics.hpp"\n')
             with mock.patch.object(check_architecture, "ROOT", root):
                 self.assertEqual(
                     check_architecture.check(),
                     [
                         "runtime/ops/Linear.cpp: production depends on "
-                        "offline tuning tuning/Measurement.hpp"
+                        "offline tuning tuning/LinearNumerics.hpp"
                     ],
                 )
 
@@ -372,9 +372,7 @@ class ArchitectureTests(unittest.TestCase):
                 "auto rank = layout.selectorRank;\n"
             )
             assembly.write_text(
-                '#include "model/Runtime.hpp"\n'
-                "ops::ExecutionPlans plans(device);\n"
-                "ops::tuning::MeasurementOptions options;\n"
+                '#include "model/Runtime.hpp"\nops::ExecutionPlans plans(device);\n'
             )
             with mock.patch.object(check_architecture, "ROOT", root):
                 self.assertEqual(check_architecture.check(), [])

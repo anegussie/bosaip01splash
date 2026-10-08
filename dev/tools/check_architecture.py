@@ -22,9 +22,7 @@ OPERATOR_WORKSPACE_POLICY_NAMES: tuple[str, ...] = (
     "moeMaximumTiles",
     "LinearTile",
     "LinearConfig",
-    "LinearSimdgroups",
     "MoeExpertTile",
-    "MoeExpertSimdgroups",
     "MoeConfig",
 )
 OPERATOR_WORKSPACE_POLICY = re.compile(

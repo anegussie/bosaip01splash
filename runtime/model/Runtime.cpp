@@ -178,8 +178,6 @@ QwenTargetPrefillBuffers prefillBuffers(const PrefillArena &arena) {
   buffers.attentionStatistics = arena.get(PrefillTensor::AttentionStatistics);
   buffers.attentionHidden = arena.get(PrefillTensor::AttentionHidden);
   buffers.attentionOutput = arena.get(PrefillTensor::AttentionOutput);
-  buffers.projectionSums = arena.get(PrefillTensor::ProjectionSums);
-  buffers.downProjectionSums = arena.get(PrefillTensor::DownProjectionSums);
   buffers.ropeCos = arena.get(PrefillTensor::RopeCos);
   buffers.ropeSin = arena.get(PrefillTensor::RopeSin);
   buffers.chunkKeys = arena.get(PrefillTensor::ChunkKeys);

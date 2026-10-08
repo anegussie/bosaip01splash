@@ -420,7 +420,7 @@ std::string walkName(LinearTile tile, bool spread) { return std::string(tileName
 // one, so the stages alternate per step walked, not by the step's parity.
 uint32_t decodeInputs(bool spread) { return spread ? 2304 : 2048; }
 LinearWorkload decode(LinearMatrix matrix, uint32_t lanes, LinearEpilogue epilogue) {
-  return {matrix, lanes * kLaneRows, LinearPhase::Decode, epilogue, WeightLayout::Block32};
+  return {matrix, lanes * kLaneRows, LinearPhase::Decode, epilogue};
 }
 
 // ---------------------------------------------------------------- decode
@@ -563,7 +563,7 @@ void prefill(MetalBackend &backend, const Linear &linear) {
                           const std::string &what) {
     const uint32_t covered = segmentColumns(parts), columns = p.outputSize;
     const auto workload = [&](uint32_t rows) {
-      return LinearWorkload{{columns, K}, rows, LinearPhase::Prefill, epilogue, WeightLayout::Block32};
+      return LinearWorkload{{columns, K}, rows, LinearPhase::Prefill, epilogue};
     };
     // Both chunks take two tiles.
     const uint32_t storage = Linear::plan(workload(kChunks[0]), kTiles, FloatOutput::BFloat16).storageRows();
@@ -589,7 +589,7 @@ void prefill(MetalBackend &backend, const Linear &linear) {
     }
     for (const uint32_t rows : {8u, 16u, 24u, 32u})
       for (const uint32_t splits : {1u, kSplitChunk}) {
-        const LinearWorkload chunk{{columns, K}, rows, LinearPhase::Prefill, epilogue, WeightLayout::Block32};
+        const LinearWorkload chunk{{columns, K}, rows, LinearPhase::Prefill, epilogue};
         const LinearPlan plan =
             Linear::plan(chunk, config(LinearTile::GgufStaged, chunk, splits), FloatOutput::BFloat16);
         const std::string name = label + " chunk of " + std::to_string(rows) + " rows S=" + std::to_string(splits);
@@ -638,8 +638,7 @@ void leadingInputs(MetalBackend &backend, const Linear &linear) {
                                                                              : MetalBuffer{},
                                                upload(backend, planes.meta))}});
     const Projection view = Projection(N, K, BlockWeights{{whole.segment}}).leadingInputs(kLeading);
-    const LinearWorkload w{{N, kLeading}, kChunk, LinearPhase::Prefill, LinearEpilogue::Residual,
-                           WeightLayout::Block32};
+    const LinearWorkload w{{N, kLeading}, kChunk, LinearPhase::Prefill, LinearEpilogue::Residual};
     const LinearPlan plan = Linear::plan(w, {.tile = LinearTile::GgufPrefill}, FloatOutput::BFloat16);
     const uint32_t storage = plan.storageRows();
     const std::vector<uint16_t> x = storageRows(activations(Inputs::Dense, storage, kLeading), kLeading, kChunk,
@@ -798,9 +797,9 @@ void tokenGather(MetalBackend &backend) {
 }
 
 // Each buffer the token gathers reach, at its extent and one element short:
-// the rows' token ids and bf16 output rows, every token's native blocks, the
-// rotation signs of a rotated PQ2_0 table, and an affine table's Q4 rows with
-// a scale and a bias per 64 values.
+// the rows' token ids and bf16 output rows, every token's native blocks (of
+// Q8_0, PQ2_0 and MLX's af4g64) and the rotation signs of a rotated PQ2_0
+// table.
 void gatherExtents(MetalBackend &backend) {
   constexpr uint32_t kVocabulary = 64, kHidden = 1024, kRows = 9;
   const MetalBuffer tokens = test::sharedBuffer(backend, kRows * 4),
@@ -813,7 +812,7 @@ void gatherExtents(MetalBackend &backend) {
     });
   };
   std::vector<EmbeddingWeights> tables;
-  for (const Fmt f : {Q80, PQ20}) {
+  for (const Fmt f : {Q80, PQ20, Fmt(GGUF_FMT_AF4G64)}) {
     const QuantFormat &format = kQuantFormats[f];
     const uint64_t rowBytes = uint64_t{kHidden} / format.block_elements * format.block_bytes;
     EmbeddingWeights table(kVocabulary, kHidden, NativeRows(test::sharedBuffer(backend, kVocabulary * rowBytes), f));
@@ -832,20 +831,6 @@ void gatherExtents(MetalBackend &backend) {
       });
     tables.push_back(table);
   }
-  const uint64_t parameters = uint64_t{kVocabulary} * (kHidden / 64) * 2;
-  const AffineWeights planes{test::sharedBuffer(backend, uint64_t{kVocabulary} * kHidden / 2),
-                             test::sharedBuffer(backend, parameters), test::sharedBuffer(backend, parameters)};
-  for (const auto &[member, bytes, element, what] :
-       std::initializer_list<std::tuple<MetalBuffer AffineWeights::*, uint64_t, uint64_t, const char *>>{
-           {&AffineWeights::weights, uint64_t{kVocabulary} * kHidden / 2, 1, "token table"},
-           {&AffineWeights::scales, parameters, 2, "token table scale"},
-           {&AffineWeights::biases, parameters, 2, "token table bias"}})
-    requireTableExtent(planes.*member, bytes, element, what, [&](const MetalBuffer &view) {
-      AffineWeights changed = planes;
-      changed.*member = view;
-      return EmbeddingWeights(kVocabulary, kHidden, changed);
-    });
-  tables.emplace_back(kVocabulary, kHidden, planes);
   for (const EmbeddingWeights &table : tables) {
     test::requireExtent(backend, tokens, kRows * 4, 4, "embedding token", [&](CommandGraph &graph, const MetalBuffer &view) {
       Embedding::add(graph, view, table, output, kRows);
@@ -853,7 +838,7 @@ void gatherExtents(MetalBackend &backend) {
     test::requireExtent(backend, output, uint64_t{kRows} * kHidden * 2, 2, "embedding output",
                         [&](CommandGraph &graph, const MetalBuffer &view) { Embedding::add(graph, tokens, table, view, kRows); });
   }
-  section("token gather extents: every buffer of native, rotated and affine tables at its extent and refused one "
+  section("token gather extents: every buffer of native and rotated tables at its extent and refused one "
           "element short");
 }
 

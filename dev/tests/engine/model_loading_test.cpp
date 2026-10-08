@@ -649,7 +649,7 @@ void testSyntheticBlockMoeModel(MetalBackend &backend, const std::filesystem::pa
         return quant_affine_format_of(bits, group);
     };
     for (const auto &layer : weights.layers) {
-        const splash::ops::BlockMoeWeights &ffn = layer.ffn.blocks();
+        const splash::ops::BlockMoeWeights &ffn = layer.ffn;
         require(ffn.gate.routed.formatId == format("switch_mlp.gate_proj") &&
                     ffn.up.routed.formatId == format("switch_mlp.up_proj") &&
                     ffn.down.routed.formatId == GGUF_FMT_MXFP4 &&

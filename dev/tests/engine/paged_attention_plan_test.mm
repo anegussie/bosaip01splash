@@ -813,11 +813,11 @@ void bufferExtents(metal::MetalBackend &backend, uint32_t queryHeads, kv::Layout
                                {1, verifyStaged(queryWidth), 2, "attention row"},
                                {2, verifyRows * width * 2, 2, "attention hidden"},
                                {3, ops::tableBytes(width, verifyRows), 2, "linear table"},
-                               {4, ops::tableSumsBytes(ops::LinearInput::Table64, width, verifyRows), 4,
+                               {4, ops::tableSumsBytes(ops::LinearInput::Table16, width, verifyRows), 4,
                                 "linear table sums"}},
                        [&](metal::CommandGraph &graph, const Buffers &b) {
                          (void)ops::PagedAttention::addVerifyGate(graph, b[0], b[1], b[2], queryHeads, layout, lanes,
-                                                                  {b[3], b[4], {}, {}}, ops::LinearInput::Table64);
+                                                                  {b[3], b[4], {}, {}}, ops::LinearInput::Table16);
                        });
 
   const auto chunk = ops::PagedAttention::prefillParams(committed, tokens, stride, 8);

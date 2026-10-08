@@ -17,31 +17,6 @@ namespace splash::model {
 
 namespace {
 
-[[nodiscard]] uint64_t q4Elements(uint32_t outputSize, uint32_t inputSize) {
-    if (!outputSize || !inputSize || inputSize % kQ4GroupElements) {
-        throw WeightStoreError(
-            "Q4 projection dimensions must be positive and input-aligned");
-    }
-    return checkedMultiply<WeightStoreError>(outputSize, inputSize, "Q4 element count");
-}
-
-} // namespace
-
-uint64_t q4PackedBytes(uint32_t outputSize, uint32_t inputSize) {
-    uint64_t elements = q4Elements(outputSize, inputSize);
-    return checkedMultiply<WeightStoreError>(elements / 16, 9, "Q4 packed byte count");
-}
-
-void validateQ4Layout(uint32_t outputSize, uint32_t inputSize) {
-    static_cast<void>(q4Elements(outputSize, inputSize));
-    if (outputSize % kQ4StorageN) {
-        throw WeightStoreError("Q4 output dimension is not a whole number of " + std::to_string(kQ4StorageN) +
-                               "-row storage tiles");
-    }
-}
-
-namespace {
-
 // The header weightFileHeader writes, which the first section follows.
 constexpr uint64_t kHeaderBytes = std::tuple_size_v<decltype(weightFileHeader({}, 0, 0))>;
 
