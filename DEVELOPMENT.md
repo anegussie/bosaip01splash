@@ -1116,10 +1116,11 @@ configuration with the target's (its `model-check`), so a draft of another
 architecture never replaces one that loads. Native loading validates the
 configuration against the target again and loads the draft like a target
 ([Weight loading](#weight-loading)):
-`DraftCheckpointLoader` (`DraftCheckpoint.cpp`) plans the draft's images, one
-per layer and one for the rest, and `AffinePreparation` quantizes each
-projection to 4 bits in groups of 64 as MLX's affine quantization rounds it and
-copies every other tensor as stored.
+`DraftCheckpointLoader` (`DraftCheckpoint.cpp`) plans the draft's `MDGG0001`
+images, one per layer and one for the rest, and `GgufPreparation` quantizes
+each projection into af4g64 planes, 4 bits in groups of 64 as MLX's affine
+quantization rounds them, and copies every other tensor as stored. The draft
+runs on the block kernels its target's projections run on.
 
 ### Vision
 
@@ -1322,22 +1323,20 @@ never rewrites upstream files.
 ### Weight loading
 
 Every start writes a model's target, draft and vision tensors into weight
-images in memory, in the layouts the kernels read: the DFlash2 draft in the
-affine Q4 layout of the affine kernels, any vision tower in the BF16 layout of
-the vision operator, and an MLX or GGUF target in the `MDGG0001` layout of the
-GGUF kernels ([MLX targets](#mlx-targets)). Each source adapter is a loader,
-which validates the source's metadata and plans its images, and a writer:
-`MlxTargetLoader` (`MlxTarget.cpp`, planned by `MlxImage.cpp`) and
-`GgufPreparation` for an MLX target, `DraftCheckpointLoader`
-(`DraftCheckpoint.cpp`) and `AffinePreparation` for the draft,
-`GgufTargetLoader` (`GgufTarget.cpp`, planned by `GgufImage.cpp`) and
-`GgufPreparation` for a GGUF target, `VisionLoader` and `VisionPreparation` for
-an MLX or GGUF vision tower. `AffinePreparation` quantizes the draft's BF16
-projections into 256-row tiles ([Drafts](#drafts)). `GgufPreparation` repacks
+images in memory, in the layouts the kernels read: any vision tower in the
+BF16 layout of the vision operator, and the target, MLX or GGUF, and the
+DFlash2 draft in the `MDGG0001` layout of the GGUF kernels ([MLX
+targets](#mlx-targets)). Each source adapter is a loader, which validates the
+source's metadata and plans its images, and a writer: `MlxTargetLoader`
+(`MlxTarget.cpp`, planned by `MlxImage.cpp`) and `GgufPreparation` for an MLX
+target, `DraftCheckpointLoader` (`DraftCheckpoint.cpp`) and `GgufPreparation`
+for the draft, `GgufTargetLoader` (`GgufTarget.cpp`, planned by
+`GgufImage.cpp`) and `GgufPreparation` for a GGUF target, `VisionLoader` and
+`VisionPreparation` for an MLX or GGUF vision tower. `GgufPreparation` repacks
 GGUF blocks ([GGUF targets](#gguf-targets)) and MLX tensors without
-requantization, and computes an MLX target's GDN decay as
-`float(-exp(double(A_log)))`, which may differ by one float ULP from MLX's
-float exponential.
+requantization, quantizes the draft's BF16 projections ([Drafts](#drafts)),
+and computes an MLX target's GDN decay as `float(-exp(double(A_log)))`, which
+may differ by one float ULP from MLX's float exponential.
 
 Loading never rounds a target or vision weight but in the F32 values of an MLX
 target's quantized router, shared-expert gate or GDN alpha and beta ([MLX
@@ -1418,8 +1417,7 @@ Operator plans use each projection's physical layout, `Affine64` or `Block32`,
 independently of the source container. `Projection`, `MoeWeights` and
 `EmbeddingWeights` (`runtime/ops/Weights.hpp`, `MoE.hpp`) hold either layout
 and represent different operator contracts. Arena sizing collects each
-projection's actual layout (a GGUF target's block projections beside its
-affine draft's) and reserves the vocabulary head only for decode.
+projection's actual layout and reserves the vocabulary head only for decode.
 
 ### Kernels
 

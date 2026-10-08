@@ -6,7 +6,7 @@
 // model.
 
 #include "TestChecks.hpp"
-#include "model/AffinePreparation.hpp"
+#include "metal/abi/DraftAttention.h"
 #include "model/DFlashDraft.hpp"
 #include "model/DraftCheckpoint.hpp"
 #include "model/MlxTarget.hpp"
@@ -58,19 +58,40 @@ inline void writeSyntheticShard(const std::filesystem::path &path,
   std::filesystem::resize_file(path, sizeof(uint64_t) + header.size() + offset);
 }
 
-// The checkpoint tensors the images read, each in the first dtype its input
-// takes.
-inline std::vector<SyntheticTensor> imageTensors(const std::vector<model::affine::Image> &images) {
+// The tensors of a DFlash2 draft of layout as its repository releases them,
+// every one BF16, which model/DraftCheckpoint.cpp reads.
+inline std::vector<SyntheticTensor> draftTensors(const model::DFlashDraftLayout &layout) {
   std::vector<SyntheticTensor> result;
-  const auto add = [&](const model::affine::Input &input) {
-    result.push_back({input.name, input.dtypes.front(), input.shape});
+  const auto add = [&](const std::string &name, std::vector<uint64_t> shape) {
+    result.push_back({name, "BF16", std::move(shape)});
   };
-  for (const model::affine::Image &image : images)
-    for (const model::affine::Section &section : image.sections) {
-      if (section.parts.empty()) add(section.input);
-      for (const model::affine::ProjectionPart &part : section.parts)
-        for (const model::affine::Input &field : part.fields) add(field);
+  const uint64_t hidden = layout.hiddenSize, kv = uint64_t{layout.kvHeads} * layout.attentionHeadDimension;
+  for (uint32_t layer = 0; layer < layout.layers; ++layer) {
+    const std::string prefix = "layers." + std::to_string(layer) + ".";
+    const std::string attention = prefix + "self_attn.";
+    add(prefix + "input_layernorm.weight", {hidden});
+    for (const std::string convolution : {"attention_conv.", "mlp_conv."}) {
+      add(prefix + convolution + "base_kernel",
+          {SPLASH_DRAFT_CONVOLUTION_STAGES, SPLASH_DRAFT_CONVOLUTION_TAPS, hidden});
+      add(prefix + convolution + "kernel_projection.weight", {layout.dynamicSize, hidden});
     }
+    add(attention + "q_proj.weight", {layout.attentionSize, hidden});
+    add(attention + "k_proj.weight", {kv, hidden});
+    add(attention + "v_proj.weight", {kv, hidden});
+    add(attention + "q_norm.weight", {layout.attentionHeadDimension});
+    add(attention + "k_norm.weight", {layout.attentionHeadDimension});
+    add(attention + "o_proj.weight", {hidden, layout.attentionSize});
+    add(prefix + "post_attention_layernorm.weight", {hidden});
+    add(prefix + "mlp.gate_proj.weight", {layout.intermediateSize, hidden});
+    add(prefix + "mlp.up_proj.weight", {layout.intermediateSize, hidden});
+    add(prefix + "mlp.down_proj.weight", {hidden, layout.intermediateSize});
+  }
+  add("fc.weight", {hidden, layout.targetHiddenSize});
+  add("hidden_norm.weight", {hidden});
+  add("norm.weight", {hidden});
+  add("candidate_selector.hidden_projection.weight", {layout.selectorRank, hidden});
+  add("candidate_selector.predecessor_codebook", {layout.vocabularySize, layout.selectorRank});
+  add("candidate_selector.successor_codebook", {layout.vocabularySize, layout.selectorRank});
   return result;
 }
 
@@ -194,7 +215,7 @@ void writeSyntheticCheckpoints(const std::filesystem::path &root, const Layout &
                                                                                 : std::pair{4u, 64u};
   };
   writeSyntheticShard(root / "target" / "model.safetensors", mlxTargetTensors(target, releaseBits));
-  writeSyntheticShard(root / "draft" / "model.safetensors", imageTensors(model::draftCheckpointImages(draft)));
+  writeSyntheticShard(root / "draft" / "model.safetensors", draftTensors(draft));
 }
 
 // Writes an installed MLX model of these layouts under root: its checkpoints
@@ -206,9 +227,8 @@ SyntheticAccounting writeSyntheticModel(const std::filesystem::path &root, const
                                         const ops::VisionLayout &vision) {
   writeSyntheticCheckpoints(root, target, draft);
   writeSyntheticShard(root / "vision" / "model.safetensors", visionTensors(vision));
-  uint64_t draftBytes = 0;
-  for (const model::affine::Image &image : model::draftCheckpointImages(draft)) draftBytes += image.bytes;
-  return {model::mlxTargetImageBytes(root / "target", target), draftBytes, model::visionImageBytes(vision)};
+  return {model::mlxTargetImageBytes(root / "target", target), model::draftImageBytes(root / "draft", draft),
+          model::visionImageBytes(vision)};
 }
 
 } // namespace splash::test

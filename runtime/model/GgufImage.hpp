@@ -37,14 +37,17 @@ struct RowOrder {
 // which the writer interleaves into the native rows of its format
 // (metal/abi/QuantFormat.h): per group an affine tensor's bf16 scale, its
 // bias and its codes, or an mxfp4 tensor's block_mxfp4, its E8M0 scale and
-// codes (GGUF_FMT_MXFP4).
+// codes (GGUF_FMT_MXFP4). Or a BF16 weight, which the writer quantizes into
+// native af4g64 rows as MLX's affine quantization rounds it (a DFlash2
+// draft's projections).
 struct MlxSource {
   const SourceTensor *codes = nullptr, *scales = nullptr, *biases = nullptr;
+  const SourceTensor *bfloat16 = nullptr;
 };
 
 // Rows [0, rows) of one source tensor in image order, read from `file`: rows
-// of rowBytes bytes at `offset` of its tensor data, or, for an MLX quantized
-// tensor (mlx.codes set), its format's native rows.
+// of rowBytes bytes at `offset` of its tensor data, or, for an MLX tensor
+// (mlx.codes or mlx.bfloat16 set), its format's native rows.
 struct TensorRows {
   std::string name;
   uint32_t type = 0;   // ggml type, or QUANT_AFFINE_TYPE

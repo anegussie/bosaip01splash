@@ -145,13 +145,18 @@ StateAdmission admitIdleLane(const QwenStateStorage &states,
   return {{}, StateFailure::ConcurrencyLimit};
 }
 
+// A prefill arena's linear scratch. Prefill plans read plain bf16 rows, so
+// there is no input table or sums.
+ops::LinearScratch prefillScratch(const PrefillArena &arena) {
+  return {.partials = arena.get(PrefillTensor::LinearPartials),
+          .counters = arena.get(PrefillTensor::LinearCounters),
+          .rotated = arena.get(PrefillTensor::LinearRotated)};
+}
+
 // A prefill arena's tensors as the target's prefill reads them.
 QwenTargetPrefillBuffers prefillBuffers(const PrefillArena &arena) {
   QwenTargetPrefillBuffers buffers;
-  // Prefill plans read plain bf16 rows, so there is no input table or sums.
-  buffers.linearScratch = {.partials = arena.get(PrefillTensor::LinearPartials),
-                           .counters = arena.get(PrefillTensor::LinearCounters),
-                           .rotated = arena.get(PrefillTensor::LinearRotated)};
+  buffers.linearScratch = prefillScratch(arena);
   buffers.hidden = {arena.get(PrefillTensor::Hidden0), arena.get(PrefillTensor::Hidden1)};
   buffers.normalized = arena.get(PrefillTensor::Normalized);
   buffers.captured = arena.get(PrefillTensor::Captured);
@@ -1171,7 +1176,7 @@ struct Runtime::Impl {
     }
     draftModel.addContextPrefill(
         graph,
-        {p(PrefillTensor::Captured), p(PrefillTensor::ProjectionSums),
+        {p(PrefillTensor::Captured), prefillScratch(*prefillArena),
          p(PrefillTensor::ContextProjected), p(PrefillTensor::ContextHidden),
          p(PrefillTensor::ContextKv), p(PrefillTensor::DraftRopeCos),
          p(PrefillTensor::DraftRopeSin)},
@@ -1520,8 +1525,11 @@ struct Runtime::Impl {
       throw std::invalid_argument("invalid draft state commit batch");
     }
     const uint32_t lanes = static_cast<uint32_t>(entries.size());
+    // The draft's projections take the target's storage rows, as in its
+    // decode (encodeDraftBatchGraph).
+    const uint32_t storage = targetModel.decodeStorageLanes(lanes);
     auto d = [&](DecodeTensor tensor) {
-      return decodeArena->batchSlice(tensor, lanes);
+      return decodeArena->batchSlice(tensor, storage);
     };
 
     std::array<uint32_t, kLaneCount> startPositions{};

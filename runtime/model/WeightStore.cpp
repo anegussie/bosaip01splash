@@ -107,20 +107,6 @@ metal::MetalBuffer WeightFile::section(uint64_t bytes,
     return impl_->backend->view(impl_->base, start, bytes);
 }
 
-std::vector<metal::MetalBuffer> WeightFile::split(std::initializer_list<uint64_t> parts,
-                                                  std::string_view label) {
-    uint64_t bytes = 0;
-    for (uint64_t part : parts) bytes = checkedAdd<WeightStoreError>(bytes, part, "weight image section size");
-    const metal::MetalBuffer whole = section(bytes, label);
-    std::vector<metal::MetalBuffer> views;
-    uint64_t offset = 0;
-    for (uint64_t part : parts) {
-        views.push_back(impl_->backend->view(whole, offset, part));
-        offset += part;
-    }
-    return views;
-}
-
 void WeightFile::finish() {
     uint64_t consumed = sectionStart(impl_->offset);
     if (consumed != impl_->base.sizeBytes()) {
@@ -132,15 +118,6 @@ void WeightFile::finish() {
 
 const WeightFileRecord &WeightFile::record() const noexcept {
     return impl_->record;
-}
-
-ops::Projection readAffineProjection(WeightFile &file, uint32_t outputSize, uint32_t inputSize,
-                                     std::string_view label) {
-    validateQ4Layout(outputSize, inputSize);
-    const uint64_t elements = q4Elements(outputSize, inputSize);
-    const std::vector<metal::MetalBuffer> planes =
-        file.split({elements / 2, elements / 32, elements / 32}, label);
-    return {outputSize, inputSize, ops::AffineWeights{planes[0], planes[1], planes[2]}};
 }
 
 ops::NormWeights readNorm(WeightFile &file, uint32_t width, bool float32,

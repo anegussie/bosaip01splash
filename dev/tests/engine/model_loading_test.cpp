@@ -342,10 +342,10 @@ void testGgufImageLayout(MetalBackend &backend, const std::filesystem::path &roo
             refusal, "token gather past its buffers was accepted");
 }
 
-// The small layouts the synthetic models load: a target of every projection
-// in whole 256-row tiles of a multiple of 256 inputs, as block images hold
-// them, its draft and a vision tower. A MoE target keeps its family's 256
-// experts, 8 per token.
+// The small layouts the synthetic models load: a target and its draft of
+// every projection in whole 256-row tiles of a multiple of 256 inputs, as
+// block images hold them, and a vision tower. A MoE target keeps its family's
+// 256 experts, 8 per token.
 template <class Layout = Qwen3_8Layout> Layout syntheticTarget() {
     Layout target;
     target.layers = 4;
@@ -377,14 +377,14 @@ template <class Layout> DFlashDraftLayout syntheticDraft(const Layout &target) {
     draft.hiddenSize = 256;
     draft.vocabularySize = 256;
     draft.dynamicSize = 256;
-    draft.qkvSize = 256;
-    draft.attentionSize = 128;
+    draft.qkvSize = 512;
+    draft.attentionSize = 256;
     draft.intermediateSize = 256;
     draft.attentionHeadDimension = 64;
     draft.rotaryTheta = 10'000'000.0F;
     draft.targetHiddenSize = target.capturedHiddenSize();
     draft.selectorRank = 256;
-    draft.kvHeads = 1;
+    draft.kvHeads = 2;
     return draft;
 }
 
@@ -537,8 +537,7 @@ ModelDescriptor writeBlockModel(const std::filesystem::path &root, const Layout 
                                 const std::vector<SyntheticTensor> &tensors) {
     const DFlashDraftLayout draft = syntheticDraft(target);
     splash::test::writeSyntheticShard(root / "target" / "model.safetensors", tensors);
-    splash::test::writeSyntheticShard(root / "draft" / "model.safetensors",
-                                      splash::test::imageTensors(splash::model::draftCheckpointImages(draft)));
+    splash::test::writeSyntheticShard(root / "draft" / "model.safetensors", splash::test::draftTensors(draft));
     ModelDescriptor descriptor = makeModelDescriptor("Qwen block loader", target, draft, syntheticVision(),
                                                      TargetSource::Mlx, VisionSource::None);
     descriptor.sourceIdentity = "sources";

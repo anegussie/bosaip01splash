@@ -128,7 +128,9 @@ struct DFlashPrefillSpan final {
 
 struct DFlashPrefillBuffers final {
   metal::MetalBuffer capturedTargetHidden;
-  metal::MetalBuffer projectionSums;
+  // The split partials and counters of the context projections' chunks of
+  // up to a decode batch (Linear::addPrefill).
+  ops::LinearScratch linearScratch;
   metal::MetalBuffer projected;
   metal::MetalBuffer hidden;
   metal::MetalBuffer contextKv;
@@ -164,8 +166,6 @@ struct DFlashDraftWeights final {
   std::vector<WeightFileRecord> files;
   uint64_t actualAllocatedBytes = 0;
 };
-
-inline constexpr std::string_view kDFlashLayerMagic = "MDFD0004";
 
 class DraftCheckpointLoader;
 

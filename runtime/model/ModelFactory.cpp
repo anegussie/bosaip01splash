@@ -49,9 +49,9 @@ TargetWeights readTarget(metal::MetalBackend &backend, const Qwen3_6MoeLayout &l
   return loadQwen3_6MoeWeights(backend, layout, files);
 }
 
-template <class Image> uint64_t imageBytes(const std::vector<Image> &images) {
+uint64_t imageBytes(const std::vector<gguf::Image> &images) {
   uint64_t total = 0;
-  for (const Image &image : images) total += image.bytes;
+  for (const gguf::Image &image : images) total += image.bytes;
   return total;
 }
 
@@ -69,7 +69,7 @@ LoadedModel loadModel(metal::MetalBackend &backend,
   // Every source's metadata is checked before the first image is written:
   // the vision tower's and the draft's here, the target's by its loader.
   const auto vision = planVisionLoader(root, result.descriptor);
-  DraftCheckpointLoader draft(images, root / "draft", result.descriptor.draft);
+  DraftCheckpointLoader draft(backend, images, root / "draft", result.descriptor.draft);
   result.target = std::visit(
       [&](const auto &layout) -> TargetWeights {
         const std::filesystem::path directory = root / "target";
@@ -112,7 +112,7 @@ uint64_t modelWeightBytes(const std::filesystem::path &root, const ModelDescript
     bytes = std::visit([&](const auto &layout) { return mlxTargetImageBytes(root / "target", layout); },
                        descriptor.target);
   }
-  bytes += imageBytes(draftCheckpointImages(descriptor.draft));
+  bytes += draftImageBytes(root / "draft", descriptor.draft);
   if (descriptor.hasVision())
     bytes += visionImageBytes(descriptor.vision);
   return bytes;

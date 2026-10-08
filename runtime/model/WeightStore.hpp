@@ -63,9 +63,6 @@ public:
 
   [[nodiscard]] metal::MetalBuffer section(uint64_t bytes,
                                             std::string_view label);
-  // One section of the parts' total bytes, as a view of each part in order.
-  [[nodiscard]] std::vector<metal::MetalBuffer> split(std::initializer_list<uint64_t> parts,
-                                                      std::string_view label);
   // Requires the sections read to cover the whole file.
   void finish();
   [[nodiscard]] const WeightFileRecord &record() const noexcept;
@@ -78,10 +75,6 @@ private:
 [[nodiscard]] uint64_t q4PackedBytes(uint32_t outputSize,
                                      uint32_t inputSize);
 void validateQ4Layout(uint32_t outputSize, uint32_t inputSize);
-
-[[nodiscard]] ops::Projection
-readAffineProjection(WeightFile &file, uint32_t outputSize, uint32_t inputSize,
-                     std::string_view label);
 
 // A norm of `width` multipliers: F32 when `float32` (a GGUF image keeps its
 // norms as the GGUF stores them), bf16 otherwise.
