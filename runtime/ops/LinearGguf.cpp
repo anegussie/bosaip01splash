@@ -155,8 +155,9 @@ GgufDecodeFusedParams fusedSegments(const LinearPlan &plan, std::span<const Quan
   const LinearWorkload w = plan.workload();
   if (order.size() > kFusedSegments || w.epilogue != LinearEpilogue::None)
     throw std::invalid_argument("a fused block projection takes at most three segments and no epilogue");
-  GgufDecodeFusedParams params{w.matrix.inputSize, plan.configuration().splits, w.matrix.outputSize,
-                               {0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
+  const LinearConfig config = plan.configuration();
+  GgufDecodeFusedParams params{w.matrix.inputSize, config.splits, w.matrix.outputSize,
+                               {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, config.spread};
   for (size_t i = 0; i < kFusedSegments; ++i) {
     const QuantizedSegment &s = *order[std::min(i, order.size() - 1)];
     if (i < order.size()) {
@@ -258,7 +259,18 @@ LinearConfig Linear::ggufBaseline(LinearWorkload w, std::span<const Projection *
   // Apple9 runs matrix operations on the FP32 pipe, so the exact register
   // kernel beats staging but for the projections apple9Stages names.
   if (family_ == GpuFamilyClass::Apple9 && !apple9Stages(w, projections)) return registerDecode(n, k, gpuCores_);
-  return stagedDecode(n, k, gpuCores_, family_);
+  // Decode tiles walking K in lockstep all fetch the same slice of the input
+  // at each step, just written by the operator before and in no cache yet,
+  // and the fetch sits on every tile's critical path; starting each column
+  // tile at its own step lets most tiles find their slice brought in by
+  // others. On Apple10 and later the 27B decodes 4-10% faster end to end on a
+  // 40-core M5 Max and 4-8% on a 20-core M5 Pro (8-bit weights, whose tiles
+  // stream twice the bytes, 1% slower at one and two lanes and 1-2% faster
+  // at three and four on the M5 Max); a 12-core M6 and Apple9 gain nothing,
+  // lockstep as fast or faster. 16 cores lies between the measured 12 and 20.
+  LinearConfig config = stagedDecode(n, k, gpuCores_, family_);
+  config.spread = family_ == GpuFamilyClass::Apple10 && gpuCores_ >= 16;
+  return config;
 }
 
 LinearScratchSize Linear::ggufDecodeScratchSize(LinearWorkload w) const {
@@ -343,8 +355,8 @@ void Linear::addGgufStaged(metal::CommandGraph &graph, const LinearBuffers &b,
                           const metal::MetalBuffer &aux) {
     graph.add(kernelInstance(decodeKernel(s.name(), rows, epilogue), plan.destination()),
               {b.input, s.plane0, s.plane1Slot(), s.meta, output, partials, counters, aux},
-              GgufDecodeParams{k, splits, n, s.columnOffset}, {s.outputSize / GGUF_TILE_COLUMNS, splits, 1},
-              {GGUF_STAGED_THREADS, 1, 1});
+              GgufDecodeParams{k, splits, n, s.columnOffset, config.spread},
+              {s.outputSize / GGUF_TILE_COLUMNS, splits, 1}, {GGUF_STAGED_THREADS, 1, 1});
   };
   if (w.phase == LinearPhase::Prefill) {
     for (const QuantizedSegment &s : segments)
@@ -424,7 +436,7 @@ void Linear::addGgufRegister(metal::CommandGraph &graph, const LinearBuffers &b,
                           const metal::MetalBuffer &aux) {
     graph.add(kernelInstance(std::string("gguf_decode_sg_") + s.name() + suffix + "_" + epilogue, plan.destination()),
               {b.scratch.input, b.scratch.sums, s.plane0, s.plane1Slot(), s.meta, output, partials, counters, aux},
-              GgufDecodeParams{k, config.splits, n, s.columnOffset}, grid, {GGUF_REGISTER_THREADS, 1, 1});
+              GgufDecodeParams{k, config.splits, n, s.columnOffset, 0}, grid, {GGUF_REGISTER_THREADS, 1, 1});
   };
   addDecodeTensor(b, w.epilogue, segments.front(), gate, tensor);
 }

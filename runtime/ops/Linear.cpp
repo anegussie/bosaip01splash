@@ -294,6 +294,8 @@ LinearPlan::LinearPlan(LinearWorkload w, LinearConfig config, FloatOutput destin
           ? !config.groups || config.groups > w.matrix.outputSize / tileColumns()
           : config.groups != 0)
     throw std::invalid_argument("a persistent decode tile takes 1 to its column tiles in groups, every other plan 0");
+  if (config.spread && config.tile != LinearTile::GgufStaged)
+    throw std::invalid_argument("only the staged block tile spreads its walks");
   if (ggufTile) {
     // Kernel names follow the segment formats (LinearGguf.cpp).
     requireBlockConfiguration();

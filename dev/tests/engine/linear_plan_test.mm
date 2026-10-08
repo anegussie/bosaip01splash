@@ -927,7 +927,7 @@ void ggufPlans() {
   const LinearWorkload down{{5120, 17408}, 8, LinearPhase::Decode, LinearEpilogue::Residual};
   const LinearPlan single = linear.plan(down, blockProjection(5120, 17408, 1));
   require(single.workload().weightLayout == WeightLayout::Block32 &&
-              single.configuration() == LinearConfig{.tile = LinearTile::GgufStaged, .splits = 2} &&
+              single.configuration() == LinearConfig{.tile = LinearTile::GgufStaged, .splits = 2, .spread = true} &&
               single.groups() == 80 &&
               single.input() == LinearInput::Plain &&
               single.scratchSize().partials == splitPartialsBytes(single) &&
@@ -1135,6 +1135,31 @@ void ggufPlans() {
           "a persistent decode tile takes 1 to its column tiles in groups", "the prefill tile took a group count");
   rejects([&] { (void)Linear::plan(chunk, {.tile = LinearTile::GgufPrefill, .splits = 2}, FloatOutput::BFloat16); },
           "invalid block prefill configuration", "the prefill tile split K");
+  // The staged decode tiles spread their walks on Apple10 and later from 16
+  // cores; Apple9's, those of fewer cores and every prefill plan, the staged
+  // chunks of up to 32 rows among them, walk in lockstep. No other tile
+  // spreads.
+  const Projection iq = blockProjection(5120, 17408, 1, GGUF_FMT_IQ2XXS);
+  for (const uint32_t family : {9U, 10U, 11U})
+    for (const uint32_t cores : {8U, 12U, 15U, 16U, 20U, 40U}) {
+      const Linear device = gpu(family, cores);
+      const LinearConfig decode =
+          device.plan({down.matrix, 8, LinearPhase::Decode, LinearEpilogue::Residual}, iq).configuration();
+      require(decode.tile == LinearTile::GgufStaged && decode.spread == (family >= 10 && cores >= 16),
+              "GGUF staged decode walk default");
+      for (const uint32_t rows : {8U, 32U, 128U})
+        require(!device.plan({down.matrix, rows, LinearPhase::Prefill, LinearEpilogue::Residual}, iq)
+                     .configuration().spread,
+                "a GGUF prefill plan spreads its walks");
+    }
+  rejects(
+      [&] {
+        (void)Linear::plan(registerDown, {.tile = LinearTile::GgufRegister, .splits = 8, .spread = true},
+                           FloatOutput::BFloat16);
+      },
+      "only the staged block tile spreads its walks", "the register tile spread its walks");
+  rejects([&] { (void)Linear::plan(chunk, {.tile = LinearTile::GgufPrefill, .spread = true}, FloatOutput::BFloat16); },
+          "only the staged block tile spreads its walks", "the prefill tile spread its walks");
 }
 
 // A rotated projection's scratch holds the bf16 rotated rows of a full decode
@@ -1158,6 +1183,8 @@ void scratchBoundsRotated() {
 // - a split count is a power of two up to eight whose partitions keep the kernel's
 //   floor (register: one 256-input unit, staged: 512 inputs in whole 32-input
 //   groups);
+// - the staged tile spreads its walks from 16 planned cores, the register tile
+//   never;
 // - it depends on the grid per core only: doubling the width and the core count
 //   keeps it, more cores never lower it and a wider grid never raises it;
 // - the arena bound (the single-tensor plan) covers every segment count.
@@ -1187,8 +1214,9 @@ void ggufCoreLaws() {
               const bool staged = c.tile == LinearTile::GgufStaged;
               require(c.tile == (family == 9 ? LinearTile::GgufRegister : LinearTile::GgufStaged) &&
                           c.groups == 0 && one.groups() == n / 64 && s >= 1 && s <= 8 &&
-                          (s & (s - 1)) == 0,
-                      "GGUF decode plan tile or split count");
+                          (s & (s - 1)) == 0 &&
+                          c.spread == (staged && plannedGpuCores(simulatedDevice(family, cores)) >= 16),
+                      "GGUF decode plan tile, split count or walk");
               require(s == 1 || (staged ? k / s >= 512 && (k / 32) % s == 0 : k / 256 / s >= 1),
                       "GGUF decode partition below the kernel floor");
               require(one.storageRows() == 8 && plan(linear, n, 24).storageRows() == (staged ? 32U : 24U),

@@ -71,8 +71,9 @@ struct GgufDecodeParams {
   uint32_t splits;      // K partitions; 1 = no cross-threadgroup reduction
   uint32_t out_stride;  // columns of a destination row
   uint32_t out_offset;  // first destination column of the tensor
+  uint32_t spread;      // staged tile: 1 = each column tile starts its K walk at its own step, 0 = lockstep
 };
-static_assert(sizeof(GgufDecodeParams) == 16, "GGUF decode parameters are 16 bytes on both sides");
+static_assert(sizeof(GgufDecodeParams) == 20, "GGUF decode parameters are 20 bytes on both sides");
 
 // Decode of a fused projection: up to three column segments of any formats in
 // one dispatch, tiles in segment order.
@@ -83,8 +84,9 @@ struct GgufDecodeFusedParams {
   uint32_t cols[3];     // columns per segment; 0 past the last
   uint32_t fmt[3];      // GGUF_FMT_* per segment
   uint32_t offset[3];   // first destination column per segment
+  uint32_t spread;      // as GgufDecodeParams', each segment's tiles from their index in it
 };
-static_assert(sizeof(GgufDecodeFusedParams) == 48, "GGUF fused decode parameters are 48 bytes on both sides");
+static_assert(sizeof(GgufDecodeFusedParams) == 52, "GGUF fused decode parameters are 52 bytes on both sides");
 
 struct GgufEmbedParams {
   uint32_t rows;

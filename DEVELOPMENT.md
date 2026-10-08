@@ -1463,12 +1463,16 @@ takes wherever the tile holds its lanes' rows unpadded. On Apple10 (M5) the stag
 which dequantize each weight once to half in threadgroup memory (`kernels/common/gguf_staged.h`)
 for MPP `matmul2d`, the neural accelerator's path, on bf16 activations. A step's weights, and
 its meta unit when it enters a new one, load while the previous step's matmul runs
-(`gguf_staged_steps`): their DRAM round trips overlap a matmul. A step of three request lanes
-runs the 32-row tile over four lanes of storage. Prefill runs the staged kernels on both
-families: the 128-row prefill tile (`LinearTile::GgufPrefill`), and the staged tile for chunks of
-up to 32 rows. Every projection splits its K across threadgroups by one rule (`decodeSplits`: each
-tile's tiers of threadgroups per core and inputs per partition, from measured occupancy, Apple9's
-staged tile taking the register tile's) that does not depend on the batch width. The MoE experts
+(`gguf_staged_steps`): their DRAM round trips overlap a matmul. On Apple10 from 16 cores each
+column tile of a decode projection starts its walk over its K partition at its own step
+(`staged_first_step`, `LinearConfig::spread`), so the tiles do not all wait on the same freshly
+written slice of the input at once; the MoE experts, prefill, Apple9 and fewer cores walk in
+lockstep. A step of three request lanes runs the 32-row tile over four lanes of storage. Prefill
+runs the staged kernels on both families: the 128-row prefill tile (`LinearTile::GgufPrefill`),
+and the staged tile for chunks of up to 32 rows. Every projection splits its K across
+threadgroups by one rule (`decodeSplits`: each tile's tiers of threadgroups per core and inputs
+per partition, from measured occupancy, Apple9's staged tile taking the register tile's) that
+does not depend on the batch width. The MoE experts
 (`runtime/ops/MoE.cpp`) run the same numerics per family over the grouped rows: the register form
 in `linear_gguf_sgmatrix.metal`, the staged one in `kernels/shared/moe_gguf.metal`, which Apple9
 takes for experts mostly in the formats it stages (`MoeShape::expertFormat`). The float router and
