@@ -88,6 +88,10 @@ struct LinearConfig final {
   // own step (kernels/common/gguf_staged_tile.h) instead of every tile at the
   // partition's first; no other tile spreads.
   bool spread = false;
+  // GgufStaged gate/up decode: gate and up in one dispatch whose simdgroups
+  // each stage both tensors' 32 columns (gguf_decode_<format>_m<rows>_gate_up,
+  // gate and up in one format), instead of a gate pass and an up pass.
+  bool oneGateUpPass = false;
   [[nodiscard]] constexpr bool validSplits() const noexcept {
     return splits && splits <= kMaximumSplits && !(splits & (splits - 1));
   }

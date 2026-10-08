@@ -8,7 +8,8 @@
 // - fused: three segments of different formats in one projection equal the projections of each segment alone;
 // - both on the staged tile's spread walk too (LinearConfig::spread), over partitions from 72 steps down to 9, an odd
 //   count, whose tiles' walks wrap past the partition's end;
-// - gate/up: each format's gate with the next format's up;
+// - gate/up: each format's gate with the next format's up, and in one pass (LinearConfig::oneGateUpPass) bitwise the
+//   two passes;
 // - prefill: 128-row tiles with each epilogue, whose simdgroups past the chunk write nothing, and chunks of up to 32
 //   rows on the decode tiles equal to them bitwise; fused segments at their column offsets;
 // - split visibility: two projections that share the split scratch, at every pair of K splits either tile's policy
@@ -36,6 +37,7 @@
 #include <iostream>
 #include <random>
 #include <set>
+#include <span>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -550,6 +552,38 @@ void gateUpPairs(MetalBackend &backend, const Linear &linear, LinearTile tile) {
           "within fp64");
 }
 
+// Gate/up in one pass (LinearConfig::oneGateUpPass) on the staged tile, gate and up in each format ([768, K]), and in
+// Q4_K and MLX 4-bit at the 27B's [17408, 5120]: at every lane count, K split and walk, bitwise the output of the gate
+// and up passes, whatever the partials held before.
+void oneGateUpPass(MetalBackend &backend, const Linear &linear, bool spread) {
+  const auto pairs = [&](Fmt f, uint32_t N, uint32_t K, uint32_t columns, std::span<const uint32_t> lanes) {
+    const Tensor g = tensor(backend, f, N, K), u = tensor(backend, f, N, K);
+    const Projection gate = projection({&g}, columns), up = projection({&u}, columns);
+    const std::vector<float> x = activations(Inputs::Dense, kMaximumRows, K);
+    for (const uint32_t splits : kSplits)
+      for (const uint32_t l : lanes) {
+        const LinearWorkload wl = decode({columns, K}, l, LinearEpilogue::GateUp);
+        LinearConfig c = config(LinearTile::GgufStaged, wl, splits, spread);
+        const LinearPlan twoPasses = Linear::plan(wl, c, FloatOutput::BFloat16);
+        c.oneGateUpPass = true;
+        const LinearPlan onePass = Linear::plan(wl, c, FloatOutput::BFloat16);
+        const std::string label = std::string(fmtName(f)) + " " + std::to_string(N) + "x" + std::to_string(K) +
+                                  " S=" + std::to_string(splits) + " L=" + std::to_string(l);
+        const std::vector<uint16_t> rows = storageRows(x, K, wl.rows, onePass.storageRows());
+        const Outcome two = run(backend, linear, twoPasses, up, &gate, rows, {}, kPoisonNaN, N, label + " two passes");
+        const Outcome one = run(backend, linear, onePass, up, &gate, rows, {}, kPoisonFinite, N, label);
+        if (!sameRows(one.output, 0, two.output, 0, wl.rows, columns)) fail(label + ": differs from the two passes");
+      }
+  };
+  const uint32_t K = decodeInputs(spread);
+  constexpr uint32_t kAllLanes[] = {1, 2, 3, 4}, kEndLanes[] = {1, kMaximumLanes};
+  for (int fi = 0; fi < FMT_COUNT; ++fi) pairs(Fmt(fi), 768, K, 768 + kPadding, kAllLanes);
+  for (const Fmt f : {Q4K, Fmt(GGUF_FMT_AF4G64)}) pairs(f, 17408, 5120, 17408, kEndLanes);
+  section(walkName(LinearTile::GgufStaged, spread) + " one-pass gate/up: " + std::to_string(FMT_COUNT) +
+          " formats at 768x" + std::to_string(K) + ", 1-4 lanes, and Q4_K and MLX 4-bit at 17408x5120, 1 and 4 lanes, "
+          "S 1-8, bitwise the two passes");
+}
+
 // ---------------------------------------------------------------- prefill
 // 168- and 136-row chunks on the 128-row tiles: the second tile holds 40 or 8 rows, so its last two or three 32-row
 // simdgroups skip their matmuls, though not the barriers of the stage they share, and leave the rows from 192 or 160
@@ -858,6 +892,7 @@ int main(int argc, char **argv) {
       }
       decodeTile(backend, linear, LinearTile::GgufStaged, true);
       fusedDecode(backend, linear, LinearTile::GgufStaged, true);
+      for (const bool spread : {false, true}) oneGateUpPass(backend, linear, spread);
       prefill(backend, linear);
       leadingInputs(backend, linear);
       // The 27B out_proj then down, and gdn_in then gate/up: K 6144, 17408 and 5120.

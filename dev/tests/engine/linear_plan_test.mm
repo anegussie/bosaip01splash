@@ -391,6 +391,33 @@ void ggufPlans() {
         require(!device.plan({down.matrix, rows, LinearPhase::Prefill, LinearEpilogue::Residual}, iq)
                      .configuration().spread,
                 "a GGUF prefill plan spreads its walks");
+      // Where the walks spread, a gate/up pair of one format runs in one pass, its K split as one projection of the
+      // pair's columns; a pair of two formats runs two passes, as every pair does elsewhere. The decode scratch bound
+      // covers the one pass's partials of both tensors and counters per 32 columns.
+      for (const uint32_t n : {1024U, 17408U}) {
+        const LinearMatrix matrix{n, 5120};
+        const Projection up = blockProjection(n, 5120, 1, GGUF_FMT_IQ2XXS),
+                         same = blockProjection(n, 5120, 1, GGUF_FMT_IQ2XXS),
+                         other = blockProjection(n, 5120, 1, GGUF_FMT_IQ2XS);
+        const bool spreads = family >= 10 && cores >= 16;
+        for (const uint32_t rows : {8U, 32U}) {
+          const LinearWorkload gateUp{matrix, rows, LinearPhase::Decode, LinearEpilogue::GateUp};
+          const LinearPlan one = device.plan(gateUp, up, &same), two = device.plan(gateUp, up, &other);
+          const uint32_t pairSplits =
+              device.plan({{2 * n, 5120}, rows, LinearPhase::Decode, LinearEpilogue::None},
+                          blockProjection(2 * n, 5120, 1, GGUF_FMT_IQ2XXS)).configuration().splits;
+          require(one.configuration().oneGateUpPass == spreads && !two.configuration().oneGateUpPass &&
+                      (!spreads || (one.configuration().splits == pairSplits && one.configuration().spread &&
+                                    one.gateScratchBytes() == 0)),
+                  "GGUF gate/up pass default");
+          const LinearScratchSize bound = device.decodeScratchSize({n, 5120}), need = one.scratchSize();
+          const uint32_t splits = one.configuration().splits;
+          require(bound.partials >= need.partials && bound.counters >= need.counters &&
+                      (!spreads || (need.partials == (splits > 1 ? uint64_t{splits} * one.storageRows() * 2 * n * 4 : 0) &&
+                                    need.counters == (splits > 1 ? n / 32 * 4 : 0))),
+                  "GGUF one-pass gate/up scratch");
+        }
+      }
     }
   rejects(
       [&] {
@@ -398,6 +425,11 @@ void ggufPlans() {
                            FloatOutput::BFloat16);
       },
       "only the staged block tile spreads its walks", "the register tile spread its walks");
+  rejects(
+      [&] {
+        (void)Linear::plan(down, {.tile = LinearTile::GgufStaged, .oneGateUpPass = true}, FloatOutput::BFloat16);
+      },
+      "only a staged block gate/up decode runs gate and up in one pass", "a residual plan ran gate/up in one pass");
   rejects([&] { (void)Linear::plan(chunk, {.tile = LinearTile::GgufPrefill, .spread = true}, FloatOutput::BFloat16); },
           "only the staged block tile spreads its walks", "the prefill tile spread its walks");
 }

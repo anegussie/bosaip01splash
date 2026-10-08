@@ -121,9 +121,10 @@ LinearInput LinearPlan::input() const noexcept {
   return config_.tile == LinearTile::GgufRegister ? LinearInput::Table16 : LinearInput::Plain;
 }
 uint64_t LinearPlan::gateScratchBytes() const noexcept {
-  // Gate/up runs as a gate pass into the gate scratch and an up-with-gate pass.
-  const bool needed =
-      workload_.epilogue == LinearEpilogue::UpWithGate || workload_.epilogue == LinearEpilogue::GateUp;
+  // Gate/up runs as a gate pass into the gate scratch and an up-with-gate
+  // pass, but in one pass (LinearConfig::oneGateUpPass).
+  const bool needed = workload_.epilogue == LinearEpilogue::UpWithGate ||
+                      (workload_.epilogue == LinearEpilogue::GateUp && !config_.oneGateUpPass);
   return needed ? uint64_t{storageRows()} * workload_.matrix.outputSize * 2 : 0;
 }
 

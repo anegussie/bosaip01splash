@@ -1447,7 +1447,9 @@ its meta unit when it enters a new one, load while the previous step's matmul ru
 column tile of a decode projection starts its walk over its K partition at its own step
 (`staged_first_step`, `LinearConfig::spread`), so the tiles do not all wait on the same freshly
 written slice of the input at once; the MoE experts, prefill, Apple9 and fewer cores walk in
-lockstep. A step of three request lanes runs the 32-row tile over four lanes of storage. Prefill
+lockstep. There a dense gate/up pair whose tensors share their format also decodes in one
+dispatch (`LinearConfig::oneGateUpPass`), each simdgroup staging both tensors' columns, so a
+chain's serial steps serve both; its output is bitwise the two passes'. A step of three request lanes runs the 32-row tile over four lanes of storage. Prefill
 runs the staged kernels on both families: the 128-row prefill tile (`LinearTile::GgufPrefill`),
 and the staged tile for chunks of up to 32 rows. Every projection splits its K across
 threadgroups by one rule (`decodeSplits`: each tile's tiers of threadgroups per core and inputs
@@ -1472,7 +1474,8 @@ producer writes plain rows. The token table gathers each row through the inverse
 (`gguf_embed_rotated_pq20`).
 
 A GGUF kernel of one quantized tensor names its epilogue last: `a` none, `r` residual, `g` the
-up pass with the silu gate. The staged ones are `gguf_decode_<format>_m<rows>_<e>` and
+up pass with the silu gate. The staged ones are `gguf_decode_<format>_m<rows>_<e>`, with gate and
+up in one pass `gguf_decode_<format>_m<rows>_gate_up`, and
 `gguf_prefill_<format>_<e>` (and `gguf_prefill_<format>_r_leading_inputs` over a view of the
 leading inputs of wider rows), the register ones `gguf_decode_sg_<format>_l<lanes>_<e>`, and the
 experts `moe_expert_gguf_m<rows>_<e>` and `moe_expert_gguf_sg_<e>`, with gate and up in one pass
@@ -1504,13 +1507,13 @@ PQ2_0 token gather bitwise against the fp32 butterflies and within one bf16 step
 `gguf-projection`, every GGUF projection through
 `ops::Linear` with each tile forced, so both decode tiles run on every GPU, at one to four
 lanes, every K split and epilogue, fused segments, every format's gate with the next format's up
-and the prefill tiles, each output inside the fp64 bound of `GgufFormatReference.hpp`; and
-`gguf-moe`: the float projections on both float tiles and the MoE layer on every GGUF plan, the
-staged 8- and 32-row tiles and the Apple9 register tile whatever GPU runs it, in every format,
-against fp64, and bitwise against the full grids and two gate/up passes. The goldens and how to
-regenerate them are in `dev/tests/fixtures/weight-goldens/`; with
-`SPLASH_GGML_ORACLE=<libggml-base.dylib>`, `gguf-reference` also compares the reference with GGML
-directly and prints GGML's hashes.
+and the prefill tiles, each output inside the fp64 bound of `GgufFormatReference.hpp`, and the
+one-pass gate/up bitwise against the two passes; and `gguf-moe`: the float projections on both
+float tiles and the MoE layer on every GGUF plan, the staged 8- and 32-row tiles and the Apple9
+register tile whatever GPU runs it, in every format, against fp64, and bitwise against the full
+grids and two gate/up passes. The goldens and how to regenerate them are in
+`dev/tests/fixtures/weight-goldens/`; with `SPLASH_GGML_ORACLE=<libggml-base.dylib>`,
+`gguf-reference` also compares the reference with GGML directly and prints GGML's hashes.
 
 Two benchmark tools repeat the measurements behind the GGUF split tiers and MoE plans, with the
 weights DRAM-cold. `make benchmark-gguf-projection GGUF_PROJECTION_ARGS='q4k 5120 8192'` times one
