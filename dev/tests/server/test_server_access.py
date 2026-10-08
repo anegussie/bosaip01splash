@@ -400,7 +400,15 @@ class ServerAccessTests(unittest.TestCase):
         for method in ("GET", "HEAD"):
             for path in ("/health", "/ready"):
                 self.assertEqual(harness.request(method, path)[0], 200)
-            for path in ("/", "/index.html?test=1", "/favicon.ico"):
+            for path in (
+                "/",
+                "/index.html?test=1",
+                "/favicon.ico",
+                "/chat-assets/markdown-it-15.0.2.min.js",
+                "/chat-assets/highlight-11.12.0.min.js",
+                "/chat-assets/github-11.12.0.min.css",
+                "/chat-assets/github-dark-11.12.0.min.css",
+            ):
                 self.assertEqual(harness.request(method, path)[0], 404)
         default = self.harness()
         self.assertEqual(default.request("GET", "/")[0], 200)
@@ -416,6 +424,28 @@ class ServerAccessTests(unittest.TestCase):
         status, content_type, icon = protected.request("GET", "/favicon.ico")
         self.assertEqual((status, content_type), (200, "image/svg+xml"))
         self.assertTrue(ElementTree.fromstring(icon).tag.endswith("svg"))
+
+    def test_chat_assets_are_public_but_do_not_expose_other_files(self):
+        harness = self.harness(api_key="test-server-key")
+        for name, mime in (
+            ("markdown-it-15.0.2.min.js", "text/javascript"),
+            ("highlight-11.12.0.min.js", "text/javascript"),
+            ("github-11.12.0.min.css", "text/css"),
+            ("github-dark-11.12.0.min.css", "text/css"),
+        ):
+            with self.subTest(name=name):
+                route = f"/chat-assets/{name}"
+                status, content_type, payload = harness.request("GET", route)
+                self.assertEqual(status, 200)
+                self.assertEqual(content_type, f"{mime}; charset=utf-8")
+                self.assertEqual(
+                    payload,
+                    (server.ROOT / "server" / "chat-assets" / name).read_bytes(),
+                )
+                self.assertEqual(harness.request("HEAD", route)[0], 200)
+        key = {"Authorization": "Bearer test-server-key"}
+        for path in ("/chat-assets/../server.py", "/chat-assets/missing.js"):
+            self.assertEqual(harness.request("GET", path, headers=key)[0], 404)
 
     def test_cli_takes_origins_as_browsers_send_them(self):
         typed = ["tauri://localhost", "http://localhost:3000", "*"]
