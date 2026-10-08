@@ -38,15 +38,33 @@ struct MoeTileDescriptor {
 static_assert(sizeof(MoeTileDescriptor) == 8,
               "MoE tile descriptors are 8 bytes on both sides");
 
+// The column tiles of a GGUF plan's gate/up and down passes, whose grids the
+// grouping writes (MoeTileCount); 0 for affine plans, whose passes run every
+// tile a step could fill.
 struct MoeGroupParams {
   uint32_t rows;
   uint32_t top_k;
   uint32_t tile_rows;
   uint32_t experts;
+  uint32_t gate_up_columns;
+  uint32_t down_columns;
 };
 
-static_assert(sizeof(MoeGroupParams) == 16,
-              "MoE grouping parameters are 16 bytes on both sides");
+static_assert(sizeof(MoeGroupParams) == 24,
+              "MoE grouping parameters are 24 bytes on both sides");
+
+// What the grouping writes besides the tiles: their count, which every pass
+// over them reads first, and the grids (column tiles, tiles, 1) of a GGUF
+// plan's gate/up and down passes, which they read as an indirect dispatch
+// (MTLDispatchThreadgroupsIndirectArguments) to launch the live tiles alone.
+struct MoeTileCount {
+  uint32_t tiles;
+  uint32_t gate_up_grid[3];
+  uint32_t down_grid[3];
+};
+
+static_assert(sizeof(MoeTileCount) == 28,
+              "the MoE tile count is 28 bytes on both sides");
 
 struct MoeGatherParams {
   uint32_t tile_rows;

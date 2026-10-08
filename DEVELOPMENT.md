@@ -1475,10 +1475,12 @@ per partition, from measured occupancy, Apple9's staged tile taking the register
 does not depend on the batch width. The MoE experts
 (`runtime/ops/MoE.cpp`) run the same numerics per family over the grouped rows: the register form
 in `linear_gguf_sgmatrix.metal`, the staged one in `kernels/shared/moe_gguf.metal`, which Apple9
-takes for experts mostly in the formats it stages (`MoeShape::expertFormat`). The float router and
-alpha/beta projections run in `kernels/shared/gguf_float.metal`, and the token rows are gathered
-by one template in `kernels/shared/embedding.metal`. These plans are fixed rules of GPU family,
-core count, shape and format.
+takes for experts mostly in the formats it stages (`MoeShape::expertFormat`). Their passes launch
+the live tiles alone: the grouping kernel writes each pass's grid with the tile count, and the
+pass reads it as an indirect dispatch (`ComputeDispatch::indirectThreadgroups`). The float
+router and alpha/beta projections run in `kernels/shared/gguf_float.metal`, and the token rows
+are gathered by one template in `kernels/shared/embedding.metal`. These plans are fixed rules of
+GPU family, core count, shape and format.
 
 A rotated projection rotates its input once into `LinearScratch::rotated`
 (`gguf_rotate`, in fp32 and rounded once to bf16) before its quantized segments,
@@ -1523,7 +1525,7 @@ lanes, every K split and epilogue, fused segments, every format's gate with the 
 and the prefill tiles, each output inside the fp64 bound of `GgufFormatReference.hpp`; and
 `gguf-moe`: the float projections on both float tiles and the MoE layer on every GGUF plan, the
 staged 8- and 32-row tiles and the Apple9 register tile whatever GPU runs it, in every format,
-against fp64. The goldens and how to regenerate them are in
+against fp64, and bitwise against the full grids. The goldens and how to regenerate them are in
 `dev/tests/fixtures/weight-goldens/`; with `SPLASH_GGML_ORACLE=<libggml-base.dylib>`,
 `gguf-reference` also compares the reference with GGML directly and prints GGML's hashes.
 

@@ -737,6 +737,23 @@ struct MetalBackend::Impl {
                 }
                 claim(binding.index);
             }
+            // Metal reads an indirect grid's three counts at a multiple of 4
+            // bytes.
+            const IndirectGrid &grid = dispatch.indirectThreadgroups;
+            if (grid.buffer) {
+                const MetalBuffer::Impl &arguments = *grid.buffer.impl_;
+                if (arguments.allocation->accounting.get() != accounting.get() ||
+                    !arguments.allocation->buffer ||
+                    grid.offsetBytes % sizeof(uint32_t) ||
+                    grid.offsetBytes > arguments.lengthBytes ||
+                    arguments.lengthBytes - grid.offsetBytes <
+                        3 * sizeof(uint32_t)) {
+                    throw MetalBackendError(
+                        "compute dispatch '" + dispatch.pipelineName +
+                        "' reads its grid outside a buffer of this backend");
+                }
+                ++bindings;
+            }
             bindings += dispatch.buffers.size();
             command.dispatches.push_back(item);
         }
@@ -756,6 +773,9 @@ struct MetalBackend::Impl {
         for (const ComputeDispatch &dispatch : dispatches) {
             for (const BufferBinding &binding : dispatch.buffers)
                 bound.push_back(&binding.buffer.impl_->allocation);
+            if (dispatch.indirectThreadgroups.buffer)
+                bound.push_back(
+                    &dispatch.indirectThreadgroups.buffer.impl_->allocation);
         }
         const auto allocation =
             [](const std::shared_ptr<MetalAllocation> *owner) {
@@ -873,8 +893,19 @@ struct MetalBackend::Impl {
                                length:binding.sizeBytes
                               atIndex:binding.index];
                 }
-                [encoder dispatchThreadgroups:item.groups
-                         threadsPerThreadgroup:item.threads];
+                const IndirectGrid &grid = dispatch.indirectThreadgroups;
+                if (grid.buffer) {
+                    const MetalBuffer::Impl &arguments = *grid.buffer.impl_;
+                    [encoder
+                        dispatchThreadgroupsWithIndirectBuffer:
+                            arguments.allocation->buffer
+                                          indirectBufferOffset:
+                            arguments.offsetBytes + grid.offsetBytes
+                                         threadsPerThreadgroup:item.threads];
+                } else {
+                    [encoder dispatchThreadgroups:item.groups
+                             threadsPerThreadgroup:item.threads];
+                }
             }
             encodeSteps(dispatches.size());
             if (encoder) [encoder endEncoding];

@@ -539,7 +539,7 @@ void checkPlan(const MoePlan &plan) {
               w.selectedExpertsBytes == routes * sizeof(uint32_t) &&
               w.routingWeightsBytes == routes * sizeof(float) &&
               w.tileDescriptorsBytes == tiles * sizeof(MoeTileDescriptor) &&
-              w.tileCountBytes == sizeof(uint32_t) &&
+              w.tileCountBytes == sizeof(MoeTileCount) &&
               w.groupedRoutesBytes == grouped * sizeof(uint32_t) &&
               w.routeRowsBytes == routes * sizeof(uint32_t) &&
               w.groupedInputBytes == std::max<uint64_t>(grouped * shape.hiddenSize * kBFloat16Bytes,

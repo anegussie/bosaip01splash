@@ -14,8 +14,8 @@
 //   chunks) for every format, gate, up and down in three formats and the
 //   shared expert in three more; routes and weights against the fp64 router,
 //   each pass inside the fp64 interval its numerics allow, the block's output,
-//   and a row's output bitwise equal at every lane count and chunk of one
-//   tile.
+//   a row's output bitwise equal at every lane count and chunk of one tile,
+//   and the output of the live tiles' grids bitwise that of every tile's.
 #include "../../../runtime/metal/CommandGraph.hpp"
 #include "../../../runtime/metal/MetalBackend.hpp"
 #include "../../../runtime/ops/Linear.hpp"
@@ -46,6 +46,7 @@ namespace {
 using splash::DeviceCapabilities;
 using splash::metal::BufferStorage;
 using splash::metal::CommandGraph;
+using splash::metal::ComputeDispatch;
 using splash::metal::MetalBackend;
 using splash::metal::MetalBuffer;
 using splash::ops::FloatOutput;
@@ -439,6 +440,14 @@ struct Stats {
   double gateUpWorst = 0, downWorst = 0;
 };
 
+// The dispatches of `graph` on the grids of their bounds, every tile a step
+// could fill.
+std::vector<ComputeDispatch> fullGrids(const CommandGraph &graph) {
+  std::vector<ComputeDispatch> dispatches(graph.dispatches().begin(), graph.dispatches().end());
+  for (ComputeDispatch &dispatch : dispatches) dispatch.indirectThreadgroups = {};
+  return dispatches;
+}
+
 // One plan's run checked against the fp64 model; returns its output rows.
 std::vector<uint16_t> runPlan(MetalBackend &backend, const Model &m, Buffers &b, const MoePlan &plan, bool staged,
                               std::map<std::pair<uint32_t, uint32_t>, GateUp> &products, Stats &stats,
@@ -457,6 +466,16 @@ std::vector<uint16_t> runPlan(MetalBackend &backend, const Model &m, Buffers &b,
   const auto *output = static_cast<const __bf16 *>(b.moe.output.contents());
   const uint32_t tileRows = plan.tileRows(), tiles = *static_cast<const uint32_t *>(b.moe.scratch.tileCount.contents());
   require(tiles <= plan.maximumTiles(), label + ": tile count exceeds its bound");
+  // Each expert pass runs the live tiles of its column tiles.
+  for (const ComputeDispatch &dispatch : graph.dispatches()) {
+    const uint32_t *grid = nullptr;
+    if (const MetalBuffer &buffer = dispatch.indirectThreadgroups.buffer)
+      grid = static_cast<const uint32_t *>(buffer.contents()) + dispatch.indirectThreadgroups.offsetBytes / 4;
+    require(dispatch.pipelineName.starts_with("moe_expert_gguf") == (grid != nullptr) &&
+                (!grid || (grid[0] == dispatch.threadgroups.x && grid[1] == tiles && grid[2] == 1 &&
+                           dispatch.threadgroups.y == plan.maximumTiles())),
+            label + ": " + dispatch.pipelineName + " runs another grid than its live tiles");
+  }
   for (uint32_t r = 0; r < rows; ++r) {
     const float *x = b.input.data() + uint64_t{r} * kHidden;
     // Routes: the fp64 top-k by descending score, ascending id; the GPU's fp32
@@ -569,6 +588,11 @@ std::vector<uint16_t> runPlan(MetalBackend &backend, const Model &m, Buffers &b,
   }
   std::vector<uint16_t> result(uint64_t{rows} * kHidden);
   std::memcpy(result.data(), output, result.size() * 2);
+  // Bitwise the output of every tile's threadgroups.
+  std::memset(b.moe.output.contents(), 0, b.moe.output.sizeBytes());
+  static_cast<void>(backend.submitCommandAsync(fullGrids(graph)).wait());
+  require(!std::memcmp(result.data(), output, result.size() * 2),
+          label + ": the output differs from the full grids'");
   return result;
 }
 
