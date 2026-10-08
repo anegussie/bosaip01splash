@@ -194,13 +194,24 @@ void addAffineExperts(metal::CommandGraph &graph, const MoeScratch &scratch,
   }
 }
 
-// The three GGUF expert passes over grouped tiles, each on the grid of the
-// live tiles that the grouping wrote (MoeTileCount), within the column tiles
-// of `group` and maximumTiles(): gate into expertOutput (the down pass
-// overwrites it after the up pass consumed it), up with silu(gate) into
-// expertIntermediate, down into expertOutput. Register plans read Table16
-// tiles from groupedInput: the gather writes the gate/up input's and a
-// prepare dispatch the down input's.
+// Whether a GGUF plan runs gate and up in one pass
+// (moe_expert_gguf_m<rows>_gate_up): on the staged tile, where gate and up
+// share their routed format and their shared format. The register tile runs
+// two passes.
+bool oneGateUpPass(const BlockMoeWeights &weights, const MoePlan &plan) noexcept {
+  return plan.configuration().ggufTile == MoeGgufTile::Staged &&
+         weights.gate.routed.formatId == weights.up.routed.formatId &&
+         weights.gate.shared.formatId == weights.up.shared.formatId;
+}
+
+// The GGUF expert passes over grouped tiles, each on the grid of the live
+// tiles that the grouping wrote (MoeTileCount), within the column tiles of
+// `group` and maximumTiles(): gate and up in one pass into
+// expertIntermediate (oneGateUpPass), or gate into expertOutput (the down
+// pass overwrites it after the up pass consumed it) and up with silu(gate)
+// into expertIntermediate; then down into expertOutput. Register plans read
+// Table16 tiles from groupedInput: the gather writes the gate/up input's and
+// a prepare dispatch the down input's.
 void addGgufExperts(metal::CommandGraph &graph, const MoeScratch &scratch, const BlockMoeWeights &weights,
                     const MoePlan &plan, const MoeGroupParams &group) {
   const MoeShape shape = plan.shape();
@@ -229,10 +240,24 @@ void addGgufExperts(metal::CommandGraph &graph, const MoeScratch &scratch, const
   };
   const uint32_t hidden = shape.hiddenSize;
   const uint32_t intermediate = shape.expertIntermediateSize;
-  pass(weights.gate, false, scratch.groupedInput, scratch.expertOutput,
-       intermediate, hidden, group.gate_up_columns, gateUpGrid);
-  pass(weights.up, true, scratch.groupedInput, scratch.expertIntermediate,
-       intermediate, hidden, group.gate_up_columns, gateUpGrid);
+  if (oneGateUpPass(weights, plan)) {
+    const BlockExpertProjection &gate = weights.gate, &up = weights.up;
+    graph.add(kernel + "_gate_up",
+              {scratch.groupedInput, scratch.tileDescriptors, scratch.tileCount,
+               gate.routed.plane0, gate.routed.plane1Slot(), gate.routed.meta,
+               gate.shared.plane0, gate.shared.plane1Slot(), gate.shared.meta,
+               up.routed.plane0, up.routed.plane1Slot(), up.routed.meta,
+               up.shared.plane0, up.shared.plane1Slot(), up.shared.meta,
+               scratch.expertIntermediate},
+              MoeGgufExpertParams{hidden, intermediate, shape.experts, gate.routed.formatId,
+                                  gate.shared.formatId},
+              {group.gate_up_columns, tiles, 1}, gateUpGrid, {threads, 1, 1});
+  } else {
+    pass(weights.gate, false, scratch.groupedInput, scratch.expertOutput,
+         intermediate, hidden, group.gate_up_columns, gateUpGrid);
+    pass(weights.up, true, scratch.groupedInput, scratch.expertIntermediate,
+         intermediate, hidden, group.gate_up_columns, gateUpGrid);
+  }
   if (table16)
     graph.add("moe_prepare_table16",
               {scratch.expertIntermediate, scratch.tileCount,
@@ -245,8 +270,8 @@ void addGgufExperts(metal::CommandGraph &graph, const MoeScratch &scratch, const
 
 } // namespace
 
-// Prefill plans and GGUF plans run the three expert passes of the split
-// plan, affine decode plans the fused gate/up tile.
+// Prefill plans and GGUF plans run the expert passes of the split plan,
+// affine decode plans the fused gate/up tile.
 MoePlan::MoePlan(MoeShape shape, uint32_t rows, MoeConfig config,
                  MoePhase phase)
     : shape_(shape), rows_(rows), config_(config),
@@ -317,7 +342,9 @@ void MoE::add(metal::CommandGraph &graph, const MoeBuffers &buffers,
   // of a decode cycle, a 12-core M6 0.1-1.0% and a 40-core M3 Max up to 4.8%.
   MoeGroupParams group{rows, shape.expertsPerToken, tileRows, shape.experts, 0, 0};
   if (block) {
-    group.gate_up_columns = shape.expertIntermediateSize / GGUF_TILE_COLUMNS;
+    const bool oneGateUp = oneGateUpPass(weights.blocks(), plan);
+    group.gate_up_columns =
+        shape.expertIntermediateSize / (oneGateUp ? GGUF_STAGED_COLUMNS : GGUF_TILE_COLUMNS);
     group.down_columns = shape.hiddenSize / GGUF_TILE_COLUMNS;
   }
   graph.add("moe_group_routes",
