@@ -7,9 +7,10 @@
 namespace splash::engine {
 
 // The Mac's thermal state as macOS reports it (NSProcessInfo.thermalState).
-// From serious on, macOS may lower the CPU's and GPU's clocks, so prefill and
-// decode slow down with nothing in the engine having changed. The engine
-// reports it and goes on serving: heat is not a resource it can free.
+// As the state rises, the CPU and GPU clocks drop, on some Macs already at
+// fair, so prefill and decode slow down with nothing in the engine having
+// changed. The engine reports it and goes on serving: heat is not a resource
+// it can free.
 enum class ThermalState : uint8_t {
   Nominal,
   Fair,
