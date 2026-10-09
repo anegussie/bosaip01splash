@@ -43,7 +43,9 @@
 using namespace splash;
 using namespace splash::ops;
 using namespace gguf_reference;
+using splash::metal::BytesBinding;
 using splash::metal::CommandGraph;
+using splash::metal::ComputeDispatch;
 using splash::metal::MetalBackend;
 using splash::metal::MetalBuffer;
 using splash::ops::tuning::bf16ToFloat;
@@ -303,8 +305,9 @@ struct Outcome {
   std::vector<uint16_t> output, gate;
 };
 
-// Runs one projection with `plan` over `x` (and `aux`), its split partials first set to `poison`; checks what every
-// run must leave as it was: guards, counters and the padding columns past `covered`.
+// Runs one projection with `plan` over `x` (and `aux`), its split partials first set to `poison`; checks that a spread
+// plan's dispatches bind the spread walk, and what every run must leave as it was: guards, counters and the padding
+// columns past `covered`.
 Outcome run(MetalBackend &backend, const Linear &linear, const LinearPlan &plan, const Projection &p,
             const Projection *gate, const std::vector<uint16_t> &x, const std::vector<uint16_t> &aux, uint32_t poison,
             uint32_t covered, const std::string &label) {
@@ -313,6 +316,17 @@ Outcome run(MetalBackend &backend, const Linear &linear, const LinearPlan &plan,
   scratch.poison(poison);
   CommandGraph graph;
   static_cast<void>(linear.add(graph, o.bindings(plan, scratch), p, plan, gate));
+  // A spread plan's dispatches are staged decode tiles, each binding its parameters with spread set.
+  if (plan.configuration().spread)
+    for (const ComputeDispatch &dispatch : graph.dispatches()) {
+      const BytesBinding &params = dispatch.bytes.front();
+      uint32_t spread = 0;
+      if (params.sizeBytes == sizeof(GgufDecodeParams))
+        spread = static_cast<const GgufDecodeParams *>(params.data)->spread;
+      else if (params.sizeBytes == sizeof(GgufDecodeFusedParams))
+        spread = static_cast<const GgufDecodeFusedParams *>(params.data)->spread;
+      if (spread != 1) fail(label + ": " + dispatch.pipelineName + " walks K in lockstep");
+    }
   static_cast<void>(backend.submitCommandAsync(graph.dispatches()).wait());
   if (!scratch.intact() || !o.input.intact() || !o.aux.intact() || !o.output.intact() || !o.gate.intact())
     fail(label + ": a counter is not reset or a write past a buffer");
