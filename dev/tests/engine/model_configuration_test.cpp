@@ -197,12 +197,15 @@ void testOneRulePerValue(const std::filesystem::path &fixtures) {
 
 // An MLX target's quantization is MLX's own object: the object and each
 // module's own entry name affine 2, 3, 4, 5, 6 or 8 bits in groups of 32, 64
-// or 128, or mxfp4; an entry is affine unless it names its mode, and takes its
-// mode's default bits and group size (affine 4 and 64, mxfp4 4 and 32) when it
-// omits them, as MLX loads it. The entry false, which MLX writes for a module
-// it leaves unquantized, is refused for a projection, the head and the token
-// table, and accepted for the router, the shared-expert gate and GDN alpha and
-// beta. A GGUF target has none (above).
+// or 128, mxfp4 or nvfp4; an entry is affine unless it names its mode, and
+// takes its mode's default bits and group size (affine 4 and 64, mxfp4 4 and
+// 32, nvfp4 4 and 16) when it omits them, as MLX loads it. The entry false,
+// which MLX writes for a module it leaves unquantized, is refused for a
+// projection and the head, and accepted for the router, the shared-expert
+// gate, GDN alpha and beta and the token table. A Model Optimizer target's is
+// its quantization_config: NVFP4 in groups of 16 or per-tensor FP8 for each
+// layer it quantizes, every projection and the head among them. A GGUF target
+// has none (above).
 void testQuantization(const std::filesystem::path &fixtures) {
   const SourceModel dense = mlxModel(fixtures, "qwen3.8-27b");
   const SourceModel moe = mlxModel(fixtures, "qwen3.6-35b-a3b");
@@ -215,6 +218,9 @@ void testQuantization(const std::filesystem::path &fixtures) {
   const std::string_view mxfp4 = R"("group_size": 32,
     "bits": 4,
     "mode": "mxfp4")";
+  const std::string_view nvfp4 = R"("group_size": 16,
+    "bits": 4,
+    "mode": "nvfp4")";
   // The MoE router's entry.
   const std::string_view router = R"("group_size": 64,
       "bits": 8)";
@@ -229,6 +235,7 @@ void testQuantization(const std::filesystem::path &fixtures) {
       "group_size": 64,
       "bits": 8
     })";
+  const std::string unquantizedTable = std::string(object) + R"("language_model.model.embed_tokens": false,)";
   struct Accepted final {
     const SourceModel &model;
     std::string_view from, to;
@@ -238,6 +245,7 @@ void testQuantization(const std::filesystem::path &fixtures) {
            {dense, R"("bits": 4)", R"("bits": 3)"},
            {dense, R"("group_size": 64)", R"("group_size": 128)"},
            {dense, affine, mxfp4},
+           {dense, affine, nvfp4},
            // The router 4-bit; under an mxfp4 object, its 8-bit entry stays affine.
            {moe, R"("bits": 8)", R"("bits": 4)"},
            {moe, affine, mxfp4},
@@ -248,6 +256,8 @@ void testQuantization(const std::filesystem::path &fixtures) {
            // Modules the images also read unquantized (as F32).
            {moe, routerEntry, R"("language_model.model.layers.0.mlp.gate": false)"},
            {moe, sharedGateEntry, R"("language_model.model.layers.0.mlp.shared_expert_gate": false)"},
+           // A bf16 token table, which the gather reads as stored.
+           {dense, object, unquantizedTable},
            {dense, object, R"("quantization": {
     "language_model.model.layers.0.linear_attn.in_proj_a": false,
     "language_model.model.layers.0.linear_attn.in_proj_b": false,)"},
@@ -261,11 +271,11 @@ void testQuantization(const std::filesystem::path &fixtures) {
            // MLX's own object, not the quantization_config a transformers
            // checkpoint (GPTQ, AWQ, ...) states.
            {dense, R"("quantization": {)", R"("unused": {)",
-            "this model requires an MLX checkpoint (affine 2, 3, 4, 5, 6 or 8 bits in groups of 32, 64 or 128, or "
-            "mxfp4) or a supported GGUF"},
+            "this model requires an MLX checkpoint (affine 2, 3, 4, 5, 6 or 8 bits in groups of 32, 64 or 128, mxfp4 "
+            "or nvfp4), a Model Optimizer NVFP4 checkpoint or a supported GGUF"},
            {dense, R"("bits": 4)", R"("bits": 7)",
             "quantization is affine 7-bit in groups of 64; MLX weights load as affine 2, 3, 4, 5, 6 or 8 bits in "
-            "groups of 32, 64 or 128, or as mxfp4"},
+            "groups of 32, 64 or 128, or as mxfp4 or nvfp4"},
            {dense, R"("group_size": 64)", R"("group_size": 16)", "quantization is affine 4-bit in groups of 16"},
            // A group past a byte is no format (4 bits in groups of 320 are not af5g64).
            {dense, R"("group_size": 64)", R"("group_size": 320)", "quantization is affine 4-bit in groups of 320"},
@@ -277,7 +287,7 @@ void testQuantization(const std::filesystem::path &fixtures) {
     refuses(refused.model.with(&SourceModel::config, refused.from, refused.to), refused.error,
             "an MLX quantization was accepted with " + std::string(refused.to));
   // A module the images read only quantized, left unquantized: a projection
-  // of each kind, the head and the token table.
+  // of each kind and the head.
   struct Unquantized final {
     const SourceModel &model;
     std::string module;
@@ -287,15 +297,47 @@ void testQuantization(const std::filesystem::path &fixtures) {
            {dense, "language_model.model.layers.0.linear_attn.in_proj_qkv"},
            {dense, "language_model.model.layers.0.mlp.up_proj"},
            {dense, "language_model.lm_head"},
-           {dense, "language_model.model.embed_tokens"},
            {moe, "language_model.model.layers.0.mlp.switch_mlp.down_proj"},
            {moe, "language_model.model.layers.0.mlp.shared_expert.gate_proj"},
        })
     refuses(unquantized.model.with(&SourceModel::config, object,
                                    std::string(object) + "\"" + unquantized.module + "\": false,"),
             "quantization " + unquantized.module +
-                " is unquantized; Splash loads quantized MLX projections and token tables",
+                " is unquantized; Splash loads quantized MLX projections",
             "an unquantized " + unquantized.module + " was accepted");
+  // Model Optimizer: the dense config with its quantization_config in place
+  // of MLX's objects.
+  const std::string_view mlxObjects = R"("quantization": {
+    "group_size": 64,
+    "bits": 4,
+    "mode": "affine"
+  },
+  "quantization_config": {
+    "group_size": 64,
+    "bits": 4,
+    "mode": "affine"
+  })";
+  const auto modelOptimizer = [&](std::string_view quantization) {
+    return dense.with(&SourceModel::config, mlxObjects,
+                      std::string(R"("quantization_config": {"quant_method": "modelopt", )") + std::string(quantization) +
+                          "}");
+  };
+  for (std::string_view accepted : {R"("quant_algo": "NVFP4", "group_size": 16, "ignore": ["mtp*", "model.visual*"])",
+                                    R"("quant_algo": "W4A16_NVFP4", "group_size": 16)", R"("quant_algo": "FP8")"})
+    static_cast<void>(inspect(modelOptimizer(accepted)));
+  for (const auto &[quantization, error] : std::initializer_list<std::pair<std::string_view, std::string_view>>{
+           {R"("quant_algo": "W4A8_AWQ")",
+            "quantization_config is W4A8_AWQ; Model Optimizer weights load as NVFP4, W4A16_NVFP4 or FP8"},
+           {R"("quant_algo": "NVFP4", "group_size": 32)", "quantization_config is NVFP4 in groups of 32"},
+           {R"("quant_algo": "NVFP4", "ignore": ["*.self_attn.q_proj"])",
+            "quantization_config leaves model.language_model.layers.3.self_attn.q_proj unquantized"},
+           {R"("quant_algo": "MIXED_PRECISION", "quantized_layers": {"lm_head": {"quant_algo": "NVFP4"}})",
+            "quantization_config leaves model.language_model.layers.0.linear_attn.in_proj_qkv unquantized"},
+           {R"("quant_algo": "MIXED_PRECISION", "quantized_layers": {"lm_head": {"quant_algo": "INT4_AWQ"}})",
+            "quantization_config quantized_layers lm_head is INT4_AWQ"},
+       })
+    refuses(modelOptimizer(quantization), error,
+            "a Model Optimizer quantization was accepted with " + std::string(quantization));
 }
 
 // The vision tower the record names is the family's, over RGB patches of two

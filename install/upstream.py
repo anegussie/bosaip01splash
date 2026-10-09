@@ -36,8 +36,9 @@ TOKENIZER_FILES = (
     "added_tokens.json",
     "special_tokens_map.json",
 )
-# The name prefix of an MLX checkpoint's vision tower tensors.
-VISION_TOWER = "vision_tower."
+# The name prefixes of a safetensors checkpoint's vision tower tensors: MLX's,
+# and transformers' (as NVIDIA's Model Optimizer keeps them).
+VISION_TOWER = ("vision_tower.", "model.visual.")
 # Where an MLX repository keeps its image processor's configuration: a file of
 # its own, or the image_processor object of processor_config.json, where newer
 # Transformers releases save it.
@@ -267,8 +268,8 @@ def _image_processor(repo):
 
 def _weight_files(repo, prefix="", exclude=None):
     """The checkpoint's shards holding a tensor whose name starts with prefix,
-    and not with exclude. exclude filters an index's shards; a single
-    model.safetensors is always the checkpoint's."""
+    and not with exclude (each a string or a tuple of them). exclude filters
+    an index's shards; a single model.safetensors is always the checkpoint's."""
     if "model.safetensors.index.json" in repo.files:
         index = models.read_json(repo.file("model.safetensors.index.json"))
         weights = index.get("weight_map")

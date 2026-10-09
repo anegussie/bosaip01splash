@@ -1,8 +1,8 @@
 #pragma once
 
-// Source adapter for an MLX target: its block images (model/MlxImage.hpp) are
-// written into memory, and QwenTargetLoader reads them as block-quantized
-// weights (BlockTargetFormat).
+// Source adapter for a safetensors target, MLX's or Model Optimizer's: its
+// block images (model/MlxImage.hpp) are written into memory, and
+// QwenTargetLoader reads them as block-quantized weights (BlockTargetFormat).
 
 #include "model/GgufImage.hpp"
 #include "model/QwenHybridLayout.hpp"
@@ -26,6 +26,9 @@ public:
   [[nodiscard]] WeightFile layer(uint32_t index);
   [[nodiscard]] WeightFile head();
   [[nodiscard]] WeightFile embedding();
+  // Whether its images hold F32 norms, those of a checkpoint of transformers
+  // names (mlx::ModuleNames), rather than MLX's bf16 norms.
+  [[nodiscard]] bool float32Norms() const noexcept { return float32Norms_; }
 
 private:
   // The checkpoint and its images, which their writers share.
@@ -39,9 +42,10 @@ private:
   metal::MetalBackend &backend_;
   WeightImages &images_;
   std::shared_ptr<Planned> planned_;
+  bool float32Norms_ = false;
 };
 
-// The bytes of every image of the MLX target in directory.
+// The bytes of every image of the safetensors target in directory.
 [[nodiscard]] uint64_t mlxTargetImageBytes(const std::filesystem::path &directory,
                                            const QwenTargetDimensions &geometry);
 

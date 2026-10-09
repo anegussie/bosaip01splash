@@ -8,6 +8,7 @@
 #import <Foundation/Foundation.h>
 
 #include <cmath>
+#include <fnmatch.h>
 #include <cstdint>
 #include <initializer_list>
 #include <span>
@@ -294,47 +295,105 @@ void validateTextConfig(NSDictionary *text, const QwenTargetDimensions &target, 
 // default, affine, unless it names another. The object states its bits and
 // group size; a module's entry that omits either takes its mode's default, as
 // MLX's to_quantized does: affine 4 bits in groups of 64, mxfp4 4 bits in
-// groups of 32. The images read each module's format from its tensors, as MLX
-// does (model/MlxImage.hpp). An entry that is not an object, false as MLX
-// writes for a module it leaves unquantized, is refused for a module the
-// images read only quantized (mlx::quantizedModules: each projection, the head
-// and the token table), so before any weight download; any other module's,
-// such as the router's, the shared-expert gate's or GDN alpha's and beta's,
-// which the images read unquantized too, is accepted.
-void requireQuantization(NSDictionary *config, const QwenTargetDimensions &geometry) {
-  // A checkpoint without it holds BF16 weights, or another method's that a
-  // transformers quantization_config states (GPTQ, AWQ, ...).
-  NSDictionary *quantization = config[@"quantization"];
-  if (![quantization isKindOfClass:[NSDictionary class]])
-    throw std::invalid_argument(
-        "this model requires an MLX checkpoint (affine 2, 3, 4, 5, 6 or 8 bits in groups of 32, 64 or 128, or "
-        "mxfp4) or a supported GGUF");
+// groups of 32, nvfp4 4 bits in groups of 16. The images read each module's
+// format from its tensors, as MLX does (model/MlxImage.hpp). An entry that is
+// not an object, false as MLX writes for a module it leaves unquantized, is
+// refused for a module the images read only quantized (mlx::quantizedModules:
+// each projection and the head), so before any weight download; any other
+// module's, such as the router's, the shared-expert gate's, GDN alpha's and
+// beta's or the token table's, which the images read unquantized too, is
+// accepted.
+void requireMlxQuantization(NSDictionary *quantization, const QwenTargetDimensions &geometry) {
   const auto require = [](NSDictionary *entry, const std::string &label, bool module) {
     NSString *mode = entry[@"mode"] ?: @"affine";
     if (![mode isKindOfClass:[NSString class]]) throw std::invalid_argument(label + " mode must be a string");
-    const bool affine = [mode isEqual:@"affine"];
+    const bool affine = [mode isEqual:@"affine"], nvfp4 = [mode isEqual:@"nvfp4"];
     const auto number = [&](NSString *key, uint32_t modeDefault) {
       return module && !entry[key] ? modeDefault : requireWhole(entry[key], label + " " + key.UTF8String);
     };
-    const uint32_t bits = number(@"bits", 4), group = number(@"group_size", affine ? 64 : 32);
+    const uint32_t bits = number(@"bits", 4), group = number(@"group_size", affine ? 64 : nvfp4 ? 16 : 32);
     if (affine ? quant_affine_format_of(bits, group) == GGUF_FMT_COUNT
-               : ![mode isEqual:@"mxfp4"] || bits != 4 || group != 32)
+               : nvfp4 ? bits != 4 || group != 16 : ![mode isEqual:@"mxfp4"] || bits != 4 || group != 32)
       throw std::invalid_argument(label + " is " + mode.UTF8String + " " + std::to_string(bits) +
                                   "-bit in groups of " + std::to_string(group) +
                                   "; MLX weights load as affine 2, 3, 4, 5, 6 or 8 bits in groups of 32, 64 or "
-                                  "128, or as mxfp4");
+                                  "128, or as mxfp4 or nvfp4");
   };
   require(quantization, "quantization", false);
   // A module's entry is an object; the object's other values are its own.
   for (NSString *module in quantization)
     if ([quantization[module] isKindOfClass:[NSDictionary class]])
       require(quantization[module], "quantization " + std::string(module.UTF8String ?: ""), true);
-  for (const std::string &module : mlx::quantizedModules(geometry)) {
+  for (const std::string &module : mlx::quantizedModules(geometry, mlx::ModuleNames::Mlx)) {
     id entry = quantization[@(module.c_str())];
     if (entry && ![entry isKindOfClass:[NSDictionary class]])
       throw std::invalid_argument("quantization " + module +
-                                  " is unquantized; Splash loads quantized MLX projections and token tables");
+                                  " is unquantized; Splash loads quantized MLX projections");
   }
+}
+
+// A Model Optimizer target's quantization, its config.json's
+// quantization_config of quant_method "modelopt": each layer it quantizes,
+// by its quantized_layers or else by its quant_algo for every layer its
+// ignore patterns leave, holds NVFP4 in groups of 16 (NVFP4, W4A16_NVFP4) or
+// FP8 with a scale per tensor (FP8), which the block kernels read
+// weights-only, and each module the images read only quantized
+// (mlx::quantizedModules by transformers names) is such a layer. Its
+// activation and KV cache quantization play no part: the kernels read
+// activations in bf16 and keep Splash's own KV formats.
+void requireModelOptimizerQuantization(NSDictionary *quantization, const QwenTargetDimensions &geometry) {
+  const auto requireAlgorithm = [](NSDictionary *entry, const std::string &label) {
+    const std::string algorithm = requireString(entry, @"quant_algo", label + " quant_algo");
+    if (algorithm == "FP8") return;
+    if (algorithm != "NVFP4" && algorithm != "W4A16_NVFP4")
+      throw std::invalid_argument(label + " is " + algorithm +
+                                  "; Model Optimizer weights load as NVFP4, W4A16_NVFP4 or FP8");
+    if (entry[@"group_size"] && requireWhole(entry[@"group_size"], label + " group_size") != 16)
+      throw std::invalid_argument(label + " is NVFP4 in groups of " +
+                                  std::to_string(requireWhole(entry[@"group_size"], label + " group_size")) +
+                                  "; Model Optimizer NVFP4 loads in groups of 16");
+  };
+  const std::vector<std::string> required = mlx::quantizedModules(geometry, mlx::ModuleNames::Transformers);
+  NSDictionary *layers = quantization[@"quantized_layers"];
+  if ([layers isKindOfClass:[NSDictionary class]]) {
+    for (NSString *module in layers) {
+      const std::string label = "quantization_config quantized_layers " + std::string(module.UTF8String ?: "");
+      if (![layers[module] isKindOfClass:[NSDictionary class]]) throw std::invalid_argument(label + " must be an object");
+      requireAlgorithm(layers[module], label);
+    }
+    for (const std::string &module : required)
+      if (!layers[@(module.c_str())])
+        throw std::invalid_argument("quantization_config leaves " + module +
+                                    " unquantized; Splash loads quantized projections");
+    return;
+  }
+  requireAlgorithm(quantization, "quantization_config");
+  NSArray *ignore = quantization[@"ignore"] ?: quantization[@"exclude_modules"];
+  if (ignore && ![ignore isKindOfClass:[NSArray class]])
+    throw std::invalid_argument("quantization_config ignore must be an array");
+  for (const std::string &module : required)
+    for (id pattern in ignore) {
+      if (![pattern isKindOfClass:[NSString class]])
+        throw std::invalid_argument("quantization_config ignore must hold strings");
+      if (!fnmatch(static_cast<NSString *>(pattern).UTF8String, module.c_str(), 0))
+        throw std::invalid_argument("quantization_config leaves " + module +
+                                    " unquantized; Splash loads quantized projections");
+    }
+}
+
+// A safetensors target's quantization: MLX's "quantization" object, or Model
+// Optimizer's quantization_config. A checkpoint with neither holds BF16
+// weights, or another method's that a transformers quantization_config states
+// (GPTQ, AWQ, ...).
+void requireQuantization(NSDictionary *config, const QwenTargetDimensions &geometry) {
+  NSDictionary *mlxQuantization = config[@"quantization"];
+  if ([mlxQuantization isKindOfClass:[NSDictionary class]]) return requireMlxQuantization(mlxQuantization, geometry);
+  NSDictionary *modelOptimizer = config[@"quantization_config"];
+  if ([modelOptimizer isKindOfClass:[NSDictionary class]] && [modelOptimizer[@"quant_method"] isEqual:@"modelopt"])
+    return requireModelOptimizerQuantization(modelOptimizer, geometry);
+  throw std::invalid_argument(
+      "this model requires an MLX checkpoint (affine 2, 3, 4, 5, 6 or 8 bits in groups of 32, 64 or 128, mxfp4 or "
+      "nvfp4), a Model Optimizer NVFP4 checkpoint or a supported GGUF");
 }
 
 // A DFlash2 checkpoint's config: the draft's layout; the block, window,

@@ -16,7 +16,7 @@ namespace {
 
 static_assert([] {
   for (uint32_t format = 0; format < GGUF_FMT_COUNT; ++format) {
-    if (quant_affine_format(format)) continue;
+    if (quant_loader_format(format)) continue;
     const GgmlTypeTraits *type = ggmlTypeTraits(kQuantFormats[format].ggml_type);
     if (!type || type->blockElements != kQuantFormats[format].block_elements ||
         type->blockBytes != kQuantFormats[format].block_bytes)
@@ -255,12 +255,11 @@ void requireRotation(const GgufFile &file, const QwenTargetDimensions &g, const 
 uint64_t convertedBytes(const TensorRows &source, Conversion conversion, uint64_t sourceBytes) {
   switch (conversion) {
   case Conversion::NarrowToBfloat16: return sourceBytes / 2;
-  case Conversion::WidenToFloat32: return sourceBytes * 2;
+  case Conversion::WidenToFloat32: case Conversion::CenteredNorm: return sourceBytes * 2;
   case Conversion::Decay: return source.type == ggml::kBF16 ? sourceBytes * 2 : sourceBytes;
   case Conversion::DequantizeToFloat32: {
     const uint32_t format = gguf_format_of(source.type);
-    if (!quant_affine_format(format) && format != GGUF_FMT_MXFP4)
-      throw GgufError("not an MLX quantized tensor: " + source.name);
+    if (!safetensorsFormat(format)) throw GgufError("not a quantized safetensors tensor: " + source.name);
     return sourceBytes / kQuantFormats[format].block_bytes * kQuantFormats[format].block_elements * 4;
   }
   case Conversion::None: break;

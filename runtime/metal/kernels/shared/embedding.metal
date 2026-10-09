@@ -36,6 +36,7 @@ GGUF_EMBEDDING_ENTRY(gguf_embed_iq4nl, GgufEmbedIQ4NL)
 GGUF_EMBEDDING_ENTRY(gguf_embed_iq4xs, GgufEmbedIQ4XS)
 GGUF_EMBEDDING_ENTRY(gguf_embed_iq3s, GgufEmbedIQ3S)
 GGUF_EMBEDDING_ENTRY(gguf_embed_mxfp4, GgufEmbedMXFP4)
+GGUF_EMBEDDING_ENTRY(gguf_embed_bf16, GgufEmbedBF16)
 #define GGUF_EMBEDDING_AFFINE(B)                                                                \
   GGUF_EMBEDDING_ENTRY(gguf_embed_af##B##g32, GgufEmbedAF##B##G32)                              \
   GGUF_EMBEDDING_ENTRY(gguf_embed_af##B##g64, GgufEmbedAF##B##G64)                              \

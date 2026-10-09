@@ -29,7 +29,7 @@ uint32_t elementBytes(const std::string &type) {
   if (type == "BF16" || type == "F16" || type == "I16" || type == "U16") return 2;
   if (type == "F32" || type == "I32" || type == "U32") return 4;
   if (type == "F64" || type == "I64" || type == "U64") return 8;
-  if (type == "BOOL" || type == "I8" || type == "U8") return 1;
+  if (type == "BOOL" || type == "I8" || type == "U8" || type == "F8_E4M3") return 1;
   throw WeightStoreError("unsupported safetensors dtype: " + type);
 }
 

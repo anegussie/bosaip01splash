@@ -43,7 +43,7 @@ void checkFormat(void *ggml, const Goldens &hashes, Fmt f) {
 // GGML's table, as +0.
 void checkMlx(const char *path) {
   const std::vector<MlxTensor> tensors = mlxFixture(path);
-  check(tensors.size() == GGUF_FMT_COUNT - GGUF_FMT_AF2G32 + 1, "MLX fixture holds every MLX affine format and mxfp4");
+  check(tensors.size() == GGUF_FMT_AF8G128 - GGUF_FMT_AF2G32 + 2, "MLX fixture holds every MLX affine format and mxfp4");
   for (const MlxTensor &tensor : tensors) {
     const Fmt f = tensor.format();
     const uint32_t rows = tensor.rows, K = tensor.columns;

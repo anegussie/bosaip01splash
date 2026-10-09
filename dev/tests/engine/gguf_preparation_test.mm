@@ -167,7 +167,7 @@ void checkDense(MetalBackend &backend, const std::filesystem::path &directory, c
 void checkQuantizedAlphaBeta(MetalBackend &backend, const std::filesystem::path &directory) {
   for (bool moe : {false, true})
     for (uint32_t format = 0; format < GGUF_FMT_COUNT; ++format) {
-      if (quant_affine_format(format)) continue;   // no GGUF tensor type
+      if (quant_loader_format(format)) continue;   // no GGUF tensor type
       SmallTarget target = smallTarget(moe);
       const model::QwenTargetDimensions &g = target.geometry;
       const Fmt f = Fmt(format);
@@ -541,6 +541,101 @@ void checkMlxSources(MetalBackend &backend, const std::filesystem::path &directo
   }
 }
 
+// Model Optimizer's tensors of a reference NVFP4 or FP8 tensor (makeNative):
+// NVFP4's U8 codes [rows, K / 2], F8_E4M3 scales [rows, K / 16] and F32
+// weight_scale_2, FP8's F8_E4M3 values [rows, K] and F32 weight_scale, read
+// back into the reference's native rows, its planes and its F32 values; and a
+// transformers RMSNorm weight w, read as the F32 1 + w.
+void checkModelOptimizerSources(MetalBackend &backend, const std::filesystem::path &directory) {
+  std::mt19937 rng(7);
+  for (const Fmt f : {NVFP4, FP8}) {
+    const QuantFormat &layout = kQuantFormats[f];
+    const uint32_t rows = 96, K = 1280, blocks = K / layout.block_elements;
+    const std::vector<uint8_t> native = makeNative(f, rows, K, rng);
+    std::vector<uint8_t> codes, scales, scale(4);
+    for (uint32_t r = 0; r < rows; ++r)
+      for (uint32_t b = 0; b < blocks; ++b) {
+        const uint8_t *blk = native.data() + (size_t(r) * blocks + b) * layout.block_bytes;
+        if (f == NVFP4) {
+          scales.insert(scales.end(), blk, blk + 16);
+          codes.insert(codes.end(), blk + kNvfp4Codes, blk + kNvfp4Codes + 128);
+        } else {
+          codes.insert(codes.end(), blk + kFp8Values, blk + kFp8Values + 256);
+        }
+      }
+    std::memcpy(scale.data(), native.data() + (f == NVFP4 ? kNvfp4Scale : 0), 4);
+    const auto root = directory / (std::string("modelopt-") + fmtName(f));
+    const std::vector<uint64_t> scalar;
+    if (f == NVFP4)
+      writeShard(root / "model.safetensors", {{"m.weight", "U8", {rows, K / 2}, &codes},
+                                              {"m.weight_scale", "F8_E4M3", {rows, K / 16}, &scales},
+                                              {"m.weight_scale_2", "F32", scalar, &scale}});
+    else
+      writeShard(root / "model.safetensors",
+                 {{"m.weight", "F8_E4M3", {rows, K}, &codes}, {"m.weight_scale", "F32", scalar, &scale}});
+    const model::SafetensorsCheckpoint checkpoint(root);
+    const model::SourceTensor &weight = checkpoint.require("m.weight");
+    model::gguf::MlxSource tensors{&weight};
+    if (f == NVFP4) tensors.scales = &checkpoint.require("m.weight_scale");
+    tensors.tensorScale = &checkpoint.require(f == NVFP4 ? "m.weight_scale_2" : "m.weight_scale");
+    const model::gguf::TensorRows source{"m", layout.ggml_type, 0, rows, rowBytes(f, K), {}, weight.file, tensors};
+    std::vector<uint8_t> tile = native;
+    tile.resize(size_t(QUANT_TILE_ROWS) * rowBytes(f, K), 0);
+    std::vector<float> reference;
+    const Packed expected = repack(f, tile, QUANT_TILE_ROWS, K, &reference);
+    reference.resize(size_t(rows) * K);
+
+    model::gguf::ImageBuilder builder("modelopt.bin", 0, 0);
+    model::gguf::Repack planes = builder.planes(f, QUANT_TILE_ROWS, K, "m");
+    planes.sources.push_back(source);
+    const model::gguf::Repack step = planes;
+    builder.repack(std::move(planes));
+    const uint64_t nativeAt = builder.section(native.size());
+    builder.copyAt(nativeAt, source, model::gguf::Conversion::None);
+    const uint64_t valuesAt = builder.section(reference.size() * 4);
+    builder.copyAt(valuesAt, source, model::gguf::Conversion::DequantizeToFloat32);
+    const model::gguf::Image plan = builder.finish();
+    const auto image = backend.allocateBuffer(plan.bytes, splash::metal::BufferStorage::Shared, "modelopt-image");
+    model::writeGgufImage(backend, image, plan);
+    const auto actual = model::contentsOf(image);
+    const auto holds = [&](uint64_t at, const std::vector<uint8_t> &bytes) {
+      return at + bytes.size() <= actual.size() && std::equal(bytes.begin(), bytes.end(), actual.begin() + at);
+    };
+    const std::string name = std::string("Model Optimizer ") + fmtName(f);
+    check(holds(step.plane0, expected.w0) && holds(step.meta, expected.meta), name + ": planes from its tensors");
+    check(holds(nativeAt, native), name + ": native rows of its scales, tensor scale and codes");
+    std::vector<float> values(reference.size());
+    std::memcpy(values.data(), actual.data() + valuesAt, values.size() * 4);
+    check(values == reference, name + ": dequantized to its F32 values");
+  }
+  // RMSNorm weights a transformers checkpoint stores 1 below the norm's: the
+  // F32 1 + w, exact for these bf16 values.
+  std::vector<uint8_t> weights(2 * 512);
+  for (size_t i = 0; i < weights.size(); i += 2) {
+    const uint16_t bits = f2bf(std::uniform_real_distribution<float>(-0.5f, 0.5f)(rng));
+    std::memcpy(weights.data() + i, &bits, 2);
+  }
+  const auto root = directory / "centered-norm";
+  writeShard(root / "model.safetensors", {{"n.weight", "BF16", {512}, &weights}});
+  const model::SafetensorsCheckpoint checkpoint(root);
+  const model::SourceTensor &norm = checkpoint.require("n.weight");
+  model::gguf::ImageBuilder builder("norm.bin", 0, 0);
+  builder.copy({"n.weight", model::ggml::kBF16, norm.offset, 1, norm.bytes, {}, norm.file},
+               model::gguf::Conversion::CenteredNorm);
+  const model::gguf::Image plan = builder.finish();
+  const auto image = backend.allocateBuffer(plan.bytes, splash::metal::BufferStorage::Shared, "norm-image");
+  model::writeGgufImage(backend, image, plan);
+  const auto actual = model::contentsOf(image);
+  std::vector<float> expected(512), got(512);
+  for (size_t i = 0; i < expected.size(); ++i) {
+    uint16_t bits;
+    std::memcpy(&bits, weights.data() + 2 * i, 2);
+    expected[i] = 1.0f + bf2f(bits);
+  }
+  std::memcpy(got.data(), actual.data() + plan.copies.front().destination, got.size() * 4);
+  check(got == expected, "transformers RMSNorm weight read as the F32 1 + w");
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -560,6 +655,7 @@ int main(int argc, char **argv) {
     guarded("preparation of quantized alpha/beta", [&] { checkQuantizedAlphaBeta(backend, directory.path()); });
     guarded("the target loader", [&] { checkDenseTarget(backend, directory.path()); });
     guarded("MLX sources", [&] { checkMlxSources(backend, directory.path(), argv[3]); });
+    guarded("Model Optimizer sources", [&] { checkModelOptimizerSources(backend, directory.path()); });
     std::printf("%s (%d failures)\n", failures ? "GGUF preparation tests FAILED" : "GGUF preparation tests passed",
                 failures);
     return failures ? 1 : 0;

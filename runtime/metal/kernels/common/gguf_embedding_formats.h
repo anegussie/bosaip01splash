@@ -177,6 +177,13 @@ template <uint Bits, uint Group> struct GgufEmbedAffine {
     return bfloat(code * s + z);
   }
 };
+// A bf16 token table, which a safetensors checkpoint keeps unquantized: each value is its own block.
+struct GgufEmbedBF16 {
+  enum : uint { Weights = 1, Bytes = 2 };
+  __attribute__((always_inline)) static bfloat value(device const uchar *block, uint) {
+    return as_type<bfloat>(ushort(block[0] | (block[1] << 8)));
+  }
+};
 #define GGUF_EMBED_AFFINE(B)                                                                                       \
   typedef GgufEmbedAffine<B, 32> GgufEmbedAF##B##G32; typedef GgufEmbedAffine<B, 64> GgufEmbedAF##B##G64;        \
   typedef GgufEmbedAffine<B, 128> GgufEmbedAF##B##G128;
