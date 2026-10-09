@@ -66,6 +66,7 @@ function createChat(storage = new Map(), writable = true, models = null,
   const dialog = {accept: true, messages: []};
   const clipboard = {writeText: async text => { copied.push(text); }};
   let scrolls = 0;
+  let scrollBehavior;
   for (const id of ['chat', 'form', 'input', 'attachments', 'image-input',
                    'attach', 'effort', 'api-key', 'send', 'recents', 'new-chat',
                    'mobile-new', 'menu', 'scrim', 'scroll-bottom', 'sidebar',
@@ -97,7 +98,11 @@ function createChat(storage = new Map(), writable = true, models = null,
     scrollY: 2200, innerHeight: 800,
     matchMedia: () => ({matches: false}),
     addEventListener(name, callback) { handlers[name] = callback; },
-    scrollTo(options) { scrolls += 1; context.scrollY = Math.min(options.top, viewport.scrollHeight - 800); },
+    scrollTo(options) {
+      scrolls += 1;
+      scrollBehavior = options.behavior;
+      context.scrollY = Math.min(options.top, viewport.scrollHeight - 800);
+    },
     AbortController, TextDecoder, Uint8Array, console, FileReader,
     navigator: {clipboard},
     confirm(message) { dialog.messages.push(message); return dialog.accept; },
@@ -122,6 +127,7 @@ function createChat(storage = new Map(), writable = true, models = null,
   context.window = context;
   scripts.forEach(script => vm.runInContext(script, context));
   return {elements, requests, reads, modelRequests, clipboard, copied, timers, dialog, scrolls: () => scrolls,
+    scrollBehavior: () => scrollBehavior,
     scrollTo(y) { context.scrollY = y; handlers.scroll?.(); },
     scrollEvent() { handlers.scroll?.(); },
     grow() { viewport.scrollHeight += 200; },
@@ -581,14 +587,16 @@ for (const [name, overrides, shouldSend] of [
   assert.equal(reasoning.scrollTop, 900, 'Thinking must follow new text inside its own scroll area');
   assert.equal(chat.scrolls(), before, 'content and reasoning must not pull a reader down');
   assert.equal(chat.elements['scroll-bottom'].hidden, false);
-  chat.elements['scroll-bottom'].handlers.click();
-  chat.scrollEvent();
-  assert.equal(chat.elements['scroll-bottom'].hidden, true);
   before = chat.scrolls();
+  chat.elements['scroll-bottom'].handlers.click();
+  assert.equal(chat.scrollBehavior(), 'instant', 'a jump during a reply must not animate');
   reasoning.scrollTop = 30;
+  // The chunk arrives before the jump's scroll event.
   await chunk({content: ' latest'});
   assert.equal(reasoning.scrollTop, 30, 'reply text must not scroll the Thinking area');
-  assert.equal(chat.scrolls(), before + 1, 'reaching the bottom after a jump resumes following');
+  assert.equal(chat.scrolls(), before + 2, 'a jump to the latest reply resumes following');
+  chat.scrollEvent();
+  assert.equal(chat.elements['scroll-bottom'].hidden, true);
   chat.scrollTo(400);
   chat.scrollTo(100000);
   before = chat.scrolls();

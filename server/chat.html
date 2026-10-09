@@ -888,7 +888,10 @@
   $('#menu').addEventListener('click', () => setSidebarOpen(true));
   $('#scrim').addEventListener('click', () => setSidebarOpen(false));
   scrollBottom.addEventListener('click', () => {
-    scrollToLatest(window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth');
+    // Jumping during a reply follows it again. The jump is instant then, since
+    // a smooth scroll's first scroll events would stop following midway.
+    followResponse = Boolean(controller);
+    scrollToLatest(controller || window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth');
   });
   window.addEventListener('scroll', onPageScroll, {passive: true});
   window.addEventListener('resize', () => {
