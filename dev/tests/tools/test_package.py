@@ -26,6 +26,7 @@ class PackageTests(unittest.TestCase):
                 ("install", package.INSTALL_FILES),
                 ("install/completions", package.COMPLETION_FILES),
                 ("server", package.SERVER_FILES),
+                ("server/chat-assets", package.CHAT_ASSET_FILES),
                 ("build", ("splash", "splash.metallib")),
             ):
                 (root / folder).mkdir(parents=True)
@@ -79,6 +80,7 @@ class PackageTests(unittest.TestCase):
             for folder, names in (
                 ("install", package.INSTALL_FILES),
                 ("server", package.SERVER_FILES),
+                ("server/chat-assets", package.CHAT_ASSET_FILES),
                 ("build", ("splash", "splash.metallib")),
             ):
                 (root / folder).mkdir(parents=True)
@@ -101,6 +103,7 @@ class PackageTests(unittest.TestCase):
             (completions / "private-junk").write_text("must not ship")
             (root / "install/private-junk").write_text("must not ship")
             (root / "server/local.log").write_text("must not ship")
+            (root / "server/chat-assets/private-junk").write_text("must not ship")
             token = root / "install/download-token"
             token.write_text("hf_testdistributiontoken")
             with mock.patch.object(package, "ROOT", root):
@@ -129,8 +132,17 @@ class PackageTests(unittest.TestCase):
                 )
             self.assertEqual(
                 {p.name for p in (stage / "server").iterdir()},
-                set(package.SERVER_FILES),
+                {*package.SERVER_FILES, "chat-assets"},
             )
+            assets = stage / "server/chat-assets"
+            self.assertEqual(
+                {p.name for p in assets.iterdir()}, set(package.CHAT_ASSET_FILES)
+            )
+            for name in package.CHAT_ASSET_FILES:
+                self.assertEqual(
+                    (assets / name).read_bytes(),
+                    (root / "server/chat-assets" / name).read_bytes(),
+                )
             self.assertNotIn(
                 "hf_testdistributiontoken", (stage / "release.json").read_text()
             )

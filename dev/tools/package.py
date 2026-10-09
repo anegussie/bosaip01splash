@@ -72,6 +72,12 @@ SERVER_FILES = (
     "chat.html",
     "favicon.svg",
 )
+CHAT_ASSET_FILES = (
+    "markdown-it-15.0.2.min.js",
+    "highlight-11.12.0.min.js",
+    "github-11.12.0.min.css",
+    "github-dark-11.12.0.min.css",
+)
 # Splash's license and the notices of the third-party code it ships.
 LICENSE_FILES = ("LICENSE", "THIRD_PARTY_NOTICES")
 
@@ -86,6 +92,7 @@ def stage_runtime(destination, version):
         ("install", INSTALL_FILES),
         ("install/completions", COMPLETION_FILES),
         ("server", SERVER_FILES),
+        ("server/chat-assets", CHAT_ASSET_FILES),
         ("engine", ("splash", "splash.metallib")),
     ):
         (destination / folder).mkdir()
