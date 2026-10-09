@@ -478,9 +478,9 @@ std::vector<ComputeDispatch> fullGridsTwoPasses(const CommandGraph &graph, const
   return dispatches;
 }
 
-// One plan's run checked against the fp64 model; returns its output rows.
+// One plan's run checked against the fp64 model, gate and up in one pass where oneGateUp; returns its output rows.
 std::vector<uint16_t> runPlan(MetalBackend &backend, const Model &m, Buffers &b, const MoePlan &plan, bool staged,
-                              std::map<std::pair<uint32_t, uint32_t>, GateUp> &products, Stats &stats,
+                              bool oneGateUp, std::map<std::pair<uint32_t, uint32_t>, GateUp> &products, Stats &stats,
                               const std::string &label) {
   const uint32_t rows = plan.rows();
   allocate(backend, b, plan);
@@ -496,7 +496,9 @@ std::vector<uint16_t> runPlan(MetalBackend &backend, const Model &m, Buffers &b,
   const auto *output = static_cast<const __bf16 *>(b.moe.output.contents());
   const uint32_t tileRows = plan.tileRows(), tiles = *static_cast<const uint32_t *>(b.moe.scratch.tileCount.contents());
   require(tiles <= plan.maximumTiles(), label + ": tile count exceeds its bound");
-  // Each expert pass runs the live tiles of its column tiles.
+  // Each expert pass runs the live tiles of its column tiles; gate and up run
+  // in one pass (_gate_up) or as the gate and up passes (_a, then _g).
+  uint32_t gateUpPasses = 0, upPasses = 0;
   for (const ComputeDispatch &dispatch : graph.dispatches()) {
     const uint32_t *grid = nullptr;
     if (const MetalBuffer &buffer = dispatch.indirectThreadgroups.buffer)
@@ -505,7 +507,11 @@ std::vector<uint16_t> runPlan(MetalBackend &backend, const Model &m, Buffers &b,
                 (!grid || (grid[0] == dispatch.threadgroups.x && grid[1] == tiles && grid[2] == 1 &&
                            dispatch.threadgroups.y == plan.maximumTiles())),
             label + ": " + dispatch.pipelineName + " runs another grid than its live tiles");
+    gateUpPasses += dispatch.pipelineName.ends_with("_gate_up");
+    upPasses += dispatch.pipelineName.ends_with("_g");
   }
+  require(gateUpPasses == oneGateUp && upPasses == !oneGateUp,
+          label + (oneGateUp ? ": gate and up run in two passes" : ": gate and up run in one pass"));
   for (uint32_t r = 0; r < rows; ++r) {
     const float *x = b.input.data() + uint64_t{r} * kHidden;
     // Routes: the fp64 top-k by descending score, ascending id; the GPU's fp32
@@ -708,7 +714,8 @@ int moe(MetalBackend &backend) {
               MoeConfig{MoeExpertTile::M8, moeRouteWideRows(kAssumedGpuCores), MoeExpertSimdgroups::Eight, tile});
           const std::string label = formats + (tile == MoeGgufTile::Register ? " register" : " staged") + " decode B" +
                                     std::to_string(lanes);
-          const std::vector<uint16_t> rows = runPlan(backend, m, b, plan, tile == MoeGgufTile::Staged, products, stats, label);
+          const std::vector<uint16_t> rows =
+              runPlan(backend, m, b, plan, tile == MoeGgufTile::Staged, oneGateUp, products, stats, label);
           // A row's result depends on its own routes only, not on the lanes it
           // is batched with (the tile rows of one expert are independent).
           if (widest.empty()) widest = rows;
@@ -724,7 +731,8 @@ int moe(MetalBackend &backend) {
               MoeConfig{MoeExpertTile::M8, moeRouteWideRows(kAssumedGpuCores), MoeExpertSimdgroups::Eight, tile});
           const std::string label = formats + (tile == MoeGgufTile::Register ? " register" : " staged") + " prefill rows=" +
                                     std::to_string(chunk);
-          const std::vector<uint16_t> rows = runPlan(backend, m, b, plan, tile == MoeGgufTile::Staged, products, stats, label);
+          const std::vector<uint16_t> rows =
+              runPlan(backend, m, b, plan, tile == MoeGgufTile::Staged, oneGateUp, products, stats, label);
           if (!std::equal(rows.begin(), rows.begin() + std::min(rows.size(), widest.size()), widest.begin())) {
             printf("  %s: rows differ from the four-lane dispatch FAIL\n", label.c_str());
             ++failures;
@@ -750,7 +758,7 @@ int moe(MetalBackend &backend) {
           const MoePlan plan = MoE::prefillPlan(shape, rows, config);
           const std::string label = formats + " prefill rows=" + std::to_string(rows) +
                                     (router == FloatTile::NeuralAccelerator ? " (accelerator router)" : "");
-          const std::vector<uint16_t> result = runPlan(backend, m, b, plan, true, products, stats, label);
+          const std::vector<uint16_t> result = runPlan(backend, m, b, plan, true, oneGateUp, products, stats, label);
           if (widest.empty()) widest = result;
           else if (!std::equal(result.begin(), result.end(), widest.begin())) {
             printf("  %s: rows differ from the %u-row chunk FAIL\n", label.c_str(), kMaximumRows);
