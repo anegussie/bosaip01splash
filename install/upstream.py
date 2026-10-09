@@ -250,7 +250,8 @@ def _mlx_target(repo, language_only):
 
 def _weight_files(repo, prefix="", exclude=None):
     """The checkpoint's shards holding a tensor whose name starts with prefix,
-    and not with exclude."""
+    and not with exclude. exclude filters an index's shards; a single
+    model.safetensors is always the checkpoint's."""
     if "model.safetensors.index.json" in repo.files:
         index = models.read_json(repo.file("model.safetensors.index.json"))
         weights = index.get("weight_map")
@@ -265,7 +266,7 @@ def _weight_files(repo, prefix="", exclude=None):
             and not (exclude and tensor.startswith(exclude))
         }
     elif "model.safetensors" in repo.files:
-        # One file: its header says whether it holds such a tensor.
+        # One file: its header is read only to look for prefix.
         holds = not prefix or any(
             tensor.startswith(prefix)
             for tensor in _safetensors_tensors(repo, "model.safetensors")
