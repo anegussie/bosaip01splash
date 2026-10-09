@@ -379,9 +379,13 @@ metal::MetalBuffer recurrentHalf(const metal::MetalBackend &backend,
 
 using StateSamples = std::vector<std::pair<std::string, std::vector<float>>>;
 
+// The ring rows of positions from `capturedFrom` on, which the chunks after a
+// restore captured from their own rows, are sampled apart as captured_* rings:
+// compareCommittedSamples holds them bit for bit.
 StateSamples sampleCommittedState(const metal::MetalBackend &backend,
                                   const model::QwenStateStorage &states,
-                                  uint32_t lane) {
+                                  uint32_t lane,
+                                  uint64_t capturedFrom = std::numeric_limits<uint64_t>::max()) {
   StateSamples result;
   const auto add = [&](std::string name, const metal::MetalBuffer &buffer,
                        bool bfloat) {
@@ -411,19 +415,24 @@ StateSamples sampleCommittedState(const metal::MetalBackend &backend,
   for (uint32_t layer = 0; layer < ring.size(); ++layer) {
     const auto *keys = bfloatContents(ring[layer].keys, "draft keys");
     const auto *values = bfloatContents(ring[layer].values, "draft values");
-    std::vector<float> keySamples, valueSamples;
+    std::vector<float> keySamples, valueSamples, capturedKeys, capturedValues;
     for (uint64_t index = 0; index < elements; index += stride) {
       const uint32_t dimension = index % layout.headDimension;
       const uint32_t position = (index / layout.headDimension) % lengths.draftLength;
       const uint32_t head = index / (uint64_t{layout.headDimension} * lengths.draftLength);
       const uint32_t ring = (lengths.draftBase + position) % window;
-      keySamples.push_back(test::bf16ToFloat(
+      const bool captured = lengths.draftBase + position >= capturedFrom;
+      (captured ? capturedKeys : keySamples).push_back(test::bf16ToFloat(
           keys[(uint64_t{head} * window + ring) * layout.headDimension + dimension]));
-      valueSamples.push_back(test::bf16ToFloat(
+      (captured ? capturedValues : valueSamples).push_back(test::bf16ToFloat(
           values[(uint64_t{head} * layout.headDimension + dimension) * window + ring]));
     }
     result.emplace_back("draft_key_" + std::to_string(layer), std::move(keySamples));
     result.emplace_back("draft_value_" + std::to_string(layer), std::move(valueSamples));
+    if (!capturedKeys.empty()) {
+      result.emplace_back("captured_key_" + std::to_string(layer), std::move(capturedKeys));
+      result.emplace_back("captured_value_" + std::to_string(layer), std::move(capturedValues));
+    }
   }
   // The context window's rows of the rings' positions, byte for byte: a
   // restore copies the window and computes the rings from it again.
@@ -824,8 +833,10 @@ void requireRepeatedImagePlacements(model::Runtime &executor,
 
 // A restore at a full window: the chunk after it stores its rows into the
 // window slots of the oldest restored positions and writes their ring slots,
-// so the rings computed again from the window must come before them. The
-// restored lane matches the cold teacher-forced lane that made the checkpoint.
+// so the rings computed again from the window must come before them: a later
+// rebuild would overwrite the chunk's captured rings, which match bit for bit.
+// The restored lane matches the cold teacher-forced lane that made the
+// checkpoint.
 void requireFullWindowRestore(model::Runtime &executor,
                               const metal::MetalBackend &backend,
                               const model::QwenStateStorage &states) {
@@ -845,7 +856,7 @@ void requireFullWindowRestore(model::Runtime &executor,
   auto checkpoint = executor.snapshot(request.id);
   require(checkpoint != nullptr, "full-window checkpoint allocation failed");
   prefillChunk(executor, request.id, boundary, tokens.subspan(boundary), pages);
-  const auto expected = sampleCommittedState(backend, states, 0);
+  const auto expected = sampleCommittedState(backend, states, 0, boundary);
   executor.end(request.id);
   // With the idle rings reclaimed, the restored lane's rings hold none of the
   // teacher's rows: only the rebuild puts them back.
@@ -856,7 +867,8 @@ void requireFullWindowRestore(model::Runtime &executor,
   beginCold(executor, request, 0);
   restoreActivePrefix(executor, request.id, prompt.size(), boundary, checkpoint);
   prefillChunk(executor, request.id, boundary, tokens.subspan(boundary), pages);
-  compareCommittedSamples(expected, sampleCommittedState(backend, states, 0), true, true);
+  compareCommittedSamples(expected, sampleCommittedState(backend, states, 0, boundary), true,
+                          true);
   executor.end(request.id);
   std::cout << "full_window_restore=PASS\n";
 }
