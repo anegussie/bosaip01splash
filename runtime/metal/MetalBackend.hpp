@@ -147,8 +147,8 @@ struct BytesBinding {
 
 // A grid the GPU reads as the dispatch starts, so an earlier dispatch of the
 // same command may write it: three uint32 threadgroup counts, x, y and z
-// (MTLDispatchThreadgroupsIndirectArguments), at offsetBytes into buffer, a
-// multiple of 4.
+// (MTLDispatchThreadgroupsIndirectArguments), at offsetBytes into buffer and
+// at a multiple of 4 bytes into its allocation.
 struct IndirectGrid {
   MetalBuffer buffer;
   uint64_t offsetBytes = 0;

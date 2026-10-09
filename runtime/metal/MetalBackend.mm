@@ -738,13 +738,14 @@ struct MetalBackend::Impl {
                 claim(binding.index);
             }
             // Metal reads an indirect grid's three counts at a multiple of 4
-            // bytes.
+            // bytes, counted from the allocation's start, not the view's.
             const IndirectGrid &grid = dispatch.indirectThreadgroups;
             if (grid.buffer) {
                 const MetalBuffer::Impl &arguments = *grid.buffer.impl_;
                 if (arguments.allocation->accounting.get() != accounting.get() ||
                     !arguments.allocation->buffer ||
-                    grid.offsetBytes % sizeof(uint32_t) ||
+                    (arguments.offsetBytes + grid.offsetBytes) %
+                        sizeof(uint32_t) ||
                     grid.offsetBytes > arguments.lengthBytes ||
                     arguments.lengthBytes - grid.offsetBytes <
                         3 * sizeof(uint32_t)) {

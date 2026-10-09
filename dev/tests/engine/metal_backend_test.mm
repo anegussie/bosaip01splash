@@ -40,6 +40,7 @@ using splash::metal::Command;
 using splash::metal::CommandTicket;
 using splash::metal::ComputeDispatch;
 using splash::metal::EventStep;
+using splash::metal::IndirectGrid;
 using splash::metal::MetalBackend;
 using splash::metal::MetalBackendError;
 using splash::metal::SharedEvent;
@@ -1134,8 +1135,8 @@ void bindingRunsKeepOffsets(MetalBackend &backend) {
 }
 
 // An indirect dispatch runs the grid that an earlier dispatch of its command
-// wrote, at the grid's offset into a view; a grid unaligned or past its
-// buffer is refused.
+// wrote, at the grid's offset into a view; a grid unaligned in its allocation
+// or past its buffer is refused.
 void indirectGridsRunTheWrittenGrid(MetalBackend &backend) {
     constexpr uint32_t kWords = 8, gridWords = 3, increment = 1;
     MetalBuffer grid = sharedBuffer(backend, 8 * sizeof(uint32_t));
@@ -1161,8 +1162,12 @@ void indirectGridsRunTheWrittenGrid(MetalBackend &backend) {
         require(out[word] == (word < 3 ? increment : 0),
                 "an indirect dispatch ran another grid than the one written");
     }
-    for (const uint64_t offset : {uint64_t{6}, uint64_t{20}}) {
-        add.indirectThreadgroups.offsetBytes = offset;
+    // Byte 8 of a view from byte 2 lies at byte 10 of the buffer.
+    const MetalBuffer unaligned = backend.view(grid, 2, 6 * sizeof(uint32_t));
+    for (const IndirectGrid &outside : {IndirectGrid{view, 6},
+                                        IndirectGrid{view, 20},
+                                        IndirectGrid{unaligned, 8}}) {
+        add.indirectThreadgroups = outside;
         rejects([&] { (void)backend.submit(add); }, "reads its grid outside",
                 "an unaligned or out-of-range grid was accepted");
     }
