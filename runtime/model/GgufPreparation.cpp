@@ -1,6 +1,7 @@
 #include "model/GgufPreparation.hpp"
 
 #include "metal/abi/GgufRepack.h"
+#include "metal/abi/QuantTables.h"
 #include "model/Bfloat16.hpp"
 #include "model/GgufImageLayout.hpp"
 #include "model/WeightImages.hpp"
@@ -116,13 +117,6 @@ void narrowToBfloat16(const uint8_t *values, uint64_t count, uint8_t *to, const 
   }
 }
 
-float widen(uint16_t bfloat16) {
-  const uint32_t bits = uint32_t{bfloat16} << 16;
-  float value;
-  std::memcpy(&value, &bits, 4);
-  return value;
-}
-
 // Writes the F32 values `count` BF16 values equal.
 void widenToFloat32(const uint8_t *values, uint64_t count, uint8_t *to) {
   for (uint64_t i = 0; i < count; ++i) {
@@ -133,26 +127,9 @@ void widenToFloat32(const uint8_t *values, uint64_t count, uint8_t *to) {
   }
 }
 
-// Writes the decay -exp(A_log) of `count` BF16 or F32 values A_log, each
-// float(-exp(double(A_log))).
-void writeDecay(const uint8_t *values, uint64_t count, bool bfloat16, uint8_t *to) {
-  for (uint64_t i = 0; i < count; ++i) {
-    float value;
-    if (bfloat16) {
-      uint16_t bits;
-      std::memcpy(&bits, values + 2 * i, 2);
-      value = widen(bits);
-    } else {
-      std::memcpy(&value, values + 4 * i, 4);
-    }
-    const float decay = static_cast<float>(-std::exp(static_cast<double>(value)));
-    std::memcpy(to + 4 * i, &decay, 4);
-  }
-}
-
 // Writes the F32 values, as the kernels compute them, of `count` native
-// blocks of MLX format `id`: s * code + z (affine), or twice the E2M1 value of
-// the code (sign, 2-bit exponent, 1-bit mantissa) times 2^(e - 128) (mxfp4).
+// blocks of MLX format `id`: s * code + z (affine), or kFP4Values[code] (twice
+// the E2M1 value) times 2^(e - 128) (mxfp4).
 void dequantize(const uint8_t *blocks, uint64_t count, uint32_t id, uint8_t *to) {
   const QuantFormat &format = kQuantFormats[id];
   if (id == GGUF_FMT_MXFP4) {
@@ -160,9 +137,7 @@ void dequantize(const uint8_t *blocks, uint64_t count, uint32_t id, uint8_t *to)
       const uint8_t *in = blocks + block * format.block_bytes;
       const float scale = std::ldexp(1.0f, int{in[0]} - 128);
       for (uint32_t l = 0; l < format.block_elements; ++l) {
-        const uint32_t code = (in[1 + l % 16] >> (l < 16 ? 0 : 4)) & 15, exponent = (code >> 1) & 3;
-        const int twice = exponent ? int((2 + (code & 1)) << (exponent - 1)) : int(code & 1);
-        const float value = float(code & 8 ? -twice : twice) * scale;
+        const float value = float(kFP4Values[(in[1 + l % 16] >> (l < 16 ? 0 : 4)) & 15]) * scale;
         std::memcpy(to + 4 * (block * format.block_elements + l), &value, 4);
       }
     }
@@ -178,7 +153,7 @@ void dequantize(const uint8_t *blocks, uint64_t count, uint32_t id, uint8_t *to)
       const uint32_t at = l * bits, shift = at % 8;
       uint32_t word = in[4 + at / 8];
       if (shift + bits > 8) word |= uint32_t{in[4 + at / 8 + 1]} << 8;
-      const float value = std::fma(static_cast<float>((word >> shift) & mask), widen(s), widen(z));
+      const float value = std::fma(static_cast<float>((word >> shift) & mask), widenBfloat16(s), widenBfloat16(z));
       std::memcpy(to + 4 * (block * format.block_elements + l), &value, 4);
     }
   }
@@ -220,9 +195,11 @@ void addCopyTasks(uint8_t *image, const gguf::Copy &copy,
           narrowToBfloat16(staging.data(), count * width / 4, to, rows.name);
           break;
         case gguf::Conversion::WidenToFloat32: widenToFloat32(staging.data(), count * width / 2, to); break;
-        case gguf::Conversion::Decay:
-          writeDecay(staging.data(), count * width / (rows.type == ggml::kBF16 ? 2 : 4), rows.type == ggml::kBF16, to);
+        case gguf::Conversion::Decay: {
+          const bool bfloat16 = rows.type == ggml::kBF16;
+          writeGdnDecay(staging.data(), count * width / (bfloat16 ? 2 : 4), bfloat16, to);
           break;
+        }
         case gguf::Conversion::DequantizeToFloat32:
           dequantize(staging.data(), count * width / mlxFormat(rows).block_bytes, gguf_format_of(rows.type), to);
           break;
