@@ -269,6 +269,26 @@ class UpstreamTest(unittest.TestCase):
             self.prepare(selection(self.root, "someone/package", language_only=False))
         self.assertFalse(selection(self.root, "someone/package").link.exists())
 
+    def test_an_installed_splash_package_is_refused_before_any_request(self):
+        # What an earlier release installed: a link to the package's snapshot.
+        chosen = selection(self.root, "someone/package", language_only=False)
+        snapshot = self.cache / "models--someone--package/snapshots" / ("c" * 40)
+        snapshot.mkdir(parents=True)
+        (snapshot / "manifest.json").write_text(
+            json.dumps({"format": {"name": "splash-packed-q4-moe"}})
+        )
+        chosen.link.parent.mkdir(parents=True)
+        chosen.link.symlink_to(snapshot, target_is_directory=True)
+        fake = FakeHub(self, self.cache)
+        with self.assertRaisesRegex(
+            models.ModelError,
+            "someone/package is a Splash package, which Splash no longer loads; "
+            "serve the MLX model of its family instead: splash serve --model "
+            "mlx-community/Qwen3.6-35B-A3B-4bit",
+        ):
+            self.prepare(chosen)
+        self.assertEqual((fake.requests, fake.downloads), ([], []))
+
     def test_only_mlx_affine_quantization_is_accepted(self):
         def target(quantization):
             def build(root):
