@@ -891,7 +891,7 @@ Proxy consumers can use these fields; additional fields may be added:
 | --- | --- |
 | `requests.submitted`, `completed`, `cancelled`, `failed` | Native request counters since engine start |
 | `memory_actual.current_bytes`, `peak_bytes` | Metal allocations, not process RSS |
-| `weights.idle_release_seconds`, `released`, `restores` | `--idle-release` in seconds (`null` for `off`), whether the weights' memory is released now, and the times it was restored for a request since engine start |
+| `weights.idle_release_seconds`, `released`, `restores`, `restore_failures` | `--idle-release` in seconds (`null` for `off`), whether the weights' memory is released now, the times it was restored for a request since engine start, and the restores that gave up for want of memory |
 | `ane_ffn.state`, `share`, `minimum_rows`, `reason` | The prefill FFN's [Neural Engine split](#neural-engine-prefill): `split` while it serves, at `share` of the FFN's channels over chunks of `minimum_rows` rows or more; `off` when the start left the GPU alone (`share` and `minimum_rows` 0); `stopped` once it stopped while serving, until the engine restarts. `reason` is the start's outcome, or why the split stopped |
 | `ane_ffn.split_commands`, `evaluations`, `ane_ms`, `reruns` | Prefill commands the split ran since engine start, the Neural Engine's evaluations in them and its milliseconds over them (each evaluation's from the GPU's signal to start it to its report); and the chunks the GPU ran again alone after the split's work for them failed |
 | `model_timing.prefill.last_gpu_ms`, `total_gpu_ms` | GPU time of the last prefill command, and of all since engine start, warmup included: each from its first Metal command buffer's start to its last one's end, so with the Neural Engine split it spans the GPU's waits on the Neural Engine; a chunk run again adds the rerun's |
@@ -1406,11 +1406,21 @@ are freed, the weights' views stay the same handles, and a command that binds
 released memory fails (`MetalBackend::releaseMemory`). The next request waits
 while the same writers write the images again (`WeightImages::restore`), an
 image per tick so that the loop keeps answering status and cancellations; this
-takes about as long as the load at startup and logs `Weights restored in N s`. A
-restore is not admitted again: the memory plan counted the images at startup,
-and nothing else allocates while the engine holds no request. A restore that
-fails (an allocation the driver refuses, a read error, a source written in
-place) stops the engine, which the server starts again. With the
+takes about as long as the load at startup and logs `Weights restored in N s`.
+The governor admits each image's memory (`MemoryGovernor::allocationAdmission`)
+as memory the waiting requests need: the host's margins do not refuse it, as
+they do not refuse memory a request in service needs, and it fits the
+engine's limit, since the cache does not grow while the engine holds no
+request; critical pressure refuses it. A refused image, or one the driver or
+its writer cannot allocate, stays released, and the images before it stay. The
+requests wait for memory, retrying every 0.1 s as a refused request does and
+counted in `admission.waiting_memory`, and the log says `Weights wait for
+memory to be restored`. Once the 30 s resource wait has passed since the first
+refusal after the last image that came back, or at once when no request waits
+any more, the restore gives up: the images it wrote back are released, the
+waiting requests fail with `resource_timeout`, `weights.restore_failures`
+counts it, and the next request starts over from the first image. Any other failure (a read error, a source written in place)
+stops the engine, which the server starts again. With the
 [Neural Engine split](#neural-engine-prefill), the release unloads its program
 after the images, and the restore loads it again in one tick more, after the
 last image (`ReleasableMemory`).

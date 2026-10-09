@@ -223,7 +223,8 @@ private:
   engine::NativeLoopConfig loopConfig() {
     return {.engine = test::engineConfig({.maxContext = 1024}),
             .metrics = &metrics_,
-            .weights = &weights_};
+            .weights = &weights_,
+            .weightAdmission = test::admitAll};
   }
 
   test::TestKvStorage backing_;

@@ -58,7 +58,7 @@ public:
   [[nodiscard]] WeightFile load(ImagePlan image);
   [[nodiscard]] bool released() const noexcept override { return released_; }
   void release() override;
-  [[nodiscard]] bool restore() override;
+  [[nodiscard]] bool restore(const metal::AllocationAdmission &admit) override;
 
   struct Contents final {
     std::string_view component;
