@@ -80,7 +80,7 @@ void checkMoe(splash::ops::MoeWorkspace workspace,
   require(workspace.selectedExpertsBytes == routes * sizeof(uint32_t) &&
               workspace.routingWeightsBytes == routes * sizeof(float) &&
               workspace.tileDescriptorsBytes == tiles * sizeof(MoeTileDescriptor) &&
-              workspace.tileCountBytes == sizeof(uint32_t) &&
+              workspace.tileCountBytes == sizeof(MoeTileCount) &&
               workspace.groupedRoutesBytes == grouped * sizeof(uint32_t) &&
               workspace.routeRowsBytes == routes * sizeof(uint32_t) &&
               workspace.groupedInputBytes == std::max(grouped * shape.hiddenSize * kBFloat16Bytes,

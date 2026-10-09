@@ -129,10 +129,11 @@ int timing(MetalBackend &backend, uint32_t rounds, Fmt gateUpFormat, Fmt downFor
       .sharedDown = affineExperts(1, H, I),
       .sharedScalarGate = affineRouter(false),
   };
-  // GGUF: the same routing in an F32 router.
+  // GGUF: the same routing in an F32 router, and weights at a model's
+  // magnitudes in every format as the tests draw them (scaleRange; an MLX
+  // affine format takes bf16 scales and a bias).
   const auto planes = [&](Fmt f, uint32_t rows, uint32_t k) {
-    std::uniform_real_distribution<float> d(0.0005f, 0.004f);
-    const std::vector<uint8_t> native = makeNative(f, rows, k, local, [&] { return f2h(d(local)); });
+    const std::vector<uint8_t> native = makeNative(f, rows, k, local);
     return planeSegment(backend, f, repack(f, native, rows, k, nullptr), rows, k);
   };
   std::vector<float> router(uint64_t{E} * H, 0.0f), sharedGate(H, 0.0f);

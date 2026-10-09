@@ -1464,18 +1464,28 @@ decode faster on the staged tile there, which a projection all of whose segments
 takes wherever the tile holds its lanes' rows unpadded. On Apple10 (M5) the staged tile
 (`LinearTile::GgufStaged`) runs the kernels of `runtime/metal/kernels/shared/gguf_linear.metal`,
 which dequantize each weight once to half in threadgroup memory (`kernels/common/gguf_staged.h`)
-for MPP `matmul2d`, the neural accelerator's path, on bf16 activations; a step of three request
-lanes runs the 32-row tile over four lanes of storage. Prefill runs the staged kernels on both
-families: the 128-row prefill tile (`LinearTile::GgufPrefill`), and the staged tile for chunks of
-up to 32 rows. Every projection splits its K across threadgroups by one rule (`decodeSplits`: each
-tile's tiers of threadgroups per core and inputs per partition, from measured occupancy, Apple9's
-staged tile taking the register tile's) that does not depend on the batch width. The MoE experts
+for MPP `matmul2d`, the neural accelerator's path, on bf16 activations. A step's weights, and
+its meta unit when it enters a new one, load while the previous step's matmul runs
+(`gguf_staged_steps`): their DRAM round trips overlap a matmul. On Apple10 from 16 cores each
+column tile of a decode projection starts its walk over its K partition at its own step
+(`staged_first_step`, `LinearConfig::spread`), so the tiles do not all wait on the same freshly
+written slice of the input at once; the MoE experts, prefill, Apple9 and fewer cores walk in
+lockstep. A step of three request lanes runs the 32-row tile over four lanes of storage. Prefill
+runs the staged kernels on both families: the 128-row prefill tile (`LinearTile::GgufPrefill`),
+and the staged tile for chunks of up to 32 rows. Every projection splits its K across
+threadgroups by one rule (`decodeSplits`: each tile's tiers of threadgroups per core and inputs
+per partition, from measured occupancy, Apple9's staged tile taking the register tile's) that
+does not depend on the batch width. The MoE experts
 (`runtime/ops/MoE.cpp`) run the same numerics per family over the grouped rows: the register form
 in `linear_gguf_sgmatrix.metal`, the staged one in `kernels/shared/moe_gguf.metal`, which Apple9
-takes for experts mostly in the formats it stages (`MoeShape::expertFormat`). The float router and
-alpha/beta projections run in `kernels/shared/gguf_float.metal`, and the token rows are gathered
-by one template in `kernels/shared/embedding.metal`. These plans are fixed rules of GPU family,
-core count, shape and format.
+takes for experts mostly in the formats it stages (`MoeShape::expertFormat`). Their passes launch
+the live tiles alone: the grouping kernel writes each pass's grid with the tile count, and the
+pass reads it as an indirect dispatch (`ComputeDispatch::indirectThreadgroups`). The staged
+tile runs gate and up in one pass where they share their routed and their shared formats, a
+gate and an up simdgroup on the same columns, bitwise the two passes' intermediate. The float
+router and alpha/beta projections run in `kernels/shared/gguf_float.metal`, and the token rows
+are gathered by one template in `kernels/shared/embedding.metal`. These plans are fixed rules of
+GPU family, core count, shape and format.
 
 A rotated projection rotates its input once into `LinearScratch::rotated`
 (`gguf_rotate`, in fp32 and rounded once to bf16) before its quantized segments,
@@ -1488,7 +1498,8 @@ A GGUF kernel of one quantized tensor names its epilogue last: `a` none, `r` res
 up pass with the silu gate. The staged ones are `gguf_decode_<format>_m<rows>_<e>` and
 `gguf_prefill_<format>_<e>` (and `gguf_prefill_<format>_r_leading_inputs` over a view of the
 leading inputs of wider rows), the register ones `gguf_decode_sg_<format>_l<lanes>_<e>`, and the
-experts `moe_expert_gguf_m<rows>_<e>` and `moe_expert_gguf_sg_<e>`; the fused projections run
+experts `moe_expert_gguf_m<rows>_<e>` and `moe_expert_gguf_sg_<e>`, with gate and up in one pass
+`moe_expert_gguf_m<rows>_gate_up`; the fused projections run
 `gguf_decode_fused_m<rows>` and `gguf_decode_sg_fused_l<lanes>`. The norm, GDN and
 attention-gate variants that also write a register kernel's input table carry `table64` (the
 affine Q4 kernel's) or `table16` (the GGUF one's) in their names. The epilogue kinds of both GGUF
@@ -1520,9 +1531,10 @@ lanes, every K split and epilogue, fused segments, every format's gate with the 
 and the prefill tiles, each output inside the fp64 bound of `GgufFormatReference.hpp`; and
 `gguf-moe`: the float projections on both float tiles and the MoE layer on every GGUF plan, the
 staged 8- and 32-row tiles and the Apple9 register tile whatever GPU runs it, in every format,
-against fp64. The goldens and how to regenerate them are in
-`dev/tests/fixtures/weight-goldens/`; with `SPLASH_GGML_ORACLE=<libggml-base.dylib>`,
-`gguf-reference` also compares the reference with GGML directly and prints GGML's hashes.
+against fp64, and bitwise against the full grids and two gate/up passes. The goldens and how to
+regenerate them are in `dev/tests/fixtures/weight-goldens/`; with
+`SPLASH_GGML_ORACLE=<libggml-base.dylib>`, `gguf-reference` also compares the reference with GGML
+directly and prints GGML's hashes.
 
 Two benchmark tools repeat the measurements behind the GGUF split tiers and MoE plans, with the
 weights DRAM-cold. `make benchmark-gguf-projection GGUF_PROJECTION_ARGS='q4k 5120 8192'` times one

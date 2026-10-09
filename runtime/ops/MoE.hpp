@@ -127,10 +127,11 @@ struct MoeScratch final {
   // rows * routesPerToken() routes: expert ids and fp32 routing weights.
   metal::MetalBuffer selectedExperts;
   metal::MetalBuffer routingWeights;
-  // Sized by moeMaximumTiles(): tile descriptors, one tile count, the route
-  // at each grouped row, each route's grouped row, and the grouped rows'
-  // inputs, intermediates and outputs. The router parks its fp32 scores in
-  // groupedInput until the gather claims it.
+  // Sized by moeMaximumTiles(): tile descriptors, the tile count with the
+  // GGUF expert passes' grids (MoeTileCount), the route at each grouped row,
+  // each route's grouped row, and the grouped rows' inputs, intermediates and
+  // outputs. The router parks its fp32 scores in groupedInput until the
+  // gather claims it.
   metal::MetalBuffer tileDescriptors;
   metal::MetalBuffer tileCount;
   metal::MetalBuffer groupedRoutes;
@@ -175,7 +176,7 @@ inline constexpr auto kMoeWorkspaceFields = [] {
 // consume Q4 expert slabs in storage tiles: decode plans run the fused
 // gate/up tile on M8 tiles, prefill plans the experts on M32 tiles as three
 // N256 passes (gate, up with the silu gate, down) whose tiles shrink to the
-// descriptor's live rows. GGUF plans run three passes of M8 tiles, or of M32
+// descriptor's live rows. GGUF plans run their passes on M8 tiles, or on M32
 // tiles to prefill (moeGgufPrefillTile).
 enum class MoeExpertTile : uint8_t { M8 = 8, M32 = 32 };
 
@@ -197,8 +198,9 @@ moeDecodeSimdgroups(GpuFamilyClass family) noexcept {
                                           : MoeExpertSimdgroups::Eight;
 }
 
-// The expert tile of GGUF plans, which run three grouped passes (gate, up
-// with silu(gate), down) over the GGUF image: the half-staged tiles of
+// The expert tile of GGUF plans, which run grouped passes (gate, up with
+// silu(gate), down; the staged tile runs gate and up in one pass where they
+// share their formats) over the GGUF image: the half-staged tiles of
 // kernels/shared/moe_gguf.metal, or Register, the exact register tile of
 // kernels/decode/linear_gguf_sgmatrix.metal over Table16 tiles of the
 // grouped rows (8-row tiles only). Apple9 runs Register in both phases but

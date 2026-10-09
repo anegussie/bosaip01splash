@@ -431,10 +431,11 @@ kernel void moe_route_select_f32(
 // (moe_matmul_rows) carry the route ~0u. One threadgroup covers all routes
 // and thread e owns expert e's count, offsets and tile descriptors. The
 // shared expert's tiles follow the routed tiles and hold every row in order.
+// It writes the tile count with the expert passes' grids (MoeTileCount).
 kernel void moe_group_routes(
     device const uint *selected [[buffer(0)]],
     device MoeTileDescriptor *tiles [[buffer(1)]],
-    device uint *tile_count [[buffer(2)]],
+    device MoeTileCount *tile_count [[buffer(2)]],
     device uint *grouped_routes [[buffer(3)]],
     device uint *route_rows [[buffer(4)]],
     constant MoeGroupParams &params [[buffer(5)]],
@@ -517,8 +518,11 @@ kernel void moe_group_routes(
       grouped_routes[shared_base + row] = ~0u;
     }
   }
-  if (thread_index == 0)
-    *tile_count = routed_tiles + shared_tiles;
+  if (thread_index == 0) {
+    const uint live = routed_tiles + shared_tiles;
+    *tile_count = MoeTileCount{live, {params.gate_up_columns, live, 1},
+                               {params.down_columns, live, 1}};
+  }
 }
 
 // Copies each grouped row's input so every expert tile is a dense matrix,

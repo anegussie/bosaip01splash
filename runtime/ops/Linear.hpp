@@ -109,6 +109,10 @@ struct LinearConfig final {
   // least two); all other tiles use one.
   uint32_t splits = 1;
   static constexpr uint32_t kMaximumSplits = 8;
+  // GgufStaged: each column tile starts its walk over its K partition at its
+  // own step (kernels/common/gguf_staged_tile.h) instead of every tile at the
+  // partition's first; no other tile spreads.
+  bool spread = false;
   [[nodiscard]] constexpr bool validSplits() const noexcept {
     return splits && splits <= kMaximumSplits && !(splits & (splits - 1));
   }
