@@ -822,6 +822,45 @@ void requireRepeatedImagePlacements(model::Runtime &executor,
   std::cout << "repeated_image_placements=PASS\n";
 }
 
+// A restore at a full window: the chunk after it stores its rows into the
+// window slots of the oldest restored positions and writes their ring slots,
+// so the rings computed again from the window must come before them. The
+// restored lane matches the cold teacher-forced lane that made the checkpoint.
+void requireFullWindowRestore(model::Runtime &executor,
+                              const metal::MetalBackend &backend,
+                              const model::QwenStateStorage &states) {
+  constexpr uint32_t window = model::ExecutionLimits::draftContextTokens;
+  constexpr uint32_t boundary = window + 64;
+  std::vector<uint32_t> prompt(boundary + 64);
+  for (uint32_t index = 0; index < prompt.size(); ++index)
+    prompt[index] = 1 + index;
+  const std::span<const uint32_t> tokens(prompt);
+  const std::vector<uint32_t> pages = pageRange(0, prompt.size() / kv::kPageTokens);
+  EngineRequest request = makeRequest(104, prompt, 1);
+  beginCold(executor, request, 0);
+  const std::array<uint32_t, 1> checkpoints{boundary};
+  executor.setDraftContextPlan(request.id, planDraftContext(0, prompt.size(), checkpoints));
+  prefillChunk(executor, request.id, 0, tokens.first(window), pages);
+  prefillChunk(executor, request.id, window, tokens.subspan(window, boundary - window), pages);
+  auto checkpoint = executor.snapshot(request.id);
+  require(checkpoint != nullptr, "full-window checkpoint allocation failed");
+  prefillChunk(executor, request.id, boundary, tokens.subspan(boundary), pages);
+  const auto expected = sampleCommittedState(backend, states, 0);
+  executor.end(request.id);
+  // With the idle rings reclaimed, the restored lane's rings hold none of the
+  // teacher's rows: only the rebuild puts them back.
+  while (executor.reclaimIdleState(false, IdleMemory::BuffersThenCaches)) {
+  }
+
+  request.id = 105;
+  beginCold(executor, request, 0);
+  restoreActivePrefix(executor, request.id, prompt.size(), boundary, checkpoint);
+  prefillChunk(executor, request.id, boundary, tokens.subspan(boundary), pages);
+  compareCommittedSamples(expected, sampleCommittedState(backend, states, 0), true, true);
+  executor.end(request.id);
+  std::cout << "full_window_restore=PASS\n";
+}
+
 // Fills every byte of a lane's GDN recurrent state, the FP32 half of the cell
 // its next transition reads, with 0xFF: NaN, which the recurrence carries into
 // every row the lane computes. Non-finite KV would not do: the paged-attention
@@ -3429,6 +3468,7 @@ int main(int argc, char **argv) {
       executor.end(93);
       std::cout << "discontinuous_capture_fails=PASS\n";
     }
+    requireFullWindowRestore(executor, backend, states);
 
     const auto rowsBeforeInvalidWarmup = executor.telemetry().targetPrefillRows;
     for (uint32_t rows : {0U, model::ExecutionLimits::prefillTokenBudget + 1,
