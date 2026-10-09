@@ -120,9 +120,9 @@ QUANT_FORMATS(GGUF_DECODE_FORMAT)
 // Gate/up in one dispatch, where gate and up share their format (ops::Linear, LinearConfig::oneGateUpPass): grid
 // (32-column tiles, K partitions), threadgroups of one simdgroup that stages the gate's and the up's same 32 columns
 // (gguf_staged_pair_steps), so the per-step latency of a tile's chain serves both tensors. Each walks from the step its
-// 64-column tile walks from in the two passes, so gate and up are the bits of the gate pass and of the up pass's sums,
-// and the output is bf16(up) * silu(bf16(gate)) as the up pass writes it. Split partials [split][Rows][2 * out_stride]:
-// the gate's columns, then the up's at out_stride on; one counter per 32 columns.
+// 64-column tile walks from in the two passes, so at the same K split gate and up are the bits of the gate pass's and
+// of the up pass's sums, and the output is bf16(up) * silu(bf16(gate)) as the up pass writes it. Split partials
+// [split][Rows][2 * out_stride]: the gate's columns, then the up's at out_stride on; one counter per 32 columns.
 template <class F, ushort Rows>
 kernel void gguf_decode_gate_up(device bfloat *input [[buffer(0)]], device uchar *gw0 [[buffer(1)]],
                                 device uchar *gw1 [[buffer(2)]], device uchar *gmeta [[buffer(3)]],

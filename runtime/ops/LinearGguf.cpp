@@ -372,9 +372,9 @@ void Linear::addGguf(metal::CommandGraph &graph, const LinearBuffers &b,
 // The staged decode tiles, for decode and prefill chunks of up to 32 rows:
 // every row of the plan's storage in each threadgroup's tile, grid (64-column
 // tiles, K splits). Decode runs one dispatch per projection (addDecodeTensor,
-// fusedSegments), gate/up as two passes, which a fused gate/up kernel does not
-// beat (-4..+2% on the 27B gate/up at 10-40 cores). Prefill chunks run one
-// dispatch per segment.
+// fusedSegments), gate/up as two passes, or, where ggufBaseline sets
+// LinearConfig::oneGateUpPass, as one pass over 32-column threadgroups of one
+// simdgroup each. Prefill chunks run one dispatch per segment.
 void Linear::addGgufStaged(metal::CommandGraph &graph, const LinearBuffers &b,
                              const Projection &p, const LinearPlan &plan,
                              const Projection *gate) const {

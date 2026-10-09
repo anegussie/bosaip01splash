@@ -178,7 +178,7 @@ template <class F> struct StagedColumn {
 // [step_begin, step_end) of K from step_first, wrapping as gguf_staged_steps walks. Each step dequantizes both tensors
 // into their stages (one each), meets at a barrier, loads both tensors' next payloads, runs both matmuls on the step's
 // input and meets again before the stages are rewritten. Each tensor sums its steps in the order of its own decode
-// tile, so gate and up hold the bits of the gate and up passes.
+// tile, so gate and up hold the bits of the gate and up passes over the same steps.
 template <class F, ushort Rows, class Acc>
 inline void gguf_staged_pair_steps(device bfloat *input, device uchar *gw0, device uchar *gw1, device uchar *gmeta,
                                    device uchar *uw0, device uchar *uw1, device uchar *umeta, uint input_size,

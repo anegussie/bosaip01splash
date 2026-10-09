@@ -9,7 +9,7 @@
 // - both on the staged tile's spread walk too (LinearConfig::spread), over partitions from 72 steps down to 9, an odd
 //   count, whose tiles' walks wrap past the partition's end;
 // - gate/up: each format's gate with the next format's up, and in one pass (LinearConfig::oneGateUpPass) bitwise the
-//   two passes;
+//   two passes at the same K split;
 // - prefill: 128-row tiles with each epilogue, whose simdgroups past the chunk write nothing, and chunks of up to 32
 //   rows on the decode tiles equal to them bitwise; fused segments at their column offsets;
 // - split visibility: two projections that share the split scratch, at every pair of K splits either tile's policy
