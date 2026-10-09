@@ -34,14 +34,13 @@ def token():
     return os.environ.get("HF_TOKEN") or get_token()
 
 
-def reason(error, used_token=None) -> str:
-    """The Hub's reason for error on one line, with the token redacted (the
-    one the request used, or the configured one) and, for denied access, how
-    to authenticate."""
+def reason(error) -> str:
+    """The Hub's reason for error on one line, with the configured token
+    redacted and, for denied access, how to authenticate."""
     from huggingface_hub.errors import HfHubHTTPError
 
     message = " ".join(str(error).split()) or type(error).__name__
-    if secret := used_token or token():
+    if secret := token():
         message = message.replace(secret, "[redacted]")
     if (
         isinstance(error, HfHubHTTPError)
