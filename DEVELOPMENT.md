@@ -61,9 +61,8 @@ completions finds them. In a source checkout, source
 `install/completions/splash.bash` for Bash, `install/completions/_splash` for
 Zsh after `compinit`, or `install/completions/splash.fish` for fish.
 
-Completion suggests commands, the official model IDs (bundled, and as
-`splash serve` last refreshed them), the upstream models the README starts with
-and installed models, a GGUF's `OWNER/REPO:VARIANT` included, without network
+Completion suggests commands, the upstream models the README starts with and
+installed models, a GGUF's `OWNER/REPO:VARIANT` included, without network
 access.
 
 ## Server configuration
@@ -292,7 +291,7 @@ are not moved.
 
 | Path | Holds |
 | --- | --- |
-| `~/Library/Application Support/Splash` | The data directory of a packaged install: `models/`, the installed models' links into the Hugging Face cache and the metadata derived from GGUFs; `runtime/`, the locks of running servers; `catalog/`, the official model list `splash serve` last fetched; and `thinking.key`, which encrypts the Messages reasoning a response hides. A source checkout keeps the first three in `install/models` and `build/runtime`. |
+| `~/Library/Application Support/Splash` | The data directory of a packaged install: `models/`, the installed models' links into the Hugging Face cache and the metadata derived from GGUFs; `runtime/`, the locks of running servers; and `thinking.key`, which encrypts the Messages reasoning a response hides. A source checkout keeps the first two in `install/models` and `build/runtime`. |
 | Hugging Face cache (`HF_HUB_CACHE`, by default `~/.cache/huggingface/hub`) | Model and draft downloads, with Splash's pins under `refs/splash` ([revisions](#revisions)). |
 | `~/Library/Caches/Splash/prefix-cache` (`--cache-dir`) | The [persistent cache](#persistent-cache), with `--persistent-cache` only. |
 | `$TMPDIR/splash-cache-*` | The [SSD cache](#ssd-cache)'s files without `--persistent-cache`, or when another process holds the persistent cache's directory or it cannot be used: one of KV pages and one of states, together at most about `--max-cache-disk`. Each is unlinked as it is created, so no directory lists it, and its space returns when the engine exits, even after a crash. `--cache-dir` does not move them; they follow `TMPDIR`. |
@@ -1226,9 +1225,9 @@ the one difference is a call cut by the token limit, which a complete Messages
 response leaves out. `make architecture-check` prevents lower layers from
 importing the HTTP entry module, and keeps one import style in `server/` and
 `install/`: a module imports its package's modules relatively. The server
-runs as `python -m server.server`; `install/launcher.py`, `install/models.py`
-and `install/catalog.py`, which run as scripts, import their siblings through
-a PEP 366 header. `serve_options.py` defines the options
+runs as `python -m server.server`; `install/launcher.py` and
+`install/models.py`, which run as scripts, import their siblings through a
+PEP 366 header. `serve_options.py` defines the options
 `splash serve` shares with the server once, each with its check, default,
 help and help group, and how the launcher passes it on; it imports only the
 standard library, since the launcher parses them before `.venv` exists.
@@ -2200,11 +2199,7 @@ does not measure end-to-end agent performance.
 
 ## Package
 
-Release archives contain no Hugging Face credentials and use the official model
-list committed with the source. `dev/tools/update_model_catalog.py` regenerates
-that list from the official collection, independently of packaging; the
-model-catalog workflow runs it and opens a pull request while the workflow is
-enabled.
+Release archives contain no Hugging Face credentials.
 Users accessing private models supply their own `HF_TOKEN` or Hugging Face login.
 
 Release versions are three-part, `x.y.z`, with no `v` prefix: after `1.2.1`

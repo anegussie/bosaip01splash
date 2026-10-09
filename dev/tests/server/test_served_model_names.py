@@ -357,7 +357,6 @@ class ServedModelNamesTests(unittest.TestCase):
             mock.patch.object(launcher.paths, "MODELS", Path(tmp) / "models"),
             mock.patch.object(launcher.socket, "socket"),
             mock.patch.object(launcher, "_ensure_installed", side_effect=link_assembly),
-            mock.patch.object(launcher.catalog, "spawn_refresh"),
             mock.patch.object(launcher.os, "execve") as execute,
         ):
             launcher.main(
@@ -389,7 +388,6 @@ class ServedModelNamesTests(unittest.TestCase):
                 mock.patch.object(
                     launcher, "_ensure_installed", side_effect=link_assembly
                 ),
-                mock.patch.object(launcher.catalog, "spawn_refresh"),
                 mock.patch.object(launcher.os, "execve") as execute,
             ):
                 launcher.main(

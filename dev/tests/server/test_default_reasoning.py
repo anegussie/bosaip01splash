@@ -211,7 +211,6 @@ class DefaultReasoningTests(unittest.TestCase):
                     mock.patch.object(
                         launcher, "_ensure_installed", side_effect=link_assembly
                     ),
-                    mock.patch.object(launcher.catalog, "spawn_refresh"),
                     mock.patch.object(launcher.os, "execve") as execute,
                 ):
                     launcher.main(["serve", "--model", "owner/repo", *options])

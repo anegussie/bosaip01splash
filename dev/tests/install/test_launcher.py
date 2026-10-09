@@ -54,11 +54,7 @@ MODEL_IDS = (
 
 class LauncherTests(unittest.TestCase):
     def setUp(self):
-        # No serve refreshes the catalog from the Hub into the checkout, and
-        # the launcher's defaults ignore the caller's Splash settings.
-        self.refresh = self.enterContext(
-            mock.patch.object(launcher.catalog, "spawn_refresh")
-        )
+        # The launcher's defaults ignore the caller's Splash settings.
         self.enterContext(mock.patch.dict(os.environ))
         for name in (
             "SPLASH_PORT",
@@ -200,7 +196,6 @@ class LauncherTests(unittest.TestCase):
                 link_assembly(chosen)
 
             def check_exec(binary, argv, environment):
-                self.refresh.assert_called_once_with()
                 self.assertEqual(binary, str(launcher.paths.PYTHON))
                 # test_serve_options.py checks every shared option; these
                 # are the launcher's own and the shared options it was given.
@@ -634,7 +629,6 @@ class LauncherTests(unittest.TestCase):
                 "launcher.paths.MODELS = launcher.ROOT / 'models'\n"
                 "launcher.paths.PYTHON = Path(sys.executable)\n"
                 "launcher._ensure_installed = link_assembly\n"
-                "launcher.catalog.spawn_refresh = lambda: None\n"
                 "launcher.main(['serve', '--model', 'test/model', '--port', sys.argv[2]])\n"
             )
             processes = []
@@ -1030,7 +1024,7 @@ class LauncherTests(unittest.TestCase):
                 ("prepare", MODEL_ID, "v2", True, options["draft_model"]),
             )
 
-    def test_offline_serve_forbids_the_hub_to_installer_refresh_and_server(self):
+    def test_offline_serve_forbids_the_hub_to_installer_and_server(self):
         for offline in (False, True):
             with (
                 self.subTest(offline=offline),
@@ -1044,9 +1038,6 @@ class LauncherTests(unittest.TestCase):
                     seen["installer"] = os.environ.get("HF_HUB_OFFLINE")
                     link_assembly(selection)
 
-                self.refresh.side_effect = lambda: seen.setdefault(
-                    "refresh", os.environ.get("HF_HUB_OFFLINE")
-                )
                 with (
                     mock.patch.object(launcher, "RUNTIME_DIR", runtime),
                     mock.patch.object(launcher.socket, "socket"),
@@ -1070,7 +1061,7 @@ class LauncherTests(unittest.TestCase):
                     )
                 argv, environment = execute.call_args.args[1:]
                 expected = "1" if offline else None
-                self.assertEqual(seen, {"installer": expected, "refresh": expected})
+                self.assertEqual(seen, {"installer": expected})
                 self.assertEqual(environment.get("HF_HUB_OFFLINE"), expected)
                 # The server has no such option: the environment carries it.
                 self.assertNotIn("--offline", argv)

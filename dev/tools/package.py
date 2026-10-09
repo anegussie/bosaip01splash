@@ -30,7 +30,6 @@ INSTALL_FILES = (
     "assembly.py",
     "upstream.py",
     "gguf.py",
-    "catalog.py",
     "requirements.txt",
 )
 COMPLETION_FILES = (
@@ -38,7 +37,6 @@ COMPLETION_FILES = (
     "_splash",
     "splash.bash",
     "splash.fish",
-    "official-models.txt",
     "suggested-models.txt",
 )
 SERVER_FILES = (
