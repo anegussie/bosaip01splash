@@ -78,6 +78,14 @@ GGUF_EMBEDDING_ENTRY(gguf_embed_pq20, GgufEmbedPQ20)
 GGUF_EMBEDDING_ENTRY(gguf_embed_iq4nl, GgufEmbedIQ4NL)
 GGUF_EMBEDDING_ENTRY(gguf_embed_iq4xs, GgufEmbedIQ4XS)
 GGUF_EMBEDDING_ENTRY(gguf_embed_iq3s, GgufEmbedIQ3S)
+GGUF_EMBEDDING_ENTRY(gguf_embed_mxfp4, GgufEmbedMXFP4)
+#define GGUF_EMBEDDING_AFFINE(B)                                                                \
+  GGUF_EMBEDDING_ENTRY(gguf_embed_af##B##g32, GgufEmbedAF##B##G32)                              \
+  GGUF_EMBEDDING_ENTRY(gguf_embed_af##B##g64, GgufEmbedAF##B##G64)                              \
+  GGUF_EMBEDDING_ENTRY(gguf_embed_af##B##g128, GgufEmbedAF##B##G128)
+GGUF_EMBEDDING_AFFINE(2) GGUF_EMBEDDING_AFFINE(3) GGUF_EMBEDDING_AFFINE(4) GGUF_EMBEDDING_AFFINE(5)
+GGUF_EMBEDDING_AFFINE(6) GGUF_EMBEDDING_AFFINE(8)
+#undef GGUF_EMBEDDING_AFFINE
 #undef GGUF_EMBEDDING_ENTRY
 
 // A verify step's input tokens, SPLASH_TARGET_VERIFY_ROWS per lane: the

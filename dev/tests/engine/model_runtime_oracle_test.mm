@@ -3175,7 +3175,11 @@ int main(int argc, char **argv) {
     // Negative presence and frequency favour the output's tokens by their
     // counts, so the decisions they change follow the counts, a verify row's
     // draft prefix included; presence 1.5 is Qwen's recommendation, and
-    // repetition also reads the prompt's tokens.
+    // repetition also reads the prompt's tokens. The prompt repeats a chat
+    // template, which a model's greedy transcript may copy by margins the
+    // milder settings leave alone (the 35B mxfp4's survive them all);
+    // repetition 3 divides the copied tokens' logits, so that one setting
+    // changes a decision to probe on every model.
     const PreemptionRun control = runPreemption(RequestKind::Greedy, 0);
     const float drift = probeLoss(control.transcript, {});
     const float tolerance = std::max(2.0F * drift, 0.1F);
@@ -3185,7 +3189,8 @@ int main(int argc, char **argv) {
     for (const ops::SamplingPenalties penalties :
          {ops::SamplingPenalties{1.0F, -2.0F, -2.0F},
           ops::SamplingPenalties{1.0F, 1.5F, 0.0F},
-          ops::SamplingPenalties{1.3F, 1.5F, 0.0F}}) {
+          ops::SamplingPenalties{1.3F, 1.5F, 0.0F},
+          ops::SamplingPenalties{3.0F, 0.0F, 0.0F}}) {
       const auto reference = runPreemption(RequestKind::Greedy, 0, penalties);
       const auto promptResumed =
           runPreemption(RequestKind::Greedy, 1, penalties);

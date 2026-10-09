@@ -37,6 +37,8 @@ using splash::model::WeightFile;
 using splash::model::WeightFileRecord;
 using splash::model::QwenAttentionWeights;
 using splash::model::QwenGdnWeights;
+using splash::model::Qwen3_6MoeLayout;
+using splash::model::Qwen3_6MoeWeights;
 using splash::model::Qwen3_8Layout;
 using splash::model::Qwen3_8Weights;
 using splash::model::TargetSource;
@@ -51,6 +53,7 @@ using splash::metal::BufferStorage;
 using splash::metal::MetalBackend;
 using splash::metal::MetalBuffer;
 using splash::test::SyntheticAccounting;
+using splash::test::SyntheticTensor;
 using splash::test::rejects;
 using splash::test::sharedBuffer;
 using splash::test::writeSyntheticModel;
@@ -506,9 +509,190 @@ void testSyntheticModel(MetalBackend &backend,
 
 }  // namespace
 
+// A target of Layout whose every projection takes whole 256-row tiles of a
+// multiple of 256 inputs: four layers, the last of them full attention.
+template <class Layout> Layout blockTarget() {
+    Layout target;
+    target.layers = 4;
+    target.hiddenSize = 256;
+    target.vocabularySize = 256;
+    target.convolutionDimension = 512;
+    target.gdnKeyHeads = 2;
+    target.gdnValueHeads = 4;
+    target.gdnHeadDimension = 64;
+    target.attentionWidth = 256;
+    target.packedGdnWidth = 1024;
+    target.attentionQueryHeads = 4;
+    target.attentionKvHeads = 4;
+    target.attentionHeadDimension = 64;
+    target.packedFullWidth = 1024;
+    target.fullAttentionPeriod = 4;
+    target.hiddenCaptureLayers.fill(target.layers - 1);
+    return target;
+}
+
+// Writes an MLX model of target, its target checkpoint holding tensors, under
+// root and loads it as block images, with the bytes modelWeightBytes plans
+// for it.
+template <class Layout>
+std::pair<splash::model::LoadedModel, uint64_t> loadBlockModel(MetalBackend &backend,
+                                                               const std::filesystem::path &root,
+                                                               const Layout &target,
+                                                               const std::vector<SyntheticTensor> &tensors) {
+    DFlashDraftLayout draft;
+    draft.layers = 2;
+    draft.hiddenSize = 256;
+    draft.vocabularySize = 256;
+    draft.dynamicSize = 256;
+    draft.qkvSize = 256;
+    draft.attentionSize = 128;
+    draft.intermediateSize = 256;
+    draft.attentionHeadDimension = 64;
+    draft.rotaryTheta = 10'000'000.0F;
+    draft.targetHiddenSize = target.capturedHiddenSize();
+    draft.selectorRank = 256;
+    draft.kvHeads = 1;
+
+    VisionLayout vision;
+    vision.depth = 2;
+    vision.hiddenSize = 128;
+    vision.patchDimension = 1536;
+    vision.intermediateSize = 200;
+    vision.paddedIntermediateSize = 256;
+    vision.mergedHiddenSize = 512;
+    vision.outputHiddenSize = 256;
+    vision.heads = 2;
+    vision.headDimension = 64;
+    vision.positionGridSide = 4;
+
+    splash::test::writeSyntheticShard(root / "target" / "model.safetensors", tensors);
+    splash::test::writeSyntheticShard(root / "draft" / "model.safetensors",
+                                      splash::test::imageTensors(splash::model::draftCheckpointImages(draft)));
+    ModelDescriptor descriptor =
+        makeModelDescriptor("Qwen block loader", target, draft, vision, TargetSource::Mlx, VisionSource::None);
+    descriptor.sourceIdentity = "sources";
+    descriptor.affineImages = false;
+    const uint64_t planned = splash::model::modelWeightBytes(root, descriptor);
+    return {loadModel(backend, root, descriptor), planned};
+}
+
+// An MLX target in formats other than the affine images' loads as block
+// images: each quantized module in the format of its tensors, GDN alpha and
+// beta of two formats as F32, bf16 norms and grouped GDN value heads, and
+// modelWeightBytes plans the bytes it loads.
+void testSyntheticBlockModel(MetalBackend &backend, const std::filesystem::path &root) {
+    auto target = blockTarget<Qwen3_8Layout>();
+    target.intermediateSize = 256;
+    // Bits and group size by module, every MLX affine bit width and group size among them.
+    const std::map<std::string_view, std::pair<uint32_t, uint32_t>> formats{
+        {"in_proj_qkv", {3, 32}}, {"in_proj_z", {5, 128}}, {"in_proj_b", {4, 64}}, {"in_proj_a", {8, 64}},
+        {"out_proj", {6, 64}},    {"q_proj", {2, 64}},     {"k_proj", {8, 32}},    {"v_proj", {4, 128}},
+        {"o_proj", {5, 32}},      {"gate_proj", {4, 32}},  {"up_proj", {6, 128}},  {"down_proj", {3, 64}},
+        {"lm_head", {8, 128}},    {"embed_tokens", {6, 32}}};
+    const auto bitsAndGroup = [&](const std::string &module) {
+        return formats.at(std::string_view(module).substr(module.rfind('.') + 1));
+    };
+    const auto format = [&](std::string_view name) {
+        const auto [bits, group] = formats.at(name);
+        return quant_affine_format_of(bits, group);
+    };
+    const auto [model, planned] =
+        loadBlockModel(backend, root, target, splash::test::mlxTargetTensors(target, bitsAndGroup));
+    const auto &weights = std::get<Qwen3_8Weights>(model.target);
+    const auto segmentFormats = [](const splash::ops::Projection &projection) {
+        std::vector<uint32_t> result;
+        for (const auto &segment : projection.blocks().segments) result.push_back(segment.formatId);
+        return result;
+    };
+    const auto &gdn = std::get<QwenGdnWeights>(weights.layers[0].mixer);
+    require(segmentFormats(gdn.inputProjection) ==
+                std::vector<uint32_t>{format("in_proj_qkv"), format("in_proj_z"),
+                                      splash::ops::QuantizedSegment::kFloat32} &&
+                segmentFormats(gdn.outputProjection) == std::vector<uint32_t>{format("out_proj")},
+            "a block GDN did not keep its modules' formats and F32 alpha/beta");
+    require(gdn.outputHeadOrder == splash::ops::GdnHeadOrder::Grouped && !weights.layers[0].inputNorm.float32,
+            "an MLX block target did not keep its grouped value heads and bf16 norms");
+    const auto &attention = std::get<QwenAttentionWeights>(weights.layers[3].mixer);
+    require(segmentFormats(attention.inputProjection) ==
+                    std::vector<uint32_t>{format("q_proj"), format("k_proj"), format("v_proj")} &&
+                segmentFormats(attention.outputProjection) == std::vector<uint32_t>{format("o_proj")},
+            "a block attention did not keep its modules' formats");
+    require(segmentFormats(weights.layers[1].gateProjection) == std::vector<uint32_t>{format("gate_proj")} &&
+                segmentFormats(weights.layers[1].upProjection) == std::vector<uint32_t>{format("up_proj")} &&
+                segmentFormats(weights.layers[1].downProjection) == std::vector<uint32_t>{format("down_proj")} &&
+                segmentFormats(weights.logitsProjection) == std::vector<uint32_t>{format("lm_head")} &&
+                weights.tokenEmbedding.blocks().formatId == format("embed_tokens"),
+            "a block FFN, head or token table did not keep its module's format");
+    require(declaredBytes(weights.files) + declaredBytes(model.draft.files) == planned,
+            "modelWeightBytes is not what an MLX block target loads");
+}
+
+// An MLX MoE target as block images: the experts in mixed formats, the routed
+// down projection mxfp4, and the 8-bit affine router and bf16 shared-expert
+// gate as the F32 values the block MoE reads; modelWeightBytes plans the
+// bytes it loads.
+void testSyntheticBlockMoeModel(MetalBackend &backend, const std::filesystem::path &root) {
+    auto target = blockTarget<Qwen3_6MoeLayout>();
+    // The checkpoint's tensors are planned from the affine images, whose
+    // router takes whole 256-row tiles.
+    target.experts = 256;
+    target.expertsPerToken = 8;
+    target.expertIntermediateSize = 256;
+    // Bits and group size of each FFN module (mxfp4's for the routed down
+    // projection); the others 4-bit in groups of 64.
+    const std::map<std::string_view, std::pair<uint32_t, uint32_t>> formats{
+        {"gate", {8, 64}},
+        {"switch_mlp.gate_proj", {5, 32}},
+        {"switch_mlp.up_proj", {2, 128}},
+        {"switch_mlp.down_proj", {4, 32}},
+        {"shared_expert.gate_proj", {6, 64}},
+        {"shared_expert.up_proj", {8, 32}},
+        {"shared_expert.down_proj", {3, 128}},
+        {"shared_expert_gate", {8, 64}}};
+    const auto bitsAndGroup = [&](const std::string &module) -> std::pair<uint32_t, uint32_t> {
+        const size_t ffn = module.find(".mlp.");
+        if (ffn == std::string::npos) return {4, 64};
+        return formats.at(std::string_view(module).substr(ffn + 5));
+    };
+    std::vector<SyntheticTensor> tensors = splash::test::mlxTargetTensors(target, bitsAndGroup);
+    // The routed down projection's scales are mxfp4's E8M0 exponents, without
+    // biases, and the shared-expert gate is a bf16 weight.
+    std::erase_if(tensors, [](const SyntheticTensor &tensor) {
+        return tensor.name.ends_with("switch_mlp.down_proj.biases") ||
+               tensor.name.ends_with("shared_expert_gate.scales") ||
+               tensor.name.ends_with("shared_expert_gate.biases");
+    });
+    for (SyntheticTensor &tensor : tensors) {
+        if (tensor.name.ends_with("switch_mlp.down_proj.scales")) tensor.dtype = "U8";
+        if (tensor.name.ends_with("shared_expert_gate.weight"))
+            tensor = {tensor.name, "BF16", {1, target.hiddenSize}};
+    }
+    const auto [model, planned] = loadBlockModel(backend, root, target, tensors);
+    const auto &weights = std::get<Qwen3_6MoeWeights>(model.target);
+    const auto format = [&](std::string_view name) {
+        const auto [bits, group] = formats.at(name);
+        return quant_affine_format_of(bits, group);
+    };
+    for (const auto &layer : weights.layers) {
+        const splash::ops::BlockMoeWeights &ffn = layer.ffn.blocks();
+        require(ffn.gate.routed.formatId == format("switch_mlp.gate_proj") &&
+                    ffn.up.routed.formatId == format("switch_mlp.up_proj") &&
+                    ffn.down.routed.formatId == GGUF_FMT_MXFP4 &&
+                    ffn.gate.shared.formatId == format("shared_expert.gate_proj") &&
+                    ffn.up.shared.formatId == format("shared_expert.up_proj") &&
+                    ffn.down.shared.formatId == format("shared_expert.down_proj"),
+                "a block MoE did not keep its experts' formats");
+        require(ffn.router.isFloat() && ffn.router.outputSize == target.experts && ffn.sharedScalarGate.isFloat() &&
+                    ffn.sharedScalarGate.outputSize == 1,
+                "a block MoE did not read its router and shared-expert gate as F32");
+    }
+    require(declaredBytes(weights.files) + declaredBytes(model.draft.files) == planned,
+            "modelWeightBytes is not what an MLX block MoE target loads");
+}
+
 int main(int argc, const char *argv[]) {
-    if (argc != 2) {
-        std::cerr << "usage: model_loading_test <test.metallib>\n";
+    if (argc != 3) {
+        std::cerr << "usage: model_loading_test <test.metallib> <splash.metallib>\n";
         return 2;
     }
     try {
@@ -518,6 +702,10 @@ int main(int argc, const char *argv[]) {
         testWeightImages(backend, temporary.path());
         testGgufImageLayout(backend, temporary.path());
         testSyntheticModel(backend, temporary.path() / "model");
+        // Block images are repacked by the production library's kernel.
+        MetalBackend production(argv[2]);
+        testSyntheticBlockModel(production, temporary.path() / "block-model");
+        testSyntheticBlockMoeModel(production, temporary.path() / "block-moe-model");
         std::cout << "PASS model-loading\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL: unexpected exception: " << error.what() << '\n';

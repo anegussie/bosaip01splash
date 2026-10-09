@@ -1,9 +1,12 @@
 #include "model/WeightImages.hpp"
 
+#include "model/Bfloat16.hpp"
+
 #include <dispatch/dispatch.h>
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstring>
 #include <exception>
 #include <memory>
@@ -77,6 +80,22 @@ void parallelFor(size_t count, const std::function<void(size_t index, unsigned t
     }
   });
   if (work.failure) std::rethrow_exception(work.failure);
+}
+
+void writeGdnDecay(const uint8_t *values, uint64_t count, bool bfloat16, uint8_t *to) {
+  for (uint64_t i = 0; i < count; ++i) {
+    float logarithm;
+    if (bfloat16) {
+      uint16_t bits;
+      std::memcpy(&bits, values + 2 * i, 2);
+      logarithm = widenBfloat16(bits);
+    } else {
+      std::memcpy(&logarithm, values + 4 * i, 4);
+    }
+    const auto decay = static_cast<float>(-std::exp(static_cast<double>(logarithm)));
+    if (!std::isfinite(decay)) throw std::runtime_error("non-finite GDN decay");
+    std::memcpy(to + 4 * i, &decay, 4);
+  }
 }
 
 void zeroUnwritten(std::span<uint8_t> image, std::vector<std::pair<uint64_t, uint64_t>> extents) {

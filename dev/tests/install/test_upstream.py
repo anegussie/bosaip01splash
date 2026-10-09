@@ -294,7 +294,7 @@ class UpstreamTest(unittest.TestCase):
             self.prepare(chosen)
         self.assertEqual((fake.requests, fake.downloads), ([], []))
 
-    def test_only_mlx_affine_quantization_is_accepted(self):
+    def test_only_mlx_formats_splash_loads_are_accepted(self):
         def target(quantization):
             def build(root):
                 mlx_target(root, DENSE)
@@ -305,10 +305,13 @@ class UpstreamTest(unittest.TestCase):
             return build
 
         fake = fake_hub(self, self.cache)
-        first = "quantization language_model.model.layers.0.linear_attn.in_proj_qkv"
         required = (
-            "this model requires an MLX affine 4-bit/group-64 checkpoint or a "
-            "supported GGUF"
+            r"this model requires an MLX checkpoint \(affine 2, 3, 4, 5, 6 or 8 bits "
+            r"in groups of 32, 64 or 128, or mxfp4\) or a supported GGUF"
+        )
+        formats = (
+            r"; MLX weights load as affine 2, 3, 4, 5, 6 or 8 bits in groups of 32, "
+            "64 or 128, or as mxfp4"
         )
         for name, quantization, refusal in (
             # A transformers quantization_config alone is another method.
@@ -335,24 +338,65 @@ class UpstreamTest(unittest.TestCase):
                 required,
             ),
             (
-                "mxfp4",
-                {"quantization": {"mode": "mxfp4", "bits": 4, "group_size": 64}},
-                first + " mode must be affine",
+                "nvfp4",
+                {"quantization": {"mode": "nvfp4", "bits": 4, "group_size": 16}},
+                "quantization is nvfp4 4-bit in groups of 16" + formats,
             ),
             (
-                "q8",
-                {"quantization": {"bits": 8, "group_size": 64}},
-                first + " bits mismatch: MLX 8, runtime 4",
+                "mxfp4-g64",
+                {"quantization": {"mode": "mxfp4", "bits": 4, "group_size": 64}},
+                "quantization is mxfp4 4-bit in groups of 64" + formats,
+            ),
+            (
+                "q7",
+                {"quantization": {"bits": 7, "group_size": 64}},
+                "quantization is affine 7-bit in groups of 64" + formats,
+            ),
+            (
+                "q4-g256",
+                {
+                    "quantization": {
+                        "bits": 4,
+                        "group_size": 64,
+                        "language_model.model.layers.0.mlp.down_proj": {
+                            "bits": 4,
+                            "group_size": 256,
+                        },
+                    }
+                },
+                "quantization language_model.model.layers.0.mlp.down_proj is "
+                "affine 4-bit in groups of 256" + formats,
             ),
         ):
             with self.subTest(name=name):
                 fake.publish(f"someone/{name}", "b" * 40, target(quantization))
                 with self.assertRaisesRegex(models.ModelError, refusal):
                     self.prepare(selection(self.root, f"someone/{name}"))
-        # MLX writes both keys, and states the mode only in newer versions.
+        # MLX writes both keys, and states the mode only in newer versions; a
+        # module's entry gives it its own format, affine unless it says.
         for name, affine in (
             ("mlx", {"bits": 4, "group_size": 64, "mode": "affine"}),
             ("older-mlx", {"bits": 4, "group_size": 64}),
+            ("q8", {"bits": 8, "group_size": 64}),
+            ("q3-g32", {"bits": 3, "group_size": 32, "mode": "affine"}),
+            ("mxfp4", {"bits": 4, "group_size": 32, "mode": "mxfp4"}),
+            (
+                "mixed",
+                {
+                    "bits": 2,
+                    "group_size": 128,
+                    "mode": "affine",
+                    "language_model.model.layers.0.mlp.down_proj": {
+                        "bits": 6,
+                        "group_size": 64,
+                    },
+                    "language_model.model.layers.1.mlp.down_proj": {
+                        "bits": 4,
+                        "group_size": 32,
+                        "mode": "mxfp4",
+                    },
+                },
+            ),
         ):
             fake.publish(
                 f"someone/{name}",
@@ -396,8 +440,8 @@ class UpstreamTest(unittest.TestCase):
             (
                 "Qwen/Qwen3.8-27B",
                 transformers_release,
-                "this model requires an MLX affine 4-bit/group-64 checkpoint or a "
-                "supported GGUF",
+                r"this model requires an MLX checkpoint \(affine 2, 3, 4, 5, 6 or 8 "
+                r"bits in groups of 32, 64 or 128, or mxfp4\) or a supported GGUF",
             ),
             (
                 "mlx-community/Qwen3.5-4B-MLX-4bit",

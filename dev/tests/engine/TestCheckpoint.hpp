@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -34,7 +35,7 @@ inline void writeSyntheticShard(const std::filesystem::path &path,
   std::string header = "{";
   uint64_t offset = 0;
   for (const SyntheticTensor &tensor : tensors) {
-    uint64_t bytes = tensor.dtype == "U32" || tensor.dtype == "F32" ? 4 : 2;
+    uint64_t bytes = tensor.dtype == "U32" || tensor.dtype == "F32" ? 4 : tensor.dtype == "U8" ? 1 : 2;
     std::string shape;
     for (uint64_t dimension : tensor.shape) {
       bytes *= dimension;
@@ -71,6 +72,28 @@ inline std::vector<SyntheticTensor> imageTensors(const std::vector<model::affine
         for (const model::affine::Input &field : part.fields) add(field);
     }
   return result;
+}
+
+// The tensors of an MLX target of layout whose quantized modules each carry
+// the bits and group size quantization(module) gives, as MLX packs them: the
+// affine images' tensors (in 4 or 8 bits, groups of kQ4GroupElements) with
+// each quantized module's codes, scales and biases reshaped.
+template <class Layout, class Quantization>
+std::vector<SyntheticTensor> mlxTargetTensors(const Layout &layout, Quantization quantization) {
+  const std::vector<model::affine::Image> images = model::affineTargetImages(layout);
+  std::vector<SyntheticTensor> tensors = imageTensors(images);
+  std::map<std::string, uint64_t> columns; // of each quantized module, from its scales
+  for (const SyntheticTensor &tensor : tensors)
+    if (tensor.name.ends_with(".scales"))
+      columns[tensor.name.substr(0, tensor.name.size() - 7)] = tensor.shape.back() * model::kQ4GroupElements;
+  for (SyntheticTensor &tensor : tensors) {
+    const size_t dot = tensor.name.rfind('.');
+    const auto module = columns.find(tensor.name.substr(0, dot));
+    if (module == columns.end()) continue;
+    const auto [bits, group] = quantization(module->first);
+    tensor.shape.back() = tensor.name.ends_with(".weight") ? module->second * bits / 32 : module->second / group;
+  }
+  return tensors;
 }
 
 // The MLX vision tower's tensors of layout, as model/VisionLoader.cpp reads

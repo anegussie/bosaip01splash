@@ -92,6 +92,10 @@ private:
 // worker has stopped.
 void parallelFor(size_t count, const std::function<void(size_t index, unsigned thread)> &task);
 
+// Writes the F32 GDN decay of `count` BF16 or F32 values A_log at values,
+// each float(-exp(double(A_log))), to `to`; throws on a non-finite decay.
+void writeGdnDecay(const uint8_t *values, uint64_t count, bool bfloat16, uint8_t *to);
+
 // Zeroes the bytes of image outside the extents, [offset, offset + bytes),
 // that its writer writes: the alignment between sections and any padding.
 void zeroUnwritten(std::span<uint8_t> image, std::vector<std::pair<uint64_t, uint64_t>> extents);

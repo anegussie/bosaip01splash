@@ -1,4 +1,5 @@
 #include "model/AffinePreparation.hpp"
+#include "model/Bfloat16.hpp"
 #include "model/WeightImages.hpp"
 #include "model/WeightLayout.hpp"
 
@@ -129,7 +130,7 @@ void writeProjectionStep(const Section &section, const Step &step, uint32_t unit
 float bfloat16Value(const uint8_t *bytes) {
   uint16_t bits;
   std::memcpy(&bits, bytes, sizeof bits);
-  return std::bit_cast<float>(uint32_t(bits) << 16);
+  return widenBfloat16(bits);
 }
 
 // The BF16 nearest a finite value, ties to even.
@@ -207,14 +208,7 @@ void writeDecay(const Section &section, uint8_t *destination, std::vector<uint8_
   const SourceTensor &tensor = *section.input.tensor;
   if (input.size() < tensor.bytes) input.resize(tensor.bytes);
   tensor.read(0, {input.data(), tensor.bytes});
-  for (uint64_t i = 0; i < section.bytes / sizeof(float); ++i) {
-    float logarithm;
-    if (tensor.dtype == "BF16") logarithm = bfloat16Value(input.data() + i * kBFloat16Bytes);
-    else std::memcpy(&logarithm, input.data() + i * 4, 4);
-    const auto value = static_cast<float>(-std::exp(static_cast<double>(logarithm)));
-    if (!std::isfinite(value)) throw std::runtime_error("non-finite GDN decay");
-    std::memcpy(destination + i * sizeof(float), &value, sizeof value);
-  }
+  writeGdnDecay(input.data(), section.bytes / sizeof(float), tensor.dtype == "BF16", destination);
 }
 
 } // namespace

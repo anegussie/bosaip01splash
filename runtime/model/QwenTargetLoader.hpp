@@ -2,6 +2,7 @@
 
 #include "model/AffineTarget.hpp"
 #include "model/GgufTarget.hpp"
+#include "model/MlxTarget.hpp"
 #include "model/QwenHybridLayout.hpp"
 #include "model/QwenTarget.hpp"
 #include "model/QwenTargetFiles.hpp"
@@ -44,17 +45,19 @@ struct AffineTargetFormat final {
   }
 };
 
-// GGUF images hold each GGUF tensor as one block-quantized segment,
-// a fused projection as its tensors in output column order, and the GGUF's
-// F32 norms. The GGUF keeps the GDN output projection's input columns in
-// llama.cpp's tiled value-head order, so the GDN writes its output in it; a
-// rotated Prism ML GGUF keeps them grouped, and rotateInputs (Qwen3_8.cpp)
-// switches its GDN to that order.
+// Block images hold each tensor as one block-quantized segment, a fused
+// projection as its tensors in output column order. A GGUF's keep its F32
+// norms and the GDN output projection's input columns in llama.cpp's tiled
+// value-head order, so the GDN writes its output in it (a rotated Prism ML
+// GGUF keeps them grouped, and rotateInputs, Qwen3_8.cpp, switches its GDN to
+// that order); an MLX target's (model/MlxImage.hpp) keep its bf16 norms and
+// grouped value heads.
 struct BlockTargetFormat final {
-  static constexpr ops::GdnHeadOrder gdnOutputOrder = ops::GdnHeadOrder::Tiled;
+  bool float32Norms = true;
+  ops::GdnHeadOrder gdnOutputOrder = ops::GdnHeadOrder::Tiled;
 
   [[nodiscard]] ops::NormWeights norm(WeightFile &file, uint32_t width, std::string_view label) const {
-    return readNorm(file, width, true, label);
+    return readNorm(file, width, float32Norms, label);
   }
   [[nodiscard]] ops::Projection projection(WeightFile &file, uint32_t outputSize,
                                            uint32_t inputSize, std::string_view label) const {
@@ -170,6 +173,9 @@ loadQwenTarget(metal::MetalBackend &backend, const Layout &layout, const QwenTar
   requireQwenLayout(layout);
   if (const auto *gguf = std::get_if<std::reference_wrapper<GgufTargetLoader>>(&files))
     return readQwenTargetWeights<Weights>(backend, layout, gguf->get(), BlockTargetFormat{}, readFfn);
+  if (const auto *mlx = std::get_if<std::reference_wrapper<MlxTargetLoader>>(&files))
+    return readQwenTargetWeights<Weights>(backend, layout, mlx->get(),
+                                          BlockTargetFormat{false, ops::GdnHeadOrder::Grouped}, readFfn);
   return readQwenTargetWeights<Weights>(
       backend, layout, std::get<std::reference_wrapper<AffineTargetLoader>>(files).get(), AffineTargetFormat{},
       readFfn);

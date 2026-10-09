@@ -195,13 +195,47 @@ void testOneRulePerValue(const std::filesystem::path &fixtures) {
           "upstream model config exceeds 1048576 bytes", "an oversized config was read");
 }
 
-// An MLX target states each module's quantization as its images read it: 4
-// bits in groups of 64 in MLX's affine mode, a MoE's router and shared-expert
-// gate at 8 bits, each module by its own entry or else the object's. A GGUF
-// target has none (above).
+// An MLX target's quantization is MLX's own object: each module the target
+// reads by its own entry or else by the object, affine in 2, 3, 4, 5, 6 or 8
+// bits in groups of 32, 64 or 128, or mxfp4; an entry is affine unless it
+// names its mode, and takes its mode's default bits and group size (affine 4
+// and 64, mxfp4 4 and 32) when it omits them, as MLX loads it. The affine
+// images hold a target whose every module is 4-bit in groups of 64 but for a
+// MoE's 8-bit router and shared-expert gate; any other loads as block images.
+// A GGUF target has none (above).
 void testQuantization(const std::filesystem::path &fixtures) {
   const SourceModel dense = mlxModel(fixtures, "qwen3.8-27b");
   const SourceModel moe = mlxModel(fixtures, "qwen3.6-35b-a3b");
+  require(inspect(dense).affineImages && inspect(moe).affineImages, "a 4-bit target did not load as affine images");
+  // The dense object and the MoE's leading fields, as mxfp4.
+  const std::string_view affine = R"("group_size": 64,
+    "bits": 4,
+    "mode": "affine")";
+  const std::string_view mxfp4 = R"("group_size": 32,
+    "bits": 4,
+    "mode": "mxfp4")";
+  // The MoE router's entry.
+  const std::string_view router = R"("group_size": 64,
+      "bits": 8)";
+  require(inspect(moe.with(&SourceModel::config, router, R"("bits": 8)")).affineImages,
+          "a router entry of only its bits did not take affine's group of 64");
+  struct Block final {
+    const SourceModel &model;
+    std::string_view from, to;
+  };
+  for (const Block &block : std::initializer_list<Block>{
+           {dense, R"("bits": 4)", R"("bits": 8)"},
+           {dense, R"("bits": 4)", R"("bits": 3)"},
+           {dense, R"("group_size": 64)", R"("group_size": 128)"},
+           {dense, affine, mxfp4},
+           // The router 4-bit; under an mxfp4 object, its 8-bit entry stays affine.
+           {moe, R"("bits": 8)", R"("bits": 4)"},
+           {moe, affine, mxfp4},
+           // An entry of only its mode: mxfp4, 4-bit in groups of 32.
+           {moe, router, R"("mode": "mxfp4")"},
+       })
+    require(!inspect(block.model.with(&SourceModel::config, block.from, block.to)).affineImages,
+            "a target with " + std::string(block.to) + " loaded as affine images");
   struct Refused final {
     const SourceModel &model;
     std::string_view from, to, error;
@@ -210,17 +244,20 @@ void testQuantization(const std::filesystem::path &fixtures) {
            // MLX's own object, not the quantization_config a transformers
            // checkpoint (GPTQ, AWQ, ...) states.
            {dense, R"("quantization": {)", R"("unused": {)",
-            "this model requires an MLX affine 4-bit/group-64 checkpoint or a supported GGUF"},
-           {dense, R"("bits": 4)", R"("bits": 8)",
-            "quantization language_model.model.layers.0.linear_attn.in_proj_qkv bits mismatch: MLX 8, runtime 4"},
-           {dense, R"("group_size": 64)", R"("group_size": 32)",
-            "quantization language_model.model.layers.0.linear_attn.in_proj_qkv group_size mismatch"},
-           {dense, R"("mode": "affine")", R"("mode": "mxfp4")",
-            "quantization language_model.model.layers.0.linear_attn.in_proj_qkv mode must be affine"},
+            "this model requires an MLX checkpoint (affine 2, 3, 4, 5, 6 or 8 bits in groups of 32, 64 or 128, or "
+            "mxfp4) or a supported GGUF"},
+           {dense, R"("bits": 4)", R"("bits": 7)",
+            "quantization is affine 7-bit in groups of 64; MLX weights load as affine 2, 3, 4, 5, 6 or 8 bits in "
+            "groups of 32, 64 or 128, or as mxfp4"},
+           {dense, R"("group_size": 64)", R"("group_size": 16)", "quantization is affine 4-bit in groups of 16"},
+           // A group past a byte is no format (4 bits in groups of 320 are not af5g64).
+           {dense, R"("group_size": 64)", R"("group_size": 320)", "quantization is affine 4-bit in groups of 320"},
+           {dense, R"("mode": "affine")", R"("mode": "nvfp4")", "quantization is nvfp4 4-bit in groups of 64"},
            {dense, R"("quantization": {)", R"("quantization": {"language_model.lm_head": false,)",
             "quantization language_model.lm_head must be an object"},
-           {moe, R"("bits": 8)", R"("bits": 4)",
-            "quantization language_model.model.layers.0.mlp.gate bits mismatch: MLX 4, runtime 8"},
+           {moe, R"("bits": 8
+    },)", R"("bits": 8, "mode": "mxfp8"
+    },)", "quantization language_model.model.layers.0.mlp.gate is mxfp8 8-bit in groups of 64"},
        })
     refuses(refused.model.with(&SourceModel::config, refused.from, refused.to), refused.error,
             "an MLX quantization was accepted with " + std::string(refused.to));

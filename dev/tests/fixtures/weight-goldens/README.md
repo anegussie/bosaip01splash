@@ -34,7 +34,7 @@ to change them:
    MTL_SHADER_VALIDATION=1 python3 dev/tests/engine/run_affine_preparation.py \
      build/engine-tests/affine-preparation build/splash.metallib dev/tests/fixtures/weight-goldens/goldens.json
    MTL_SHADER_VALIDATION=1 build/engine-tests/gguf-preparation build/splash.metallib \
-     dev/tests/fixtures/weight-goldens/goldens.json
+     dev/tests/fixtures/weight-goldens/goldens.json dev/tests/fixtures/mlx-quantization/fixture.json
    ```
 
    `gguf-preparation` prints each mismatching image with its new hash, and
@@ -46,5 +46,11 @@ to change them:
 The dequantization hashes change only with the fixture itself. Regenerate
 them with a libggml-base built from llama.cpp 7ab4ee7 (PrismML-Eng/llama.cpp
 01ae597 for PQ2_0; its other formats decode as upstream's):
-`SPLASH_GGML_ORACLE=<libggml-base.dylib> build/engine-tests/gguf-reference dev/tests/fixtures/weight-goldens/goldens.json`
+`SPLASH_GGML_ORACLE=<libggml-base.dylib> build/engine-tests/gguf-reference dev/tests/fixtures/weight-goldens/goldens.json dev/tests/fixtures/mlx-quantization/fixture.json`
 compares the reference with GGML and prints GGML's hash of each format.
+
+The MLX formats have no GGML hash: `gguf-reference` and `gguf-preparation`
+compare them with MLX's own values in
+`dev/tests/fixtures/mlx-quantization/fixture.json`, which
+`python dev/tools/mlx_quantization_fixture.py dev/tests/fixtures/mlx-quantization/fixture.json`
+regenerates (it needs MLX: `pip install mlx`).
