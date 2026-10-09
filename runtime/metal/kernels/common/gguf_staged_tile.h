@@ -141,15 +141,14 @@ inline void staged_accumulate(device bfloat *input, device uchar *w0, device uch
 }
 
 // One tensor's weights in a one-simdgroup decode tile of GGUF_STAGED_COLUMNS columns: lane l stages column l, one
-// 32-input group per step, as gguf_staged_steps does at 32 threads. It holds the payload of the step being staged, the
-// meta unit that step reads (unit hdr_unit) and the next unit's, which its step enters next.
+// 32-input group per step, as gguf_staged_steps does at 32 threads. It holds the payload of the step it stages next
+// and that step's meta unit.
 static_assert(GGUF_GATE_UP_THREADS == 32 && GGUF_STAGED_COLUMNS == 32 && GGUF_STAGED_STEP == 32,
               "lane l of one simdgroup stages column l, one 32-input group per step");
 template <class F> struct StagedColumn {
   device uchar *w0, *w1, *meta;
   typename F::Payload packed;
-  typename F::Meta hdr, next_hdr;
-  uint hdr_unit;
+  typename F::Meta hdr;
   // The planes of column `origin + lane`, and step `first`'s payload (when the walk has a step) and meta unit.
   void begin(device uchar *p0, device uchar *p1, device uchar *m, uint input_size, uint origin, uint lane, uint first,
              bool any) thread {
@@ -159,20 +158,17 @@ template <class F> struct StagedColumn {
     w1 = p1 + (ulong(plane_tile) * groups * QUANT_TILE_ROWS + plane_row) * F::P1;
     meta = m + (ulong(plane_tile) * units * QUANT_TILE_ROWS + plane_row) * F::MetaBytes;
     if (any) packed = F::load(w0 + ulong(first) * QUANT_TILE_ROWS * F::P0, w1 + ulong(first) * QUANT_TILE_ROWS * F::P1);
-    hdr_unit = first / F::MetaGroups;
-    hdr = next_hdr = F::loadMeta(meta + ulong(hdr_unit) * QUANT_TILE_ROWS * F::MetaBytes);
+    hdr = F::loadMeta(meta + ulong(first / F::MetaGroups) * QUANT_TILE_ROWS * F::MetaBytes);
   }
   // Dequantizes `step` into the lane's column of `stage`.
   void stage(uint step, threadgroup half2 *tl, threadgroup half *stage, uint lane) thread {
-    const uint unit = step / F::MetaGroups;
-    if (unit != hdr_unit) { hdr = next_hdr; hdr_unit = unit; }
     dequant32<F>(packed, hdr, step % F::MetaGroups, tl, stage + lane * GGUF_STAGED_STEP);
   }
-  // Loads `next`'s payload, and its meta unit when it enters a new one.
-  void load(uint next) thread {
+  // After `step` is staged: loads `next`'s payload, and its meta unit when it enters a new one.
+  void load(uint step, uint next) thread {
     packed = F::load(w0 + ulong(next) * QUANT_TILE_ROWS * F::P0, w1 + ulong(next) * QUANT_TILE_ROWS * F::P1);
     const uint unit = next / F::MetaGroups;
-    if (unit != hdr_unit) next_hdr = F::loadMeta(meta + ulong(unit) * QUANT_TILE_ROWS * F::MetaBytes);
+    if (unit != step / F::MetaGroups) hdr = F::loadMeta(meta + ulong(unit) * QUANT_TILE_ROWS * F::MetaBytes);
   }
 };
 
@@ -200,7 +196,7 @@ inline void gguf_staged_pair_steps(device bfloat *input, device uchar *gw0, devi
     g.stage(step, tl, stage, lane);
     u.stage(step, tl, stage + KS * Cols, lane);
     simdgroup_barrier(mem_flags::mem_threadgroup);
-    if (more) { g.load(next); u.load(next); }
+    if (more) { g.load(step, next); u.load(step, next); }
     auto a_slice = a.template slice<KS, Rows>(step * KS, 0);
     operation.run(a_slice, bg, gate);
     operation.run(a_slice, bu, up);
