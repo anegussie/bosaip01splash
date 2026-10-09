@@ -1419,11 +1419,11 @@ memory to be restored`. Once the 30 s resource wait has passed since the first
 refusal after the last image that came back, or at once when no request waits
 any more, the restore gives up: the images it wrote back are released, the
 waiting requests fail with `resource_timeout`, `weights.restore_failures`
-counts it, and the next request starts over from the first image. Any other failure (a read error, a source written in place)
-stops the engine, which the server starts again. With the
-[Neural Engine split](#neural-engine-prefill), the release unloads its program
-after the images, and the restore loads it again in one tick more, after the
-last image (`ReleasableMemory`).
+counts it, and the next request starts over from the first image. Any other
+failure (a read error, a source written in place) stops the engine, which the
+server starts again. With the [Neural Engine split](#neural-engine-prefill), the
+release unloads its program after the images, and the restore loads it again in
+one tick more, after the last image (`ReleasableMemory`).
 
 `loadQwenTarget` (`QwenTargetLoader.hpp`) reads a target's images
 (`QwenTargetFiles`: the images `MlxTargetLoader` or `GgufTargetLoader` plans)

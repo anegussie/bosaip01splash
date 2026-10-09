@@ -1317,11 +1317,11 @@ bool answeredStatus(const LoopFixture &fixture, uint64_t correlationId) {
 // held no request for the idle release, counted from Ready or from the end of
 // the last request however long it ran, never while one is there. A request
 // waits while they are written back, an image per tick, so the loop answers
-// frames between them, and the images all come back even when it is
-// cancelled. A restore that fails other than for memory stops the engine.
-// What the engine gives
-// back while idle without a Neural Engine split, ReleasableMemory over the
-// images alone, is the images: the test runs through it when `releasable`.
+// frames between them, and the images all come back even when it is cancelled,
+// while memory admits them (testRefusedRestoreWaitsForMemory). A restore that
+// fails other than for memory stops the engine. What the engine gives back
+// while idle without a Neural Engine split, ReleasableMemory over the images
+// alone, is the images: the test runs through it when `releasable`.
 void testIdleWeightsAreReleasedAndRestored(bool releasable) {
   constexpr double kIdleReleaseSeconds = 2.0;
   constexpr double idleRelease = 1000.0 * kIdleReleaseSeconds;
