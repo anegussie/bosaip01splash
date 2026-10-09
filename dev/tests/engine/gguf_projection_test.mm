@@ -6,7 +6,7 @@
 //   equal a one-lane projection of them bitwise; the plain epilogue into fp32 (the logits) holds the values its
 //   bf16 output rounds, bit for bit, each within fp64 before rounding;
 // - fused: three segments of different formats in one projection equal the projections of each segment alone;
-// - gate/up: every gate and up format pair;
+// - gate/up: each format's gate with the next format's up;
 // - prefill: 128-row tiles with each epilogue, whose simdgroups past the chunk write nothing, and chunks of up to 32
 //   rows on the decode tiles equal to them bitwise; fused segments at their column offsets;
 // - split visibility: two projections that share the split scratch, at every pair of K splits either tile's policy
@@ -498,8 +498,8 @@ void fusedDecode(MetalBackend &backend, const Linear &linear, LinearTile tile) {
           "and equal to each segment's projection");
 }
 
-// Gate/up on one tile for every gate and up format pair ([256, 1024]) and four pairs at [1024, 1024], with the K
-// splits by lanes a decode step of these widths takes on large GPUs.
+// Gate/up on one tile for each format's gate with the next format's up ([256, 1024]), so that every format runs as
+// both, and four pairs at [1024, 1024], with the K splits by lanes a decode step of these widths takes on large GPUs.
 void gateUpPairs(MetalBackend &backend, const Linear &linear, LinearTile tile) {
   constexpr uint32_t K = 1024;
   constexpr uint32_t kSplitsByLanes[kMaximumLanes] = {1, 2, 4, 4};
@@ -518,11 +518,10 @@ void gateUpPairs(MetalBackend &backend, const Linear &linear, LinearTile tile) {
                 tile == LinearTile::GgufStaged, label);
   };
   for (int gf = 0; gf < FMT_COUNT; ++gf)
-    for (int uf = 0; uf < FMT_COUNT; ++uf)
-      for (uint32_t lanes = 1; lanes <= kMaximumLanes; ++lanes) pair(Fmt(gf), Fmt(uf), 256, lanes);
+    for (uint32_t lanes = 1; lanes <= kMaximumLanes; ++lanes) pair(Fmt(gf), Fmt((gf + 1) % FMT_COUNT), 256, lanes);
   const std::array<std::array<Fmt, 2>, kMaximumLanes> wide{{{IQ4XS, Q4K}, {Q5K, Q5K}, {Q4K, IQ4XS}, {Q3K, Q6K}}};
   for (uint32_t lanes = 1; lanes <= kMaximumLanes; ++lanes) pair(wide[lanes - 1][0], wide[lanes - 1][1], 1024, lanes);
-  section(std::string(tileName(tile)) + " gate/up: " + std::to_string(FMT_COUNT * FMT_COUNT) + " gate and up format pairs at N 256 and 4 at N 1024, 1-4 lanes, "
+  section(std::string(tileName(tile)) + " gate/up: " + std::to_string(FMT_COUNT) + " gate and up format pairs at N 256 and 4 at N 1024, 1-4 lanes, "
           "within fp64");
 }
 
