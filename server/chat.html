@@ -274,6 +274,12 @@
     '<div class="table-wrap">' + renderToken(tokens, index, ...args);
   markdown.renderer.rules.table_close = (tokens, index, ...args) =>
     renderToken(tokens, index, ...args) + '</div>';
+  // A link opens in a new tab, so following it keeps the chat and its reply.
+  markdown.renderer.rules.link_open = (tokens, index, ...args) => {
+    tokens[index].attrSet('target', '_blank');
+    tokens[index].attrSet('rel', 'noopener noreferrer');
+    return renderToken(tokens, index, ...args);
+  };
   const storeKey = 'splash-chats';
   const effortKey = 'splash-thinking-effort';
   const allowedEfforts = new Set([...effort.options].map(option => option.value));

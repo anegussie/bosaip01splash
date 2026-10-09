@@ -532,7 +532,8 @@ for (const [name, overrides, shouldSend] of [
   assert.match(content.innerHTML, /&lt;b&gt;literal&lt;\/b&gt;/);
   assert.doesNotMatch(content.innerHTML, /href="javascript:/);
   assert.doesNotMatch(content.innerHTML, /<img/, 'a reply must not load images');
-  assert.match(content.innerHTML, /href="https:\/\/example.com"/);
+  assert.match(content.innerHTML, /href="https:\/\/example.com" target="_blank" rel="noopener noreferrer"/,
+    'a link must open in a new tab');
   const reasoning = '**thinking**\n\n```python\ndef think():\n    return 1\n```';
   await chunk({reasoning_content: reasoning});
   assert.equal(chat.elements.chat.children.at(-1).querySelector('details')
