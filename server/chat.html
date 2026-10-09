@@ -770,8 +770,10 @@
       const details = box.querySelector('details');
       details.hidden = false;
       const reasoning = details.querySelector('.reasoning');
+      // Thinking follows new text unless the reader scrolled up inside it.
+      const atEnd = reasoning.scrollHeight - reasoning.clientHeight - reasoning.scrollTop <= 1;
       reasoning.textContent = assistant.reasoning_content;
-      reasoning.scrollTop = reasoning.scrollHeight;
+      if (atEnd) reasoning.scrollTop = reasoning.scrollHeight;
       updateReasoningFade(reasoning);
     }
     if (delta.content) {

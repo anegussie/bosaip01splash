@@ -582,9 +582,12 @@ for (const [name, overrides, shouldSend] of [
   before = chat.scrolls();
   await chunk({content: ' more'});
   const reasoning = chat.elements.chat.children.at(-1).querySelector('details').querySelector('.reasoning');
-  reasoning.scrollHeight = 900;
+  Object.assign(reasoning, {scrollHeight: 900, clientHeight: 300, scrollTop: 600});
   await chunk({reasoning_content: 'reasoning'});
-  assert.equal(reasoning.scrollTop, 900, 'Thinking must follow new text inside its own scroll area');
+  assert.equal(reasoning.scrollTop, 900, 'Thinking at its bottom must follow new text');
+  reasoning.scrollTop = 100;
+  await chunk({reasoning_content: ' more'});
+  assert.equal(reasoning.scrollTop, 100, 'Thinking must not pull a reader down from earlier text');
   assert.equal(chat.scrolls(), before, 'content and reasoning must not pull a reader down');
   assert.equal(chat.elements['scroll-bottom'].hidden, false);
   before = chat.scrolls();
