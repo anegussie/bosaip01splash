@@ -16,9 +16,9 @@
 #include "metal/abi/GDN.h"
 #include "model/StateLayout.hpp"
 #include "ops/GDN.hpp"
-#include "tuning/LinearNumerics.hpp"
 
 #include "LinearInputReference.hpp"
+#include "LinearNumerics.hpp"
 #include "NormReference.hpp"
 
 #import <Foundation/Foundation.h>
@@ -42,8 +42,6 @@ using splash::metal::MetalBackend;
 using splash::metal::MetalBuffer;
 using namespace splash::ops;
 using namespace splash::test;
-using splash::ops::tuning::bf16ToFloat;
-using splash::ops::tuning::floatToBf16;
 
 constexpr uint32_t kRows = SPLASH_TARGET_VERIFY_ROWS;
 constexpr uint32_t kMaxLanes = SPLASH_MAXIMUM_BATCH_WIDTH;

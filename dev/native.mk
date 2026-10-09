@@ -224,7 +224,7 @@ SANITIZER_CONFIG_TARGETS := $(TEST_SLOT_FILE_ASAN) $(TEST_SLOT_FILE_TSAN) \
 # lists them: sources, objects and the engine library. A Metal library it
 # loads at run time and the force dependency are not compiler inputs either.
 ENGINE_TEST_HEADERS := $(filter %.h %.hpp,$(PRODUCTION_ENGINE_INPUTS)) \
-	$(wildcard dev/tuning/*.hpp dev/tests/engine/*.hpp)
+	$(wildcard dev/tests/engine/*.hpp)
 TEST_INPUTS = $(filter-out %.h %.hpp %.metallib,$(BUILD_INPUTS))
 $(filter-out %.air %.metallib,$(TEST_CONFIG_TARGETS)) $(PRODUCTION_FLAG_TOOLS) \
 	$(SANITIZER_CONFIG_TARGETS): $(ENGINE_TEST_HEADERS)

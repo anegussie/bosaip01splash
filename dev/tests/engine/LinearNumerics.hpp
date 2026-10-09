@@ -5,7 +5,7 @@
 #include <cstdint>
 
 // bf16 arithmetic shared by the kernel tests' CPU references.
-namespace splash::ops::tuning {
+namespace splash::test {
 
 inline float bf16ToFloat(uint16_t value) noexcept {
   return std::bit_cast<float>(uint32_t{value} << 16);
@@ -30,4 +30,4 @@ inline float ulpBf16(float value) noexcept {
   return std::ldexp(1.0f, exponent - 8);
 }
 
-} // namespace splash::ops::tuning
+} // namespace splash::test

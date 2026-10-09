@@ -2,9 +2,9 @@
 #include "TestChecks.hpp"
 #include "ops/PagedAttention.hpp"
 #include "ops/RoPE.hpp"
-#include "tuning/HostKvExtents.hpp"
-#include "tuning/LinearNumerics.hpp"
 
+#include "HostKvExtents.hpp"
+#include "LinearNumerics.hpp"
 #include "NormReference.hpp"
 
 #include <algorithm>
@@ -22,10 +22,10 @@
 namespace {
 
 using namespace splash;
-using ops::tuning::HostKvExtents;
-using ops::tuning::bf16ToFloat;
-using ops::tuning::floatToBf16;
-using ops::tuning::ulpBf16;
+using test::HostKvExtents;
+using test::bf16ToFloat;
+using test::floatToBf16;
+using test::ulpBf16;
 
 static_assert(!std::is_aggregate_v<ops::PrefillAttentionPlan> &&
               !std::is_default_constructible_v<ops::PrefillAttentionPlan> &&

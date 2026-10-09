@@ -343,18 +343,18 @@ class ArchitectureTests(unittest.TestCase):
                             ],
                         )
 
-    def test_production_cannot_include_offline_tuning(self):
+    def test_production_cannot_include_test_code(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "runtime/ops/Linear.cpp"
             source.parent.mkdir(parents=True)
-            source.write_text('#include "tuning/LinearNumerics.hpp"\n')
+            source.write_text('#include "tests/engine/LinearNumerics.hpp"\n')
             with mock.patch.object(check_architecture, "ROOT", root):
                 self.assertEqual(
                     check_architecture.check(),
                     [
                         "runtime/ops/Linear.cpp: production depends on "
-                        "offline tuning tuning/LinearNumerics.hpp"
+                        "test code tests/engine/LinearNumerics.hpp"
                     ],
                 )
 

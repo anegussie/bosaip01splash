@@ -33,6 +33,7 @@
 #include "AwakeClock.hpp"
 #include "Checked.hpp"
 #include "GgufFormatReference.hpp"
+#include "LinearNumerics.hpp"
 #include "TestBuffers.hpp"
 #include "TestFiles.hpp"
 #include "ane/ProgramInstrumentation.hpp"
@@ -42,7 +43,6 @@
 #include "metal/abi/QuantFormat.h"
 #include "ops/AneFfn.hpp"
 #include "ops/Linear.hpp"
-#include "tuning/LinearNumerics.hpp"
 
 #include <algorithm>
 #include <array>
@@ -81,8 +81,8 @@ using namespace splash::ops;
 using splash::metal::CommandGraph;
 using splash::metal::MetalBackend;
 using splash::metal::MetalBuffer;
-using splash::ops::tuning::bf16ToFloat;
-using splash::ops::tuning::floatToBf16;
+using splash::test::bf16ToFloat;
+using splash::test::floatToBf16;
 
 namespace {
 

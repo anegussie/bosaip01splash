@@ -1,11 +1,11 @@
 #pragma once
 
+#include "HostKvExtents.hpp"
+#include "LinearNumerics.hpp"
 #include "metal/CommandGraph.hpp"
 #include "metal/MetalBackend.hpp"
 #include "metal/abi/KvExtent.h"
 #include "ops/PagedAttention.hpp"
-#include "tuning/HostKvExtents.hpp"
-#include "tuning/LinearNumerics.hpp"
 
 #include <array>
 #include <cstddef>
@@ -22,7 +22,7 @@
 // The paged-attention fixture attention-sweep times: deterministic Page32
 // history of every lane in the extents of a pool, one chunk of rows per lane
 // with its queries, and the production store and attention graph over them.
-namespace splash::ops::tuning {
+namespace splash::test {
 
 // The target attention layer a fixture holds: its query and KV heads and its
 // cache format.
@@ -105,7 +105,7 @@ struct AttentionFixturePlan final {
   // it encodes.
   [[nodiscard]] static AttentionFixturePlan make(AttentionShape shape, uint32_t lanes,
                                                  uint32_t rows, const Histories &histories,
-                                                 AttentionWorkspace scratch,
+                                                 ops::AttentionWorkspace scratch,
                                                  AttentionFixtureGeometry geometry) {
     AttentionFixturePlan plan;
     plan.shape = shape;
@@ -275,25 +275,26 @@ public:
 
   // One store and attention of the fixture's rows, encoded as the runtime
   // encodes them.
-  void addGraph(metal::CommandGraph &graph, const PrefillAttentionPlan &attention) const {
-    const kv::ChunkedPrefillParams chunk = PagedAttention::prefillParams(
+  void addGraph(metal::CommandGraph &graph, const ops::PrefillAttentionPlan &attention) const {
+    const kv::ChunkedPrefillParams chunk = ops::PagedAttention::prefillParams(
         plan_.histories[0], plan_.rows, plan_.stride, plan_.pages[0]);
-    PagedAttention::addPrefillStore(graph, layer_, buffer(Tensor::ChunkKeys),
-                                    buffer(Tensor::ChunkValues), tables_[0], chunk,
-                                    plan_.layout());
-    PagedAttention::addPrefill(graph, layer_, buffer(Tensor::Queries), buffer(Tensor::Output),
-                               buffer(Tensor::Partials), buffer(Tensor::Statistics), tables_[0],
-                               chunk, attention);
+    ops::PagedAttention::addPrefillStore(graph, layer_, buffer(Tensor::ChunkKeys),
+                                         buffer(Tensor::ChunkValues), tables_[0], chunk,
+                                         plan_.layout());
+    ops::PagedAttention::addPrefill(graph, layer_, buffer(Tensor::Queries),
+                                    buffer(Tensor::Output), buffer(Tensor::Partials),
+                                    buffer(Tensor::Statistics), tables_[0], chunk, attention);
   }
   // Each lane's rows are its verify rows, in the verify chunk stride.
-  void addGraph(metal::CommandGraph &graph, const VerifyAttentionPlan &attention) const {
+  void addGraph(metal::CommandGraph &graph, const ops::VerifyAttentionPlan &attention) const {
     if (plan_.rows != kv::kVerifyRows || plan_.stride != kv::kVerifyChunkStride)
       throw std::logic_error(
           "a verify fixture stages its lanes' verify rows in the verify chunk stride");
     std::array<kv::ChunkedPrefillParams, AttentionFixturePlan::kMaximumLanes> chunks{};
     for (uint32_t lane = 0; lane < attention.lanes; ++lane)
-      chunks[lane] = PagedAttention::verifyParams(plan_.histories[lane], plan_.pages[lane]);
-    PagedAttention::addVerify(
+      chunks[lane] =
+          ops::PagedAttention::verifyParams(plan_.histories[lane], plan_.pages[lane]);
+    ops::PagedAttention::addVerify(
         graph, layer_,
         {buffer(Tensor::ChunkKeys), buffer(Tensor::ChunkValues), buffer(Tensor::Queries),
          buffer(Tensor::Partials), buffer(Tensor::Statistics), buffer(Tensor::Output), tables_},
@@ -342,4 +343,4 @@ private:
   std::array<metal::MetalBuffer, AttentionFixturePlan::kMaximumLanes> tables_{};
 };
 
-} // namespace splash::ops::tuning
+} // namespace splash::test
