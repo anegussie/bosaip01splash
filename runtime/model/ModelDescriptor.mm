@@ -306,12 +306,18 @@ bool readQuantization(NSDictionary *config, const Layout &layout) {
     throw std::invalid_argument(
         "this model requires an MLX checkpoint (affine 2, 3, 4, 5, 6 or 8 bits in groups of 32, 64 or 128, or "
         "mxfp4) or a supported GGUF");
-  // Mode, bits and group size of an entry, or of the object.
-  const auto read = [](NSDictionary *entry, NSString *mode, const std::string &label) {
+  // Mode, bits and group size of an entry, or of the object. A module's entry
+  // that omits bits or group_size takes its mode's default, as MLX's
+  // to_quantized does: affine 4 bits in groups of 64, mxfp4 4 bits in groups
+  // of 32.
+  const auto read = [](NSDictionary *entry, const std::string &label, bool module) {
+    NSString *mode = entry[@"mode"] ?: @"affine";
     if (![mode isKindOfClass:[NSString class]]) throw std::invalid_argument(label + " mode must be a string");
-    const uint32_t bits = requireWhole(entry[@"bits"], label + " bits");
-    const uint32_t group = requireWhole(entry[@"group_size"], label + " group_size");
     const bool affine = [mode isEqual:@"affine"];
+    const auto number = [&](NSString *key, uint32_t modeDefault) {
+      return module && !entry[key] ? modeDefault : requireWhole(entry[key], label + " " + key.UTF8String);
+    };
+    const uint32_t bits = number(@"bits", 4), group = number(@"group_size", affine ? 64 : 32);
     if (affine ? quant_affine_format_of(bits, group) == GGUF_FMT_COUNT
                : ![mode isEqual:@"mxfp4"] || bits != 4 || group != 32)
       throw std::invalid_argument(label + " is " + mode.UTF8String + " " + std::to_string(bits) +
@@ -320,7 +326,7 @@ bool readQuantization(NSDictionary *config, const Layout &layout) {
                                   "128, or as mxfp4");
     return std::tuple{affine, bits, group};
   };
-  const auto defaults = read(quantization, quantization[@"mode"] ?: @"affine", "quantization");
+  const auto defaults = read(quantization, "quantization", false);
   bool affineImages = true;
   for (const affine::Image &image : affineTargetImages(layout))
     for (const auto &[name, bits] : image.quantized) {
@@ -328,7 +334,7 @@ bool readQuantization(NSDictionary *config, const Layout &layout) {
       id entry = quantization[@(name.c_str())];
       if (entry && ![entry isKindOfClass:[NSDictionary class]])
         throw std::invalid_argument(label + " must be an object");
-      const auto [affine, moduleBits, group] = entry ? read(entry, entry[@"mode"] ?: @"affine", label) : defaults;
+      const auto [affine, moduleBits, group] = entry ? read(entry, label, true) : defaults;
       affineImages = affineImages && affine && moduleBits == bits && group == kQ4GroupElements;
     }
   return affineImages;

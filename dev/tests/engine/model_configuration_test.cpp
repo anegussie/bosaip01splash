@@ -198,10 +198,11 @@ void testOneRulePerValue(const std::filesystem::path &fixtures) {
 // An MLX target's quantization is MLX's own object: each module the target
 // reads by its own entry or else by the object, affine in 2, 3, 4, 5, 6 or 8
 // bits in groups of 32, 64 or 128, or mxfp4; an entry is affine unless it
-// names its mode, as MLX loads it. The affine images hold a target whose
-// every module is 4-bit in groups of 64 but for a MoE's 8-bit router and
-// shared-expert gate; any other loads as block images. A GGUF target has none
-// (above).
+// names its mode, and takes its mode's default bits and group size (affine 4
+// and 64, mxfp4 4 and 32) when it omits them, as MLX loads it. The affine
+// images hold a target whose every module is 4-bit in groups of 64 but for a
+// MoE's 8-bit router and shared-expert gate; any other loads as block images.
+// A GGUF target has none (above).
 void testQuantization(const std::filesystem::path &fixtures) {
   const SourceModel dense = mlxModel(fixtures, "qwen3.8-27b");
   const SourceModel moe = mlxModel(fixtures, "qwen3.6-35b-a3b");
@@ -213,6 +214,11 @@ void testQuantization(const std::filesystem::path &fixtures) {
   const std::string_view mxfp4 = R"("group_size": 32,
     "bits": 4,
     "mode": "mxfp4")";
+  // The MoE router's entry.
+  const std::string_view router = R"("group_size": 64,
+      "bits": 8)";
+  require(inspect(moe.with(&SourceModel::config, router, R"("bits": 8)")).affineImages,
+          "a router entry of only its bits did not take affine's group of 64");
   struct Block final {
     const SourceModel &model;
     std::string_view from, to;
@@ -225,6 +231,8 @@ void testQuantization(const std::filesystem::path &fixtures) {
            // The router 4-bit; under an mxfp4 object, its 8-bit entry stays affine.
            {moe, R"("bits": 8)", R"("bits": 4)"},
            {moe, affine, mxfp4},
+           // An entry of only its mode: mxfp4, 4-bit in groups of 32.
+           {moe, router, R"("mode": "mxfp4")"},
        })
     require(!inspect(block.model.with(&SourceModel::config, block.from, block.to)).affineImages,
             "a target with " + std::string(block.to) + " loaded as affine images");
