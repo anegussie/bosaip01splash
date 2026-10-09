@@ -1139,10 +1139,11 @@ projector, a GGUF whose name holds `mmproj` (as `mmproj-BF16.gguf` or
 weights are BF16, F32 or F16, preferred in that order. An F16 projector made
 from a BF16 tower, llama.cpp's default output, loads exactly: F16 rounds the
 smallest BF16 weights onto its subnormal grid, and what that keeps is still a
-BF16. The processor configuration (MLX `preprocessor_config.json`, the GGUF's
-`clip.vision` metadata) must describe the one preprocessing Splash implements
-(`server/images.py`); it is checked before any weight download and not
-installed.
+BF16. The processor configuration (MLX `preprocessor_config.json`, or the
+`image_processor` object of `processor_config.json`, where newer Transformers
+releases save it; the GGUF's `clip.vision` metadata) must describe the one
+preprocessing Splash implements (`server/images.py`); it is checked before any
+weight download and not installed.
 
 Both sources are written into one image, which the one BF16 vision operator
 reads: BF16 tensors are

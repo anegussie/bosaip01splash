@@ -546,9 +546,15 @@ class UpstreamTest(unittest.TestCase):
                     models.ModelError, "must come from the target repository"
                 ) as refused:
                     self.prepare(chosen)
-                # A text-only checkpoint lacks only the processor.
+                # A text-only checkpoint lacks only the processor, which either
+                # of two files holds.
                 self.assertEqual(
                     "use --language-only to serve text only" in str(refused.exception),
+                    missing == "preprocessor_config.json",
+                )
+                self.assertEqual(
+                    "preprocessor_config.json or processor_config.json"
+                    in str(refused.exception),
                     missing == "preprocessor_config.json",
                 )
                 self.assertEqual(fake.downloads, [])
@@ -650,6 +656,60 @@ class UpstreamTest(unittest.TestCase):
                 ),
             ):
                 self.prepare(selection(self.root, model, language_only=False))
+
+    def test_mlx_vision_reads_the_image_processor_of_processor_config(self):
+        # Newer Transformers releases save no preprocessor_config.json: the
+        # image processor's configuration is an object of processor_config.json,
+        # beside the video processor's.
+        def target(processor):
+            def build(root):
+                mlx_target(root, DENSE)
+                (root / "model.safetensors").unlink()
+                shards = {
+                    "vision_tower.blocks.0.attn.qkv.weight": "model-00001-of-00002.safetensors",
+                    "language_model.lm_head.weight": "model-00002-of-00002.safetensors",
+                }
+                (root / "model.safetensors.index.json").write_text(
+                    json.dumps({"weight_map": shards})
+                )
+                for name in set(shards.values()):
+                    (root / name).write_text(name)
+                (root / "processor_config.json").write_text(json.dumps(processor))
+
+            return build
+
+        fake = fake_hub(self, self.cache)
+        for model, processor, refusal in (
+            (
+                "someone/vision-model",
+                {"image_processor": PROCESSOR, "video_processor": PROCESSOR},
+                None,
+            ),
+            (
+                "someone/video-model",
+                {"video_processor": PROCESSOR},
+                "processor_config.json has no image_processor; use --language-only",
+            ),
+            (
+                "someone/other-patches",
+                {"image_processor": PROCESSOR | {"patch_size": 14}},
+                "unsupported vision preprocessing configuration",
+            ),
+        ):
+            with self.subTest(model=model):
+                fake.publish(model, "a" * 40, target(processor))
+                chosen = selection(self.root, model, language_only=False)
+                if refusal is None:
+                    self.prepare(chosen)
+                    self.assertEqual(
+                        assembly.verify(chosen.link)["vision_format"], "safetensors"
+                    )
+                else:
+                    with self.assertRaisesRegex(models.ModelError, refusal):
+                        self.prepare(chosen)
+                    self.assertNotIn(
+                        f"{model}/model-00001-of-00002.safetensors", fake.downloads
+                    )
 
     def test_a_tower_in_a_shard_of_its_own_is_not_the_targets(self):
         # OptiQ keeps the tower in a subdirectory shard: the target links the
