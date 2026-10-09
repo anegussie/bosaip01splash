@@ -263,7 +263,7 @@ class UpstreamTest(unittest.TestCase):
         with self.assertRaisesRegex(
             models.ModelError,
             "someone/package is a Splash package, which Splash no longer loads; "
-            "serve its MLX model instead: splash serve --model "
+            "serve the MLX model of its family instead: splash serve --model "
             "mlx-community/Qwen3.8-27B-4bit",
         ):
             self.prepare(selection(self.root, "someone/package", language_only=False))

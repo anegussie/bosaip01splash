@@ -270,7 +270,7 @@ def refuse_package(model, manifest):
     if name in PACKAGE_REPLACEMENTS:
         raise ModelError(
             f"{model} is a Splash package, which Splash no longer loads; "
-            f"serve its MLX model instead: splash serve --model "
+            f"serve the MLX model of its family instead: splash serve --model "
             f"{PACKAGE_REPLACEMENTS[name]}"
         )
 

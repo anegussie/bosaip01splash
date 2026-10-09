@@ -202,8 +202,8 @@ class InstallerTest(unittest.TestCase):
                 self.assertEqual(result, 1)
                 self.assertIn(
                     f"{self.MODEL_ID} is a Splash package, which Splash no longer "
-                    f"loads; serve its MLX model instead: splash serve --model "
-                    f"{replacement}",
+                    f"loads; serve the MLX model of its family instead: splash "
+                    f"serve --model {replacement}",
                     errors.getvalue(),
                 )
         # Another tool's manifest.json names no package format.
