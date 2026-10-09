@@ -405,7 +405,7 @@ void Linear::addGgufStaged(metal::CommandGraph &graph, const LinearBuffers &b,
               {b.input, g.plane0, g.plane1Slot(), g.meta, u.plane0, u.plane1Slot(), u.meta, b.output, partials,
                counters},
               GgufDecodeParams{k, splits, n, u.columnOffset, config.spread},
-              {u.outputSize / GGUF_STAGED_COLUMNS, splits, 1}, {32, 1, 1});
+              {u.outputSize / GGUF_STAGED_COLUMNS, splits, 1}, {GGUF_GATE_UP_THREADS, 1, 1});
     return;
   }
   if (segments.size() == 1) {

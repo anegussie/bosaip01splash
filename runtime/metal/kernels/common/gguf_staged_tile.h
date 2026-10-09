@@ -143,6 +143,8 @@ inline void staged_accumulate(device bfloat *input, device uchar *w0, device uch
 // One tensor's weights in a one-simdgroup decode tile of GGUF_STAGED_COLUMNS columns: lane l stages column l, one
 // 32-input group per step, as gguf_staged_steps does at 32 threads. It holds the payload of the step being staged, the
 // meta unit that step reads (unit hdr_unit) and the next unit's, which its step enters next.
+static_assert(GGUF_GATE_UP_THREADS == 32 && GGUF_STAGED_COLUMNS == 32 && GGUF_STAGED_STEP == 32,
+              "lane l of one simdgroup stages column l, one 32-input group per step");
 template <class F> struct StagedColumn {
   device uchar *w0, *w1, *meta;
   typename F::Payload packed;

@@ -132,7 +132,7 @@ kernel void gguf_decode_gate_up(device bfloat *input [[buffer(0)]], device uchar
                                 device atomic_uint *counters [[buffer(9)]], constant GgufDecodeParams &p [[buffer(10)]],
                                 uint2 group [[threadgroup_position_in_grid]], uint lane [[thread_index_in_simdgroup]]) {
   threadgroup half2 tl[F::Kind == QuantCodebook ? kQuantPairTableEntries : 1];
-  quant_pair_table<F>(tl, lane, 32);
+  quant_pair_table<F>(tl, lane, GGUF_GATE_UP_THREADS);
   threadgroup half stage[2 * GGUF_STAGED_COLUMNS * GGUF_STAGED_STEP];
   threadgroup uint arrival;
   const uint per = p.input_size / GGUF_STAGED_STEP / p.splits, sb = group.y * per, se = sb + per,
