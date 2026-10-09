@@ -15,7 +15,8 @@ The paths an assembly links, and what reads each:
                          the MLX config.json again, as each checkpoint
                          directory's own config, read by engines up to 1.2,
                          which a release check runs on this installation
-  target/<shard>         the MLX safetensors shards (SafetensorsCheckpoint.mm)
+  target/<shard>         the MLX safetensors shards except those holding only
+                         vision_tower.* (SafetensorsCheckpoint.mm)
   target/<name>.gguf     the GGUF target (GgufTarget.cpp findTargetGguf)
   tokenizer/config.json  the same configuration again, from which the
                          server's AutoTokenizer.from_pretrained chooses the
