@@ -2166,11 +2166,12 @@ the AIR of each kernel the decode path may run in the two builds'
 Two pairs of constants in `runtime/engine/Protocol.hpp` and `server/protocol.py`
 version what the server and the engine exchange. When the native wire layout
 changed since the last release, bump `kProtocolVersion` and `PROTOCOL_VERSION`
-together; each side refuses frames of another version. When the status
-document the engine writes changed, bump `kStatusSchemaVersion` and
-`STATUS_SCHEMA_VERSION` together; the server refuses a status document of
-another schema. Builds between releases share a version while its layout
-changes.
+together; each side refuses frames of another version. When a field of the
+status document the engine writes was removed or changed meaning, bump
+`kStatusSchemaVersion` and `STATUS_SCHEMA_VERSION` together; the server refuses
+a status document of another schema. An added field keeps the version, as
+`weights` did in 1.2.1 and `ane_ffn` in 1.3.0. Builds between releases share a
+version while its layout changes.
 
 ### Local benchmarks
 
