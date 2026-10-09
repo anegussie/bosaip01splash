@@ -168,12 +168,28 @@ private:
   gguf::ImageBuilder image_;
 };
 
-gguf::Image layerImage(const SafetensorsCheckpoint &checkpoint, const QwenTargetDimensions &g, uint32_t index) {
-  const bool full = g.isFullAttentionLayer(index);
-  Builder b(checkpoint, g, "layer-" + std::to_string(index) + ".bin", index, full ? 1u : 0u);
+// Plans nothing, and names the modules a walk of the images reads only
+// quantized (quantizedModules): the projections and the token table, which
+// Builder refuses unquantized.
+struct QuantizedModules {
+  void norm(const std::string &, uint64_t) {}
+  void convolution(const std::string &) {}
+  void timeBias(const std::string &) {}
+  void decay(const std::string &) {}
+  void projection(const std::string &module, uint64_t, uint64_t, uint64_t = 1) { modules.push_back(module); }
+  void alphaBeta(const std::string &, const std::string &) {}
+  void floatTensor(const std::string &, uint64_t, uint64_t) {}
+  void embedding(const std::string &module) { modules.push_back(module); }
+
+  std::vector<std::string> modules;
+};
+
+// The sections of each image, in their order, which a Builder plans and
+// QuantizedModules names: a layer's, the head's and the embedding's.
+template <class Walk> void walkLayer(Walk &b, const QwenTargetDimensions &g, uint32_t index) {
   const std::string prefix = "language_model.model.layers." + std::to_string(index) + ".";
   b.norm(prefix + "input_layernorm", g.hiddenSize);
-  if (full) {
+  if (g.isFullAttentionLayer(index)) {
     const std::string attention = prefix + "self_attn.";
     const uint64_t kvRows = uint64_t{g.attentionKvHeads} * g.attentionHeadDimension;
     b.projection(attention + "q_proj", 2ull * g.attentionWidth, g.hiddenSize);
@@ -210,22 +226,40 @@ gguf::Image layerImage(const SafetensorsCheckpoint &checkpoint, const QwenTarget
     b.projection(mlp + "up_proj", g.intermediateSize, g.hiddenSize);
     b.projection(mlp + "down_proj", g.hiddenSize, g.intermediateSize);
   }
-  return b.finish();
 }
+
+template <class Walk> void walkHead(Walk &b, const QwenTargetDimensions &g) {
+  b.norm("language_model.model.norm", g.hiddenSize);
+  b.projection("language_model.lm_head", g.vocabularySize, g.hiddenSize);
+}
+
+template <class Walk> void walkEmbedding(Walk &b) { b.embedding("language_model.model.embed_tokens"); }
 
 } // namespace
 
 std::vector<gguf::Image> planImages(const SafetensorsCheckpoint &checkpoint, const QwenTargetDimensions &geometry) {
   std::vector<gguf::Image> images;
-  for (uint32_t layer = 0; layer < geometry.layers; ++layer) images.push_back(layerImage(checkpoint, geometry, layer));
+  for (uint32_t layer = 0; layer < geometry.layers; ++layer) {
+    Builder b(checkpoint, geometry, "layer-" + std::to_string(layer) + ".bin", layer,
+              geometry.isFullAttentionLayer(layer) ? 1u : 0u);
+    walkLayer(b, geometry, layer);
+    images.push_back(b.finish());
+  }
   Builder head(checkpoint, geometry, "head.bin", geometry.layers, 2);
-  head.norm("language_model.model.norm", geometry.hiddenSize);
-  head.projection("language_model.lm_head", geometry.vocabularySize, geometry.hiddenSize);
+  walkHead(head, geometry);
   images.push_back(head.finish());
   Builder embedding(checkpoint, geometry, "embedding.bin", geometry.vocabularySize, geometry.hiddenSize);
-  embedding.embedding("language_model.model.embed_tokens");
+  walkEmbedding(embedding);
   images.push_back(embedding.finish());
   return images;
+}
+
+std::vector<std::string> quantizedModules(const QwenTargetDimensions &geometry) {
+  QuantizedModules walk;
+  for (uint32_t layer = 0; layer < geometry.layers; ++layer) walkLayer(walk, geometry, layer);
+  walkHead(walk, geometry);
+  walkEmbedding(walk);
+  return std::move(walk.modules);
 }
 
 } // namespace splash::model::mlx

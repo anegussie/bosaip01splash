@@ -14,16 +14,16 @@
 #include <utility>
 #include <vector>
 
-namespace splash::ops::tuning {
+namespace splash::test {
 
-// The extents of a KV pool in CPU-visible memory, for the attention tuner,
-// kernel tests and benchmarks that fill and read pages on the host. Page p
-// sits in extent p / extentPages at index p % extentPages, and every
-// layer's region where splash_kv_offset places it, as in production
-// extents; kernels reach a page only through its entry. The constructors
-// size each extent exactly, so an access past one fails under shader
-// validation; contiguous() extents lie extentStride() apart in one region,
-// and an access past one runs into its neighbour unchecked.
+// The extents of a KV pool in CPU-visible memory, for the kernel tests and
+// benchmarks that fill and read pages on the host. Page p sits in extent
+// p / extentPages at index p % extentPages, and every layer's region where
+// splash_kv_offset places it, as in production extents; kernels reach a page
+// only through its entry. The constructors size each extent exactly, so an
+// access past one fails under shader validation; contiguous() extents lie
+// extentStride() apart in one region, and an access past one runs into its
+// neighbour unchecked.
 class HostKvExtents final {
 public:
   struct Extent final {
@@ -185,4 +185,4 @@ private:
   std::vector<metal::MetalBuffer> buffers_;
 };
 
-} // namespace splash::ops::tuning
+} // namespace splash::test

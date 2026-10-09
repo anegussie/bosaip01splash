@@ -1,3 +1,4 @@
+#include "LinearNumerics.hpp"
 #include "TestChecks.hpp"
 #include "ane/ProgramInstrumentation.hpp"
 #include "engine/RuntimeResources.hpp"
@@ -10,7 +11,6 @@
 #include "ops/PageStorage.hpp"
 #include "ops/Sampling.hpp"
 #include "ops/Vision.hpp"
-#include "tuning/LinearNumerics.hpp"
 
 #include <algorithm>
 #include <array>
@@ -127,7 +127,7 @@ Similarity compareBfloat(const metal::MetalBuffer &left,
   const uint16_t *b = bfloatContents(right, "right BF16 buffer");
   SimilarityAccumulator accumulator;
   for (uint64_t index = 0; index < elements; index += stride) {
-    accumulator.add(ops::tuning::bf16ToFloat(a[index]), ops::tuning::bf16ToFloat(b[index]));
+    accumulator.add(test::bf16ToFloat(a[index]), test::bf16ToFloat(b[index]));
   }
   return accumulator.result();
 }
@@ -389,7 +389,7 @@ StateSamples sampleCommittedState(const metal::MetalBackend &backend,
     const uint64_t count = buffer.sizeBytes() / (bfloat ? 2 : 4);
     const uint64_t stride = std::max<uint64_t>(1, count / 65536);
     for (uint64_t index = 0; index < count; index += stride) {
-      values.push_back(bfloat ? ops::tuning::bf16ToFloat(static_cast<const uint16_t *>(
+      values.push_back(bfloat ? test::bf16ToFloat(static_cast<const uint16_t *>(
                                                  buffer.contents())[index])
                              : static_cast<const float *>(buffer.contents())[index]);
     }
@@ -417,9 +417,9 @@ StateSamples sampleCommittedState(const metal::MetalBackend &backend,
       const uint32_t position = (index / layout.headDimension) % lengths.draftLength;
       const uint32_t head = index / (uint64_t{layout.headDimension} * lengths.draftLength);
       const uint32_t ring = (lengths.draftBase + position) % window;
-      keySamples.push_back(ops::tuning::bf16ToFloat(
+      keySamples.push_back(test::bf16ToFloat(
           keys[(uint64_t{head} * window + ring) * layout.headDimension + dimension]));
-      valueSamples.push_back(ops::tuning::bf16ToFloat(
+      valueSamples.push_back(test::bf16ToFloat(
           values[(uint64_t{head} * layout.headDimension + dimension) * window + ring]));
     }
     result.emplace_back("draft_key_" + std::to_string(layer), std::move(keySamples));

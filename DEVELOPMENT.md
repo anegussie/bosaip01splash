@@ -1042,16 +1042,19 @@ An MLX target's `quantization` gives a mode, bits and group size, and may give
 a module its own, as mlx-lm writes it; a module's entry wins, and its mode
 defaults to affine. The engine loads affine 2, 3, 4, 5, 6 or 8 bits in groups
 of 32, 64 or 128 and mxfp4 (4 bits in groups of 32), mixed in any way across
-modules, and refuses any other format, naming the module (nvfp4, mxfp8). An
-affine weight is `s * q + z` for its group's bf16 `.scales` and `.biases` and
-its code `q`, packed little-endian in `.weight`'s 32-bit words at every width;
-an mxfp4 weight is an E2M1 code times its group's power of two, a uint8 scale,
-which is GGUF's MXFP4.
+modules, and refuses any other format, naming the module (nvfp4, mxfp8).
+Every projection, the experts' too, the head and the token table load only
+quantized (`mlx::quantizedModules`): an entry `false`, which mlx-lm writes for
+a module it leaves unquantized, is refused for any of them before any weight
+download, naming it, and the loader refuses one the checkpoint holds
+unquantized. The router, the shared-expert gate and GDN alpha and beta may be
+unquantized. An affine weight is `s * q + z` for its group's bf16 `.scales`
+and `.biases` and its code `q`, packed little-endian in `.weight`'s 32-bit
+words at every width; an mxfp4 weight is an E2M1 code times its group's power
+of two, a uint8 scale, which is GGUF's MXFP4.
 
-A target quantized as mlx-community's 4-bit releases are (projections affine
-4-bit in groups of 64, a MoE's router and shared-expert gate 8-bit) loads into
-the affine Q4 images of the affine kernels. Any other loads into the `MDGG0001`
-images a GGUF target's do (`MlxTargetLoader`, [Weight loading](#weight-loading)):
+An MLX target loads into the `MDGG0001` images a GGUF target's do
+(`MlxTargetLoader`, [Weight loading](#weight-loading)):
 each quantized tensor in the format mlx-lm infers from its tensors, an affine
 `af<bits>g<group>` format of `runtime/metal/abi/QuantFormat.h` or MXFP4, at the
 checkpoint's bits per weight; projections and experts as block planes, the
@@ -1121,10 +1124,11 @@ configuration with the target's (its `model-check`), so a draft of another
 architecture never replaces one that loads. Native loading validates the
 configuration against the target again and loads the draft like a target
 ([Weight loading](#weight-loading)):
-`DraftCheckpointLoader` (`DraftCheckpoint.cpp`) plans the draft's images, one
-per layer and one for the rest, and `AffinePreparation` quantizes each
-projection to 4 bits in groups of 64 as MLX's affine quantization rounds it and
-copies every other tensor as stored.
+`DraftCheckpointLoader` (`DraftCheckpoint.cpp`) plans the draft's `MDGG0001`
+images, one per layer and one for the rest, and `GgufPreparation` quantizes
+each projection into af4g64 planes, 4 bits in groups of 64 as MLX's affine
+quantization rounds them, and copies every other tensor as stored. The draft
+runs on the block kernels its target's projections run on.
 
 ### Vision
 
@@ -1327,24 +1331,20 @@ never rewrites upstream files.
 ### Weight loading
 
 Every start writes a model's target, draft and vision tensors into weight
-images in memory, in the layouts the kernels read: an MLX 4-bit target and the
-DFlash2 draft in the affine Q4 layout of the affine kernels, any vision tower in
-the BF16 layout of the vision operator, and a GGUF target and any other MLX
-target in the `MDGG0001` layout of the GGUF kernels ([MLX
+images in memory, in the layouts the kernels read: any vision tower in the
+BF16 layout of the vision operator, and the target, MLX or GGUF, and the
+DFlash2 draft in the `MDGG0001` layout of the GGUF kernels ([MLX
 targets](#mlx-targets)). Each source adapter is a loader, which validates the
-source's metadata and plans its images, and a writer: `AffineTargetLoader`
-(`AffineTarget.cpp`) and `AffinePreparation` for an MLX 4-bit target,
-`MlxTargetLoader` (`MlxTarget.cpp`, planned by `MlxImage.cpp`) and
-`GgufPreparation` for any other MLX target, `DraftCheckpointLoader`
-(`DraftCheckpoint.cpp`) and `AffinePreparation` for the draft,
-`GgufTargetLoader` (`GgufTarget.cpp`, planned by `GgufImage.cpp`) and
-`GgufPreparation` for a GGUF target, `VisionLoader` and `VisionPreparation` for
-an MLX or GGUF vision tower. `AffinePreparation` reorders an MLX target's codes, scales and
-biases into 256-row tiles without requantization, quantizes the draft's BF16
-projections into the same tiles ([Drafts](#drafts)) and computes GDN decay as
-`float(-exp(double(A_log)))`, which may differ by one float ULP from MLX's
-float exponential. `GgufPreparation`
-repacks GGUF blocks ([GGUF targets](#gguf-targets)) and MLX tensors.
+source's metadata and plans its images, and a writer: `MlxTargetLoader`
+(`MlxTarget.cpp`, planned by `MlxImage.cpp`) and `GgufPreparation` for an MLX
+target, `DraftCheckpointLoader` (`DraftCheckpoint.cpp`) and `GgufPreparation`
+for the draft, `GgufTargetLoader` (`GgufTarget.cpp`, planned by
+`GgufImage.cpp`) and `GgufPreparation` for a GGUF target, `VisionLoader` and
+`VisionPreparation` for an MLX or GGUF vision tower. `GgufPreparation` repacks
+GGUF blocks ([GGUF targets](#gguf-targets)) and MLX tensors without
+requantization, quantizes the draft's BF16 projections ([Drafts](#drafts)),
+and computes an MLX target's GDN decay as `float(-exp(double(A_log)))`, which
+may differ by one float ULP from MLX's float exponential.
 
 Loading never rounds a target or vision weight but in the F32 values of an MLX
 target's quantized router, shared-expert gate or GDN alpha and beta ([MLX
@@ -1392,7 +1392,7 @@ reports (`loaded_model_layout_sha256`, `target_model_sha256`) cover it, so
 models of one layout from different sources never share a fingerprint.
 
 Runtime admission counts the images exactly once (`modelWeightBytes`, which
-`tune-kernels` and the runtime oracle use too). Before loading, startup refuses
+the runtime oracle uses too). Before loading, startup refuses
 a model whose images, with the pipeline and runtime reserves, one lane's state,
 the KV runway and any disk tier state staging, exceed the hard budget, so a
 model that can never fit is not loaded.
@@ -1413,36 +1413,21 @@ after the images, and the restore loads it again in one tick more, after the
 last image (`ReleasableMemory`).
 
 `loadQwenTarget` (`QwenTargetLoader.hpp`) reads a target's images
-(`QwenTargetFiles`: the images `AffineTargetLoader`, `MlxTargetLoader` or
-`GgufTargetLoader` plans) through the format that stores them.
-`AffineTargetFormat`, for affine images, reads every
-projection, a fused one too, as one affine Q4 tensor and the norms as bf16.
-`BlockTargetFormat`, for `MDGG0001` images, reads each tensor as one
-block-quantized `QuantizedSegment` (a fused projection's tensors in output
-column order), the norms as F32 (bf16 for an MLX target), and keeps the GDN
-output projection's input in the source's value-head order, llama.cpp's tiled
-or MLX's grouped. Both Qwen families share one layout
+(`QwenTargetFiles`: the images `MlxTargetLoader` or `GgufTargetLoader` plans)
+through `BlockTargetFormat`, which reads each tensor as one block-quantized
+`QuantizedSegment` (a fused projection's tensors in output column order), the
+norms as F32 (bf16 for an MLX target), and keeps the GDN output projection's
+input in the source's value-head order, llama.cpp's tiled or MLX's grouped.
+Both Qwen families share one layout
 (`QwenHybridLayout`) and its validator.
 
-Operator plans use each projection's physical layout, `Affine64` or `Block32`,
-independently of the source container. `Projection`, `MoeWeights` and
-`EmbeddingWeights` (`runtime/ops/Weights.hpp`, `MoE.hpp`) hold either layout
-and represent different operator contracts. Arena sizing collects each
-projection's actual layout (a GGUF target's block projections beside its
-affine draft's) and reserves the vocabulary head only for decode.
+Every source loads into block planes: `Projection`, `BlockMoeWeights` and
+`EmbeddingWeights` (`runtime/ops/Weights.hpp`, `MoE.hpp`) hold them whatever
+the source container, and represent different operator contracts. Arena
+sizing collects each projection's shape and reserves the vocabulary head only
+for decode.
 
 ### Kernels
-
-Affine Q4 decode (`runtime/ops/Linear.cpp`) runs MPP tiles on Apple10 and later
-(the M6 reports family 11 and runs the same rules) and bf16 simdgroup matrix
-tiles on Apple9. On Apple10 a projection with at most two N128 tiles per core
-runs that tile over two, four or eight K partitions (`LinearTile::Split128`,
-`kernels/decode/linear_q4_grid_split.metal`), the most whose split grid still
-fits four 256-thread threadgroups per core; the last partition of each tile
-adds the fp32 partials in split order, so the sums do not depend on
-scheduling. The split count depends on the grid per core, never on the batch
-width, so a request's sums are the same alone and batched. Every other
-projection keeps the sequential tiles (`dev/benchmarks/device-policy.md`).
 
 Every tensor keeps its stored format: the F32 norm multipliers, GDN decay, the
 MoE router and shared-expert scalar gate, and GDN alpha/beta when a file
@@ -1470,22 +1455,26 @@ its meta unit when it enters a new one, load while the previous step's matmul ru
 column tile of a decode projection starts its walk over its K partition at its own step
 (`staged_first_step`, `LinearConfig::spread`), so the tiles do not all wait on the same freshly
 written slice of the input at once; the MoE experts, prefill, Apple9 and fewer cores walk in
-lockstep. A step of three request lanes runs the 32-row tile over four lanes of storage. Prefill
-runs the staged kernels on both families: the 128-row prefill tile (`LinearTile::GgufPrefill`),
-and the staged tile for chunks of up to 32 rows. Every projection splits its K across
-threadgroups by one rule (`decodeSplits`: each tile's tiers of threadgroups per core and inputs
-per partition, from measured occupancy, Apple9's staged tile taking the register tile's) that
-does not depend on the batch width. The MoE experts
-(`runtime/ops/MoE.cpp`) run the same numerics per family over the grouped rows: the register form
-in `linear_gguf_sgmatrix.metal`, the staged one in `kernels/shared/moe_gguf.metal`, which Apple9
-takes for experts mostly in the formats it stages (`MoeShape::expertFormat`). Their passes launch
-the live tiles alone: the grouping kernel writes each pass's grid with the tile count, and the
-pass reads it as an indirect dispatch (`ComputeDispatch::indirectThreadgroups`). The staged
-tile runs gate and up in one pass where they share their routed and their shared formats, a
-gate and an up simdgroup on the same columns, bitwise the two passes' intermediate. The float
-router and alpha/beta projections run in `kernels/shared/gguf_float.metal`, and the token rows
-are gathered by one template in `kernels/shared/embedding.metal`. These plans are fixed rules of
-GPU family, core count, shape and format.
+lockstep. There a dense gate/up pair whose tensors share their format also decodes in one
+dispatch (`LinearConfig::oneGateUpPass`), each simdgroup staging both tensors' columns, so a
+chain's serial steps serve both. Its output is bitwise the two passes' at the same K split; it
+splits K as one projection of the pair's columns, and where that split differs from theirs, its
+sums are reassociated. A step of three request lanes runs the 32-row tile over four lanes of
+storage. Prefill runs the staged kernels on both families: the 128-row prefill tile
+(`LinearTile::GgufPrefill`), and the staged tile for chunks of up to 32 rows. Every projection
+splits its K across threadgroups by one rule (`decodeSplits`: each tile's tiers of threadgroups
+per core and inputs per partition, from measured occupancy, Apple9's staged tile taking the
+register tile's) that does not depend on the batch width. The MoE experts
+(`runtime/ops/MoE.cpp`) run the same numerics per family over the grouped rows: the register
+form in `linear_gguf_sgmatrix.metal`, the staged one in `kernels/shared/moe_gguf.metal`, which
+Apple9 takes for experts mostly in the formats it stages (`MoeShape::expertFormat`). Their
+passes launch the live tiles alone: the grouping kernel writes each pass's grid with the tile
+count, and the pass reads it as an indirect dispatch (`ComputeDispatch::indirectThreadgroups`).
+The staged tile runs gate and up in one pass where they share their routed and their shared
+formats, a gate and an up simdgroup on the same columns, bitwise the two passes' intermediate.
+The float router and alpha/beta projections run in `kernels/shared/gguf_float.metal`, and the
+token rows are gathered by one template in `kernels/shared/embedding.metal`. These plans are
+fixed rules of GPU family, core count, shape and format.
 
 A rotated projection rotates its input once into `LinearScratch::rotated`
 (`gguf_rotate`, in fp32 and rounded once to bf16) before its quantized segments,
@@ -1495,17 +1484,18 @@ producer writes plain rows. The token table gathers each row through the inverse
 (`gguf_embed_rotated_pq20`).
 
 A GGUF kernel of one quantized tensor names its epilogue last: `a` none, `r` residual, `g` the
-up pass with the silu gate. The staged ones are `gguf_decode_<format>_m<rows>_<e>` and
+up pass with the silu gate. The staged ones are `gguf_decode_<format>_m<rows>_<e>`, with gate and
+up in one pass `gguf_decode_<format>_m<rows>_gate_up`, and
 `gguf_prefill_<format>_<e>` (and `gguf_prefill_<format>_r_leading_inputs` over a view of the
 leading inputs of wider rows), the register ones `gguf_decode_sg_<format>_l<lanes>_<e>`, and the
 experts `moe_expert_gguf_m<rows>_<e>` and `moe_expert_gguf_sg_<e>`, with gate and up in one pass
 `moe_expert_gguf_m<rows>_gate_up`; the fused projections run
-`gguf_decode_fused_m<rows>` and `gguf_decode_sg_fused_l<lanes>`. The norm, GDN and
-attention-gate variants that also write a register kernel's input table carry `table64` (the
-affine Q4 kernel's) or `table16` (the GGUF one's) in their names. The epilogue kinds of both GGUF
-families are in `kernels/common/gguf_tile.h`, the SiLU and sigmoid every kernel shares in
-`kernels/common/activation.h`, and the MMA helpers every register kernel uses, affine, GGUF or
-fp32, in `kernels/common/sgmatrix.h`.
+`gguf_decode_fused_m<rows>` and `gguf_decode_sg_fused_l<lanes>` in decode, and in prefill one
+`gguf_prefill_<format>_a` per format over that format's segments. The norm, GDN and
+attention-gate variants that also write the register kernels' input table carry `table16` in
+their names. The epilogue kinds of both GGUF families are in `kernels/common/gguf_tile.h`, the
+SiLU and sigmoid every kernel shares in `kernels/common/activation.h`, and the MMA helpers every
+register kernel uses, GGUF or fp32, in `kernels/common/sgmatrix.h`.
 
 The ABIs are in `runtime/metal/abi/Gguf.h`, which also defines the tile geometry the kernels
 and `LinearGguf.cpp` share, and `MoE.h`; the image formats in
@@ -1528,13 +1518,13 @@ PQ2_0 token gather bitwise against the fp32 butterflies and within one bf16 step
 `gguf-projection`, every GGUF projection through
 `ops::Linear` with each tile forced, so both decode tiles run on every GPU, at one to four
 lanes, every K split and epilogue, fused segments, every format's gate with the next format's up
-and the prefill tiles, each output inside the fp64 bound of `GgufFormatReference.hpp`; and
-`gguf-moe`: the float projections on both float tiles and the MoE layer on every GGUF plan, the
-staged 8- and 32-row tiles and the Apple9 register tile whatever GPU runs it, in every format,
-against fp64, and bitwise against the full grids and two gate/up passes. The goldens and how to
-regenerate them are in `dev/tests/fixtures/weight-goldens/`; with
-`SPLASH_GGML_ORACLE=<libggml-base.dylib>`, `gguf-reference` also compares the reference with GGML
-directly and prints GGML's hashes.
+and the prefill tiles, each output inside the fp64 bound of `GgufFormatReference.hpp`, and the
+one-pass gate/up bitwise against the two passes at the same K split; and `gguf-moe`: the float
+projections on both float tiles and the MoE layer on every GGUF plan, the staged 8- and 32-row
+tiles and the Apple9 register tile whatever GPU runs it, in every format, against fp64, and
+bitwise against the full grids and two gate/up passes. The goldens and how to regenerate them are
+in `dev/tests/fixtures/weight-goldens/`; with `SPLASH_GGML_ORACLE=<libggml-base.dylib>`,
+`gguf-reference` also compares the reference with GGML directly and prints GGML's hashes.
 
 Two benchmark tools repeat the measurements behind the GGUF split tiers and MoE plans, with the
 weights DRAM-cold. `make benchmark-gguf-projection GGUF_PROJECTION_ARGS='q4k 5120 8192'` times one
@@ -1542,19 +1532,8 @@ projection (up to three fused formats and widths, then `K` and an optional epilo
 decode tiles at one to four lanes and every K split, and marks the device policy's pick, or, with
 a trailing `prefill=R[,R...]` after the epilogue and the round count, one format's 128-row
 prefill tile at each chunk of `R` rows (more than 32);
-`make benchmark-gguf-moe` times one MoE layer at the 35B shape, GGUF against affine Q4, on the
-device's plans and the other GGUF tile.
-
-Two more time the affine Q4 kernels on synthetic weights, with no model. `make benchmark-decode`
-times the N128, N256 and paired N128 decode tiles on eight simdgroups, plain and with the residual
-and gate/up epilogues each takes, at 8 to 32 rows, on the 27B's projection shapes, its draft's
-context projection and the LM head, over a range of threadgroup counts, and prints each one's time
-and effective bandwidth. It leaves out the other decode tiles the device policy chooses: Apple9's
-register tile (`LinearTile::Q4Register`), Apple10's `Split128` and paired N256 tiles, and N128 on
-four simdgroups at 24 rows. `make benchmark-prefill` times the prefill tiles the device policy
-chooses among (N128 and N256 on eight simdgroups, N128 on four), with their residual and gated
-epilogues, on the 27B's and 35B's projection shapes at 17 to 2,048 rows: the measurements behind
-the Apple9 prefill rule in `runtime/ops/Linear.cpp`.
+`make benchmark-gguf-moe` times one MoE layer at the 35B shape on the device's plans and the
+other GGUF tile.
 
 ### Neural Engine prefill
 
@@ -1573,7 +1552,7 @@ and writing one set of surfaces sized for 2048 rows. The ANE service holds
 memory for a loaded program's intermediate values, which its functions share:
 13 programs of one function each held it 13 times (3.25 GB at the M6's share,
 against 0.67 GB for the one program). The GPU requantizes the
-ANE's weights from the Q4 or GGUF planes one layer ahead into double-buffered
+ANE's weights from the block planes one layer ahead into double-buffered
 IOSurfaces and adds the ANE's partial down projection to its own. Shared
 events order each evaluation between the GPU's packing and that join inside
 the one prefill command (`metal::EventStep`); each signal ends a Metal command
@@ -1713,7 +1692,7 @@ line of text and the breaker on timings it is given, also under the sanitizers,
 and `ane-ffn-startup`, each outcome of a start on a model it plays, a
 remembered calibration among them, and the automatic context, the same in each
 where the split may run. `make test-engine-metal` runs `ane-ffn`: its kernels
-against CPU references for affine Q4 and every GGUF format under shader
+against CPU references for every image format under shader
 validation, then, without it, the split's memory and its output against the GPU
 alone, the same output once its program is unloaded and loaded again, a chunk's
 rows on the GPU alone as a full chunk's, `verify()` of every function and of a
@@ -2073,17 +2052,16 @@ that compacts the conversation, whose summary request and the request after it
 share only the system prompt and tools. Replay points of unfinished requests
 evicted during a phase only print a warning.
 
-`benchmark-backend`, `benchmark-decode-profile` and `tune-kernels` take `MODEL`
-the same way. The models they are run with, one per family and source format:
+`benchmark-backend` and `benchmark-decode-profile` take `MODEL` the same way.
+The models they are run with, one per family and source format:
 
 | Family | MLX | GGUF |
 | --- | --- | --- |
 | Qwen3.8-27B | `mlx-community/Qwen3.8-27B-4bit` | `unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_M` |
 | Qwen3.6-35B-A3B | `mlx-community/Qwen3.6-35B-A3B-4bit` | `unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_M` |
 
-The source formats load differently: an MLX target is written into the affine
-layout of the affine kernels, a GGUF target into its own layout for the GGUF
-projection and MoE kernels.
+Both source formats load into the block layout of the GGUF projection and MoE
+kernels, an MLX target in its MLX formats, a GGUF target in its GGUF ones.
 
 On a 24 GB Mac, `test-agent-real` stops a client's workflow at macOS's warning
 memory pressure, which the smaller GGUF variants such a Mac uses can reach under
@@ -2095,15 +2073,8 @@ so it stops, naming what it needs, while other programs hold that memory. With
 only desktop applications open, a 24 GB Mac runs it for those variants.
 
 Compare performance on the same idle Mac with the same model and workload.
-`make tune-kernels MODEL=...` measures each projection key of the installed
-model on this Mac: the policy default in `runtime/ops` against the tile
-configurations that won an earlier run (`dev/tuning/LinearTuning.hpp`). It
-prints, per key, the winning configuration with its paired GPU and wall-time
-gain, or that the default is kept; it changes no default and saves no profile.
-For a GGUF model it measures only the draft's projections, and says so in its
-header, since the device policy alone plans block projections
-([GGUF targets](#gguf-targets)). Keep generated reports, profiles, local paths
-and experiment notes out of the source tree and commits.
+Keep generated reports, profiles, local paths and experiment notes out of the
+source tree and commits.
 
 ### Release check
 

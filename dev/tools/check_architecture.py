@@ -22,9 +22,7 @@ OPERATOR_WORKSPACE_POLICY_NAMES: tuple[str, ...] = (
     "moeMaximumTiles",
     "LinearTile",
     "LinearConfig",
-    "LinearSimdgroups",
     "MoeExpertTile",
-    "MoeExpertSimdgroups",
     "MoeConfig",
 )
 OPERATOR_WORKSPACE_POLICY = re.compile(
@@ -202,8 +200,8 @@ def check() -> list[str]:
         text = path.read_text(errors="replace")
         includes = include_paths(path, text)
         for include in includes:
-            if include.startswith("tuning/"):
-                errors.append(f"{name}: production depends on offline tuning {include}")
+            if include.startswith("tests/"):
+                errors.append(f"{name}: production depends on test code {include}")
         if name.startswith("runtime/metal/"):
             for include in includes:
                 if include.startswith(forbidden_metal_dependencies):

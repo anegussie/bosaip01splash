@@ -17,6 +17,10 @@
 #define GGUF_STAGED_COLUMNS 32u
 #define GGUF_STAGED_STEP 32u
 #define GGUF_STAGED_THREADS (GGUF_TILE_COLUMNS / GGUF_STAGED_COLUMNS * 32u)
+// Decode tile of a gate/up pair of one format in one pass
+// (LinearConfig::oneGateUpPass): one simdgroup staging the same
+// GGUF_STAGED_COLUMNS columns of both tensors.
+#define GGUF_GATE_UP_THREADS 32u
 // Prefill tile of the staged kernels: GGUF_PREFILL_SIMDGROUPS simdgroups of
 // GGUF_PREFILL_SIMDGROUP_ROWS rows share one stage of GGUF_PREFILL_STEP
 // inputs of the tile's columns, which all threads dequantize.
@@ -61,6 +65,16 @@ struct GgufPrefillLeadingParams {
 };
 static_assert(sizeof(GgufPrefillLeadingParams) == 20,
               "GGUF leading-input prefill parameters are 20 bytes on both sides");
+// The plain prefill kernels (gguf_prefill_<format>_a): up to three column segments of the kernel's format in one
+// dispatch, tiles in segment order, as a fused decode dispatch takes them; a single tensor is one segment.
+struct GgufPrefillSegmentsParams {
+  uint32_t input_size;  // K
+  uint32_t rows;        // rows of the chunk
+  uint32_t out_stride;  // columns of a destination row
+  uint32_t cols[3];     // columns per segment; 0 past the last
+  uint32_t offset[3];   // first destination column per segment
+};
+static_assert(sizeof(GgufPrefillSegmentsParams) == 36, "GGUF segmented prefill parameters are 36 bytes on both sides");
 
 // Decode tiles: the register tile, which Apple9 runs but for the projections
 // it stages (ops/LinearGguf.cpp, apple9Stages), and the staged tile, which

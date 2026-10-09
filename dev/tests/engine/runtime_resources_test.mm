@@ -67,6 +67,13 @@ PlannedModel plannedModel() {
   return result;
 }
 
+// The target and draft checkpoints of `model` under root, which weight
+// planning reads; its vision tower stays absent, so loading stops there.
+void writeCheckpoints(const std::filesystem::path &root, const model::ModelDescriptor &model) {
+  std::visit([&](const auto &target) { test::writeSyntheticCheckpoints(root, target, model.draft); },
+             model.target);
+}
+
 RuntimeResourcesConfig budgetConfig(const char *metallibPath, const std::filesystem::path &root) {
   const PlannedModel planned = plannedModel();
   RuntimeResourcesConfig config;
@@ -75,12 +82,13 @@ RuntimeResourcesConfig budgetConfig(const char *metallibPath, const std::filesys
   config.model = model::makeModelDescriptor("budget-test", planned.target, planned.draft, planned.vision,
                                             model::TargetSource::Mlx, model::VisionSource::Mlx);
   config.buildId = "budget-test";
+  writeCheckpoints(root, config.model);
   return config;
 }
 
-// Startup fails at the loader, whose weight files are deliberately absent.
-// Reaching it is the assertion: everything the engine checks before opening
-// the weights let this configuration through.
+// Startup fails at the loader, whose vision weight files are deliberately
+// absent. Reaching it is the assertion: everything the engine checks before
+// loading the weights let this configuration through.
 void requireReachesModelLoader(RuntimeResourcesConfig config,
                                const std::filesystem::path &root,
                                const char *message) {
@@ -271,6 +279,7 @@ void testModelBeyondBudgetIsRefusedBeforeLoading(const char *metallibPath) {
   config.model = model::makeModelDescriptor("budget-test", model::Qwen3_8Layout{}, model::kQwen3_8DraftLayout,
                                             model::kQwen3_8VisionLayout, model::TargetSource::Mlx,
                                             model::VisionSource::Mlx);
+  writeCheckpoints(root.path(), config.model);
   config.maximumMemoryBytes = model::modelWeightBytes(root.path(), config.model) + kGiB / 2;
   try {
     auto resources = RuntimeResources::create(config, 0);
@@ -297,6 +306,7 @@ void testStartupAdmissionIgnoresModelSize(const char *metallibPath) {
   config.model = model::makeModelDescriptor("budget-test", target, model::kQwen3_8DraftLayout,
                                             model::kQwen3_8VisionLayout, model::TargetSource::Mlx,
                                             model::VisionSource::Mlx);
+  writeCheckpoints(root.path(), config.model);
   require(model::modelWeightBytes(root.path(), config.model) > 3 * kGiB, "the model must exceed the sample");
   config.hostAvailableMemory = [] { return std::optional<uint64_t>(3 * kGiB); };
   requireReachesModelLoader(config, root.path(),

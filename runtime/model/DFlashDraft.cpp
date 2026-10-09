@@ -23,40 +23,34 @@ void requireLayout(const DFlashDraftLayout &layout) {
     throw WeightStoreError("draft selector kernels are compiled for rank " +
                            std::to_string(SPLASH_DRAFT_SELECTOR_RANK));
   }
-  validateQ4Layout(layout.dynamicSize, layout.hiddenSize);
-  validateQ4Layout(layout.qkvSize, layout.hiddenSize);
-  validateQ4Layout(layout.hiddenSize, layout.attentionSize);
-  validateQ4Layout(layout.intermediateSize, layout.hiddenSize);
-  validateQ4Layout(layout.hiddenSize, layout.intermediateSize);
-  validateQ4Layout(layout.hiddenSize, layout.targetHiddenSize);
-  validateQ4Layout(layout.selectorRank, layout.hiddenSize);
 }
 
 // The key and value rows of each layer's fused QKV projection, without a
-// copy: affine planes store whole tiles of kQ4StorageN rows in row order
-// (AffinePreparation), so rows from a tile boundary on are one range of
+// copy: planes store whole tiles of QUANT_TILE_ROWS rows in row order
+// (metal/abi/QuantFormat.h), so rows from a tile boundary on are one range of
 // each plane.
 std::vector<ops::Projection> contextKvRows(metal::MetalBackend &backend,
                                            const DFlashDraftWeights &weights) {
   const DFlashDraftLayout &layout = weights.layout;
   if (layout.attentionSize >= layout.qkvSize ||
-      layout.attentionSize % kQ4StorageN) {
+      layout.attentionSize % QUANT_TILE_ROWS) {
     throw std::invalid_argument(
         "draft key and value rows do not start at a storage tile");
   }
   std::vector<ops::Projection> result;
   result.reserve(weights.layers.size());
   for (const DFlashDraftLayerWeights &layer : weights.layers) {
-    const ops::AffineWeights &fused = layer.qkvProjection.affine();
+    const ops::QuantizedSegment &fused = layer.qkvProjection.blocks().segments.front();
     const auto rows = [&](const metal::MetalBuffer &plane) {
+      if (!plane) return metal::MetalBuffer{};
       const uint64_t rowBytes = plane.sizeBytes() / layout.qkvSize;
       return backend.view(plane, uint64_t{layout.attentionSize} * rowBytes,
                           uint64_t{layout.contextKvSize()} * rowBytes);
     };
     result.emplace_back(layout.contextKvSize(), layout.hiddenSize,
-                        ops::AffineWeights{rows(fused.weights),
-                                           rows(fused.scales),
-                                           rows(fused.biases)});
+                        ops::BlockWeights{{ops::QuantizedSegment::planes(
+                            fused.formatId, layout.contextKvSize(), layout.hiddenSize, rows(fused.plane0),
+                            rows(fused.plane1), rows(fused.meta))}});
   }
   return result;
 }
@@ -118,18 +112,14 @@ void DFlashDraft::addContextPrefill(
     if (span.ring.size() != layout.layers)
       throw std::invalid_argument("draft prefill ring layer mismatch");
   }
-  operators_.linear().addPrefillSums(graph, buffers.capturedTargetHidden, buffers.projectionSums,
-                                     weights_.contextProjection, rows);
   operators_.linear().addPrefill(graph, buffers.capturedTargetHidden, weights_.contextProjection,
-                                 buffers.projected, buffers.projectionSums, rows);
-  ops::Normalization::addRmsWithQ4Sums(
-      graph, buffers.projected, weights_.hiddenNorm, buffers.hidden,
-      buffers.projectionSums, layout.hiddenSize, rows);
+                                 buffers.projected, rows, buffers.linearScratch);
+  ops::Normalization::addRms(graph, buffers.projected, weights_.hiddenNorm, buffers.hidden, layout.hiddenSize,
+                             rows);
 
   for (uint32_t layer = 0; layer < layout.layers; ++layer) {
-    operators_.linear().addPrefill(graph, buffers.hidden,
-                      contextKvProjections_[layer],
-                      buffers.contextKv, buffers.projectionSums, rows);
+    operators_.linear().addPrefill(graph, buffers.hidden, contextKvProjections_[layer], buffers.contextKv, rows,
+                                   buffers.linearScratch);
     for (const DFlashPrefillSpan &span : spans) {
       const uint64_t kvOffset =
           uint64_t{span.compactRow} * layout.contextKvSize() * sizeof(uint16_t);
@@ -311,26 +301,26 @@ DFlashDraftWeights loadDFlashDraftWeights(metal::MetalBackend &backend,
     layer.inputNorm = readNorm(file, layout.hiddenSize, false, "input-norm");
     layer.attentionConvolution =
         file.section(convolutionBytes, "attention-convolution");
-    layer.attentionDynamic = readAffineProjection(
+    layer.attentionDynamic = readBlockProjection(
         file, layout.dynamicSize, layout.hiddenSize,
         "attention-dynamic");
-    layer.qkvProjection = readAffineProjection(
+    layer.qkvProjection = readBlockProjection(
         file, layout.qkvSize, layout.hiddenSize, "qkv");
     layer.queryNorm = file.section(headNormBytes, "query-norm");
     layer.keyNorm = file.section(headNormBytes, "key-norm");
-    layer.outputProjection = readAffineProjection(
+    layer.outputProjection = readBlockProjection(
         file, layout.hiddenSize, layout.attentionSize,
         "attention-output");
     layer.postAttentionNorm =
         readNorm(file, layout.hiddenSize, false, "post-attention-norm");
     layer.mlpConvolution = file.section(convolutionBytes, "mlp-convolution");
-    layer.mlpDynamic = readAffineProjection(
+    layer.mlpDynamic = readBlockProjection(
         file, layout.dynamicSize, layout.hiddenSize, "mlp-dynamic");
-    layer.gateProjection = readAffineProjection(
+    layer.gateProjection = readBlockProjection(
         file, layout.intermediateSize, layout.hiddenSize, "mlp-gate");
-    layer.upProjection = readAffineProjection(
+    layer.upProjection = readBlockProjection(
         file, layout.intermediateSize, layout.hiddenSize, "mlp-up");
-    layer.downProjection = readAffineProjection(
+    layer.downProjection = readBlockProjection(
         file, layout.hiddenSize, layout.intermediateSize, "mlp-down");
     file.finish();
     result.files.push_back(file.record());
@@ -339,12 +329,12 @@ DFlashDraftWeights loadDFlashDraftWeights(metal::MetalBackend &backend,
 
   {
     WeightFile file = files.model();
-    result.contextProjection = readAffineProjection(
+    result.contextProjection = readBlockProjection(
         file, layout.hiddenSize, layout.targetHiddenSize,
         "context-projection");
     result.hiddenNorm = readNorm(file, layout.hiddenSize, false, "hidden-norm");
     result.finalNorm = readNorm(file, layout.hiddenSize, false, "final-norm");
-    result.selectorProjection = readAffineProjection(
+    result.selectorProjection = readBlockProjection(
         file, layout.selectorRank, layout.hiddenSize, "selector");
     const uint64_t codebookBytes = checkedMultiply<WeightStoreError>(
         checkedMultiply<WeightStoreError>(layout.vocabularySize,

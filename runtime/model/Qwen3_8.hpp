@@ -18,8 +18,6 @@ namespace splash::model {
 struct Qwen3_8Layout final : QwenHybridLayout<5> {
   // The family's name, as the installer pairs its draft (install/families.py).
   static constexpr std::string_view family = "Qwen3.8-27B";
-  static constexpr std::string_view layerMagic = "MDFL0006";
-  static constexpr std::string_view headMagic = "MDFL0002";
 
   constexpr Qwen3_8Layout()
       : QwenHybridLayout{{.maximumContextTokens = 262'144,

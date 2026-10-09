@@ -1,7 +1,6 @@
 #pragma once
 
-// Plans the images of an MLX target that the affine images do not hold
-// (ModelDescriptor::affineImages): the sections a GGUF target's images hold
+// Plans the images of an MLX target: the sections a GGUF target's images hold
 // (model/GgufImage.hpp), in their order, which writeGgufImage writes from the
 // checkpoint's tensors and BlockTargetFormat reads with bf16 norms and the GDN
 // value heads grouped, as MLX keeps them. Every quantized tensor keeps the
@@ -17,6 +16,7 @@
 #include "model/QwenHybridLayout.hpp"
 #include "model/SafetensorsCheckpoint.hpp"
 
+#include <string>
 #include <vector>
 
 namespace splash::model::mlx {
@@ -25,5 +25,13 @@ namespace splash::model::mlx {
 // outlives them: their rows read its tensors.
 [[nodiscard]] std::vector<gguf::Image> planImages(const SafetensorsCheckpoint &checkpoint,
                                                   const QwenTargetDimensions &geometry);
+
+// The modules the images read only quantized, in their order: the layers'
+// projections, the experts' and the shared expert's included, the head and
+// the token table. planImages refuses a checkpoint holding one unquantized,
+// and the configuration check one its config.json states unquantized
+// (model/ModelDescriptor.mm). The router, the shared-expert gate and GDN alpha
+// and beta are not among them.
+[[nodiscard]] std::vector<std::string> quantizedModules(const QwenTargetDimensions &geometry);
 
 } // namespace splash::model::mlx

@@ -367,11 +367,26 @@ class UpstreamTest(unittest.TestCase):
                 "quantization language_model.model.layers.0.mlp.down_proj is "
                 "affine 4-bit in groups of 256" + formats,
             ),
+            # MLX writes false for a module it leaves unquantized.
+            (
+                "bf16-head",
+                {
+                    "quantization": {
+                        "bits": 4,
+                        "group_size": 64,
+                        "language_model.lm_head": False,
+                    }
+                },
+                "quantization language_model.lm_head is unquantized; Splash loads "
+                "quantized MLX projections and token tables",
+            ),
         ):
             with self.subTest(name=name):
                 fake.publish(f"someone/{name}", "b" * 40, target(quantization))
+                fake.downloads.clear()
                 with self.assertRaisesRegex(models.ModelError, refusal):
                     self.prepare(selection(self.root, f"someone/{name}"))
+                self.assertEqual(fake.downloads, [f"someone/{name}/config.json"])
         # MLX writes both keys, and states the mode only in newer versions; a
         # module's entry gives it its own format, affine unless it says.
         for name, affine in (

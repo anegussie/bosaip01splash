@@ -140,6 +140,76 @@ inline void staged_accumulate(device bfloat *input, device uchar *w0, device uch
   simdgroup_barrier(mem_flags::mem_threadgroup);   // the stage may be reused by a following accumulate
 }
 
+// One tensor's weights in a one-simdgroup decode tile of GGUF_STAGED_COLUMNS columns: lane l stages column l, one
+// 32-input group per step, as gguf_staged_steps does at 32 threads. It holds the payload of the step it stages next
+// and that step's meta unit.
+static_assert(GGUF_GATE_UP_THREADS == 32 && GGUF_STAGED_COLUMNS == 32 && GGUF_STAGED_STEP == 32,
+              "lane l of one simdgroup stages column l, one 32-input group per step");
+template <class F> struct StagedColumn {
+  device uchar *w0, *w1, *meta;
+  typename F::Payload packed;
+  typename F::Meta hdr;
+  // The planes of column `origin + lane`, and step `first`'s payload (when the walk has a step) and meta unit.
+  void begin(device uchar *p0, device uchar *p1, device uchar *m, uint input_size, uint origin, uint lane, uint first,
+             bool any) thread {
+    const uint groups = input_size / 32, units = groups / F::MetaGroups;
+    const uint plane_tile = origin / QUANT_TILE_ROWS, plane_row = origin % QUANT_TILE_ROWS + lane;
+    w0 = p0 + (ulong(plane_tile) * groups * QUANT_TILE_ROWS + plane_row) * F::P0;
+    w1 = p1 + (ulong(plane_tile) * groups * QUANT_TILE_ROWS + plane_row) * F::P1;
+    meta = m + (ulong(plane_tile) * units * QUANT_TILE_ROWS + plane_row) * F::MetaBytes;
+    if (any) packed = F::load(w0 + ulong(first) * QUANT_TILE_ROWS * F::P0, w1 + ulong(first) * QUANT_TILE_ROWS * F::P1);
+    hdr = F::loadMeta(meta + ulong(first / F::MetaGroups) * QUANT_TILE_ROWS * F::MetaBytes);
+  }
+  // Dequantizes `step` into the lane's column of `stage`.
+  void stage(uint step, threadgroup half2 *tl, threadgroup half *stage, uint lane) thread {
+    dequant32<F>(packed, hdr, step % F::MetaGroups, tl, stage + lane * GGUF_STAGED_STEP);
+  }
+  // After `step` is staged: loads `next`'s payload, and its meta unit when it enters a new one.
+  void load(uint step, uint next) thread {
+    packed = F::load(w0 + ulong(next) * QUANT_TILE_ROWS * F::P0, w1 + ulong(next) * QUANT_TILE_ROWS * F::P1);
+    const uint unit = next / F::MetaGroups;
+    if (unit != step / F::MetaGroups) hdr = F::loadMeta(meta + ulong(unit) * QUANT_TILE_ROWS * F::MetaBytes);
+  }
+};
+
+// A gate/up pair's decode tile in one simdgroup: the gate's and the up's same GGUF_STAGED_COLUMNS columns over steps
+// [step_begin, step_end) of K from step_first, wrapping as gguf_staged_steps walks. Each step dequantizes both tensors
+// into their stages (one each), meets at a barrier, loads both tensors' next payloads, runs both matmuls on the step's
+// input and meets again before the stages are rewritten. Each tensor sums its steps in the order of its own decode
+// tile, so gate and up hold the bits of the gate and up passes over the same steps.
+template <class F, ushort Rows, class Acc>
+inline void gguf_staged_pair_steps(device bfloat *input, device uchar *gw0, device uchar *gw1, device uchar *gmeta,
+                                   device uchar *uw0, device uchar *uw1, device uchar *umeta, uint input_size,
+                                   uint origin, threadgroup half *stage, threadgroup half2 *tl, uint lane,
+                                   uint step_begin, uint step_end, uint step_first, thread Acc &gate, thread Acc &up) {
+  constexpr ushort Cols = GGUF_STAGED_COLUMNS, KS = GGUF_STAGED_STEP;
+  auto a = tensor(input, dextents<int, 2>{int(input_size), Rows}, array<int, 2>{1, int(input_size)});
+  constexpr auto descriptor = matmul2d_descriptor(Rows, Cols, KS, false, true, false, matmul2d_descriptor::mode::multiply_accumulate);
+  matmul2d<descriptor, execution_simdgroups<1>> operation;
+  tensor<threadgroup half, dextents<int, 2>, tensor_inline> bt0(stage, dextents<int, 2>{KS, Cols}, array<int, 2>{1, KS});
+  tensor<threadgroup half, dextents<int, 2>, tensor_inline> bt1(stage + KS * Cols, dextents<int, 2>{KS, Cols}, array<int, 2>{1, KS});
+  auto bg = bt0.slice<KS, Cols>(0, 0), bu = bt1.slice<KS, Cols>(0, 0);
+  StagedColumn<F> g, u;
+  g.begin(gw0, gw1, gmeta, input_size, origin, lane, step_first, step_begin < step_end);
+  u.begin(uw0, uw1, umeta, input_size, origin, lane, step_first, step_begin < step_end);
+  const auto run_step = [&](uint step, uint next, bool more) __attribute__((always_inline)) {
+    g.stage(step, tl, stage, lane);
+    u.stage(step, tl, stage + KS * Cols, lane);
+    simdgroup_barrier(mem_flags::mem_threadgroup);
+    if (more) { g.load(step, next); u.load(step, next); }
+    auto a_slice = a.template slice<KS, Rows>(step * KS, 0);
+    operation.run(a_slice, bg, gate);
+    operation.run(a_slice, bu, up);
+    simdgroup_barrier(mem_flags::mem_threadgroup);
+  };
+  uint walked = 0;
+  for (uint run = 0; run < 2; ++run) {
+    const uint from = run ? step_begin : step_first, to = run ? step_first : step_end;
+    for (uint step = from; step < to; ++step, ++walked)
+      run_step(step, step + 1 < to ? step + 1 : step_begin, walked + 1 < step_end - step_begin);
+  }
+}
+
 // runtime dequantizer selection (uniform per threadgroup): the format's pair table, which every thread of the
 // threadgroup fills, then its tile loop
 template <ushort Rows, ushort Cols, ushort KS, class Acc>

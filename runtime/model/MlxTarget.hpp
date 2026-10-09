@@ -1,7 +1,6 @@
 #pragma once
 
-// Source adapter for an MLX target the affine images do not hold
-// (ModelDescriptor::affineImages): its block images (model/MlxImage.hpp) are
+// Source adapter for an MLX target: its block images (model/MlxImage.hpp) are
 // written into memory, and QwenTargetLoader reads them as block-quantized
 // weights (BlockTargetFormat).
 

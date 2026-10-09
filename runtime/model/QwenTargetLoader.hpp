@@ -1,6 +1,5 @@
 #pragma once
 
-#include "model/AffineTarget.hpp"
 #include "model/GgufTarget.hpp"
 #include "model/MlxTarget.hpp"
 #include "model/QwenHybridLayout.hpp"
@@ -20,38 +19,14 @@
 
 namespace splash::model {
 
-// How a target's files store its tensors; loadQwenTarget pairs each source's
-// files with their format. Affine files, written from MLX, hold every
-// projection, a fused one too, as one affine Q4 tensor, and bf16 norms.
-struct AffineTargetFormat final {
-  static constexpr ops::GdnHeadOrder gdnOutputOrder = ops::GdnHeadOrder::Grouped;
-
-  [[nodiscard]] ops::NormWeights norm(WeightFile &file, uint32_t width, std::string_view label) const {
-    return readNorm(file, width, false, label);
-  }
-  [[nodiscard]] ops::Projection projection(WeightFile &file, uint32_t outputSize,
-                                           uint32_t inputSize, std::string_view label) const {
-    return readAffineProjection(file, outputSize, inputSize, label);
-  }
-  // The tensor `label`; block images keep the projection as `tensors`.
-  [[nodiscard]] ops::Projection fused(WeightFile &file, uint32_t outputSize, uint32_t inputSize,
-                                      std::string_view label,
-                                      std::initializer_list<std::string_view>) const {
-    return projection(file, outputSize, inputSize, label);
-  }
-  [[nodiscard]] ops::EmbeddingWeights embedding(WeightFile &file, uint32_t outputSize,
-                                                uint32_t inputSize) const {
-    return readAffineEmbedding(file, outputSize, inputSize, "embedding");
-  }
-};
-
-// Block images hold each tensor as one block-quantized segment, a fused
-// projection as its tensors in output column order. A GGUF's keep its F32
-// norms and the GDN output projection's input columns in llama.cpp's tiled
-// value-head order, so the GDN writes its output in it (a rotated Prism ML
-// GGUF keeps them grouped, and rotateInputs, Qwen3_8.cpp, switches its GDN to
-// that order); an MLX target's (model/MlxImage.hpp) keep its bf16 norms and
-// grouped value heads.
+// How a target's block images store its tensors; loadQwenTarget pairs each
+// source's images with their format. Block images hold each tensor as one
+// block-quantized segment, a fused projection as its tensors in output column
+// order. A GGUF's keep its F32 norms and the GDN output projection's input
+// columns in llama.cpp's tiled value-head order, so the GDN writes its output
+// in it (a rotated Prism ML GGUF keeps them grouped, and rotateInputs,
+// Qwen3_8.cpp, switches its GDN to that order); an MLX target's
+// (model/MlxImage.hpp) keep its bf16 norms and grouped value heads.
 struct BlockTargetFormat final {
   bool float32Norms = true;
   ops::GdnHeadOrder gdnOutputOrder = ops::GdnHeadOrder::Tiled;
@@ -64,9 +39,8 @@ struct BlockTargetFormat final {
     return readBlockProjection(file, outputSize, inputSize, label);
   }
   // The tensors, which may leave padding columns past the last one
-  // (LinearGguf.cpp requireSegments); affine files keep one tensor.
+  // (LinearGguf.cpp requireSegments).
   [[nodiscard]] ops::Projection fused(WeightFile &file, uint32_t outputSize, uint32_t inputSize,
-                                      std::string_view,
                                       std::initializer_list<std::string_view> tensors) const;
   [[nodiscard]] ops::EmbeddingWeights embedding(WeightFile &file, uint32_t outputSize,
                                                 uint32_t inputSize) const {
@@ -74,10 +48,8 @@ struct BlockTargetFormat final {
   }
 };
 
-// Reads the mixer sections that follow a layer's input norm, in file order
-// (instantiated for both formats).
-template <class Format>
-[[nodiscard]] QwenMixerWeights readQwenMixer(WeightFile &file, const Format &format,
+// Reads the mixer sections that follow a layer's input norm, in file order.
+[[nodiscard]] QwenMixerWeights readQwenMixer(WeightFile &file, const BlockTargetFormat &format,
                                              const QwenTargetDimensions &target,
                                              bool fullAttention);
 
@@ -85,10 +57,10 @@ template <class Format>
 // source, in their format: per layer the input norm, mixer,
 // post-attention norm and the architecture's FFN through readFfn, then the
 // head and the token embedding. Weights is the architecture's weight struct.
-template <class Weights, class Layout, class Files, class Format, class ReadFfn>
+template <class Weights, class Layout, class Files, class ReadFfn>
 [[nodiscard]] Weights
 readQwenTargetWeights(metal::MetalBackend &backend, const Layout &layout, Files &&files,
-                      const Format &format, ReadFfn readFfn) {
+                      const BlockTargetFormat &format, ReadFfn readFfn) {
   const uint64_t allocationBaseline = backend.memoryStats().allocatedBytes;
   Weights result;
   result.layout = layout;
@@ -130,8 +102,9 @@ readQwenTargetWeights(metal::MetalBackend &backend, const Layout &layout, Files 
   return result;
 }
 
-// Throws unless every dimension of a family's layout is set, the dimensions
-// agree with each other and every projection fits the Q4 storage tiles.
+// Throws unless every dimension of a family's layout is set and the
+// dimensions agree with each other. The image planners hold each tensor to
+// whole plane tiles.
 template <class Layout> void requireQwenLayout(const Layout &layout) {
   const auto zero = [](auto... dimensions) { return ((dimensions == 0) || ...); };
   const bool dense = layout.ffnKind == QwenFfnKind::Dense;
@@ -155,12 +128,6 @@ template <class Layout> void requireQwenLayout(const Layout &layout) {
       std::ranges::any_of(layout.hiddenCaptureLayers, [&](uint32_t layer) { return layer >= layout.layers; }) ||
       !layout.kvLayout().valid() || !layout.gdnStateLayout().valid())
     throw WeightStoreError("Qwen target layout is inconsistent");
-  validateQ4Layout(layout.packedGdnWidth, layout.hiddenSize);
-  validateQ4Layout(layout.packedFullWidth, layout.hiddenSize);
-  validateQ4Layout(layout.hiddenSize, layout.attentionWidth);
-  validateQ4Layout(ffnWidth, layout.hiddenSize);
-  validateQ4Layout(layout.hiddenSize, ffnWidth);
-  validateQ4Layout(layout.vocabularySize, layout.hiddenSize);
 }
 
 // Checks the layout and loads a target from its files. The architecture
@@ -173,12 +140,9 @@ loadQwenTarget(metal::MetalBackend &backend, const Layout &layout, const QwenTar
   requireQwenLayout(layout);
   if (const auto *gguf = std::get_if<std::reference_wrapper<GgufTargetLoader>>(&files))
     return readQwenTargetWeights<Weights>(backend, layout, gguf->get(), BlockTargetFormat{}, readFfn);
-  if (const auto *mlx = std::get_if<std::reference_wrapper<MlxTargetLoader>>(&files))
-    return readQwenTargetWeights<Weights>(backend, layout, mlx->get(),
-                                          BlockTargetFormat{false, ops::GdnHeadOrder::Grouped}, readFfn);
-  return readQwenTargetWeights<Weights>(
-      backend, layout, std::get<std::reference_wrapper<AffineTargetLoader>>(files).get(), AffineTargetFormat{},
-      readFfn);
+  return readQwenTargetWeights<Weights>(backend, layout,
+                                        std::get<std::reference_wrapper<MlxTargetLoader>>(files).get(),
+                                        BlockTargetFormat{false, ops::GdnHeadOrder::Grouped}, readFfn);
 }
 
 } // namespace splash::model

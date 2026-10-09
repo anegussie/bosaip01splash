@@ -6,12 +6,12 @@
 // exactly one or several splits, and the last slot of the ring, so that tile
 // bounds, the window mask, empty splits and the empty-row softmax guard are
 // all exercised.
+#include "LinearNumerics.hpp"
 #include "TestBuffers.hpp"
 #include "TestChecks.hpp"
 #include "metal/MetalBackend.hpp"
 #include "metal/abi/ExecutionGeometry.h"
 #include "ops/DraftAttention.hpp"
-#include "tuning/LinearNumerics.hpp"
 
 #import <Foundation/Foundation.h>
 
@@ -31,6 +31,9 @@ using splash::metal::MetalBackend;
 using splash::metal::MetalBuffer;
 using splash::metal::CommandGraph;
 using namespace splash::ops;
+using splash::test::bf16ToFloat;
+using splash::test::floatToBf16;
+using splash::test::ulpBf16;
 
 constexpr uint32_t kRows = 8;
 constexpr uint32_t kKvHeads = 8;
@@ -72,7 +75,7 @@ MetalBuffer randomBfloat(MetalBackend &backend, uint64_t count, Random &random,
                              label);
   auto *values = static_cast<uint16_t *>(buffer.contents());
   for (uint64_t index = 0; index < count; ++index)
-    values[index] = tuning::floatToBf16(random.unit());
+    values[index] = floatToBf16(random.unit());
   return buffer;
 }
 
@@ -101,16 +104,16 @@ void referenceRows(const uint16_t *queries, const uint16_t *keys,
         const uint32_t current = key - oldCount;
         double dot = 0.0;
         for (uint32_t d = 0; d < kHeadDim; ++d) {
-          dot += double(tuning::bf16ToFloat(query[d])) *
-                 tuning::bf16ToFloat(queryKeys[current * kHeadDim + d]);
+          dot += double(bf16ToFloat(query[d])) *
+                 bf16ToFloat(queryKeys[current * kHeadDim + d]);
         }
         score = dot * kScale;
       } else if (key >= hiddenPrefix) {
         const uint32_t slot = (commonStart + key) % kWindow;
         double dot = 0.0;
         for (uint32_t d = 0; d < kHeadDim; ++d) {
-          dot += double(tuning::bf16ToFloat(query[d])) *
-                 tuning::bf16ToFloat(keys[uint64_t{slot} * kHeadDim + d]);
+          dot += double(bf16ToFloat(query[d])) *
+                 bf16ToFloat(keys[uint64_t{slot} * kHeadDim + d]);
         }
         score = dot * kScale;
       }
@@ -127,9 +130,8 @@ void referenceRows(const uint16_t *queries, const uint16_t *keys,
       for (uint32_t d = 0; d < kHeadDim; ++d) {
         const float value =
             key >= oldCount
-                ? tuning::bf16ToFloat(queryValues[uint64_t{d} * kRows + key - oldCount])
-                : tuning::bf16ToFloat(values[uint64_t{d} * kWindow +
-                                    (commonStart + key) % kWindow]);
+                ? bf16ToFloat(queryValues[uint64_t{d} * kRows + key - oldCount])
+                : bf16ToFloat(values[uint64_t{d} * kWindow + (commonStart + key) % kWindow]);
         accumulated[d] += probability * value;
       }
     }
@@ -222,7 +224,7 @@ void runCase(MetalBackend &backend, uint32_t lanes, DraftAttentionShape shape,
               (uint64_t{lane} * kKvHeads + head) * kHeadDim * kRows,
           cacheLengths[lane], reference);
       for (uint64_t index = 0; index < reference.size(); ++index) {
-        const float actual = tuning::bf16ToFloat(output[queryOffset + index]);
+        const float actual = bf16ToFloat(output[queryOffset + index]);
         const float expected = reference[index];
         if (!std::isfinite(actual) ||
             std::fabs(actual - expected) >
@@ -271,8 +273,7 @@ void planGeometry() {
 void fillDyadic(const MetalBuffer &buffer, uint32_t multiplier, uint32_t modulus) {
   auto *values = static_cast<uint16_t *>(buffer.contents());
   for (uint64_t i = 0; i < buffer.sizeBytes() / 2; ++i)
-    values[i] = tuning::floatToBf16((int((i * multiplier) % modulus) - int(modulus / 2)) /
-                        8.0F);
+    values[i] = floatToBf16((int((i * multiplier) % modulus) - int(modulus / 2)) / 8.0F);
 }
 
 void surroundingPhases(MetalBackend &backend, DraftAttentionShape shape,
@@ -308,9 +309,9 @@ void surroundingPhases(MetalBackend &backend, DraftAttentionShape shape,
   const auto queryNorm = allocate(kHeadDim * 2);
   const auto keyNorm = allocate(kHeadDim * 2);
   std::fill_n(static_cast<uint16_t *>(queryNorm.contents()), kHeadDim,
-              tuning::floatToBf16(1));
+              floatToBf16(1));
   std::fill_n(static_cast<uint16_t *>(keyNorm.contents()), kHeadDim,
-              tuning::floatToBf16(1));
+              floatToBf16(1));
   const auto ropeCos = allocate(rows * kHeadDim / 2 * sizeof(float));
   const auto ropeSin = allocate(rows * kHeadDim / 2 * sizeof(float));
   for (uint64_t i = 0; i < rows * kHeadDim / 2; ++i) {
@@ -339,18 +340,18 @@ void surroundingPhases(MetalBackend &backend, DraftAttentionShape shape,
       for (uint32_t channel = 0; channel < shape.hiddenSize; ++channel) {
         const uint64_t index = row * shape.hiddenSize + channel;
         const uint32_t group = channel / channelsPerGroup;
-        float value = tuning::bf16ToFloat(in[index]) *
-            (tuning::bf16ToFloat(base[(kind * 2) * shape.hiddenSize + channel]) +
-             tuning::bf16ToFloat(dyn[row * shape.dynamicSize +
-                            (kind * 2) * convolutionGroups + group]));
+        float value = bf16ToFloat(in[index]) *
+            (bf16ToFloat(base[(kind * 2) * shape.hiddenSize + channel]) +
+             bf16ToFloat(dyn[row * shape.dynamicSize +
+                             (kind * 2) * convolutionGroups + group]));
         if (row % kRows != 0)
-          value += tuning::bf16ToFloat(in[index - shape.hiddenSize]) *
-              (tuning::bf16ToFloat(base[(kind * 2 + 1) * shape.hiddenSize + channel]) +
-               tuning::bf16ToFloat(dyn[row * shape.dynamicSize +
-                              (kind * 2 + 1) * convolutionGroups + group]));
+          value += bf16ToFloat(in[index - shape.hiddenSize]) *
+              (bf16ToFloat(base[(kind * 2 + 1) * shape.hiddenSize + channel]) +
+               bf16ToFloat(dyn[row * shape.dynamicSize +
+                               (kind * 2 + 1) * convolutionGroups + group]));
         if (finish)
-          value += tuning::bf16ToFloat(res[index]);
-        require(actual[index] == tuning::floatToBf16(value),
+          value += bf16ToFloat(res[index]);
+        require(actual[index] == floatToBf16(value),
                 "draft convolution differed from exact CPU arithmetic");
       }
     }
@@ -383,20 +384,20 @@ void surroundingPhases(MetalBackend &backend, DraftAttentionShape shape,
             ((uint64_t{lane} * (query ? shape.queryHeads : kKvHeads) + h) * kRows + row) * kHeadDim;
         double squares = 0;
         for (uint32_t d = 0; d < kHeadDim; ++d)
-          squares += double(tuning::bf16ToFloat(source[d])) * tuning::bf16ToFloat(source[d]);
+          squares += double(bf16ToFloat(source[d])) * bf16ToFloat(source[d]);
         const double inverse = 1 / std::sqrt(squares / kHeadDim + SPLASH_RMS_EPSILON);
         for (uint32_t d = 0; d < kPairs; ++d) {
-          const double first = tuning::bf16ToFloat(
-              tuning::floatToBf16(float(tuning::bf16ToFloat(source[d]) * inverse)));
-          const double second = tuning::bf16ToFloat(
-              tuning::floatToBf16(float(tuning::bf16ToFloat(source[d + kPairs]) * inverse)));
+          const double first = bf16ToFloat(
+              floatToBf16(float(bf16ToFloat(source[d]) * inverse)));
+          const double second = bf16ToFloat(
+              floatToBf16(float(bf16ToFloat(source[d + kPairs]) * inverse)));
           const double c = static_cast<const float *>(ropeCos.contents())[laneRow * kPairs + d];
           const double s = static_cast<const float *>(ropeSin.contents())[laneRow * kPairs + d];
           const double rotated[2] = {first * c - second * s, second * c + first * s};
           for (uint32_t half = 0; half < 2; ++half)
-            require(std::fabs(tuning::bf16ToFloat(prepared[d + half * kPairs]) - rotated[half]) <=
-                        tuning::ulpBf16(float(rotated[half])) +
-                            tuning::ulpBf16(float(std::max(std::fabs(first), std::fabs(second)))),
+            require(std::fabs(bf16ToFloat(prepared[d + half * kPairs]) - rotated[half]) <=
+                        ulpBf16(float(rotated[half])) +
+                            ulpBf16(float(std::max(std::fabs(first), std::fabs(second)))),
                     "draft prepare differs from the fp64 norm and rotation");
         }
         if (!query)
@@ -472,14 +473,13 @@ void contextWriters(MetalBackend &backend, DraftAttentionShape shape) {
             kv + uint64_t{row} * kRowWidth + kValueColumn + head * kHeadDim;
         float square = 0.0F;
         for (uint32_t d = 0; d < kHeadDim; ++d)
-          square += tuning::bf16ToFloat(key[d]) * tuning::bf16ToFloat(key[d]);
+          square += bf16ToFloat(key[d]) * bf16ToFloat(key[d]);
         const float inverse =
             1.0F / std::sqrt(square / kHeadDim + float(SPLASH_RMS_EPSILON));
         std::array<float, kHeadDim> normalized;
         for (uint32_t d = 0; d < kHeadDim; ++d)
-          normalized[d] = tuning::bf16ToFloat(
-              tuning::floatToBf16(tuning::bf16ToFloat(key[d]) * inverse *
-                                  tuning::bf16ToFloat(norm[d])));
+          normalized[d] = bf16ToFloat(
+              floatToBf16(bf16ToFloat(key[d]) * inverse * bf16ToFloat(norm[d])));
         float *out =
             wantKeys.data() + (uint64_t{head} * kWindow + slot) * kHeadDim;
         for (uint32_t d = 0; d < kHeadDim / 2; ++d) {
@@ -498,7 +498,7 @@ void contextWriters(MetalBackend &backend, DraftAttentionShape shape) {
     const auto *gotValues = static_cast<const uint16_t *>(values.contents());
     for (uint64_t i = 0; i < ringElements; ++i) {
       const float expected = wantKeys[i],
-                  actual = tuning::bf16ToFloat(gotKeys[i]);
+                  actual = bf16ToFloat(gotKeys[i]);
       require(gotValues[i] == wantValues[i] &&
                   (std::isnan(expected)
                        ? gotKeys[i] == kUntouched

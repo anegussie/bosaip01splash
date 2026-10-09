@@ -195,18 +195,19 @@ void testOneRulePerValue(const std::filesystem::path &fixtures) {
           "upstream model config exceeds 1048576 bytes", "an oversized config was read");
 }
 
-// An MLX target's quantization is MLX's own object: each module the target
-// reads by its own entry or else by the object, affine in 2, 3, 4, 5, 6 or 8
-// bits in groups of 32, 64 or 128, or mxfp4; an entry is affine unless it
-// names its mode, and takes its mode's default bits and group size (affine 4
-// and 64, mxfp4 4 and 32) when it omits them, as MLX loads it. The affine
-// images hold a target whose every module is 4-bit in groups of 64 but for a
-// MoE's 8-bit router and shared-expert gate; any other loads as block images.
-// A GGUF target has none (above).
+// An MLX target's quantization is MLX's own object: the object and each
+// module's own entry name affine 2, 3, 4, 5, 6 or 8 bits in groups of 32, 64
+// or 128, or mxfp4; an entry is affine unless it names its mode, and takes its
+// mode's default bits and group size (affine 4 and 64, mxfp4 4 and 32) when it
+// omits them, as MLX loads it. The entry false, which MLX writes for a module
+// it leaves unquantized, is refused for a projection, the head and the token
+// table, and accepted for the router, the shared-expert gate and GDN alpha and
+// beta. A GGUF target has none (above).
 void testQuantization(const std::filesystem::path &fixtures) {
   const SourceModel dense = mlxModel(fixtures, "qwen3.8-27b");
   const SourceModel moe = mlxModel(fixtures, "qwen3.6-35b-a3b");
-  require(inspect(dense).affineImages && inspect(moe).affineImages, "a 4-bit target did not load as affine images");
+  static_cast<void>(inspect(dense));
+  static_cast<void>(inspect(moe));
   // The dense object and the MoE's leading fields, as mxfp4.
   const std::string_view affine = R"("group_size": 64,
     "bits": 4,
@@ -217,13 +218,22 @@ void testQuantization(const std::filesystem::path &fixtures) {
   // The MoE router's entry.
   const std::string_view router = R"("group_size": 64,
       "bits": 8)";
-  require(inspect(moe.with(&SourceModel::config, router, R"("bits": 8)")).affineImages,
-          "a router entry of only its bits did not take affine's group of 64");
-  struct Block final {
+  // The object's first key, before which a module's entry is added.
+  const std::string_view object = R"("quantization": {)";
+  // The MoE's first router and shared-expert gate entries.
+  const std::string_view routerEntry = R"("language_model.model.layers.0.mlp.gate": {
+      "group_size": 64,
+      "bits": 8
+    })";
+  const std::string_view sharedGateEntry = R"("language_model.model.layers.0.mlp.shared_expert_gate": {
+      "group_size": 64,
+      "bits": 8
+    })";
+  struct Accepted final {
     const SourceModel &model;
     std::string_view from, to;
   };
-  for (const Block &block : std::initializer_list<Block>{
+  for (const Accepted &accepted : std::initializer_list<Accepted>{
            {dense, R"("bits": 4)", R"("bits": 8)"},
            {dense, R"("bits": 4)", R"("bits": 3)"},
            {dense, R"("group_size": 64)", R"("group_size": 128)"},
@@ -231,11 +241,18 @@ void testQuantization(const std::filesystem::path &fixtures) {
            // The router 4-bit; under an mxfp4 object, its 8-bit entry stays affine.
            {moe, R"("bits": 8)", R"("bits": 4)"},
            {moe, affine, mxfp4},
+           // An entry of only its bits takes affine's group of 64.
+           {moe, router, R"("bits": 8)"},
            // An entry of only its mode: mxfp4, 4-bit in groups of 32.
            {moe, router, R"("mode": "mxfp4")"},
+           // Modules the images also read unquantized (as F32).
+           {moe, routerEntry, R"("language_model.model.layers.0.mlp.gate": false)"},
+           {moe, sharedGateEntry, R"("language_model.model.layers.0.mlp.shared_expert_gate": false)"},
+           {dense, object, R"("quantization": {
+    "language_model.model.layers.0.linear_attn.in_proj_a": false,
+    "language_model.model.layers.0.linear_attn.in_proj_b": false,)"},
        })
-    require(!inspect(block.model.with(&SourceModel::config, block.from, block.to)).affineImages,
-            "a target with " + std::string(block.to) + " loaded as affine images");
+    static_cast<void>(inspect(accepted.model.with(&SourceModel::config, accepted.from, accepted.to)));
   struct Refused final {
     const SourceModel &model;
     std::string_view from, to, error;
@@ -253,14 +270,32 @@ void testQuantization(const std::filesystem::path &fixtures) {
            // A group past a byte is no format (4 bits in groups of 320 are not af5g64).
            {dense, R"("group_size": 64)", R"("group_size": 320)", "quantization is affine 4-bit in groups of 320"},
            {dense, R"("mode": "affine")", R"("mode": "nvfp4")", "quantization is nvfp4 4-bit in groups of 64"},
-           {dense, R"("quantization": {)", R"("quantization": {"language_model.lm_head": false,)",
-            "quantization language_model.lm_head must be an object"},
            {moe, R"("bits": 8
     },)", R"("bits": 8, "mode": "mxfp8"
     },)", "quantization language_model.model.layers.0.mlp.gate is mxfp8 8-bit in groups of 64"},
        })
     refuses(refused.model.with(&SourceModel::config, refused.from, refused.to), refused.error,
             "an MLX quantization was accepted with " + std::string(refused.to));
+  // A module the images read only quantized, left unquantized: a projection
+  // of each kind, the head and the token table.
+  struct Unquantized final {
+    const SourceModel &model;
+    std::string module;
+  };
+  for (const Unquantized &unquantized : std::initializer_list<Unquantized>{
+           {dense, "language_model.model.layers.3.self_attn.q_proj"},
+           {dense, "language_model.model.layers.0.linear_attn.in_proj_qkv"},
+           {dense, "language_model.model.layers.0.mlp.up_proj"},
+           {dense, "language_model.lm_head"},
+           {dense, "language_model.model.embed_tokens"},
+           {moe, "language_model.model.layers.0.mlp.switch_mlp.down_proj"},
+           {moe, "language_model.model.layers.0.mlp.shared_expert.gate_proj"},
+       })
+    refuses(unquantized.model.with(&SourceModel::config, object,
+                                   std::string(object) + "\"" + unquantized.module + "\": false,"),
+            "quantization " + unquantized.module +
+                " is unquantized; Splash loads quantized MLX projections and token tables",
+            "an unquantized " + unquantized.module + " was accepted");
 }
 
 // The vision tower the record names is the family's, over RGB patches of two

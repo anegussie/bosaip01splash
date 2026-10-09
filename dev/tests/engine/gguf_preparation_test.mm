@@ -282,9 +282,7 @@ void checkWidenedAlphaBeta(MetalBackend &backend, const std::filesystem::path &d
 
 // The segments of a block projection of `n` x `k`, by output width.
 bool blockProjection(const ops::Projection &p, uint32_t n, uint32_t k, std::vector<uint32_t> widths) {
-  if (p.layout() != ops::WeightLayout::Block32 || p.outputSize != n || p.inputSize != k ||
-      p.blocks().segments.size() != widths.size())
-    return false;
+  if (p.outputSize != n || p.inputSize != k || p.blocks().segments.size() != widths.size()) return false;
   uint32_t offset = 0;
   for (size_t i = 0; i < widths.size(); ++i) {
     const ops::QuantizedSegment &s = p.blocks().segments[i];
@@ -344,8 +342,7 @@ void checkDenseTarget(MetalBackend &backend, const std::filesystem::path &direct
             std::string_view(weights.logitsProjection.blocks().segments.front().name()) == "q6k" &&
             weights.logitsProjection.destination == ops::FloatOutput::Float32,
         "GGUF target: logits a Q6_K block projection of vocabulary x hidden into fp32");
-  check(weights.tokenEmbedding.layout() == ops::WeightLayout::Block32 &&
-            weights.tokenEmbedding.blocks().formatId == GGUF_FMT_IQ4XS &&
+  check(weights.tokenEmbedding.blocks().formatId == GGUF_FMT_IQ4XS &&
             weights.tokenEmbedding.outputSize == layout.vocabularySize && weights.tokenEmbedding.inputSize == hidden,
         "GGUF target: token table IQ4_XS blocks of vocabulary x hidden");
   check(model::qwenTargetGeometry(weights).valid(), "GGUF target: a valid target geometry");

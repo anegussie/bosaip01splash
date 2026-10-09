@@ -2,9 +2,9 @@
 #include "TestChecks.hpp"
 #include "ops/PagedAttention.hpp"
 #include "ops/RoPE.hpp"
-#include "tuning/HostKvExtents.hpp"
-#include "tuning/LinearNumerics.hpp"
 
+#include "HostKvExtents.hpp"
+#include "LinearNumerics.hpp"
 #include "NormReference.hpp"
 
 #include <algorithm>
@@ -22,10 +22,10 @@
 namespace {
 
 using namespace splash;
-using ops::tuning::HostKvExtents;
-using ops::tuning::bf16ToFloat;
-using ops::tuning::floatToBf16;
-using ops::tuning::ulpBf16;
+using test::HostKvExtents;
+using test::bf16ToFloat;
+using test::floatToBf16;
+using test::ulpBf16;
 
 static_assert(!std::is_aggregate_v<ops::PrefillAttentionPlan> &&
               !std::is_default_constructible_v<ops::PrefillAttentionPlan> &&
@@ -813,11 +813,11 @@ void bufferExtents(metal::MetalBackend &backend, uint32_t queryHeads, kv::Layout
                                {1, verifyStaged(queryWidth), 2, "attention row"},
                                {2, verifyRows * width * 2, 2, "attention hidden"},
                                {3, ops::tableBytes(width, verifyRows), 2, "linear table"},
-                               {4, ops::tableSumsBytes(ops::LinearInput::Table64, width, verifyRows), 4,
+                               {4, ops::tableSumsBytes(ops::LinearInput::Table16, width, verifyRows), 4,
                                 "linear table sums"}},
                        [&](metal::CommandGraph &graph, const Buffers &b) {
                          (void)ops::PagedAttention::addVerifyGate(graph, b[0], b[1], b[2], queryHeads, layout, lanes,
-                                                                  {b[3], b[4], {}, {}}, ops::LinearInput::Table64);
+                                                                  {b[3], b[4], {}, {}}, ops::LinearInput::Table16);
                        });
 
   const auto chunk = ops::PagedAttention::prefillParams(committed, tokens, stride, 8);

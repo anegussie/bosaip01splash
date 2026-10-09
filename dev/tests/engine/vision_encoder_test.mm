@@ -10,6 +10,7 @@
 // numpy reference. It then verifies determinism, a second grid through the
 // same scratch arena, and reports the encode time of a 64x64-patch image.
 
+#include "LinearNumerics.hpp"
 #include "TestChecks.hpp"
 #include "metal/CommandGraph.hpp"
 #include "metal/MetalBackend.hpp"
@@ -17,7 +18,6 @@
 #include "model/VisionLoader.hpp"
 #include "model/WeightImages.hpp"
 #include "ops/Vision.hpp"
-#include "tuning/LinearNumerics.hpp"
 
 #import <Foundation/Foundation.h>
 
@@ -74,7 +74,7 @@ std::vector<float> encodeOnce(MetalBackend &backend,
   const auto *words = static_cast<const uint16_t *>(embeddings.contents());
   std::vector<float> result(uint64_t{grid.mergedTokens()} * hiddenSize);
   for (uint64_t index = 0; index < result.size(); ++index)
-    result[index] = splash::ops::tuning::bf16ToFloat(words[index]);
+    result[index] = splash::test::bf16ToFloat(words[index]);
   return result;
 }
 
