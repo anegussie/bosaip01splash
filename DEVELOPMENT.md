@@ -1129,16 +1129,17 @@ runs on the block kernels its target's projections run on.
 
 ### Vision
 
-Vision comes from the target repository: MLX's `vision_tower.*` tensors,
-linking only `config.json` and the shards holding them, or the GGUF
-repository's root projector, a GGUF whose name holds `mmproj` (as
-`mmproj-BF16.gguf` or `MODEL-mmproj-BF16.gguf`), chosen by its header: a `clip`
-projector whose weights are BF16, or F32; BF16 is preferred. F16 has a narrower
-exponent than BF16, so an F16 projector has already rounded small weights and
-is not used. The processor configuration (MLX `preprocessor_config.json`, the
-GGUF's `clip.vision` metadata) must describe the one preprocessing Splash
-implements (`server/images.py`); it is checked before any weight download and
-not installed.
+Vision comes from the target repository: MLX's `vision_tower.*` tensors, linking
+only `config.json` and the shards holding them, or the GGUF repository's root
+projector, a GGUF whose name holds `mmproj` (as `mmproj-BF16.gguf` or
+`MODEL-mmproj-BF16.gguf`), chosen by its header: a `clip` projector whose
+weights are BF16, F32 or F16, preferred in that order. An F16 projector made
+from a BF16 tower, llama.cpp's default output, loads exactly: F16 rounds the
+smallest BF16 weights onto its subnormal grid, and what that keeps is still a
+BF16. The processor configuration (MLX `preprocessor_config.json`, the GGUF's
+`clip.vision` metadata) must describe the one preprocessing Splash implements
+(`server/images.py`); it is checked before any weight download and not
+installed.
 
 Both sources are written into one image, which the one BF16 vision operator
 reads: BF16 tensors are

@@ -108,13 +108,13 @@ def select_gguf(files, variant):
 def select_vision(repo):
     """The name and header of the GGUF repository's vision projector, chosen
     by content among its root GGUF files named mmproj, whatever the publisher
-    calls them: a clip model whose weights are BF16, or F32, which
-    preparation converts only where every value is exact; BF16 is preferred.
-    The tower runs in BF16 and preparation never rounds a weight: F16 has a
-    narrower exponent than BF16, so an F16 projector has already rounded
-    small weights, as a quantized one has. Each header costs a few range
-    requests."""
-    usable, found = {"BF16": [], "F32": []}, []
+    calls them: a clip model whose weights are BF16, F32 or F16, preferred in
+    that order. The tower runs in BF16 and preparation never rounds a weight:
+    it converts F32 and F16 only where every value is exact. An F16 projector
+    made from a BF16 tower is: F16 rounds the smallest BF16 weights onto its
+    subnormal grid, and what that keeps is still a BF16. Each header costs a
+    few range requests."""
+    usable, found = {"BF16": [], "F32": [], "F16": []}, []
     for name in filter(_projector_named, _root_ggufs(repo.files)):
         with repo.open(name) as stream:
             header = gguf.Metadata(stream, tensors=True)
@@ -124,8 +124,9 @@ def select_vision(repo):
             for kind in header.tensors.values()
         }
         found.append(f"{name} ({architecture}: {', '.join(sorted(types))})")
-        if architecture == "clip" and types and types <= {"BF16", "F32"}:
-            usable["BF16" if "BF16" in types else "F32"].append((name, header))
+        if architecture == "clip" and types and types <= {"BF16", "F32", "F16"}:
+            precision = next(p for p in ("F16", "BF16", "F32") if p in types)
+            usable[precision].append((name, header))
     for precision, projectors in usable.items():
         if len(projectors) == 1:
             return projectors[0]
@@ -136,7 +137,7 @@ def select_vision(repo):
                 + ", describe no single tower; use --language-only to serve text only"
             )
     raise models.ModelError(
-        "the GGUF repository has no BF16 or F32 vision projector ("
+        "the GGUF repository has no BF16, F32 or F16 vision projector ("
         + ("; ".join(found) or "no GGUF named mmproj")
         + "); use --language-only to serve text only"
     )
