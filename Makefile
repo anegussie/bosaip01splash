@@ -296,6 +296,7 @@ ENGINE_MM_SOURCES := \
 	runtime/ane/Program.mm \
 	runtime/model/SafetensorsCheckpoint.mm \
 	runtime/model/ModelDescriptor.mm \
+	runtime/engine/ThermalState.mm \
 	runtime/engine/RuntimeResources.mm \
 	runtime/engine/Bootstrap.mm
 ENGINE_OBJECTS := \
