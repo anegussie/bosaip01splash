@@ -1402,10 +1402,11 @@ bool Engine::reclaimIdleState(bool keepLane) noexcept {
 
 // While growth is paused a lane short of state buffers takes a cached
 // state's, as a request short of pages takes idle cached pages below:
-// evicting the state returns its cell and ring to the pool the lane draws
-// from, and nothing is allocated. A state goes only when those in RAM cover
-// what the pool lacks; otherwise the cache survives, and the request grows
-// if it is in service and waits if it is not.
+// evicting the state returns its cell and context window to the pool the
+// lane draws from, and nothing is allocated. A state goes only when those in
+// RAM cover what the pool lacks, which they never do for the draft rings no
+// cached state holds; otherwise the cache survives, and the request grows if
+// it is in service and waits if it is not.
 CacheReclaimResult Engine::reuseCachedStateWhilePaused(ReclaimClass upTo) {
   if (reclaimIdleState(true))
     return {true, 0};

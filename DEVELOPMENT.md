@@ -213,8 +213,8 @@ checkpoints and replays its prompt after each suspension. With it off, startup
 suggests it in one line when the memory available at startup may not hold the
 advertised context. It does not raise the context limit. A quota smaller than
 the working set can cause repeated reads and writes; it is not a write-rate
-limit. Its state writes stage through a buffer of one state (109 MiB for 35B,
-187 MiB for 27B), which the memory plan sets aside within `--max-memory`; a
+limit. Its state writes stage through a buffer of one state (64 MiB for 35B,
+153 MiB for 27B), which the memory plan sets aside within `--max-memory`; a
 quota too small for one state leaves it off.
 
 Restarts recompute everything unless `--persistent-cache` is on (see
@@ -1726,8 +1726,8 @@ plan holds with the split it runs.
 ### Residency and KV extents
 
 Every buffer the backend allocates belongs to one residency set attached to its
-command queue (`MetalBackend::allocateBuffer`): weights, KV extents, state cells
-and draft rings, and scratch alike stay wired between requests until the idle
+command queue (`MetalBackend::allocateBuffer`): weights, KV extents, state
+buffers and scratch alike stay wired between requests until the idle
 release (`--idle-release`, 10 minutes by default) passes without a command, and
 the next command wires them again. `--idle-release off` keeps every buffer
 wired, and the weight images allocated, while the engine runs; KV extents return
@@ -1856,7 +1856,7 @@ system prompt, resumes there instead of from the start. It stays only if the
 replay state fits beside it; refused memory, the replay state takes its buffers
 rather than another lane's checkpoint. With the SSD cache it costs a write as
 well: reclaim takes checkpoints first and writes the states it evicts to the
-SSD, this one too (187 MiB for 27B), and one published straight to the SSD,
+SSD, this one too (153 MiB for 27B), and one published straight to the SSD,
 when no RAM slot took it, stays there. The persistent cache's hourly write limit
 does not pause these writes, and a full quota makes room for one by dropping the
 oldest copy, perhaps an older conversation's restore point.
@@ -1879,9 +1879,20 @@ request-sized allocation fits. A request that cannot fit even alone, after every
 cached prefix was evicted, fails with 400 `capacity_exhausted`, naming
 `--max-memory` and `--max-context`; retrying it fails the same way.
 
+A cached state holds the target's GDN cell and the draft's context window, not
+the draft's rings: the context row of each of the 2048 positions the rings
+cover, from which every draft layer computes its keys and values, in 4-bit
+codes over groups of 64 values with each group's fp16 scale and minimum
+(`DraftStateLayout::windowBytes`: 5.6 MiB for 27B and 2.25 MiB for 35B, where
+the rings take 40 and 48 MiB). Prefill keeps a lane's window beside its rings;
+a restore that continues the rings computes them from the window again at the
+start of the request's first prefill chunk (`DFlashDraft::addContextRebuild`).
+Decode writes the rings alone, so states are published only in prefill.
+
 ### Disk tier
 
-The tier holds cached request states (GDN cell plus draft ring) and KV pages.
+The tier holds cached request states (GDN cell plus the draft's context
+window) and KV pages.
 RAM and disk copies share the same block tree and recency order. Restoring a
 prefix keeps its disk copy, so its next eviction needs no write while that copy
 remains cached. The KV tier takes no Metal memory. The state staging buffer,

@@ -17,11 +17,13 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -573,6 +575,111 @@ void contextWriters(MetalBackend &backend, DraftAttentionShape shape) {
           "invalid draft context write partially encoded a graph");
 }
 
+// The context window's reference for one group of 64 values: the codes and
+// the fp16 scale and minimum prefill_draft_context_store writes, and the bf16
+// values prefill_draft_context_load reads back from them.
+struct WindowGroup final {
+  std::array<uint8_t, 32> codes{};
+  _Float16 scale = 0, minimum = 0;
+  std::array<uint16_t, 64> loaded{};
+};
+
+WindowGroup referenceWindowGroup(const uint16_t *values) {
+  float low = INFINITY, high = -INFINITY;
+  for (uint32_t i = 0; i < 64; ++i) {
+    low = std::min(low, bf16ToFloat(values[i]));
+    high = std::max(high, bf16ToFloat(values[i]));
+  }
+  WindowGroup result;
+  result.scale = _Float16((high - low) / 15.0F);
+  result.minimum = _Float16(low);
+  const float scale = float(result.scale), minimum = float(result.minimum);
+  for (uint32_t i = 0; i < 64; ++i) {
+    const float steps = (bf16ToFloat(values[i]) - minimum) / scale;
+    const uint32_t code = scale > 0 ? uint32_t(std::clamp(std::nearbyint(steps), 0.0F, 15.0F)) : 0;
+    result.codes[i / 2] |= uint8_t(code << (4 * (i % 2)));
+    result.loaded[i] = floatToBf16(std::fma(float(code), scale, minimum));
+  }
+  return result;
+}
+
+// Stores 37 rows that wrap from the ring's last slots to its first, and every
+// slot of a second window, and loads them back, all rows and a run inside:
+// codes, scales and minimums match the reference byte for byte, the loaded
+// rows bit for bit, and slots no store reached keep their bytes. The rows
+// hold a constant group (zero scale), a wide one and random ones.
+void contextWindow(MetalBackend &backend, uint32_t width) {
+  constexpr uint8_t kUntouched = 0xA5;
+  const uint32_t groups = width / 64;
+  const uint64_t windowBytes = DraftAttention::contextWindowBytes(width);
+  require(windowBytes == uint64_t{kWindow} * (width / 2 + groups * 4), "context window bytes");
+  Random random(0xc0de1000ULL + width);
+  for (const auto [rows, start] : {std::pair{37U, 6130U}, std::pair{kWindow, 0U}}) {
+    const MetalBuffer input = randomBfloat(backend, uint64_t{rows} * width, random, "draft context rows");
+    auto *values = static_cast<uint16_t *>(input.contents());
+    std::fill_n(values, 64, floatToBf16(0.75F));
+    for (uint32_t i = 0; i < 64; ++i)
+      values[uint64_t{width} + 64 + i] = floatToBf16((float(i) - 31.5F) * 9.375F);
+    MetalBuffer window = backend.allocateBuffer(windowBytes, BufferStorage::Shared, "draft context window");
+    std::memset(window.contents(), kUntouched, windowBytes);
+    MetalBuffer loaded = backend.allocateBuffer(uint64_t{rows} * width * 2, BufferStorage::Shared,
+                                                "draft context loaded rows");
+    constexpr uint32_t kRunBegin = 5, kRunRows = 16;
+    MetalBuffer run = backend.allocateBuffer(uint64_t{kRunRows} * width * 2, BufferStorage::Shared,
+                                             "draft context loaded run");
+    CommandGraph graph;
+    DraftAttention::addWindowStore(graph, input, window, rows, start, width);
+    DraftAttention::addWindowLoad(graph, window, loaded, rows, start, width);
+    DraftAttention::addWindowLoad(graph, window, run, kRunRows, start + kRunBegin, width);
+    static_cast<void>(backend.submitCommandAsync(graph.dispatches()).wait());
+
+    const auto *bytes = static_cast<const uint8_t *>(window.contents());
+    const auto *scales = reinterpret_cast<const _Float16 *>(bytes + uint64_t{kWindow} * (width / 2));
+    const auto *loadedValues = static_cast<const uint16_t *>(loaded.contents());
+    const auto *runValues = static_cast<const uint16_t *>(run.contents());
+    std::vector<bool> written(kWindow);
+    for (uint32_t row = 0; row < rows; ++row) {
+      const uint32_t slot = (start + row) % kWindow;
+      written[slot] = true;
+      for (uint32_t group = 0; group < groups; ++group) {
+        const uint64_t offset = uint64_t{row} * width + group * 64;
+        const WindowGroup want = referenceWindowGroup(values + offset);
+        require(std::equal(want.codes.begin(), want.codes.end(),
+                           bytes + uint64_t{slot} * (width / 2) + group * 32),
+                "context window codes");
+        const _Float16 *scale = scales + (uint64_t{slot} * groups + group) * 2;
+        require(std::bit_cast<uint16_t>(scale[0]) == std::bit_cast<uint16_t>(want.scale) &&
+                    std::bit_cast<uint16_t>(scale[1]) == std::bit_cast<uint16_t>(want.minimum),
+                "context window scale and minimum");
+        require(std::equal(want.loaded.begin(), want.loaded.end(), loadedValues + offset),
+                "context window loaded rows");
+        if (row >= kRunBegin && row < kRunBegin + kRunRows)
+          require(std::equal(want.loaded.begin(), want.loaded.end(),
+                             runValues + (uint64_t{row - kRunBegin}) * width + group * 64),
+                  "context window loaded run");
+      }
+    }
+    for (uint32_t slot = 0; slot < kWindow; ++slot) {
+      if (written[slot]) continue;
+      const uint8_t *codes = bytes + uint64_t{slot} * (width / 2);
+      const auto *groupBytes = reinterpret_cast<const uint8_t *>(scales + uint64_t{slot} * groups * 2);
+      require(std::all_of(codes, codes + width / 2, [](uint8_t b) { return b == kUntouched; }) &&
+                  std::all_of(groupBytes, groupBytes + groups * 4, [](uint8_t b) { return b == kUntouched; }),
+              "a context window store reached a slot outside its rows");
+    }
+  }
+  CommandGraph invalid;
+  const MetalBuffer rows = backend.allocateBuffer(uint64_t{kWindow + 1} * width * 2, BufferStorage::Shared, "rows");
+  const MetalBuffer window = backend.allocateBuffer(windowBytes, BufferStorage::Shared, "window");
+  rejects([&] { DraftAttention::addWindowStore(invalid, rows, window, 0, 0, width); },
+          "a context window holds one ring's rows", "an empty context window store was accepted");
+  rejects([&] { DraftAttention::addWindowLoad(invalid, window, rows, kWindow + 1, 0, width); },
+          "a context window holds one ring's rows", "a load of more rows than a ring was accepted");
+  rejects([&] { static_cast<void>(DraftAttention::contextWindowBytes(width + 32)); },
+          "draft context rows are whole 64-value groups", "a partial context group was accepted");
+  require(invalid.empty(), "an invalid context window transfer encoded a dispatch");
+}
+
 // Each buffer the draft phases reach, at its extent and one element short,
 // for three lanes of eight rows: the convolution's rows, the lanes' dynamic
 // weights and the taps' base weights; the prepare's q|k|v rows, its grouped
@@ -661,6 +768,22 @@ void bufferExtents(MetalBackend &backend, DraftAttentionShape shape) {
     DraftAttention::addContextCommit(graph, b[0], b[1], b[2], b[3], rings(b, 5), rings(b, 5 + lanes), b[4], starts,
                                      shape);
   });
+  const uint64_t windowBytes = DraftAttention::contextWindowBytes(shape.hiddenSize);
+  const uint64_t contextRows = uint64_t{contextTokens} * shape.hiddenSize * 2;
+  splash::test::requireExtents(backend,
+                               Extents{{0, contextRows, 2, "draft context rows"},
+                                       {1, windowBytes, 1, "draft context window"}},
+                               [&](CommandGraph &graph, const Buffers &b) {
+                                 DraftAttention::addWindowStore(graph, b[0], b[1], contextTokens, 2040,
+                                                                shape.hiddenSize);
+                               });
+  splash::test::requireExtents(backend,
+                               Extents{{0, windowBytes, 1, "draft context window"},
+                                       {1, contextRows, 2, "draft context rows"}},
+                               [&](CommandGraph &graph, const Buffers &b) {
+                                 DraftAttention::addWindowLoad(graph, b[0], b[1], contextTokens, 2040,
+                                                               shape.hiddenSize);
+                               });
 }
 
 } // namespace
@@ -676,6 +799,7 @@ int main(int argc, char **argv) {
       for (uint32_t lanes = 1; lanes <= kLanes; ++lanes)
         surroundingPhases(backend, shape, lanes);
       contextWriters(backend, shape);
+      contextWindow(backend, shape.hiddenSize);
       runCase(backend, 1, shape, {0, 0, 0, 0});
       runCase(backend, 2, shape, {2048, 2047, 0, 0});
       runCase(backend, 3, shape, {2100, 4094, 6143, 0});
