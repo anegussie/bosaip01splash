@@ -828,9 +828,10 @@ int moe(MetalBackend &backend) {
 // rows whose first kExperts inputs rank the experts, the first at 1, the next
 // expert at 0.5 and expert e otherwise at 0.01 e. Every row (Concentrated) or
 // six of every eight (Skewed) route to experts 0 and 1 first, the others to
-// expert row % kExperts and the next. On the staged 32-row tiles of one
-// format, 1, 12 and 48 rows leave ragged tiles of 8- and 16-row matmuls and
-// 256 rows whole ones; a row's result is the same at every row count.
+// expert row % kExperts and the next. On the staged 32-row tiles of the
+// Q4_K gate/up model, 1, 12 and 48 rows leave ragged tiles of 8- and 16-row
+// matmuls; at 256 rows the concentrated load fills whole tiles and the skewed
+// one leaves 16-row tails. A row's result is the same at every row count.
 int routingLoads(MetalBackend &backend) {
   enum class Load { Concentrated, Skewed };
   Model m = makeModel(backend, Q4K, true);
