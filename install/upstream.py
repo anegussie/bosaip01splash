@@ -38,6 +38,10 @@ TOKENIZER_FILES = (
 )
 # The name prefix of an MLX checkpoint's vision tower tensors.
 VISION_TOWER = "vision_tower."
+# Where an MLX repository keeps its image processor's configuration: a file of
+# its own, or the image_processor object of processor_config.json, where newer
+# Transformers releases save it.
+PROCESSOR_FILES = ("preprocessor_config.json", "processor_config.json")
 
 
 @dataclass(frozen=True)
@@ -209,17 +213,15 @@ def _gguf_target(repo, variant, language_only, scratch):
 
 def _mlx_target(repo, language_only):
     required = {"config.json", "tokenizer.json", "tokenizer_config.json"}
-    if not language_only:
-        required.add("preprocessor_config.json")
-    if missing := required - repo.files:
-        # --language-only drops the processor requirement and no other.
-        hint = (
-            "; use --language-only to serve text only"
-            if missing == {"preprocessor_config.json"}
-            else ""
-        )
+    missing = sorted(required - repo.files)
+    # --language-only drops the processor requirement and no other.
+    processor = language_only or any(n in repo.files for n in PROCESSOR_FILES)
+    if missing or not processor:
+        hint = "" if missing else "; use --language-only to serve text only"
+        if not processor:
+            missing.append(" or ".join(PROCESSOR_FILES))
         raise models.ModelError(
-            f"target repository {repo.name} is missing: {', '.join(sorted(missing))}. "
+            f"target repository {repo.name} is missing: {', '.join(missing)}. "
             "Configuration, tokenizer and processor must come from the target "
             f"repository{hint}."
         )
@@ -232,7 +234,7 @@ def _mlx_target(repo, language_only):
     files |= {"tokenizer/" + n: n for n in TOKENIZER_FILES if n in repo.files}
     vision_format = "none"
     if not language_only:
-        _validate_processor(models.read_json(repo.file("preprocessor_config.json")))
+        _validate_processor(_image_processor(repo))
         shards = _weight_files(repo, VISION_TOWER)
         if not shards:
             raise models.ModelError(
@@ -247,6 +249,20 @@ def _mlx_target(repo, language_only):
     # keeps it in a subdirectory).
     files |= {"target/" + n: n for n in _weight_files(repo, exclude=VISION_TOWER)}
     return Target("mlx-affine", vision_format, config, None, family, files)
+
+
+def _image_processor(repo):
+    """An MLX target's image processor configuration, from the first of
+    PROCESSOR_FILES the repository has."""
+    if "preprocessor_config.json" in repo.files:
+        return models.read_json(repo.file("preprocessor_config.json"))
+    config = models.read_json(repo.file("processor_config.json")).get("image_processor")
+    if not isinstance(config, dict):
+        raise models.ModelError(
+            f"{repo.name}'s processor_config.json has no image_processor; "
+            "use --language-only to serve text only"
+        )
+    return config
 
 
 def _weight_files(repo, prefix="", exclude=None):
