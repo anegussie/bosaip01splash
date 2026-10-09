@@ -1513,13 +1513,13 @@ the half rounding of every reference weight; `gguf-rotation`, `gguf_rotate` and 
 PQ2_0 token gather bitwise against the fp32 butterflies and within one bf16 step of fp64;
 `gguf-projection`, every GGUF projection through
 `ops::Linear` with each tile forced, so both decode tiles run on every GPU, at one to four
-lanes, every K split and epilogue, fused segments, every gate/up format pair and the prefill
-tiles, each output inside the fp64 bound of `GgufFormatReference.hpp`; and `gguf-moe`: the float
-projections on both float tiles and the MoE layer on every GGUF plan, the staged 8- and 32-row
-tiles and the Apple9 register tile whatever GPU runs it, in every format, against fp64. The
-goldens and how to regenerate them are in `dev/tests/fixtures/weight-goldens/`; with
-`SPLASH_GGML_ORACLE=<libggml-base.dylib>`, `gguf-reference` also compares the reference with
-GGML directly and prints GGML's hashes.
+lanes, every K split and epilogue, fused segments, every format's gate with the next format's up
+and the prefill tiles, each output inside the fp64 bound of `GgufFormatReference.hpp`; and
+`gguf-moe`: the float projections on both float tiles and the MoE layer on every GGUF plan, the
+staged 8- and 32-row tiles and the Apple9 register tile whatever GPU runs it, in every format,
+against fp64. The goldens and how to regenerate them are in
+`dev/tests/fixtures/weight-goldens/`; with `SPLASH_GGML_ORACLE=<libggml-base.dylib>`,
+`gguf-reference` also compares the reference with GGML directly and prints GGML's hashes.
 
 Two benchmark tools repeat the measurements behind the GGUF split tiers and MoE plans, with the
 weights DRAM-cold. `make benchmark-gguf-projection GGUF_PROJECTION_ARGS='q4k 5120 8192'` times one
