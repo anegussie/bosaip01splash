@@ -1216,7 +1216,9 @@ struct Runtime::Impl {
     auto p = [&](PrefillTensor tensor) { return prefillArena->get(tensor); };
 
     // A restored lane's rings first: they pass through the context buffers
-    // and the draft RoPE tables before this chunk's rows do.
+    // and the draft RoPE tables before this chunk's rows do. Once the window
+    // is full, this chunk's window store and ring writes reuse the slots of
+    // the oldest restored positions, so the rebuild comes before them too.
     for (const RaggedPrefillSequence &sequence : batch.sequences)
       if (const auto &rebuild = sequence.entry->draftRebuild)
         addDraftRebuild(graph, sequence.entry->stateLane, *rebuild);
@@ -2149,14 +2151,17 @@ Runtime::prefillAsync(const BatchPlan &plan,
     // computes what it would have the first time. Nothing of the chunk is
     // committed before the code below: state parity, lengths, the selected
     // token and the image rows' state. The rerun writes the same KV and draft
-    // rows; clearForColdStart clears the current state again, which neither
-    // command writes; synchronizedPageTable writes nothing at the same
-    // revision; image rows the first command encoded are still `encoding` and
-    // are copied, not encoded again; and the requests' draws restored, a
-    // sampled first token draws the same uniform. The first ticket was
-    // released before this completion runs (DeferredMetalTicket::wait), so
-    // the backend takes the rerun's command, whose time counts in the
-    // chunk's.
+    // rows; a restored lane's rebuild may read window slots the failed run
+    // filled with its own rows, but each belongs to a position the rerun
+    // captures again, and that capture overwrites the ring slot after the
+    // rebuild; clearForColdStart clears the current state again, which
+    // neither command writes; synchronizedPageTable writes nothing at the
+    // same revision; image rows the first command encoded are still
+    // `encoding` and are copied, not encoded again; and the requests' draws
+    // restored, a sampled first token draws the same uniform. The first
+    // ticket was released before this completion runs
+    // (DeferredMetalTicket::wait), so the backend takes the rerun's command,
+    // whose time counts in the chunk's.
     if (impl->aneFfn && !impl->aneFfn->finish()) {
       for (uint32_t lane = 0; lane < items.size(); ++lane)
         entries[lane]->rngCounter = draws[lane];
