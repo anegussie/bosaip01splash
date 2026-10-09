@@ -16,8 +16,8 @@ namespace affine {
 struct PlannedCheckpoint;
 }
 
-// Writes a native MLX affine checkpoint's target into images laid out as a
-// Splash package's target files, which QwenTargetLoader reads as affine
+// Writes a native MLX affine checkpoint's target into affine images
+// (model/AffinePreparation.hpp), which QwenTargetLoader reads as affine
 // weights (AffineTargetFormat). The checkpoint is planned once; each image is
 // written into memory when it is opened.
 class AffineTargetLoader final {

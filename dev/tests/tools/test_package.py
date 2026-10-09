@@ -33,9 +33,6 @@ class PackageTests(unittest.TestCase):
                     (root / folder / name).write_text("fixture")
             for name in package.LICENSE_FILES:
                 (root / name).write_text("fixture")
-            (root / "install/completions/official-models.txt").write_text(
-                "company/Published\n"
-            )
             (root / "install/download-token").write_text("hf_legacycredential")
             cached = root / "build/release/python-runtime.tar.gz"
             cached.parent.mkdir()
@@ -73,10 +70,6 @@ class PackageTests(unittest.TestCase):
                             content = archive.extractfile(member).read()
                             self.assertNotIn(b"hf_legacycredential", content)
                             self.assertNotIn(b"hf_testcredential", content)
-                    with archive.extractfile(
-                        f"splash-{version}-arm64-macos26/install/completions/official-models.txt"
-                    ) as catalog:
-                        self.assertEqual(catalog.read(), b"company/Published\n")
 
     def test_release_has_only_runtime_files_and_excludes_credentials(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -100,7 +93,6 @@ class PackageTests(unittest.TestCase):
                 "_splash",
                 "splash.bash",
                 "splash.fish",
-                "official-models.txt",
                 "suggested-models.txt",
             }
             for name in completion_names:
@@ -281,7 +273,7 @@ puts SplashMacOSRequirement.check
                 "_splash",
                 "splash.bash",
                 "splash.fish",
-                "official-models.txt",
+                "suggested-models.txt",
             ):
                 (assets / name).write_text(f"fixture {name}\n")
             (assets / "models").write_text("#!/bin/sh\nprintf '%s\\n' new/model\n")
@@ -415,7 +407,7 @@ class InstallerTests(unittest.TestCase):
             helper = assets / "models"
             helper.write_text("#!/bin/sh\nprintf '%s\\n' fixture/model\n")
             helper.chmod(0o755)
-            (assets / "official-models.txt").write_text("fixture/model\n")
+            (assets / "suggested-models.txt").write_text("fixture/model\n")
         archive = self.releases / f"{name}.tar.gz"
         subprocess.run(
             ["tar", "-czf", str(archive), "-C", str(staging), name], check=True

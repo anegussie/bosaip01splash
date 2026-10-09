@@ -98,7 +98,7 @@ TEST_NATIVE_ARGUMENTS_TEST := $(ENGINE_TEST_BUILD)/native-arguments
 TEST_RESOURCES_TEST := $(ENGINE_TEST_BUILD)/runtime-resources
 TEST_KV_PAGE_TIER_TEST := $(ENGINE_TEST_BUILD)/kv-page-tier
 TEST_METRICS_TEST := $(ENGINE_TEST_BUILD)/runtime-metrics
-TEST_MODEL_PACKAGE_TEST := $(ENGINE_TEST_BUILD)/model-package
+TEST_MODEL_LOADING_TEST := $(ENGINE_TEST_BUILD)/model-loading
 TEST_MEMORY_AUDIT_TEST := $(ENGINE_TEST_BUILD)/memory-audit
 TEST_MEMORY_GOVERNOR_TEST := $(ENGINE_TEST_BUILD)/memory-governor
 TEST_QWEN_STATE_TEST := $(ENGINE_TEST_BUILD)/qwen-state-storage
@@ -137,7 +137,6 @@ TEST_ATTENTION_SWEEP := $(ENGINE_TEST_BUILD)/attention-sweep
 TEST_GGUF_PROJECTION_BENCHMARK := $(ENGINE_TEST_BUILD)/gguf-projection-benchmark
 TEST_GGUF_MOE_BENCHMARK := $(ENGINE_TEST_BUILD)/gguf-moe-benchmark
 TEST_MODEL_RUNTIME_ORACLE := $(ENGINE_TEST_BUILD)/model-runtime-oracle
-TEST_AFFINE_SOURCE_ORACLE := $(ENGINE_TEST_BUILD)/affine-source-oracle
 WEIGHT_DIGESTS := $(ENGINE_TEST_BUILD)/weight-digests
 TEST_VISION_ENCODER_TEST := $(ENGINE_TEST_BUILD)/vision-encoder
 TEST_Q8_AIR := $(ENGINE_TEST_BUILD)/q8-paged-kv.air
@@ -208,7 +207,7 @@ TEST_METAL_TARGETS := $(TEST_AFFINE_PREPARATION) \
 	$(TEST_LINEAR_PLAN) \
 	$(TEST_RESOURCES_TEST) \
 	$(TEST_KV_PAGE_TIER_TEST) \
-	$(TEST_MODEL_PACKAGE_TEST) \
+	$(TEST_MODEL_LOADING_TEST) \
 	$(TEST_QWEN_STATE_TEST) \
 	$(TEST_Q8_METAL_TEST) \
 	$(TEST_Q8_STORAGE_TEST) \
@@ -232,7 +231,7 @@ TEST_METAL_TARGETS := $(TEST_AFFINE_PREPARATION) \
 # Keep every output that uses a flag set together, including standalone
 # benchmarks, real-model tests and intermediate test AIRs/metallibs.
 TEST_CONFIG_TARGETS := $(filter-out $(LIB),$(sort $(TEST_CPU_TARGETS) $(TEST_METAL_TARGETS))) \
-	$(TEST_MODEL_RUNTIME_ORACLE) $(TEST_VISION_ENCODER_TEST) $(TEST_AFFINE_SOURCE_ORACLE) \
+	$(TEST_MODEL_RUNTIME_ORACLE) $(TEST_VISION_ENCODER_TEST) \
 	$(TEST_DECODE_PROFILE) $(TEST_ATTENTION_SWEEP) \
 	$(TEST_GGUF_PROJECTION_BENCHMARK) $(TEST_GGUF_MOE_BENCHMARK) \
 	$(TEST_Q8_AIR) $(TEST_Q8_KERNEL_AIRS) $(TEST_RESIDENCY_AIR) $(TEST_METAL_BACKEND_AIR) \
@@ -318,7 +317,7 @@ $(TEST_VISION_PREPARATION): dev/tests/engine/vision_preparation_test.cpp $(ENGIN
 $(TEST_NATIVE_ARGUMENTS_TEST): dev/tests/engine/native_arguments_test.cpp \
 		$(ENGINE_LIBRARY)
 $(TEST_ANE_FFN_STARTUP): dev/tests/engine/ane_ffn_startup_test.cpp $(ENGINE_LIBRARY)
-$(TEST_MODEL_PACKAGE_TEST): dev/tests/engine/model_package_test.cpp \
+$(TEST_MODEL_LOADING_TEST): dev/tests/engine/model_loading_test.cpp \
 		$(ENGINE_LIBRARY)
 $(TEST_OPERATOR_WORKSPACE): dev/tests/engine/operator_workspace_test.cc \
 		$(ENGINE_LIBRARY)
@@ -334,7 +333,7 @@ $(TEST_VISION_METAL_TEST): dev/tests/engine/vision_metal_test.cpp \
 		$(ENGINE_LIBRARY) $(LIB)
 
 $(TEST_AFFINE_CHECKPOINT) $(TEST_MODEL_CONFIGURATION) $(TEST_VISION_PREPARATION) \
-		$(TEST_NATIVE_ARGUMENTS_TEST) $(TEST_ANE_FFN_STARTUP) $(TEST_MODEL_PACKAGE_TEST) $(TEST_OPERATOR_WORKSPACE) \
+		$(TEST_NATIVE_ARGUMENTS_TEST) $(TEST_ANE_FFN_STARTUP) $(TEST_MODEL_LOADING_TEST) $(TEST_OPERATOR_WORKSPACE) \
 		$(TEST_EXECUTION_PLANS) $(TEST_MODEL_EXECUTION_PLANS) $(TEST_LINEAR_TUNING) \
 		$(TEST_TUNING_WORKLOADS) $(TEST_VISION_METAL_TEST): | $(ENGINE_TEST_BUILD)
 	$(RUN_CONFIGURED) $(CXX) $(ENGINE_TEST_CXXFLAGS) $(TEST_INPUTS) \
@@ -401,11 +400,6 @@ $(TEST_MODEL_RUNTIME_ORACLE): dev/tests/engine/model_runtime_oracle_test.mm \
 		$(BUILD_ID_HEADER)
 # The oracle remembers the split's calibration under the build, as the engine does.
 $(TEST_MODEL_RUNTIME_ORACLE): ENGINE_TEST_CXXFLAGS += -include $(BUILD_ID_HEADER)
-# Compares the affine images loaded from an MLX model with the released
-# package, including all padding and metadata bytes. No target runs it, as it
-# needs an installed MLX model and the matching package (DEVELOPMENT.md).
-$(TEST_AFFINE_SOURCE_ORACLE): dev/tests/engine/affine_source_oracle_test.mm \
-		$(ENGINE_LIBRARY)
 $(TEST_DECODE_PROFILE): dev/benchmarks/decode_profile.mm \
 		$(ENGINE_INSTRUMENTED_METAL_OBJECT) $(ENGINE_LIBRARY) $(LIB)
 $(TEST_ATTENTION_SWEEP): dev/benchmarks/attention_sweep.mm \
@@ -429,7 +423,7 @@ $(TEST_AFFINE_PREPARATION) $(TEST_GGUF_PROJECTION) $(TEST_ANE_FFN) \
 		$(TEST_GDN_DECODE_TEST) $(TEST_DRAFT_SELECTOR_TEST) \
 		$(TEST_TARGET_SAMPLING_TEST) $(TEST_Q8_METAL_TEST) $(TEST_Q8_STORAGE_TEST) \
 		$(TEST_METAL_BACKEND_TEST) $(TEST_HANDOFF_TEST) $(TEST_VISION_ENCODER_TEST) \
-		$(TEST_MODEL_RUNTIME_ORACLE) $(TEST_AFFINE_SOURCE_ORACLE) \
+		$(TEST_MODEL_RUNTIME_ORACLE) \
 		$(TEST_DECODE_PROFILE) $(TEST_ATTENTION_SWEEP) \
 		$(TEST_GGUF_PROJECTION_BENCHMARK) $(TEST_GGUF_MOE_BENCHMARK): | $(ENGINE_TEST_BUILD)
 	$(RUN_CONFIGURED) $(CXX) $(ENGINE_TEST_CXXFLAGS) -fobjc-arc $(TEST_INPUTS) \
@@ -545,7 +539,7 @@ test-engine-cpu: $(TEST_CPU_TARGETS) $(TEST_ATTENTION_SWEEP) $(TUNE_KERNELS)
 	$(TEST_NATIVE_LOOP_TEST)
 	$(TEST_FD_TRANSPORT_TEST)
 	$(TEST_BOOTSTRAP_TEST)
-	$(TEST_NATIVE_ARGUMENTS_TEST) dev/tests/engine/native_command_golden.txt
+	$(TEST_NATIVE_ARGUMENTS_TEST) dev/tests/engine/native_command_golden.txt $(MODEL_CONFIGS)
 	$(TEST_METRICS_TEST)
 	$(TEST_MEMORY_AUDIT_TEST)
 	$(TEST_MEMORY_GOVERNOR_TEST)
@@ -572,7 +566,7 @@ test-engine-metal: $(TEST_METAL_TARGETS)
 	$(TEST_LINEAR_PLAN) --capabilities $(LIB)
 	$(METAL_TEST_ENV) $(TEST_RESOURCES_TEST) $(LIB)
 	$(METAL_TEST_ENV) $(TEST_KV_PAGE_TIER_TEST) $(TEST_METAL_BACKEND_LIB)
-	$(METAL_TEST_ENV) $(TEST_MODEL_PACKAGE_TEST) $(TEST_METAL_BACKEND_LIB)
+	$(METAL_TEST_ENV) $(TEST_MODEL_LOADING_TEST) $(TEST_METAL_BACKEND_LIB)
 	$(METAL_TEST_ENV) $(TEST_QWEN_STATE_TEST) $(TEST_Q8_LIB)
 	$(METAL_TEST_ENV) $(TEST_Q8_METAL_TEST) $(TEST_Q8_LIB)
 	$(METAL_TEST_ENV) $(TEST_Q8_STORAGE_TEST) $(TEST_METAL_BACKEND_LIB)
@@ -593,16 +587,12 @@ test-engine-metal: $(TEST_METAL_TARGETS)
 	$(METAL_TEST_ENV) $(TEST_HANDOFF_TEST) $(TEST_METAL_BACKEND_LIB)
 
 .PHONY: test-real
-# The vision fixture is named after the installed model's family: model.json
-# for an upstream model, the manifest's model for a Splash package. Nothing is
-# printed when the installation serves no vision (model.json's vision_format
-# is none: --language-only, or a GGUF without an mmproj); every package has it.
-VISION_FIXTURE_FAMILY := import json, pathlib, sys; root = pathlib.Path(sys.argv[1]); \
-	record = root / "model.json"; \
-	model = json.loads(record.read_text()) if record.is_file() else None; \
-	print("" if model and model["vision_format"] == "none" else \
-	      (model["family"] if model \
-	       else json.loads((root / "manifest.json").read_text())["model"]).lower())
+# The vision fixture is named after the installed model's family, which its
+# model.json records. Nothing is printed when the installation serves no
+# vision (vision_format none: --language-only, or a GGUF without an mmproj).
+VISION_FIXTURE_FAMILY := import json, pathlib, sys; \
+	model = json.loads((pathlib.Path(sys.argv[1]) / "model.json").read_text()); \
+	print("" if model["vision_format"] == "none" else model["family"].lower())
 test-real: preflight $(TARGET) $(TEST_MODEL_RUNTIME_ORACLE) \
 		$(TEST_VISION_ENCODER_TEST) $(LIB)
 	family=$$($(BUILD_ID_PYTHON) -c '$(VISION_FIXTURE_FAMILY)' "$(MODEL_ROOT)") && \

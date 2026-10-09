@@ -77,6 +77,6 @@ using Qwen3_8Weights = QwenTargetWeights<Qwen3_8Layout, Qwen3_8LayerWeights>;
 
 [[nodiscard]] Qwen3_8Weights
 loadQwen3_8Weights(metal::MetalBackend &backend, Qwen3_8Layout layout,
-                   const QwenTargetFiles<Qwen3_8Layout> &files);
+                   const QwenTargetFiles &files);
 
 } // namespace splash::model

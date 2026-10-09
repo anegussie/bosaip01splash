@@ -288,12 +288,11 @@ void DFlashDraft::addContextCommit(
   }
 }
 
-namespace {
-
-// Reads a draft's files in their section order: each layer, then model.bin.
-template <class Files>
-DFlashDraftWeights readDraft(metal::MetalBackend &backend, Files &files,
-                             const DFlashDraftLayout &layout) {
+// Reads a draft's images in their section order: each layer, then model.bin.
+DFlashDraftWeights loadDFlashDraftWeights(metal::MetalBackend &backend,
+                                          DraftCheckpointLoader &files,
+                                          DFlashDraftLayout layout) {
+  requireLayout(layout);
   const uint64_t allocationBaseline = backend.memoryStats().allocatedBytes;
   DFlashDraftWeights result;
   result.layout = layout;
@@ -363,29 +362,6 @@ DFlashDraftWeights readDraft(metal::MetalBackend &backend, Files &files,
   result.actualAllocatedBytes = metal::allocationDelta(
       allocationBaseline, backend.memoryStats().allocatedBytes);
   return result;
-}
-
-} // namespace
-
-WeightFile PackageDraftFiles::layer(uint32_t index) const {
-  const std::string filename = "layer-" + std::to_string(index) + ".bin";
-  return images.load(packageImage(directory / filename, "draft/" + filename,
-                                  kDFlashLayerMagic, index, 0));
-}
-
-WeightFile PackageDraftFiles::model() const {
-  return images.load(packageImage(directory / "model.bin", "draft/model.bin",
-                                  kDFlashLayerMagic, layout.layers, 1));
-}
-
-DFlashDraftWeights loadDFlashDraftWeights(metal::MetalBackend &backend,
-                                          const DraftFiles &files,
-                                          DFlashDraftLayout layout) {
-  requireLayout(layout);
-  if (const auto *checkpoint =
-          std::get_if<std::reference_wrapper<DraftCheckpointLoader>>(&files))
-    return readDraft(backend, checkpoint->get(), layout);
-  return readDraft(backend, std::get<PackageDraftFiles>(files), layout);
 }
 
 } // namespace splash::model

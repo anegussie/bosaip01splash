@@ -1,10 +1,11 @@
 #include "TestBuffers.hpp"
 #include "TestChecks.hpp"
-#include "TestPackage.hpp"
+#include "TestCheckpoint.hpp"
 #include "model/GgufImageLayout.hpp"
 #include "model/ModelFactory.hpp"
 #include "model/WeightImages.hpp"
 #include "model/WeightLayout.hpp"
+#include "model/WeightSource.hpp"
 #include "ops/Embedding.hpp"
 
 #include <algorithm>
@@ -44,6 +45,7 @@ using splash::ops::VisionLayout;
 using splash::model::kWeightFileAlignment;
 using splash::model::loadModel;
 using splash::model::makeModelDescriptor;
+using splash::model::modelWeightBytes;
 using splash::model::weightManifestFingerprint;
 using splash::metal::BufferStorage;
 using splash::metal::MetalBackend;
@@ -51,8 +53,7 @@ using splash::metal::MetalBuffer;
 using splash::test::SyntheticAccounting;
 using splash::test::rejects;
 using splash::test::sharedBuffer;
-using splash::test::writeSyntheticPackage;
-using splash::test::writeWeightFile;
+using splash::test::writeSyntheticModel;
 
 constexpr std::string_view kGgufImageMagic = "MDGG0001";
 
@@ -63,6 +64,41 @@ constexpr std::string_view kGgufImageMagic = "MDGG0001";
 
 void require(bool condition, const std::string &message) {
     if (!condition) fail(message);
+}
+
+// Writes a weight file of the given magic, layer and type whose sections have
+// the given sizes, and returns its size.
+uint64_t writeWeightFile(const std::filesystem::path &path, std::string_view magic, uint32_t layer,
+                         uint32_t type, std::span<const uint64_t> sections) {
+    require(magic.size() == 8, "synthetic magic has the wrong size");
+    std::filesystem::create_directories(path.parent_path());
+    const int descriptor = open(path.c_str(), O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
+    require(descriptor >= 0, "unable to create synthetic weight file");
+    const std::array<uint8_t, 16> header = splash::model::weightFileHeader(magic, layer, type);
+    uint64_t offset = header.size();
+    for (uint64_t bytes : sections) {
+        require(bytes > 0, "synthetic section is empty");
+        offset = splash::model::alignWeightOffset(offset) + bytes;
+    }
+    const uint64_t fileBytes = splash::model::alignWeightOffset(offset);
+    const bool written = pwrite(descriptor, header.data(), header.size(), 0) ==
+                             static_cast<ssize_t>(header.size()) &&
+                         fileBytes <= static_cast<uint64_t>(std::numeric_limits<off_t>::max()) &&
+                         ftruncate(descriptor, static_cast<off_t>(fileBytes)) == 0;
+    close(descriptor);
+    require(written, "unable to write synthetic weight file");
+    return fileBytes;
+}
+
+// The image of the weight file at path, read as it is.
+splash::model::ImagePlan fileImage(const std::filesystem::path &path, std::string component,
+                                   std::string_view magic, uint32_t layer, uint32_t type) {
+    auto source = std::make_shared<splash::model::WeightSource>(path);
+    return {std::move(component), std::string(magic), layer, type, source->bytes(),
+            [source](std::span<uint8_t> destination, const MetalBuffer &) {
+                source->readData(0, destination);
+                source->checkUnchanged();
+            }};
 }
 
 void testStartupCapabilities() {
@@ -88,7 +124,7 @@ public:
     TempDirectory() {
         std::string pattern =
             (std::filesystem::temp_directory_path() /
-             "splash-model-package.XXXXXX").string();
+             "splash-model-loading.XXXXXX").string();
         char *created = mkdtemp(pattern.data());
         if (!created) fail("unable to create temporary directory");
         path_ = created;
@@ -107,7 +143,7 @@ private:
     std::filesystem::path path_;
 };
 
-// A package file loaded into an image: its sections are aligned views the GPU
+// A weight file loaded into an image: its sections are aligned views the GPU
 // reads and its memory is tracked; once released, a command that binds it
 // fails until a restore reads the file again, which fails once the file was
 // written.
@@ -143,7 +179,7 @@ void testWeightImages(MetalBackend &backend, const std::filesystem::path &root) 
     {
         splash::model::WeightImages images(backend, "fixture");
         WeightFile file = images.load(
-            splash::model::packageImage(validPath, "test/valid.bin", "TEST0001", 7, 9));
+            fileImage(validPath, "test/valid.bin", "TEST0001", 7, 9));
         retained = file.section(sizeof(expected), "payload");
         require(retained.contents() != nullptr &&
                     reinterpret_cast<uintptr_t>(retained.contents()) % kWeightFileAlignment == 0,
@@ -176,7 +212,7 @@ void testWeightImages(MetalBackend &backend, const std::filesystem::path &root) 
     const auto load = [&](const std::filesystem::path &path, std::string_view magic, uint32_t layer,
                           uint32_t type) {
         splash::model::WeightImages images(backend, "fixture");
-        return images.load(splash::model::packageImage(path, "test/" + path.filename().string(), magic, layer, type));
+        return images.load(fileImage(path, "test/" + path.filename().string(), magic, layer, type));
     };
     auto headerPath = root / "header.bin";
     writeWeightFile(headerPath, "TEST0001", 7, 9, sections);
@@ -255,7 +291,7 @@ void testGgufImageLayout(MetalBackend &backend, const std::filesystem::path &roo
     splash::model::WeightImages images(backend, "fixture");
     const auto loaded = [&](const std::filesystem::path &path) {
         return images.load(
-            splash::model::packageImage(path, "test/" + path.filename().string(), kGgufImageMagic, 0, 0));
+            fileImage(path, "test/" + path.filename().string(), kGgufImageMagic, 0, 0));
     };
     {
         // finish() proves the reader took exactly the descriptor, plane0 and
@@ -303,13 +339,15 @@ void testGgufImageLayout(MetalBackend &backend, const std::filesystem::path &roo
             refusal, "token gather past its buffers was accepted");
 }
 
-void testSyntheticPackage(MetalBackend &backend,
-                          const std::filesystem::path &root) {
+// A synthetic installed model of small layouts loads every role, accounts
+// each image's bytes and fingerprints what it loaded.
+void testSyntheticModel(MetalBackend &backend,
+                        const std::filesystem::path &root) {
     Qwen3_8Layout target;
     target.layers = 4;
     target.hiddenSize = 256;
     target.vocabularySize = 256;
-    target.packedGdnWidth = 256;
+    target.packedGdnWidth = 512;
     target.packedFullWidth = 256;
     target.convolutionDimension = 192;
     target.gdnKeyHeads = 1;
@@ -329,13 +367,13 @@ void testSyntheticPackage(MetalBackend &backend,
     draft.vocabularySize = 256;
     draft.dynamicSize = 256;
     draft.qkvSize = 256;
-    draft.attentionSize = 64;
+    draft.attentionSize = 128;
     draft.intermediateSize = 256;
     draft.attentionHeadDimension = 64;
     draft.rotaryTheta = 10'000'000.0F;
     draft.targetHiddenSize = target.capturedHiddenSize();
     draft.selectorRank = 256;
-    draft.kvHeads = 8;
+    draft.kvHeads = 1;
 
     VisionLayout vision;
     vision.depth = 2;
@@ -350,19 +388,19 @@ void testSyntheticPackage(MetalBackend &backend,
     vision.positionGridSide = 4;
 
     SyntheticAccounting expected =
-        writeSyntheticPackage(root, target, draft, vision);
+        writeSyntheticModel(root, target, draft, vision);
     uint64_t baseline = backend.memoryStats().allocatedBytes;
     uint64_t actualTrackedBytes = 0;
     {
         ModelDescriptor descriptor =
             makeModelDescriptor("Qwen dense loader oracle", target, draft, vision,
-                                TargetSource::Package, VisionSource::Package);
+                                TargetSource::Mlx, VisionSource::Mlx);
         descriptor.sourceIdentity = "sources";
-        auto package = loadModel(backend, root, descriptor);
-        const auto &loadedTarget = std::get<Qwen3_8Weights>(package.target);
+        auto model = loadModel(backend, root, descriptor);
+        const auto &loadedTarget = std::get<Qwen3_8Weights>(model.target);
         require(loadedTarget.layers.size() == target.layers,
                 "target layer vector is incomplete");
-        require(package.draft.layers.size() == draft.layers,
+        require(model.draft.layers.size() == draft.layers,
                 "draft layer vector is incomplete");
         require(std::holds_alternative<QwenGdnWeights>(
                     loadedTarget.layers[0].mixer),
@@ -372,39 +410,43 @@ void testSyntheticPackage(MetalBackend &backend,
                 "target full-attention layer has the wrong typed layout");
         require(loadedTarget.files.size() == target.layers + 2,
                 "target file records are incomplete");
-        require(package.draft.files.size() == draft.layers + 1,
+        require(model.draft.files.size() == draft.layers + 1,
                 "draft file records are incomplete");
         require(declaredBytes(loadedTarget.files) == expected.targetBytes,
                 "target declared byte accounting is wrong");
-        require(declaredBytes(package.draft.files) == expected.draftBytes,
+        require(declaredBytes(model.draft.files) == expected.draftBytes,
                 "draft declared byte accounting is wrong");
-        require(package.vision.tensors.blocks.size() == vision.depth &&
-                    package.vision.files.size() == 1 &&
-                    declaredBytes(package.vision.files) == expected.visionBytes,
+        require(model.vision.tensors.blocks.size() == vision.depth &&
+                    model.vision.files.size() == 1 &&
+                    declaredBytes(model.vision.files) == expected.visionBytes,
                 "vision role records are incomplete");
+        require(modelWeightBytes(root, descriptor) ==
+                    expected.targetBytes + expected.draftBytes +
+                        expected.visionBytes,
+                "the weight budget does not count every image");
         require(loadedTarget.actualAllocatedBytes +
-                    package.draft.actualAllocatedBytes +
-                    package.vision.actualAllocatedBytes ==
+                    model.draft.actualAllocatedBytes +
+                    model.vision.actualAllocatedBytes ==
                     backend.memoryStats().allocatedBytes - baseline,
-                "actual package allocation accounting is wrong");
-        require(package.manifestFingerprintSha256.size() == 64,
+                "actual model allocation accounting is wrong");
+        require(model.manifestFingerprintSha256.size() == 64,
                 "manifest SHA-256 has the wrong length");
 
         std::vector<WeightFileRecord> records = loadedTarget.files;
-        records.insert(records.end(), package.draft.files.begin(),
-                       package.draft.files.end());
-        records.insert(records.end(), package.vision.files.begin(),
-                       package.vision.files.end());
+        records.insert(records.end(), model.draft.files.begin(),
+                       model.draft.files.end());
+        records.insert(records.end(), model.vision.files.begin(),
+                       model.vision.files.end());
         require(weightManifestFingerprint(records) ==
-                    package.manifestFingerprintSha256,
+                    model.manifestFingerprintSha256,
                 "combined manifest fingerprint is not reproducible");
         std::reverse(records.begin(), records.end());
         require(weightManifestFingerprint(records) ==
-                    package.manifestFingerprintSha256,
+                    model.manifestFingerprintSha256,
                 "manifest fingerprint depends on load order");
         records.front().declaredBytes += kWeightFileAlignment;
         require(weightManifestFingerprint(records) !=
-                    package.manifestFingerprintSha256,
+                    model.manifestFingerprintSha256,
                 "manifest fingerprint ignores declared file sizes");
         records.front().declaredBytes -= kWeightFileAlignment;
         require(std::all_of(records.begin(), records.end(),
@@ -414,12 +456,12 @@ void testSyntheticPackage(MetalBackend &backend,
                 "an image does not record the sources it was written from");
         records.front().contentIdentity = "other sources";
         require(weightManifestFingerprint(records) !=
-                    package.manifestFingerprintSha256,
+                    model.manifestFingerprintSha256,
                 "manifest fingerprint ignores the sources' identity");
 
-        require(package.draft.layers[0].attentionDynamic.outputSize ==
+        require(model.draft.layers[0].attentionDynamic.outputSize ==
                         draft.dynamicSize &&
-                    package.draft.layers[0].downProjection.outputSize ==
+                    model.draft.layers[0].downProjection.outputSize ==
                         draft.hiddenSize,
                 "draft projections lost their logical dimensions");
         actualTrackedBytes =
@@ -431,20 +473,20 @@ void testSyntheticPackage(MetalBackend &backend,
 
         // The weights go back to memory as they were loaded.
         std::vector<std::vector<uint8_t>> loaded;
-        for (const auto &image : package.images->contents())
+        for (const auto &image : model.images->contents())
             loaded.emplace_back(image.bytes.begin(), image.bytes.end());
-        package.images->release();
+        model.images->release();
         require(backend.memoryStats().allocatedBytes - baseline ==
                     actualTrackedBytes - declaredBytes(loadedTarget.files) -
-                        declaredBytes(package.draft.files) - declaredBytes(package.vision.files),
+                        declaredBytes(model.draft.files) - declaredBytes(model.vision.files),
                 "released weights remain in backend accounting");
         // They come back an image at a time, in load order.
-        require(!package.images->restore() && !package.images->contents()[0].bytes.empty() &&
-                    package.images->contents()[1].bytes.empty(),
+        require(!model.images->restore() && !model.images->contents()[0].bytes.empty() &&
+                    model.images->contents()[1].bytes.empty(),
                 "a restore wrote back other than the next image");
-        while (!package.images->restore()) {
+        while (!model.images->restore()) {
         }
-        const auto restored = package.images->contents();
+        const auto restored = model.images->contents();
         require(restored.size() == loaded.size() &&
                     std::equal(restored.begin(), restored.end(), loaded.begin(),
                                [](const auto &image, const std::vector<uint8_t> &bytes) {
@@ -454,7 +496,7 @@ void testSyntheticPackage(MetalBackend &backend,
                 "restored weights differ from the loaded ones");
     }
     require(backend.memoryStats().allocatedBytes == baseline,
-            "the package's allocations survived its destruction");
+            "the model's allocations survived its destruction");
 
     std::cout << "synthetic declared_target=" << expected.targetBytes
               << " declared_draft=" << expected.draftBytes
@@ -462,103 +504,11 @@ void testSyntheticPackage(MetalBackend &backend,
               << " actual_tracked=" << actualTrackedBytes << '\n';
 }
 
-void validateRealPackage(MetalBackend &backend,
-                         const std::filesystem::path &root) {
-    uint64_t baseline = backend.memoryStats().allocatedBytes;
-    uint64_t actualTrackedBytes = 0;
-    uint64_t targetBytes = 0;
-    uint64_t draftBytes = 0;
-    uint64_t visionBytes = 0;
-    std::string fingerprint;
-    std::string name;
-    {
-        auto package = loadModel(backend, root, splash::model::inspectModelRoot(root));
-        targetBytes = declaredBytes(package.targetFiles());
-        draftBytes = declaredBytes(package.draft.files);
-        visionBytes = declaredBytes(package.vision.files);
-        const uint32_t targetLayers = std::visit(
-            [](const auto &weights) { return weights.layout.layers; },
-            package.target);
-        require(package.targetFiles().size() == targetLayers + 2,
-                "real target file set is incomplete");
-        require(package.draft.files.size() == package.draft.layout.layers + 1,
-                "real draft file set is incomplete");
-        require(package.vision.files.size() == 1,
-                "real vision file set is incomplete");
-        require(targetBytes && draftBytes && visionBytes,
-                "real package has an empty role");
-        actualTrackedBytes =
-            backend.memoryStats().allocatedBytes - baseline;
-        require(actualTrackedBytes >= targetBytes + draftBytes + visionBytes,
-                "real package allocation accounting is below declared bytes");
-        fingerprint = package.manifestFingerprintSha256;
-        name = package.name();
-    }
-    require(backend.memoryStats().allocatedBytes == baseline,
-            "real model images survived package destruction");
-    std::cout << "real model=\"" << name << "\""
-              << " declared_target=" << targetBytes
-              << " declared_draft=" << draftBytes
-              << " declared_vision=" << visionBytes
-              << " actual_tracked=" << actualTrackedBytes
-              << " manifest_sha256=" << fingerprint << '\n';
-}
-
-void testRealPackageMetadata(const std::filesystem::path &root) {
-    std::ifstream input(root / "manifest.json");
-    require(bool(input), "unable to read model manifest for format test");
-    const std::string original{std::istreambuf_iterator<char>(input),
-                               std::istreambuf_iterator<char>()};
-    const std::string_view originalPrefix = "splash-packed-q4";
-    const size_t offset = original.find(originalPrefix);
-    require(offset != std::string::npos, "model manifest lacks a known format");
-
-    TempDirectory temporary;
-    std::filesystem::create_directory(temporary.path() / "tokenizer");
-    std::filesystem::copy_file(root / "tokenizer/config.json",
-                               temporary.path() / "tokenizer/config.json");
-    const auto expected = splash::model::inspectModelRoot(root);
-    for (std::string_view name : {std::string_view(expected.name),
-                                  std::string_view("Community fine-tune")}) {
-        for (std::string_view prefix : {"splash-packed-q4", "unknown-packed-q4"}) {
-            std::string manifest = original;
-            manifest.replace(offset, originalPrefix.size(), prefix);
-            const std::string originalName = '"' + expected.name + '"';
-            const size_t nameOffset = manifest.find(originalName);
-            require(nameOffset != std::string::npos,
-                    "model manifest lacks the expected display name");
-            manifest.replace(nameOffset, originalName.size(),
-                             '"' + std::string(name) + '"');
-            {
-                std::ofstream output(temporary.path() / "manifest.json");
-                output << manifest;
-                require(bool(output), "unable to write format test manifest");
-            }
-            try {
-                const auto descriptor =
-                    splash::model::inspectModelRoot(temporary.path());
-                require(prefix != "unknown-packed-q4",
-                        "unknown model format was accepted");
-                require(descriptor.name == name &&
-                            descriptor.target == expected.target &&
-                            descriptor.draft == expected.draft &&
-                            descriptor.valid(),
-                        "model metadata changed the loaded layout or display name");
-            } catch (const std::invalid_argument &error) {
-                require(prefix == "unknown-packed-q4" &&
-                            std::string_view(error.what()).find("weight format") !=
-                                std::string_view::npos,
-                        std::string("model metadata failed: ") + error.what());
-            }
-        }
-    }
-}
-
 }  // namespace
 
 int main(int argc, const char *argv[]) {
-    if (argc < 2 || argc > 3) {
-        std::cerr << "usage: model_package_test <test.metallib> [models-root]\n";
+    if (argc != 2) {
+        std::cerr << "usage: model_loading_test <test.metallib>\n";
         return 2;
     }
     try {
@@ -567,12 +517,8 @@ int main(int argc, const char *argv[]) {
         TempDirectory temporary;
         testWeightImages(backend, temporary.path());
         testGgufImageLayout(backend, temporary.path());
-        testSyntheticPackage(backend, temporary.path() / "package");
-        if (argc == 3) {
-            testRealPackageMetadata(argv[2]);
-            validateRealPackage(backend, argv[2]);
-        }
-        std::cout << "PASS model-package\n";
+        testSyntheticModel(backend, temporary.path() / "model");
+        std::cout << "PASS model-loading\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL: unexpected exception: " << error.what() << '\n';
         return 1;
