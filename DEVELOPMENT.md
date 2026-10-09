@@ -1416,14 +1416,15 @@ its writer cannot allocate, stays released, and the images before it stay. The
 requests wait for memory, retrying every 0.1 s as a refused request does and
 counted in `admission.waiting_memory`, and the log says `Weights wait for
 memory to be restored`. Once the 30 s resource wait has passed since the first
-refusal after the last image that came back, or at once when no request waits
-any more, the restore gives up: the images it wrote back are released, the
-waiting requests fail with `resource_timeout`, `weights.restore_failures`
-counts it, and the next request starts over from the first image. Any other
-failure (a read error, a source written in place) stops the engine, which the
-server starts again. With the [Neural Engine split](#neural-engine-prefill), the
-release unloads its program after the images, and the restore loads it again in
-one tick more, after the last image (`ReleasableMemory`).
+refusal after the last image that came back, the restore gives up: the images it
+wrote back are released, the waiting requests fail with `resource_timeout`, and
+`weights.restore_failures` counts the give-up. When no request waits any more,
+it gives up at once and counts nothing. Either way the next request starts over
+from the first image. Any other failure (a read error, a source written in
+place) stops the engine, which the server starts again. With the [Neural Engine
+split](#neural-engine-prefill), the release unloads its program after the
+images, and the restore loads it again in one tick more, after the last image
+(`ReleasableMemory`).
 
 `loadQwenTarget` (`QwenTargetLoader.hpp`) reads a target's images
 (`QwenTargetFiles`: the images `MlxTargetLoader` or `GgufTargetLoader` plans)
