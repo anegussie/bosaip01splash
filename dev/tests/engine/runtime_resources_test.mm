@@ -156,9 +156,10 @@ void testWeightBudgetBeforeLoading(const char *metallibPath) {
   }
   config.memoryPressure = [] { return MemoryPressure::Warning; };
 
-  // The low ceiling is one byte short of the minimum, so every image must be
-  // counted. The other ceilings must reach the real loader, whose expected
-  // weight files are deliberately absent.
+  // The low ceiling is one byte short of the minimum, so admission must
+  // charge modelWeightBytes and all a model needs beside its weights. The
+  // other ceilings must reach the real loader, whose expected weight files
+  // are deliberately absent.
   const uint64_t minimum = minimumBytes(config);
   for (uint64_t ceiling : {minimum - 1, minimum, uint64_t{0}}) {
     config.maximumMemoryBytes = ceiling;

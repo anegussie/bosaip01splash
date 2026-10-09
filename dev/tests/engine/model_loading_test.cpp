@@ -45,6 +45,7 @@ using splash::ops::VisionLayout;
 using splash::model::kWeightFileAlignment;
 using splash::model::loadModel;
 using splash::model::makeModelDescriptor;
+using splash::model::modelWeightBytes;
 using splash::model::weightManifestFingerprint;
 using splash::metal::BufferStorage;
 using splash::metal::MetalBackend;
@@ -419,6 +420,10 @@ void testSyntheticModel(MetalBackend &backend,
                     model.vision.files.size() == 1 &&
                     declaredBytes(model.vision.files) == expected.visionBytes,
                 "vision role records are incomplete");
+        require(modelWeightBytes(root, descriptor) ==
+                    expected.targetBytes + expected.draftBytes +
+                        expected.visionBytes,
+                "the weight budget does not count every image");
         require(loadedTarget.actualAllocatedBytes +
                     model.draft.actualAllocatedBytes +
                     model.vision.actualAllocatedBytes ==
