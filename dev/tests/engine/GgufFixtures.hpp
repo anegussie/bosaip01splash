@@ -54,15 +54,16 @@ inline int failures = 0;
 // shape, MLX's packed codes, scales and biases (bf16; none for mxfp4) and MLX's reading of it, an affine
 // tensor's codes and the fp32 values.
 struct MlxTensor {
+  std::string mode;
   bool affine = true;
   uint32_t bits = 0, group = 0, rows = 0, columns = 0;
   std::vector<uint8_t> weight, scales, biases, codes, values;
   // Its format (metal/abi/QuantFormat.h).
   [[nodiscard]] Fmt format() const {
-    return affine ? Fmt(quant_affine_format_of(bits, group)) : gguf_reference::MXFP4;
+    return affine ? Fmt(quant_affine_format_of(bits, group)) : mode == "nvfp4" ? gguf_reference::NVFP4 : gguf_reference::MXFP4;
   }
   [[nodiscard]] std::vector<uint8_t> native() const {
-    return gguf_reference::mlxNative(affine, bits, group, rows, columns, weight, scales, biases);
+    return gguf_reference::mlxNative(format(), rows, columns, weight, scales, biases);
   }
 };
 inline std::vector<MlxTensor> mlxFixture(const char *path) {
@@ -79,7 +80,8 @@ inline std::vector<MlxTensor> mlxFixture(const char *path) {
   std::vector<MlxTensor> tensors;
   for (NSDictionary *entry in fixture[@"formats"]) {
     MlxTensor &t = tensors.emplace_back();
-    t.affine = [entry[@"mode"] isEqual:@"affine"];
+    t.mode = [entry[@"mode"] UTF8String];
+    t.affine = t.mode == "affine";
     t.bits = [entry[@"bits"] unsignedIntValue];
     t.group = [entry[@"group"] unsignedIntValue];
     t.rows = [entry[@"rows"] unsignedIntValue];

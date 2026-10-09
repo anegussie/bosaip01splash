@@ -528,7 +528,7 @@ void checkMlxSources(MetalBackend &backend, const std::filesystem::path &directo
     const auto holds = [&](uint64_t at, const std::vector<uint8_t> &bytes) {
       return at + bytes.size() <= actual.size() && std::equal(bytes.begin(), bytes.end(), actual.begin() + at);
     };
-    const std::string name = std::string("MLX ") + (tensor.affine ? "" : "mxfp4 as ") + fmtName(f);
+    const std::string name = std::string("MLX ") + (tensor.affine ? "" : tensor.mode + " as ") + fmtName(f);
     check(holds(step.plane0, expected.w0) && (!layout.plane1_bytes || holds(step.plane1, expected.w1)) &&
               holds(step.meta, expected.meta),
           name + ": planes from its codes and scales");

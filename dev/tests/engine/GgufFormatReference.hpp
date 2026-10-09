@@ -131,16 +131,28 @@ inline uint32_t affineCode(const uint8_t *codes, uint32_t bits, uint32_t l) {
   if (shift + bits > 8) word |= uint32_t(codes[at / 8 + 1]) << 8;
   return (word >> shift) & ((1u << bits) - 1);
 }
-// The native rows (metal/abi/QuantFormat.h) of `rows` MLX rows of K weights: codes packed as MLX packs a row's,
-// a little-endian bit string of `bits` bits each, and per group of `group` its scale (bf16, or mxfp4's E8M0 byte)
-// and an affine tensor's bf16 bias. An affine group is its scale, its bias and its codes; an mxfp4 group a
-// block_mxfp4, its exponent and its codes with element j < 16 in the low nibble of byte j and j + 16 in its high
-// nibble.
-inline std::vector<uint8_t> mlxNative(bool affineMode, uint32_t bits, uint32_t group, uint32_t rows, uint32_t K,
-                                      const std::vector<uint8_t> &weight, const std::vector<uint8_t> &scales,
-                                      const std::vector<uint8_t> &biases) {
-  const uint32_t groupBytes = group * bits / 8, rowCodes = K * bits / 8, groups = K / group;
+// The native rows (metal/abi/QuantFormat.h) of `rows` MLX rows of K weights of format f: codes packed as MLX packs a
+// row's, a little-endian bit string of `bits` bits each, and per group of `group` its scale (bf16, mxfp4's E8M0 byte
+// or nvfp4's E4M3 byte) and an affine tensor's bf16 bias. An affine group is its scale, its bias and its codes; an
+// mxfp4 group a block_mxfp4, its exponent and its codes with element j < 16 in the low nibble of byte j and j + 16 in
+// its high nibble; 256 nvfp4 elements their 16 scales, a tensor scale of 1 and their codes as MLX packs them.
+inline std::vector<uint8_t> mlxNative(Fmt f, uint32_t rows, uint32_t K, const std::vector<uint8_t> &weight,
+                                      const std::vector<uint8_t> &scales, const std::vector<uint8_t> &biases) {
   std::vector<uint8_t> native;
+  if (f == NVFP4) {
+    const float one = 1.0f;
+    for (uint32_t r = 0; r < rows; ++r)
+      for (uint32_t b = 0; b < K / 256; ++b) {
+        const uint8_t *s = scales.data() + size_t(r) * (K / 16) + 16 * b, *codes = weight.data() + size_t(r) * (K / 2) + 128 * b;
+        native.insert(native.end(), s, s + 16);
+        native.insert(native.end(), reinterpret_cast<const uint8_t *>(&one), reinterpret_cast<const uint8_t *>(&one) + 4);
+        native.insert(native.end(), codes, codes + 128);
+      }
+    return native;
+  }
+  const bool affineMode = affine(f);
+  const uint32_t bits = affineMode ? quant_affine_bits(f) : 4, group = kQuantFormats[f].block_elements;
+  const uint32_t groupBytes = group * bits / 8, rowCodes = K * bits / 8, groups = K / group;
   for (uint32_t r = 0; r < rows; ++r)
     for (uint32_t g = 0; g < groups; ++g) {
       const uint8_t *codes = weight.data() + size_t(r) * rowCodes + g * groupBytes;

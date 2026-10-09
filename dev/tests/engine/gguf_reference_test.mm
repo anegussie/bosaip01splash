@@ -39,11 +39,12 @@ void checkFormat(void *ggml, const Goldens &hashes, Fmt f) {
 
 // Each fixture tensor as the loader's native rows of its format (mlxNative)
 // against MLX's own reading of it: an affine tensor's codes and the fp32
-// values, bit for bit but for mxfp4's zero code 8, which MLX reads as -0 and
+// values, bit for bit but for mxfp4's and nvfp4's zero code 8, which MLX reads as -0 and
 // GGML's table, as +0.
 void checkMlx(const char *path) {
   const std::vector<MlxTensor> tensors = mlxFixture(path);
-  check(tensors.size() == GGUF_FMT_AF8G128 - GGUF_FMT_AF2G32 + 2, "MLX fixture holds every MLX affine format and mxfp4");
+  check(tensors.size() == GGUF_FMT_AF8G128 - GGUF_FMT_AF2G32 + 3,
+        "MLX fixture holds every MLX affine format, mxfp4 and nvfp4");
   for (const MlxTensor &tensor : tensors) {
     const Fmt f = tensor.format();
     const uint32_t rows = tensor.rows, K = tensor.columns;
@@ -65,7 +66,8 @@ void checkMlx(const char *path) {
       memcpy(&value, tensor.values.data() + 4 * i, 4);
       same = tensor.affine ? !memcmp(&value, &reference[i], 4) : value == reference[i];
     }
-    check(same, std::string("CPU reference matches MLX's values: ") + fmtName(f) + (tensor.affine ? "" : " (MLX mxfp4)"));
+    check(same, std::string("CPU reference matches MLX's values: ") + fmtName(f) +
+                    (tensor.affine ? "" : " (MLX " + tensor.mode + ")"));
   }
 }
 
