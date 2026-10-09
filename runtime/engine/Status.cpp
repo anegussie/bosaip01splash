@@ -23,7 +23,8 @@ void appendWeights(std::ostringstream &out, const WeightsSnapshot &weights) {
   else
     out << weights.idleReleaseSeconds;
   out << ",\"released\":" << boolean(weights.released)
-      << ",\"restores\":" << weights.restores << '}';
+      << ",\"restores\":" << weights.restores
+      << ",\"restore_failures\":" << weights.restoreFailures << '}';
 }
 
 // reruns: the chunks the GPU ran again alone once the split's work for them

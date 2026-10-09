@@ -26,18 +26,31 @@ WeightFile WeightImages::load(ImagePlan image) {
 }
 
 void WeightImages::release() {
-  if (released_) throw std::logic_error("weights are already released");
-  for (Image &image : images_) backend_->releaseMemory(image.buffer);
+  // During a restore, only the images it wrote back hold memory.
+  const size_t held = released_ ? restored_ : images_.size();
+  for (size_t index = 0; index < held; ++index) backend_->releaseMemory(images_[index].buffer);
   released_ = true;
   restored_ = 0;
 }
 
-bool WeightImages::restore() {
+bool WeightImages::restore(const metal::AllocationAdmission &admit) {
   if (!released_) throw std::logic_error("weights are not released");
   if (restored_ < images_.size()) {
     Image &image = images_[restored_];
-    backend_->restoreMemory(image.buffer);
-    image.write(contentsOf(image.buffer), image.buffer);
+    const metal::AllocationResult admitted = admit(image.buffer.sizeBytes(), [&] {
+      backend_->restoreMemory(image.buffer);
+      try {
+        image.write(contentsOf(image.buffer), image.buffer);
+      } catch (const metal::MetalAllocationError &) {
+        // A writer refused memory of its own leaves the image released too.
+        backend_->releaseMemory(image.buffer);
+        throw;
+      }
+    });
+    if (!admitted)
+      throw metal::MetalAllocationError("unable to restore " + image.component + ": " +
+                                            metal::allocationFailureName(admitted.failure),
+                                        admitted.failure);
     ++restored_;
   }
   released_ = restored_ < images_.size();

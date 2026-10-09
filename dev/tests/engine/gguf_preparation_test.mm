@@ -8,6 +8,7 @@
 // how to update it. MLX_FIXTURE is
 // dev/tests/fixtures/mlx-quantization/fixture.json.
 #include "GgufFixtures.hpp"
+#include "TestAdmission.hpp"
 #include "model/GgufPreparation.hpp"
 #include "model/GgufTarget.hpp"
 #include "model/SafetensorsCheckpoint.hpp"
@@ -105,7 +106,7 @@ void checkGoldenImages(MetalBackend &backend, const std::filesystem::path &path,
   });
   check(uint64_t(goldens) == loaded.size(), "every golden " + name + " image is prepared");
   images.release();
-  while (!images.restore()) {
+  while (!images.restore(splash::test::admitAll)) {
   }
   check(bytesOf(images) == loaded, "restored " + name + " images are the bytes loaded");
 }

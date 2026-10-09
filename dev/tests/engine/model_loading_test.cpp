@@ -1,3 +1,4 @@
+#include "TestAdmission.hpp"
 #include "TestBuffers.hpp"
 #include "TestChecks.hpp"
 #include "TestCheckpoint.hpp"
@@ -15,6 +16,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <limits>
@@ -195,7 +197,7 @@ void testWeightImages(MetalBackend &backend, const std::filesystem::path &root) 
         require(!retained.contents() && backend.memoryStats().allocatedBytes == baseline,
                 "released image memory remains");
         rejects([&] { (void)readBack(); }, "binds released memory", "a command bound released image memory");
-        require(images.restore() && !images.released() &&
+        require(images.restore(splash::test::admitAll) && !images.released() &&
                     backend.memoryStats().allocatedBytes >= baseline + fileBytes && readBack(),
                 "GPU read of a restored image section was incorrect");
         images.release();
@@ -205,7 +207,7 @@ void testWeightImages(MetalBackend &backend, const std::filesystem::path &root) 
                     pwrite(descriptor, &edit, sizeof(edit), kWeightFileAlignment) == sizeof(edit),
                 "unable to write the loaded file");
         close(descriptor);
-        rejects([&] { static_cast<void>(images.restore()); }, "written while the model is loaded",
+        rejects([&] { static_cast<void>(images.restore(splash::test::admitAll)); }, "written while the model is loaded",
                 "a restore read a file written since it was opened");
     }
     retained = MetalBuffer{};
@@ -250,6 +252,78 @@ void testWeightImages(MetalBackend &backend, const std::filesystem::path &root) 
             "unable to truncate synthetic file");
     rejects([&] { (void)load(unalignedPath, "TEST0001", 1, 2); }, "weight image size is not 16 KiB-aligned",
             "unaligned file size was accepted");
+}
+
+// A restore admits each image's memory. An image admission refuses, and one
+// whose writer is refused memory of its own, stays released and holds none,
+// and the images before it stay; a release during a restore gives back the
+// images it wrote back, and the next restore writes every image again as it
+// was loaded.
+void testRestoreAdmission(MetalBackend &backend, const std::filesystem::path &root) {
+    const uint64_t baseline = backend.memoryStats().allocatedBytes;
+    bool writerRefused = false;
+    splash::model::WeightImages images(backend, "fixture");
+    for (uint32_t index = 0; index < 2; ++index) {
+        const std::array<uint64_t, 1> sections{kWeightFileAlignment};
+        const auto path = root / ("restore-" + std::to_string(index) + ".bin");
+        writeWeightFile(path, "TEST0001", index, 9, sections);
+        const std::vector<uint8_t> payload(kWeightFileAlignment, static_cast<uint8_t>(index + 1));
+        const int descriptor = open(path.c_str(), O_WRONLY | O_CLOEXEC);
+        require(descriptor >= 0 &&
+                    pwrite(descriptor, payload.data(), payload.size(), kWeightFileAlignment) ==
+                        static_cast<ssize_t>(payload.size()),
+                "unable to write a restore payload");
+        close(descriptor);
+        splash::model::ImagePlan image =
+            fileImage(path, "test/" + path.filename().string(), "TEST0001", index, 9);
+        image.write = [&writerRefused, write = std::move(image.write)](std::span<uint8_t> bytes,
+                                                                       const MetalBuffer &buffer) {
+            if (writerRefused)
+                throw splash::metal::MetalAllocationError("writer refused memory");
+            write(bytes, buffer);
+        };
+        WeightFile file = images.load(std::move(image));
+        static_cast<void>(file.section(kWeightFileAlignment, "payload"));
+        file.finish();
+    }
+    std::vector<std::vector<uint8_t>> loaded;
+    for (const auto &image : images.contents())
+        loaded.emplace_back(image.bytes.begin(), image.bytes.end());
+    const auto holdsNone = [&] {
+        return images.released() && images.contents()[0].bytes.empty() &&
+               images.contents()[1].bytes.empty() && backend.memoryStats().allocatedBytes == baseline;
+    };
+
+    images.release();
+    require(holdsNone(), "released images hold memory");
+    require(!images.restore(splash::test::admitAll) && !images.contents()[0].bytes.empty() &&
+                images.contents()[1].bytes.empty(),
+            "a restore did not write back the first image alone");
+    const uint64_t firstBack = backend.memoryStats().allocatedBytes;
+    const auto keepsTheFirst = [&] {
+        return images.released() && !images.contents()[0].bytes.empty() &&
+               images.contents()[1].bytes.empty() && backend.memoryStats().allocatedBytes == firstBack;
+    };
+    const splash::metal::AllocationAdmission refuse = [](uint64_t, const std::function<void()> &) {
+        return splash::metal::AllocationResult{splash::metal::AllocationFailure::HostPressure};
+    };
+    rejects([&] { static_cast<void>(images.restore(refuse)); }, "host memory reserve protected",
+            "an image admission refused was restored");
+    require(keepsTheFirst(), "an image admission refused holds memory, or the image before it went");
+    writerRefused = true;
+    rejects([&] { static_cast<void>(images.restore(splash::test::admitAll)); }, "writer refused memory",
+            "an image whose writer was refused memory was restored");
+    require(keepsTheFirst(), "an image whose writer was refused memory holds its own, or the image before it went");
+    writerRefused = false;
+    images.release();
+    require(holdsNone(), "a release during a restore kept an image it wrote back");
+    while (!images.restore(splash::test::admitAll)) {
+    }
+    for (size_t index = 0; index < loaded.size(); ++index) {
+        const auto restored = images.contents()[index].bytes;
+        require(std::equal(restored.begin(), restored.end(), loaded[index].begin(), loaded[index].end()),
+                "a restore that started over wrote an image other than it was loaded");
+    }
 }
 
 // One tensor of a GGUF image: its descriptor, then its sections.
@@ -504,10 +578,10 @@ void testSyntheticModel(MetalBackend &backend,
                         declaredBytes(model.draft.files) - declaredBytes(model.vision.files),
                 "released weights remain in backend accounting");
         // They come back an image at a time, in load order.
-        require(!model.images->restore() && !model.images->contents()[0].bytes.empty() &&
+        require(!model.images->restore(splash::test::admitAll) && !model.images->contents()[0].bytes.empty() &&
                     model.images->contents()[1].bytes.empty(),
                 "a restore wrote back other than the next image");
-        while (!model.images->restore()) {
+        while (!model.images->restore(splash::test::admitAll)) {
         }
         const auto restored = model.images->contents();
         require(restored.size() == loaded.size() &&
@@ -689,6 +763,7 @@ int main(int argc, const char *argv[]) {
         MetalBackend backend(argv[1]);
         TempDirectory temporary;
         testWeightImages(backend, temporary.path());
+        testRestoreAdmission(backend, temporary.path());
         testGgufImageLayout(backend, temporary.path());
         // Block images are repacked by the production library's kernel.
         MetalBackend production(argv[2]);

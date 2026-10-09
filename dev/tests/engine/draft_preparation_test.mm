@@ -10,6 +10,7 @@
 // GOLDENS is dev/tests/fixtures/weight-goldens/goldens.json; its README says
 // how to update it.
 #include "GgufFixtures.hpp"
+#include "TestAdmission.hpp"
 #include "model/DFlashDraft.hpp"
 #include "model/DraftCheckpoint.hpp"
 #include "model/GgufPreparation.hpp"
@@ -111,7 +112,7 @@ int main(int argc, char **argv) {
         checkGolden(hashes, std::string(image.component), image.bytes, std::string(image.component) + ": golden");
       }
       images.release();
-      while (!images.restore()) {
+      while (!images.restore(splash::test::admitAll)) {
       }
       for (size_t index = 0; index < loaded.size(); ++index)
         check(bytesOf(images.contents()[index].bytes) == loaded[index],

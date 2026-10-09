@@ -255,6 +255,9 @@ struct WeightsSnapshot {
   bool released = false;
   // The times they were written back, each for a request.
   uint64_t restores = 0;
+  // The restores that gave up for want of memory: their requests failed
+  // retryably and the weights were released again.
+  uint64_t restoreFailures = 0;
 };
 
 // The prefill FFN's Neural Engine split (RuntimeResources::aneFfnSnapshot).
