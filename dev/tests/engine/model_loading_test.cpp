@@ -547,7 +547,8 @@ ModelDescriptor writeBlockModel(const std::filesystem::path &root, const Layout 
 // An MLX target loads as block images: each quantized module in the format of
 // its tensors, GDN alpha and beta of two formats as F32, bf16 norms and
 // grouped GDN value heads, and modelWeightBytes plans the bytes it loads. A
-// raw checkpoint, whose convolution mlx-lm has not sanitized, is refused.
+// raw checkpoint, whose convolution mlx-lm has not sanitized, is refused, and
+// so is one whose head or token table mlx-lm left unquantized.
 void testSyntheticBlockModel(MetalBackend &backend, const std::filesystem::path &root) {
     const Qwen3_8Layout target = syntheticTarget();
     // Bits and group size by module, every MLX affine bit width and group size among them.
@@ -603,6 +604,19 @@ void testSyntheticBlockModel(MetalBackend &backend, const std::filesystem::path 
             "source tensor type or shape does not match: "
             "language_model.model.layers.0.linear_attn.conv1d.weight",
             "a raw checkpoint's convolution was accepted");
+
+    // An unquantized module: its weight in bf16, without scales and biases.
+    for (const std::string module : {"language_model.lm_head", "language_model.model.embed_tokens"}) {
+        std::vector<splash::test::SyntheticTensor> tensors;
+        for (splash::test::SyntheticTensor &tensor : splash::test::mlxTargetTensors(target, bitsAndGroup))
+            if (tensor.name == module + ".weight")
+                tensors.push_back({tensor.name, "BF16", {target.vocabularySize, target.hiddenSize}});
+            else if (tensor.name != module + ".scales" && tensor.name != module + ".biases")
+                tensors.push_back(std::move(tensor));
+        splash::test::writeSyntheticShard(root / "target" / "model.safetensors", tensors);
+        rejects([&] { static_cast<void>(loadModel(backend, root, descriptor)); }, module + " is unquantized",
+                "an unquantized " + module + " was accepted");
+    }
 }
 
 // An MLX MoE target loads as block images: the experts in mixed formats, the
