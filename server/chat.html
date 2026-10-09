@@ -248,7 +248,7 @@
     success: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>',
     error: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg>'
   };
-  const markdown = typeof window.markdownit === 'function' ? window.markdownit({
+  const markdown = window.markdownit({
     html: false,
     breaks: true,
     highlight(source, language) {
@@ -257,26 +257,24 @@
       }
       return ''; // Markdown escapes code for unknown or omitted languages.
     }
-  }) : null;
-  if (markdown) {
-    for (const rule of ['fence', 'code_block']) {
-      const renderCode = markdown.renderer.rules[rule];
-      markdown.renderer.rules[rule] = (tokens, index, ...args) => {
-        const language = markdown.utils.escapeHtml(markdown.utils.unescapeAll(tokens[index].info || '').trim().split(/\s+/)[0] || 'text');
-        tokens[index].attrJoin('class', 'hljs');
-        return '<div class="code-block"><div class="code-toolbar"><span class="code-language">' + language +
-          '</span><button type="button" class="copy-code" title="Copy code" aria-label="Copy code" aria-live="polite">' + copyIcons.copy + '</button></div>' +
-          renderCode(tokens, index, ...args) + '</div>';
-      };
-    }
-    // A wide table scrolls inside the message instead of widening it. There
-    // are no table rules to wrap, so the generic renderToken emits the tags.
-    const renderToken = markdown.renderer.renderToken.bind(markdown.renderer);
-    markdown.renderer.rules.table_open = (tokens, index, ...args) =>
-      '<div class="table-wrap">' + renderToken(tokens, index, ...args);
-    markdown.renderer.rules.table_close = (tokens, index, ...args) =>
-      renderToken(tokens, index, ...args) + '</div>';
+  });
+  for (const rule of ['fence', 'code_block']) {
+    const renderCode = markdown.renderer.rules[rule];
+    markdown.renderer.rules[rule] = (tokens, index, ...args) => {
+      const language = markdown.utils.escapeHtml(markdown.utils.unescapeAll(tokens[index].info || '').trim().split(/\s+/)[0] || 'text');
+      tokens[index].attrJoin('class', 'hljs');
+      return '<div class="code-block"><div class="code-toolbar"><span class="code-language">' + language +
+        '</span><button type="button" class="copy-code" title="Copy code" aria-label="Copy code" aria-live="polite">' + copyIcons.copy + '</button></div>' +
+        renderCode(tokens, index, ...args) + '</div>';
+    };
   }
+  // A wide table scrolls inside the message instead of widening it. There
+  // are no table rules to wrap, so the generic renderToken emits the tags.
+  const renderToken = markdown.renderer.renderToken.bind(markdown.renderer);
+  markdown.renderer.rules.table_open = (tokens, index, ...args) =>
+    '<div class="table-wrap">' + renderToken(tokens, index, ...args);
+  markdown.renderer.rules.table_close = (tokens, index, ...args) =>
+    renderToken(tokens, index, ...args) + '</div>';
   const storeKey = 'splash-chats';
   const effortKey = 'splash-thinking-effort';
   const allowedEfforts = new Set([...effort.options].map(option => option.value));
@@ -423,9 +421,7 @@
   }
 
   function renderMarkdown(element, content) {
-    const text = displayContent(content);
-    if (markdown) element.innerHTML = markdown.render(text);
-    else element.textContent = text;
+    element.innerHTML = markdown.render(displayContent(content));
   }
 
   async function copyText(button, text, label) {
