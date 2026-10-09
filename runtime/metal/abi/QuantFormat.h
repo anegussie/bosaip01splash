@@ -163,9 +163,10 @@ inline constexpr bool quant_affine_format(uint32_t format) {
   return format >= GGUF_FMT_AF2G32 && format < GGUF_FMT_COUNT;
 }
 inline constexpr uint32_t quant_affine_bits(uint32_t format) { return (kQuantFormats[format].ggml_type >> 8) & 0xFF; }
-// The MLX affine format of b bits in groups of g; GGUF_FMT_COUNT when none.
+// The MLX affine format of b bits in groups of g; GGUF_FMT_COUNT when none
+// (QUANT_AFFINE_TYPE holds b and g in a byte each).
 inline constexpr uint32_t quant_affine_format_of(uint32_t bits, uint32_t group) {
-  return gguf_format_of(QUANT_AFFINE_TYPE(bits, group));
+  return bits <= 0xFF && group <= 0xFF ? gguf_format_of(QUANT_AFFINE_TYPE(bits, group)) : GGUF_FMT_COUNT;
 }
 
 // The chunk order slot of element e (0..31) of a group.

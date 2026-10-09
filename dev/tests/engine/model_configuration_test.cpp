@@ -242,6 +242,8 @@ void testQuantization(const std::filesystem::path &fixtures) {
             "quantization is affine 7-bit in groups of 64; MLX weights load as affine 2, 3, 4, 5, 6 or 8 bits in "
             "groups of 32, 64 or 128, or as mxfp4"},
            {dense, R"("group_size": 64)", R"("group_size": 16)", "quantization is affine 4-bit in groups of 16"},
+           // A group past a byte is no format (4 bits in groups of 320 are not af5g64).
+           {dense, R"("group_size": 64)", R"("group_size": 320)", "quantization is affine 4-bit in groups of 320"},
            {dense, R"("mode": "affine")", R"("mode": "nvfp4")", "quantization is nvfp4 4-bit in groups of 64"},
            {dense, R"("quantization": {)", R"("quantization": {"language_model.lm_head": false,)",
             "quantization language_model.lm_head must be an object"},
