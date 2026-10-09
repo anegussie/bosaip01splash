@@ -16,6 +16,7 @@
 #include "model/QwenHybridLayout.hpp"
 #include "model/SafetensorsCheckpoint.hpp"
 
+#include <string>
 #include <vector>
 
 namespace splash::model::mlx {
@@ -24,5 +25,13 @@ namespace splash::model::mlx {
 // outlives them: their rows read its tensors.
 [[nodiscard]] std::vector<gguf::Image> planImages(const SafetensorsCheckpoint &checkpoint,
                                                   const QwenTargetDimensions &geometry);
+
+// The modules the images read only quantized, in their order: the layers'
+// projections, the experts' and the shared expert's included, the head and
+// the token table. planImages refuses a checkpoint holding one unquantized,
+// and the configuration check one its config.json states unquantized
+// (model/ModelDescriptor.mm). The router, the shared-expert gate and GDN alpha
+// and beta are not among them.
+[[nodiscard]] std::vector<std::string> quantizedModules(const QwenTargetDimensions &geometry);
 
 } // namespace splash::model::mlx

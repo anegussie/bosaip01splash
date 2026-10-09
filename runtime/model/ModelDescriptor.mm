@@ -1,5 +1,6 @@
 #include "ModelDescriptor.hpp"
 #include "GgufImage.hpp"
+#include "MlxImage.hpp"
 #include "WeightStore.hpp"
 #include "metal/abi/DraftAttention.h"
 #include "metal/abi/ExecutionGeometry.h"
@@ -294,8 +295,13 @@ void validateTextConfig(NSDictionary *text, const QwenTargetDimensions &target, 
 // group size; a module's entry that omits either takes its mode's default, as
 // MLX's to_quantized does: affine 4 bits in groups of 64, mxfp4 4 bits in
 // groups of 32. The images read each module's format from its tensors, as MLX
-// does (model/MlxImage.hpp).
-void requireQuantization(NSDictionary *config) {
+// does (model/MlxImage.hpp). An entry that is not an object, false as MLX
+// writes for a module it leaves unquantized, is refused for a module the
+// images read only quantized (mlx::quantizedModules: each projection, the head
+// and the token table), so before any weight download; any other module's,
+// such as the router's, the shared-expert gate's or GDN alpha's and beta's,
+// which the images read unquantized too, is accepted.
+void requireQuantization(NSDictionary *config, const QwenTargetDimensions &geometry) {
   // A checkpoint without it holds BF16 weights, or another method's that a
   // transformers quantization_config states (GPTQ, AWQ, ...).
   NSDictionary *quantization = config[@"quantization"];
@@ -323,6 +329,12 @@ void requireQuantization(NSDictionary *config) {
   for (NSString *module in quantization)
     if ([quantization[module] isKindOfClass:[NSDictionary class]])
       require(quantization[module], "quantization " + std::string(module.UTF8String ?: ""), true);
+  for (const std::string &module : mlx::quantizedModules(geometry)) {
+    id entry = quantization[@(module.c_str())];
+    if (entry && ![entry isKindOfClass:[NSDictionary class]])
+      throw std::invalid_argument("quantization " + module +
+                                  " is unquantized; Splash loads quantized MLX projections and token tables");
+  }
 }
 
 // A DFlash2 checkpoint's config: the draft's layout; the block, window,
@@ -421,7 +433,7 @@ ModelDescriptor describeSourceModel(std::string name, std::string_view targetFor
                                : qwen38Descriptor(std::move(name), targetSource, visionSource);
   std::visit([&](const auto &layout) {
     validateTextConfig(text, layout, layout.family, result.targetSource);
-    if (result.targetSource == TargetSource::Mlx) requireQuantization(config);
+    if (result.targetSource == TargetSource::Mlx) requireQuantization(config, layout);
     if (draft) validateDraftConfig(draft, result.draft, layout.maskToken, layout.hiddenCaptureLayers);
   }, result.target);
   if (result.hasVision())

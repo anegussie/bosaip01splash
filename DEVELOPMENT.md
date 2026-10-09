@@ -1039,11 +1039,16 @@ An MLX target's `quantization` gives a mode, bits and group size, and may give
 a module its own, as mlx-lm writes it; a module's entry wins, and its mode
 defaults to affine. The engine loads affine 2, 3, 4, 5, 6 or 8 bits in groups
 of 32, 64 or 128 and mxfp4 (4 bits in groups of 32), mixed in any way across
-modules, and refuses any other format, naming the module (nvfp4, mxfp8). An
-affine weight is `s * q + z` for its group's bf16 `.scales` and `.biases` and
-its code `q`, packed little-endian in `.weight`'s 32-bit words at every width;
-an mxfp4 weight is an E2M1 code times its group's power of two, a uint8 scale,
-which is GGUF's MXFP4.
+modules, and refuses any other format, naming the module (nvfp4, mxfp8).
+Every projection, the experts' too, the head and the token table load only
+quantized (`mlx::quantizedModules`): an entry `false`, which mlx-lm writes for
+a module it leaves unquantized, is refused for any of them before any weight
+download, naming it, and the loader refuses one the checkpoint holds
+unquantized. The router, the shared-expert gate and GDN alpha and beta may be
+unquantized. An affine weight is `s * q + z` for its group's bf16 `.scales`
+and `.biases` and its code `q`, packed little-endian in `.weight`'s 32-bit
+words at every width; an mxfp4 weight is an E2M1 code times its group's power
+of two, a uint8 scale, which is GGUF's MXFP4.
 
 An MLX target loads into the `MDGG0001` images a GGUF target's do
 (`MlxTargetLoader`, [Weight loading](#weight-loading)):
