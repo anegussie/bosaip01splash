@@ -288,11 +288,11 @@ void DFlashDraft::addContextCommit(
   }
 }
 
-namespace {
-
 // Reads a draft's images in their section order: each layer, then model.bin.
-DFlashDraftWeights readDraft(metal::MetalBackend &backend, DraftCheckpointLoader &files,
-                             const DFlashDraftLayout &layout) {
+DFlashDraftWeights loadDFlashDraftWeights(metal::MetalBackend &backend,
+                                          DraftCheckpointLoader &files,
+                                          DFlashDraftLayout layout) {
+  requireLayout(layout);
   const uint64_t allocationBaseline = backend.memoryStats().allocatedBytes;
   DFlashDraftWeights result;
   result.layout = layout;
@@ -362,15 +362,6 @@ DFlashDraftWeights readDraft(metal::MetalBackend &backend, DraftCheckpointLoader
   result.actualAllocatedBytes = metal::allocationDelta(
       allocationBaseline, backend.memoryStats().allocatedBytes);
   return result;
-}
-
-} // namespace
-
-DFlashDraftWeights loadDFlashDraftWeights(metal::MetalBackend &backend,
-                                          DraftCheckpointLoader &files,
-                                          DFlashDraftLayout layout) {
-  requireLayout(layout);
-  return readDraft(backend, files, layout);
 }
 
 } // namespace splash::model

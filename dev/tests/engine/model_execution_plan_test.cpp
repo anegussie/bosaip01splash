@@ -20,7 +20,7 @@ using splash::test::rejects;
 using splash::test::require;
 
 template <class Weights>
-model::LoadedModel package() {
+model::LoadedModel loadedModel() {
   model::LoadedModel result;
   Weights target;
   const model::DFlashDraftLayout draft = std::is_same_v<Weights, model::Qwen3_6MoeWeights>
@@ -62,7 +62,7 @@ model::LoadedModel package() {
 }
 
 void checkMixedLayouts() {
-  auto mixed = package<model::Qwen3_8Weights>();
+  auto mixed = loadedModel<model::Qwen3_8Weights>();
   auto &target = std::get<model::Qwen3_8Weights>(mixed.target);
   auto &up = target.layers.front().upProjection;
   up = ops::Projection(up.outputSize, up.inputSize,
@@ -109,7 +109,7 @@ void checkMixedLayouts() {
   }
   // Every MoE block of a target shares one layout, which the geometry's one
   // MoE shape records: no source mixes them.
-  auto sparse = package<model::Qwen3_6MoeWeights>();
+  auto sparse = loadedModel<model::Qwen3_6MoeWeights>();
   auto &moe = std::get<model::Qwen3_6MoeWeights>(sparse.target);
   require(model::qwenTargetGeometry(moe).moeShape().weightLayout == ops::WeightLayout::Affine64,
           "the MoE shape lost the blocks' layout");
@@ -127,8 +127,8 @@ void checkMixedLayouts() {
 // Split128 plan's partials grow with the rows. The arena must hold every
 // lane's plan of every affine target and draft projection at the measured
 // core counts.
-void checkLaneScratch(const model::LoadedModel &package) {
-  const auto geometry = model::RuntimeGeometry::from(package, kv::Format::Int8);
+void checkLaneScratch(const model::LoadedModel &loaded) {
+  const auto geometry = model::RuntimeGeometry::from(loaded, kv::Format::Int8);
   const auto &d = geometry.draft;
   std::vector<ops::LinearMatrix> matrices{
       {d.dynamicSize, d.hiddenSize}, {d.qkvSize, d.hiddenSize}, {d.contextKvSize(), d.hiddenSize},
@@ -159,7 +159,7 @@ void checkLaneScratch(const model::LoadedModel &package) {
 // Arenas are sized from the projections the weights hold, so each must have
 // sizes; an empty one would drop its workspace from the bound silently.
 void checkUnsizedProjection() {
-  auto broken = package<model::Qwen3_8Weights>();
+  auto broken = loadedModel<model::Qwen3_8Weights>();
   std::get<model::Qwen3_8Weights>(broken.target).layers.back().downProjection = ops::Projection();
   rejects([&] { static_cast<void>(model::RuntimeGeometry::from(broken, kv::Format::Int8)); },
           "invalid model runtime geometry", "a target projection without sizes reached arena sizing");
@@ -170,7 +170,7 @@ void checkUnsizedProjection() {
 // the GDN shape, whose packed rows must also hold the two gates of every
 // value head.
 void checkGdnWidths() {
-  const auto sparse = package<model::Qwen3_6MoeWeights>();
+  const auto sparse = loadedModel<model::Qwen3_6MoeWeights>();
   const auto sizeArenas = [&](const model::Qwen3_6MoeLayout &layout) {
     auto candidate = sparse;
     std::get<model::Qwen3_6MoeWeights>(candidate.target).layout = layout;
@@ -198,8 +198,8 @@ int main() {
     checkUnsizedProjection();
     checkGdnWidths();
     checkMixedLayouts();
-    const auto dense = package<model::Qwen3_8Weights>();
-    const auto sparse = package<model::Qwen3_6MoeWeights>();
+    const auto dense = loadedModel<model::Qwen3_8Weights>();
+    const auto sparse = loadedModel<model::Qwen3_6MoeWeights>();
     checkLaneScratch(dense);
     checkLaneScratch(sparse);
     std::cout << "model execution plans: PASS (two paired geometries)\n";

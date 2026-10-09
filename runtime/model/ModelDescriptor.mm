@@ -165,17 +165,17 @@ void requireBooleans(NSDictionary *object, std::string_view where,
   }
 }
 
-// Each layer's type in a layer_types array, as the array names a
-// full-attention layer and a GDN layer.
+// Each layer's type in a layer_types array: full_attention for a
+// full-attention layer, linear_attention for a GDN layer.
 void requireLayerTypes(NSArray *types, const QwenTargetDimensions &target,
-                       NSString *attention, NSString *gdn,
                        std::string_view source, std::string_view label) {
   if (types.count != target.layers)
     throw std::invalid_argument(std::string(label) + " count mismatch: " + std::string(source) +
                                 " " + std::to_string(types.count) + ", runtime " +
                                 std::to_string(target.layers));
   for (uint32_t layer = 0; layer < target.layers; ++layer) {
-    NSString *expected = target.isFullAttentionLayer(layer) ? attention : gdn;
+    NSString *expected =
+        target.isFullAttentionLayer(layer) ? @"full_attention" : @"linear_attention";
     if (![types[layer] isEqual:expected])
       throw std::invalid_argument(std::string(label) + " " +
                                   std::to_string(layer) + " must be " +
@@ -264,8 +264,7 @@ void validateTextConfig(NSDictionary *text, const QwenTargetDimensions &target, 
   requireEqual(requireString(text, @"hidden_act", "text config hidden_act"),
                "silu", name, "text config hidden_act");
   requireLayerTypes(requireArray(text, @"layer_types", "text config layer_types"),
-                    target, @"full_attention", @"linear_attention", name,
-                    "text config layer_types");
+                    target, name, "text config layer_types");
   NSDictionary *rope =
       requireObject(text, @"rope_parameters", "text config rope_parameters");
   requireNumbers(rope, name, "text config rope_parameters",
