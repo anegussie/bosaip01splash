@@ -52,8 +52,8 @@ void requireSegmentPlanes(const QuantizedSegment &segment, std::string_view what
 
 enum class LinearPhase : uint8_t { Prefill, Decode };
 enum class LinearEpilogue : uint8_t { None, Residual, GateUp, UpWithGate };
-// The tiles run 64 columns per threadgroup, but a one-pass gate/up
-// (LinearConfig::oneGateUpPass), which runs 32 columns of both tensors per
+// The tiles run 64 columns per threadgroup; a one-pass gate/up
+// (LinearConfig::oneGateUpPass) runs 32 columns of both tensors per
 // threadgroup of one simdgroup. The staged tiles, GgufStaged and GgufPrefill,
 // dequantize the weights into threadgroup memory for matmul2d.
 // GgufStaged: the two-simdgroup staged tile of 8, 16 or 32 rows (decode, and
