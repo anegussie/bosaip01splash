@@ -4,13 +4,13 @@
 // store + attention graph the executor encodes, reports the fused GPU time of
 // the whole graph and, with each dispatch submitted as its own command, the GPU
 // time of each pipeline over the deterministic synthetic history of
-// dev/tests/engine/AttentionFixture.hpp. These are kernel timings, not a correctness
-// oracle (the attention kernel tests are). The KV sits in extents of the size
-// the memory plan picks for the model, or of --extent-pages pages, which must
-// hold whole alignment units of every swept shape; the swept layer is the
-// second of two so that its region starts past the first one's, and each case
-// prints a digest of its output: two builds that fill the same pages must print
-// the same digests, whatever their storage.
+// dev/tests/engine/AttentionFixture.hpp. These are kernel timings, not a
+// correctness oracle (the attention kernel tests are). The KV sits in extents
+// of the size the memory plan picks for the model, or of --extent-pages pages,
+// which must hold whole alignment units of every swept shape; the swept layer
+// is the second of two so that its region starts past the first one's, and each
+// case prints a digest of its output: two builds that fill the same pages must
+// print the same digests, whatever their storage.
 //
 // usage: attention-sweep METALLIB [--histories 0,2048,...] [--shapes 27b,35b]
 //                        [--lanes 1,4] [--repeat N] [--phases both|verify|prefill]
