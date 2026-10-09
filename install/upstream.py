@@ -316,7 +316,9 @@ def prepare(selection):
     kind = models.installation_kind(selection.link)
     if kind == models.PACKAGE:
         models.refuse_package(
-            selection.model, models.read_json(selection.link / "manifest.json")
+            selection.model,
+            models.read_json(selection.link / "manifest.json"),
+            selection.link,
         )
     installed = None
     if kind == models.ASSEMBLY:

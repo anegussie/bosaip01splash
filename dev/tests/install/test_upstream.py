@@ -4,6 +4,7 @@ import errno
 import fcntl
 import io
 import json
+import re
 import shutil
 import tempfile
 import unittest
@@ -280,11 +281,15 @@ class UpstreamTest(unittest.TestCase):
         chosen.link.parent.mkdir(parents=True)
         chosen.link.symlink_to(snapshot, target_is_directory=True)
         fake = FakeHub(self, self.cache)
+        # The message names the Hub cache folder the package's files take.
         with self.assertRaisesRegex(
             models.ModelError,
-            "someone/package is a Splash package, which Splash no longer loads; "
-            "serve the MLX model of its family instead: splash serve --model "
-            "mlx-community/Qwen3.6-35B-A3B-4bit",
+            re.escape(
+                "someone/package is a Splash package, which Splash no longer loads "
+                f"(its files in {(self.cache / 'models--someone--package').resolve()} "
+                "can be deleted); serve the MLX model of its family instead: "
+                "splash serve --model mlx-community/Qwen3.6-35B-A3B-4bit"
+            ),
         ):
             self.prepare(chosen)
         self.assertEqual((fake.requests, fake.downloads), ([], []))

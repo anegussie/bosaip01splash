@@ -1195,7 +1195,9 @@ of earlier releases, which Splash no longer loads. A `--model` that names one,
 installed or on the Hub, stops and names the MLX model of its family to serve
 instead: `mlx-community/Qwen3.8-27B-4bit` or
 `mlx-community/Qwen3.6-35B-A3B-4bit`, which load the packages' weights byte for
-byte but for the 27B's GDN decay vectors, each within a float ULP. A package is
+byte but for the 27B's GDN decay vectors, each within a float ULP. For an
+installed package it also names the Hub cache folder holding the package's
+files, which nothing reads any more and can be deleted. A package is
 recognized by its `manifest.json`, which names the package format.
 
 ## Internals

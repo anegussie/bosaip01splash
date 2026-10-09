@@ -189,11 +189,16 @@ class InstallerTest(unittest.TestCase):
         models = self.root / "models"
         for name, replacement in installer.PACKAGE_REPLACEMENTS.items():
             with self.subTest(format=name):
-                link = installer.selection_link(models, self.MODEL_ID)
-                link.mkdir(parents=True, exist_ok=True)
-                (link / "manifest.json").write_text(
+                # A link to a folder outside any Hub cache.
+                package = self.root / "packages" / name
+                package.mkdir(parents=True)
+                (package / "manifest.json").write_text(
                     json.dumps({"format": {"name": name}})
                 )
+                link = installer.selection_link(models, self.MODEL_ID)
+                link.parent.mkdir(parents=True, exist_ok=True)
+                link.unlink(missing_ok=True)
+                link.symlink_to(package, target_is_directory=True)
                 errors = io.StringIO()
                 with contextlib.redirect_stderr(errors):
                     result = installer.main(
@@ -206,6 +211,8 @@ class InstallerTest(unittest.TestCase):
                     f"serve --model {replacement}",
                     errors.getvalue(),
                 )
+                # Only a Hub cache folder is named for deletion.
+                self.assertNotIn("can be deleted", errors.getvalue())
         # Another tool's manifest.json names no package format.
         installer.refuse_package(self.MODEL_ID, {"format": "other"})
         installer.refuse_package(self.MODEL_ID, [])
