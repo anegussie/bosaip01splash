@@ -305,8 +305,9 @@ def _safetensors_tensors(repo, name):
     little-endian), then a JSON object, read on demand, without a download."""
     with repo.open(name) as stream:
         size = int.from_bytes(stream.read(8), "little")
-        # The native checkpoint reader's bound on one header.
-        if not 2 <= size <= 1 << 20:
+        # The native checkpoint reader's bound on one header, the safetensors
+        # format's own.
+        if not 2 <= size <= 100_000_000:
             raise models.ModelError(f"invalid safetensors header in {name}")
         try:
             header = json.loads(stream.read(size))
