@@ -85,7 +85,6 @@
   .content blockquote { margin: 0 0 1em; padding-left: 14px; border-left: 2px solid var(--border); color: var(--muted) }
   .content hr { margin: 1.5em 0; border: 0; border-top: 1px solid var(--border) }
   .content a { color: var(--link); text-underline-offset: 2px }
-  .content img { max-width: 100%; border-radius: 12px }
   .content :not(pre) > code { padding: .15em .35em; border-radius: 6px; background: var(--bubble); font-size: .9em }
   .table-wrap { overflow-x: auto; margin: 0 0 1em }
   .content table { border-collapse: collapse; width: 100%; overflow-wrap: normal; font-size: .95em }
@@ -257,7 +256,7 @@
       }
       return ''; // Markdown escapes code for unknown or omitted languages.
     }
-  });
+  }).disable('image'); // A reply's image would load its URL without a click.
   for (const rule of ['fence', 'code_block']) {
     const renderCode = markdown.renderer.rules[rule];
     markdown.renderer.rules[rule] = (tokens, index, ...args) => {
