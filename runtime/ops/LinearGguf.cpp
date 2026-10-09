@@ -431,19 +431,52 @@ void Linear::addGgufStaged(metal::CommandGraph &graph, const LinearBuffers &b,
 }
 
 // The prefill tile, which runs prefill chunks of more than
-// kMaximumDecodeTileRows rows: one dispatch per segment over 128-row tiles;
-// rows past the chunk's stay inside the budget-sized prefill buffers, and the
-// simdgroups of a tile that only hold them skip their matmuls.
+// kMaximumDecodeTileRows rows over 128-row tiles: a plain projection in one
+// dispatch per format, over the column tiles of its segments of that format
+// (a fused projection's segments otherwise run as small grids of their own),
+// a projection with an epilogue in one dispatch per segment. Rows past the
+// chunk's stay inside the budget-sized prefill buffers, and the simdgroups of
+// a tile that only hold them skip their matmuls.
 void Linear::addGgufPrefill(metal::CommandGraph &graph, const LinearBuffers &b,
                             const Projection &p, const LinearPlan &plan) const {
   const LinearWorkload w = plan.workload();
   const auto [n, k] = w.matrix;
   const char epilogue = epilogueSuffix(w.epilogue);
+  const uint32_t rowTiles = plan.storageRows() / GGUF_PREFILL_ROWS;
+  if (w.epilogue == LinearEpilogue::None && !p.planeInputs()) {
+    const std::vector<QuantizedSegment> &segments = p.blocks().segments;
+    std::vector<uint32_t> formats;
+    for (const QuantizedSegment &s : segments)
+      if (std::find(formats.begin(), formats.end(), s.formatId) == formats.end()) formats.push_back(s.formatId);
+    for (const uint32_t format : formats) {
+      std::vector<const QuantizedSegment *> group;
+      for (const QuantizedSegment &s : segments)
+        if (s.formatId == format) group.push_back(&s);
+      if (group.size() > kFusedSegments) throw std::invalid_argument("a block prefill takes at most three segments");
+      GgufPrefillSegmentsParams params{k, w.rows, n, {0, 0, 0}, {0, 0, 0}};
+      std::vector<metal::MetalBuffer> bindings{b.input};
+      uint32_t columns = 0;
+      for (size_t i = 0; i < kFusedSegments; ++i) {
+        // Slots past the group's last segment bind its planes, which no tile reads.
+        const QuantizedSegment &s = *group[std::min(i, group.size() - 1)];
+        if (i < group.size()) {
+          params.cols[i] = s.outputSize;
+          params.offset[i] = s.columnOffset;
+          columns += s.outputSize;
+        }
+        bindings.insert(bindings.end(), {s.plane0, s.plane1Slot(), s.meta});
+      }
+      bindings.push_back(b.output);
+      graph.add(prefillKernel(group.front()->name(), epilogue), std::move(bindings), params,
+                {rowTiles, columns / GGUF_TILE_COLUMNS, 1}, {GGUF_PREFILL_THREADS, 1, 1});
+    }
+    return;
+  }
   for (const QuantizedSegment &s : p.blocks().segments) {
     std::vector<metal::MetalBuffer> bindings{b.input, s.plane0, s.plane1Slot(), s.meta, b.output};
     if (w.epilogue != LinearEpilogue::None) bindings.push_back(epilogueInput(b, w.epilogue));
     const GgufPrefillParams params{k, w.rows, n, s.columnOffset};
-    const metal::DispatchSize groups{plan.storageRows() / GGUF_PREFILL_ROWS, s.outputSize / GGUF_TILE_COLUMNS, 1};
+    const metal::DispatchSize groups{rowTiles, s.outputSize / GGUF_TILE_COLUMNS, 1};
     if (p.planeInputs())
       graph.add(leadingInputsInstance(prefillKernel(s.name(), epilogue)), std::move(bindings),
                 GgufPrefillLeadingParams{params, p.planeInputs()}, groups, {GGUF_PREFILL_THREADS, 1, 1});

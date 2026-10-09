@@ -65,6 +65,16 @@ struct GgufPrefillLeadingParams {
 };
 static_assert(sizeof(GgufPrefillLeadingParams) == 20,
               "GGUF leading-input prefill parameters are 20 bytes on both sides");
+// The plain prefill kernels (gguf_prefill_<format>_a): up to three column segments of the kernel's format in one
+// dispatch, tiles in segment order, as a fused decode dispatch takes them; a single tensor is one segment.
+struct GgufPrefillSegmentsParams {
+  uint32_t input_size;  // K
+  uint32_t rows;        // rows of the chunk
+  uint32_t out_stride;  // columns of a destination row
+  uint32_t cols[3];     // columns per segment; 0 past the last
+  uint32_t offset[3];   // first destination column per segment
+};
+static_assert(sizeof(GgufPrefillSegmentsParams) == 36, "GGUF segmented prefill parameters are 36 bytes on both sides");
 
 // Decode tiles: the register tile, which Apple9 runs but for the projections
 // it stages (ops/LinearGguf.cpp, apple9Stages), and the staged tile, which

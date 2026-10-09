@@ -194,9 +194,17 @@ QUANT_FORMATS(GGUF_DECODE_GATE_UP_FORMAT)
 // step staged_first_step gives the tile's index within the segment. The fused and prefill kernels stay plain kernels:
 // as template instantiations (weak_odr) the compiler infers fewer parameter attributes and inlines differently.
 #define GGUF_SEGMENT(i, w0, w1, m) device uchar *w0 [[buffer(i)]], device uchar *w1 [[buffer(i + 1)]], device uchar *m [[buffer(i + 2)]]
+#define GGUF_SEGMENTS GGUF_SEGMENT(1, w0a, w1a, ma), GGUF_SEGMENT(4, w0b, w1b, mb), GGUF_SEGMENT(7, w0c, w1c, mc)
+// The segment s of column tile `tile` among the segments' tiles (cols, 0 past the last), the tile's index `local`
+// within it, and the segment's planes w0, w1 and meta.
+#define GGUF_SEGMENT_OF(tile, cols)                                                                                \
+  const uint t0 = (cols)[0] / GGUF_TILE_COLUMNS, t1 = t0 + (cols)[1] / GGUF_TILE_COLUMNS;                          \
+  const uint s = (tile) < t0 ? 0 : (tile) < t1 ? 1 : 2, local = (tile) - (s == 0 ? 0 : s == 1 ? t0 : t1);          \
+  device uchar *w0 = s == 0 ? w0a : s == 1 ? w0b : w0c;                                                           \
+  device uchar *w1 = s == 0 ? w1a : s == 1 ? w1b : w1c;                                                           \
+  device uchar *meta = s == 0 ? ma : s == 1 ? mb : mc
 #define GGUF_DECODE_FUSED(R)                                                                                       \
-  kernel void gguf_decode_fused_m##R(device bfloat *input [[buffer(0)]], GGUF_SEGMENT(1, w0a, w1a, ma),          \
-                                     GGUF_SEGMENT(4, w0b, w1b, mb), GGUF_SEGMENT(7, w0c, w1c, mc),                \
+  kernel void gguf_decode_fused_m##R(device bfloat *input [[buffer(0)]], GGUF_SEGMENTS,                          \
                                      device bfloat *output [[buffer(10)]],                                        \
                                      device coherent(device) float *partials [[buffer(11)]],                      \
                                      device atomic_uint *counters [[buffer(12)]],                                 \
@@ -205,12 +213,8 @@ QUANT_FORMATS(GGUF_DECODE_GATE_UP_FORMAT)
                                      uint simd_lane [[thread_index_in_simdgroup]],                                \
                                      uint simd_group [[simdgroup_index_in_threadgroup]]) {                        \
     threadgroup half stage[kStagedStages]; threadgroup half2 tl[kQuantPairTableEntries]; threadgroup uint arrival; \
-    const uint t0 = p.cols[0] / GGUF_TILE_COLUMNS, t1 = t0 + p.cols[1] / GGUF_TILE_COLUMNS;                        \
-    const uint s = group.x < t0 ? 0 : group.x < t1 ? 1 : 2;                                                       \
-    device uchar *w0 = s == 0 ? w0a : s == 1 ? w0b : w0c;                                                         \
-    device uchar *w1 = s == 0 ? w1a : s == 1 ? w1b : w1c;                                                         \
-    device uchar *meta = s == 0 ? ma : s == 1 ? mb : mc;                                                          \
-    const uint local = group.x - (s == 0 ? 0 : s == 1 ? t0 : t1), per = p.input_size / GGUF_STAGED_STEP / p.splits; \
+    GGUF_SEGMENT_OF(group.x, p.cols);                                                                             \
+    const uint per = p.input_size / GGUF_STAGED_STEP / p.splits;                                                  \
     const uint sb = group.y * per, se = sb + per;                                                                 \
     const uint origin = local * GGUF_TILE_COLUMNS + simd_group * GGUF_STAGED_COLUMNS, column0 = p.offset[s] + origin; \
     threadgroup half *my = stage + simd_group * kStagedSimdgroupStage;                                            \
@@ -225,10 +229,9 @@ QUANT_FORMATS(GGUF_DECODE_GATE_UP_FORMAT)
   }
 GGUF_DECODE_FUSED(8) GGUF_DECODE_FUSED(16) GGUF_DECODE_FUSED(32)
 #undef GGUF_DECODE_FUSED
-#undef GGUF_SEGMENT
 
-// The prefill kernels: grid (GGUF_PREFILL_ROWS-row tiles of the chunk, column tiles of the segment), four
-// simdgroups; the residual and gate kernels read aux at buffer 5, the plain one binds none.
+// The prefill kernels: grid (GGUF_PREFILL_ROWS-row tiles of the chunk, column tiles), four simdgroups; the residual
+// and gate kernels run one tensor and read aux at buffer 5.
 #define GGUF_PREFILL_BUFFERS                                                                                       \
   device bfloat *input [[buffer(0)]], device uchar *w0 [[buffer(1)]], device uchar *w1 [[buffer(2)]],             \
       device uchar *meta [[buffer(3)]], device bfloat *output [[buffer(4)]]
@@ -239,15 +242,19 @@ GGUF_DECODE_FUSED(8) GGUF_DECODE_FUSED(16) GGUF_DECODE_FUSED(32)
   threadgroup half2 tl[F::Kind == QuantCodebook ? kQuantPairTableEntries : 1];                                     \
   quant_pair_table<F>(tl, simd_group * 32 + simd_lane, GGUF_PREFILL_THREADS);                                      \
   threadgroup half stage[kPrefillStages]
+// The plain kernel takes up to three segments of its format (GgufPrefillSegmentsParams), so the segments of a fused
+// projection that share a format run as one dispatch, grid.y over their column tiles in segment order.
 #define GGUF_PREFILL(F, f)                                                                                         \
-  kernel void gguf_prefill_##f##_a(GGUF_PREFILL_BUFFERS, constant GgufPrefillParams &p [[buffer(5)]],            \
-                                   GGUF_PREFILL_THREAD) {                                                          \
+  kernel void gguf_prefill_##f##_a(device bfloat *input [[buffer(0)]], GGUF_SEGMENTS,                            \
+                                   device bfloat *output [[buffer(10)]],                                          \
+                                   constant GgufPrefillSegmentsParams &p [[buffer(11)]], GGUF_PREFILL_THREAD) {    \
     GGUF_PREFILL_TABLES(F);                                                                                        \
+    GGUF_SEGMENT_OF(group.y, p.cols);                                                                              \
     const uint first = group.x * GGUF_PREFILL_ROWS, rows = p.rows > first ? p.rows - first : 0;                    \
     gguf_prefill_tile<F, GGUF_PREFILL_SIMDGROUP_ROWS, GGUF_PREFILL_SIMDGROUPS, GGUF_TILE_COLUMNS, GGUF_PREFILL_STEP>(input + ulong(first) * p.input_size, w0, w1, meta,                        \
                                          output + ulong(first) * p.out_stride, p.input_size,                       \
-                                         group.y * GGUF_TILE_COLUMNS, rows, stage, tl, simd_lane, simd_group,      \
-                                         p.out_stride, p.out_offset);                                              \
+                                         local * GGUF_TILE_COLUMNS, rows, stage, tl, simd_lane, simd_group,        \
+                                         p.out_stride, p.offset[s]);                                               \
   }
 #define GGUF_PREFILL_EPILOGUE(F, f, ep, Ep)                                                                        \
   kernel void gguf_prefill_##f##_##ep(GGUF_PREFILL_BUFFERS, device bfloat *aux [[buffer(5)]],                    \
@@ -292,3 +299,6 @@ QUANT_FORMATS(GGUF_PREFILL_LEADING_INPUTS)
 #undef GGUF_PREFILL_TABLES
 #undef GGUF_PREFILL_THREAD
 #undef GGUF_PREFILL_BUFFERS
+#undef GGUF_SEGMENT_OF
+#undef GGUF_SEGMENTS
+#undef GGUF_SEGMENT
