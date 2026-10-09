@@ -404,10 +404,7 @@ class ServerAccessTests(unittest.TestCase):
                 "/",
                 "/index.html?test=1",
                 "/favicon.ico",
-                "/chat-assets/markdown-it-15.0.2.min.js",
-                "/chat-assets/highlight-11.12.0.min.js",
-                "/chat-assets/github-11.12.0.min.css",
-                "/chat-assets/github-dark-11.12.0.min.css",
+                *server.CHAT_ASSETS,
             ):
                 self.assertEqual(harness.request(method, path)[0], 404)
         default = self.harness()
@@ -427,20 +424,15 @@ class ServerAccessTests(unittest.TestCase):
 
     def test_chat_assets_are_public_but_do_not_expose_other_files(self):
         harness = self.harness(api_key="test-server-key")
-        for name, mime in (
-            ("markdown-it-15.0.2.min.js", "text/javascript"),
-            ("highlight-11.12.0.min.js", "text/javascript"),
-            ("github-11.12.0.min.css", "text/css"),
-            ("github-dark-11.12.0.min.css", "text/css"),
-        ):
-            with self.subTest(name=name):
-                route = f"/chat-assets/{name}"
+        mimes = {".js": "text/javascript", ".css": "text/css"}
+        for route in server.CHAT_ASSETS:
+            with self.subTest(route=route):
                 status, content_type, payload = harness.request("GET", route)
                 self.assertEqual(status, 200)
+                mime = mimes[os.path.splitext(route)[1]]
                 self.assertEqual(content_type, f"{mime}; charset=utf-8")
                 self.assertEqual(
-                    payload,
-                    (server.ROOT / "server" / "chat-assets" / name).read_bytes(),
+                    payload, (server.ROOT / "server" / route[1:]).read_bytes()
                 )
                 self.assertEqual(harness.request("HEAD", route)[0], 200)
         key = {"Authorization": "Bearer test-server-key"}

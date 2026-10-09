@@ -26,15 +26,7 @@ class PackageTests(unittest.TestCase):
                 ("install", package.INSTALL_FILES),
                 ("install/completions", package.COMPLETION_FILES),
                 ("server", package.SERVER_FILES),
-                (
-                    "server/chat-assets",
-                    (
-                        "markdown-it-15.0.2.min.js",
-                        "highlight-11.12.0.min.js",
-                        "github-11.12.0.min.css",
-                        "github-dark-11.12.0.min.css",
-                    ),
-                ),
+                ("server/chat-assets", package.CHAT_ASSET_FILES),
                 ("build", ("splash", "splash.metallib")),
             ):
                 (root / folder).mkdir(parents=True)
@@ -95,15 +87,7 @@ class PackageTests(unittest.TestCase):
             for folder, names in (
                 ("install", package.INSTALL_FILES),
                 ("server", package.SERVER_FILES),
-                (
-                    "server/chat-assets",
-                    (
-                        "markdown-it-15.0.2.min.js",
-                        "highlight-11.12.0.min.js",
-                        "github-11.12.0.min.css",
-                        "github-dark-11.12.0.min.css",
-                    ),
-                ),
+                ("server/chat-assets", package.CHAT_ASSET_FILES),
                 ("build", ("splash", "splash.metallib")),
             ):
                 (root / folder).mkdir(parents=True)
@@ -160,20 +144,9 @@ class PackageTests(unittest.TestCase):
             )
             assets = stage / "server/chat-assets"
             self.assertEqual(
-                {p.name for p in assets.iterdir()},
-                {
-                    "markdown-it-15.0.2.min.js",
-                    "highlight-11.12.0.min.js",
-                    "github-11.12.0.min.css",
-                    "github-dark-11.12.0.min.css",
-                },
+                {p.name for p in assets.iterdir()}, set(package.CHAT_ASSET_FILES)
             )
-            for name in (
-                "markdown-it-15.0.2.min.js",
-                "highlight-11.12.0.min.js",
-                "github-11.12.0.min.css",
-                "github-dark-11.12.0.min.css",
-            ):
+            for name in package.CHAT_ASSET_FILES:
                 self.assertEqual(
                     (assets / name).read_bytes(),
                     (root / "server/chat-assets" / name).read_bytes(),
