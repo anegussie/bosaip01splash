@@ -59,7 +59,8 @@ inline uint staged_first_step(uint tile, uint step_begin, uint step_end, uint sp
 // Rows-row matmul2d of `input` on the stage. Threads that run no matmuls still stage and meet every barrier: in MSL a
 // barrier inside a conditional must be reached by every thread of the threadgroup. Each thread loads the next step's
 // payload while the step's matmul runs, and so its meta unit when the next step enters a new one (a unit spans
-// F::MetaGroups groups): both DRAM round trips overlap a matmul.
+// F::MetaGroups groups): both DRAM round trips overlap a matmul. Both go to the registers the step has just
+// dequantized from, so the prefetch holds no second meta unit.
 template <class F, ushort Rows, ushort Cols, ushort KS, ushort Threads, class Acc>
 inline void gguf_staged_steps(device bfloat *input, device uchar *w0, device uchar *w1, device uchar *meta, uint input_size,
                               uint output_origin, threadgroup half *stage, threadgroup half2 *tl, uint thread_index,
@@ -76,28 +77,25 @@ inline void gguf_staged_steps(device bfloat *input, device uchar *w0, device uch
   tensor<threadgroup half, dextents<int, 2>, tensor_inline> bt0(stage, dextents<int, 2>{KS, Cols}, array<int, 2>{1, KS});
   tensor<threadgroup half, dextents<int, 2>, tensor_inline> bt1(stage + KS * Cols, dextents<int, 2>{KS, Cols}, array<int, 2>{1, KS});
   auto b0 = bt0.slice<KS, Cols>(0, 0), b1 = bt1.slice<KS, Cols>(0, 0);
-  // Per item: the payload of the step being staged, the meta unit it reads (hdr, unit hdr_unit) and the next unit's
-  // (next_hdr), which the item's step enters next.
-  typename F::Payload packed[IPT]; typename F::Meta hdr[IPT], next_hdr[IPT]; uint hdr_unit[IPT];
+  // Per item: the payload of the step it stages next and that step's meta unit.
+  typename F::Payload packed[IPT]; typename F::Meta hdr[IPT];
 #pragma unroll
   for (ushort it = 0; it < IPT; ++it) {
     const uint item = thread_index + it * Threads; const bool live = item < Items;
     const uint col = live ? item % Cols : 0, gi = live ? item / Cols : 0;
     const ulong g = ulong(step_first) * GPS + gi;
     if (live && step_begin < step_end) packed[it] = F::load(tw0 + (g * QUANT_TILE_ROWS + col) * F::P0, tw1 + (g * QUANT_TILE_ROWS + col) * F::P1);
-    hdr_unit[it] = uint(g / F::MetaGroups);
-    hdr[it] = next_hdr[it] = F::loadMeta(tmeta + (ulong(hdr_unit[it]) * QUANT_TILE_ROWS + col) * F::MetaBytes);
+    hdr[it] = F::loadMeta(tmeta + (ulong(g / F::MetaGroups) * QUANT_TILE_ROWS + col) * F::MetaBytes);
   }
-  // One step: dequantize `step` into stage `buffer`, load `next`'s payload when there is a next step (`more`), and run
-  // the step's matmul.
+  // One step: dequantize `step` into stage `buffer`, load `next`'s payload and meta unit when there is a next step
+  // (`more`), and run the step's matmul.
   const auto run_step = [&](uint step, uint next, bool more, uint buffer) __attribute__((always_inline)) {
     threadgroup half *buf = stage + buffer * (KS * Cols);
 #pragma unroll
     for (ushort it = 0; it < IPT; ++it) {
       const uint item = thread_index + it * Threads; if (item >= Items) break;
-      const uint col = item % Cols, gi = item / Cols, g = step * GPS + gi, unit = g / F::MetaGroups; const ushort j = g % F::MetaGroups;
-      if (unit != hdr_unit[it]) { hdr[it] = next_hdr[it]; hdr_unit[it] = unit; }
-      dequant32<F>(packed[it], hdr[it], j, tl, buf + col * KS + gi * 32);
+      const uint col = item % Cols, gi = item / Cols, g = step * GPS + gi;
+      dequant32<F>(packed[it], hdr[it], g % F::MetaGroups, tl, buf + col * KS + gi * 32);
     }
     if constexpr (Threads == 32) simdgroup_barrier(mem_flags::mem_threadgroup);
     else threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -108,7 +106,8 @@ inline void gguf_staged_steps(device bfloat *input, device uchar *w0, device uch
         const uint col = item % Cols, gi = item / Cols; const ulong g = ulong(next) * GPS + gi;
         packed[it] = F::load(tw0 + (g * QUANT_TILE_ROWS + col) * F::P0, tw1 + (g * QUANT_TILE_ROWS + col) * F::P1);
         const uint unit = uint(g / F::MetaGroups);
-        if (unit != hdr_unit[it]) next_hdr[it] = F::loadMeta(tmeta + (ulong(unit) * QUANT_TILE_ROWS + col) * F::MetaBytes);
+        if (unit != (step * GPS + gi) / F::MetaGroups)
+          hdr[it] = F::loadMeta(tmeta + (ulong(unit) * QUANT_TILE_ROWS + col) * F::MetaBytes);
       }
     }
     if (matmuls) {
