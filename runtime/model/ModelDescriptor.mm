@@ -9,9 +9,10 @@
 
 #include <algorithm>
 #include <cmath>
-#include <fnmatch.h>
 #include <cstdint>
+#include <fnmatch.h>
 #include <initializer_list>
+#include <iterator>
 #include <regex>
 #include <span>
 #include <stdexcept>
@@ -342,15 +343,31 @@ void requireMlxQuantization(NSDictionary *quantization, const QwenTargetDimensio
   }
 }
 
+// The projections a configuration names for a layer's routed experts
+// (mlx::quantizedModules' mlp.experts by transformers names) as each expert's
+// own modules: the first and the last expert's stand for every expert's, as
+// matching all names of 256 experts in 40 layers takes half a second, and the
+// images refuse any other expert left unquantized when they read its tensors.
+std::vector<std::string> expertProjections(const std::string &experts, const QwenTargetDimensions &geometry) {
+  std::vector<std::string> names;
+  for (const uint32_t expert : {0u, geometry.experts - 1})
+    for (const char *projection : {"gate_proj", "up_proj", "down_proj"})
+      names.push_back(experts + "." + std::to_string(expert) + "." + projection);
+  return names;
+}
+
 // A Model Optimizer target's quantization, its config.json's
 // quantization_config of quant_method "modelopt": each layer it quantizes,
 // by its quantized_layers or else by its quant_algo for every layer its
 // ignore patterns leave, holds NVFP4 in groups of 16 (NVFP4, W4A16_NVFP4) or
 // FP8 with a scale per tensor (FP8), which the block kernels read
 // weights-only, and each module the images read only quantized
-// (mlx::quantizedModules by transformers names) is such a layer. Its
-// activation and KV cache quantization play no part: the kernels read
-// activations in bf16 and keep Splash's own KV formats.
+// (mlx::quantizedModules by transformers names, a layer's routed experts as
+// the one layer mlp.experts, as quantized_layers keys them) is such a layer:
+// a key of quantized_layers, or else a module no ignore pattern names, nor
+// its experts' projections (expertProjections). Its activation and KV cache
+// quantization play no part: the kernels read activations in bf16 and keep
+// Splash's own KV formats.
 void requireModelOptimizerQuantization(NSDictionary *quantization, const QwenTargetDimensions &geometry) {
   const auto requireAlgorithm = [](NSDictionary *entry, const std::string &label) {
     const std::string algorithm = requireString(entry, @"quant_algo", label + " quant_algo");
@@ -368,7 +385,8 @@ void requireModelOptimizerQuantization(NSDictionary *quantization, const QwenTar
   if ([layers isKindOfClass:[NSDictionary class]]) {
     for (NSString *module in layers) {
       const std::string label = "quantization_config quantized_layers " + std::string(module.UTF8String ?: "");
-      if (![layers[module] isKindOfClass:[NSDictionary class]]) throw std::invalid_argument(label + " must be an object");
+      if (![layers[module] isKindOfClass:[NSDictionary class]])
+        throw std::invalid_argument(label + " must be an object");
       requireAlgorithm(layers[module], label);
     }
     for (const std::string &module : required)
@@ -383,29 +401,40 @@ void requireModelOptimizerQuantization(NSDictionary *quantization, const QwenTar
     throw std::invalid_argument("quantization_config ignore must be an array");
   for (id entry in ignore) {
     const std::string pattern = requireText(entry, "quantization_config ignore entry");
-    for (const std::string &module : required)
-      if (!fnmatch(pattern.c_str(), module.c_str(), 0))
-        throw std::invalid_argument("quantization_config leaves " + module +
-                                    " unquantized; Splash loads quantized projections");
+    for (const std::string &module : required) {
+      std::vector<std::string> names{module};
+      if (module.ends_with(".experts"))
+        std::ranges::copy(expertProjections(module, geometry), std::back_inserter(names));
+      for (const std::string &name : names)
+        if (!fnmatch(pattern.c_str(), name.c_str(), 0))
+          throw std::invalid_argument("quantization_config leaves " + name +
+                                      " unquantized; Splash loads quantized projections");
+    }
   }
 }
 
 // The modules compressed-tensors names by a configuration's targets and
 // ignore entries: a module's own name, a regular expression after "re:"
 // matched from the start of a name (as Python's re.match), or a class, of
-// which Linear is every projection's.
+// which Linear is every projection's. A pattern is bounded, as parsing it
+// recurses on its nesting, and so is a match (libc++ throws error_complexity
+// past its step bound), so no configuration exhausts the check.
 class ModuleMatcher {
 public:
-  ModuleMatcher(NSArray *entries, const std::string &label) {
+  static constexpr size_t kMaxPatternBytes = 512;
+
+  ModuleMatcher(NSArray *entries, std::string label) : label_(std::move(label)) {
     for (id entry in entries) {
-      const std::string text = requireText(entry, label + " entry");
+      const std::string text = requireText(entry, label_ + " entry");
       if (text == "Linear") {
         linear_ = true;
       } else if (text.starts_with("re:")) {
+        if (text.size() > kMaxPatternBytes)
+          throw std::invalid_argument(label_ + " entry exceeds " + std::to_string(kMaxPatternBytes) + " bytes");
         try {
           patterns_.emplace_back(text.substr(3));
         } catch (const std::regex_error &) {
-          throw std::invalid_argument(label + " entry " + text + " is not a regular expression Splash reads");
+          throw std::invalid_argument(label_ + " entry " + text + " is not a regular expression Splash reads");
         }
       } else {
         names_.insert(text);
@@ -413,12 +442,18 @@ public:
     }
   }
   [[nodiscard]] bool matches(const std::string &module) const {
-    return linear_ || names_.contains(module) || std::ranges::any_of(patterns_, [&](const std::regex &pattern) {
-             return std::regex_search(module, pattern, std::regex_constants::match_continuous);
-           });
+    if (linear_ || names_.contains(module)) return true;
+    try {
+      return std::ranges::any_of(patterns_, [&](const std::regex &pattern) {
+        return std::regex_search(module, pattern, std::regex_constants::match_continuous);
+      });
+    } catch (const std::regex_error &) {
+      throw std::invalid_argument(label_ + " holds a regular expression too complex to match " + module);
+    }
   }
 
 private:
+  std::string label_;
   bool linear_ = false;
   std::unordered_set<std::string> names_;
   std::vector<std::regex> patterns_;
@@ -430,9 +465,9 @@ private:
 // (nvfp4-pack-quantized: float 4-bit by tensor_group in groups of 16) or FP8
 // (float-quantized: float 8-bit by channel or tensor), symmetric and in their
 // stored column order, and each module the images read only quantized
-// (mlx::quantizedModules by transformers names, the routed experts by each
-// expert's projections) is a group's target that no ignore entry names
-// (ModuleMatcher). Its activation and KV cache schemes play no part.
+// (mlx::quantizedModules by transformers names, the routed experts by their
+// projections, expertProjections) is a group's target that no ignore entry
+// names (ModuleMatcher). Its activation and KV cache schemes play no part.
 void requireCompressedTensorsQuantization(NSDictionary *quantization, const QwenTargetDimensions &geometry) {
   NSDictionary *groups = quantization[@"config_groups"];
   if (![groups isKindOfClass:[NSDictionary class]] || !groups.count)
@@ -444,7 +479,8 @@ void requireCompressedTensorsQuantization(NSDictionary *quantization, const Qwen
     const std::string label = "quantization_config config_groups " + std::string(name.UTF8String ?: "");
     NSDictionary *group = groups[name], *weights = nil;
     if ([group isKindOfClass:[NSDictionary class]]) weights = group[@"weights"];
-    if (![weights isKindOfClass:[NSDictionary class]]) throw std::invalid_argument(label + " weights must be an object");
+    if (![weights isKindOfClass:[NSDictionary class]])
+      throw std::invalid_argument(label + " weights must be an object");
     const std::string groupFormat = group[@"format"] ? requireString(group, @"format", label + " format") : format;
     const std::string type = requireString(weights, @"type", label + " weights type");
     const std::string strategy = requireString(weights, @"strategy", label + " weights strategy");
@@ -473,14 +509,9 @@ void requireCompressedTensorsQuantization(NSDictionary *quantization, const Qwen
     throw std::invalid_argument("quantization_config ignore must be an array");
   const ModuleMatcher ignore(ignoreEntries, "quantization_config ignore");
   for (const std::string &module : mlx::quantizedModules(geometry, mlx::ModuleNames::Transformers)) {
-    std::vector<std::string> modules{module};
-    if (module.ends_with(".experts")) {
-      modules.clear();
-      for (uint32_t expert = 0; expert < geometry.experts; ++expert)
-        for (const char *projection : {"gate_proj", "up_proj", "down_proj"})
-          modules.push_back(module + "." + std::to_string(expert) + "." + projection);
-    }
-    for (const std::string &name : modules)
+    const std::vector<std::string> names =
+        module.ends_with(".experts") ? expertProjections(module, geometry) : std::vector<std::string>{module};
+    for (const std::string &name : names)
       if (ignore.matches(name) ||
           std::ranges::none_of(targets, [&](const ModuleMatcher &target) { return target.matches(name); }))
         throw std::invalid_argument("quantization_config leaves " + name +

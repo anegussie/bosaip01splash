@@ -28,9 +28,9 @@ def hexbytes(array) -> str:
     return np.asarray(array).tobytes().hex()
 
 
-def entry(mode: str, bits: int, group: int, seed: int) -> dict:
+def entry(mode: str, bits: int, group: int, seed: int, magnitude=0.02) -> dict:
     weights = (
-        mx.random.normal((ROWS, COLUMNS), key=mx.random.key(seed)) * 0.02
+        mx.random.normal((ROWS, COLUMNS), key=mx.random.key(seed)) * magnitude
     ).astype(mx.bfloat16)
     read = {"group_size": group, "bits": bits, "mode": mode}
     quantized = mx.quantize(weights, **read)
@@ -75,7 +75,9 @@ def main():
         for group in GROUPS
     ]
     formats.append(entry("mxfp4", 4, 32, 7))
-    formats.append(entry("nvfp4", 4, 16, 9))
+    # nvfp4's E4M3 scales: subnormal for a model's weights (MLX's nvfp4 has no
+    # tensor scale to lift them), normal for the second row's.
+    formats.append(entry("nvfp4", 4, 16, 9, mx.array([[0.02], [4.0]])))
     args.output.write_text(
         json.dumps({"mlx": mx.__version__, "formats": formats}, indent=1) + "\n"
     )

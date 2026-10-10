@@ -16,7 +16,9 @@ NativeRows::NativeRows(metal::MetalBuffer rows, uint32_t formatId) : rows(std::m
     throw std::invalid_argument("unsupported native embedding format");
 }
 const char *NativeRows::name() const noexcept { return isBfloat16() ? "bf16" : kQuantFormats[formatId].name; }
-uint32_t NativeRows::blockElements() const noexcept { return isBfloat16() ? 1 : kQuantFormats[formatId].block_elements; }
+uint32_t NativeRows::blockElements() const noexcept {
+  return isBfloat16() ? 1 : kQuantFormats[formatId].block_elements;
+}
 uint32_t NativeRows::blockBytes() const noexcept {
   return isBfloat16() ? sizeof(uint16_t) : kQuantFormats[formatId].block_bytes;
 }
@@ -32,7 +34,8 @@ void Embedding::add(metal::CommandGraph &graph, metal::MetalBuffer tokens,
   const NativeRows &native = table.blocks();
   // Every token's row of native blocks (kernels/shared/embedding.metal).
   if (table.inputSize % native.blockElements()) throw std::invalid_argument("native token rows take whole blocks");
-  requireBytes(native.rows, uint64_t{table.outputSize} * (table.inputSize / native.blockElements()) * native.blockBytes(),
+  requireBytes(native.rows,
+               uint64_t{table.outputSize} * (table.inputSize / native.blockElements()) * native.blockBytes(),
                "token table");
   const GgufEmbedParams params{rows, table.outputSize, table.inputSize};
   if (table.rotation) {

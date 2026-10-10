@@ -22,7 +22,7 @@ __attribute__((always_inline)) inline void gguf_embedding(device const uint *tok
                    uint index [[thread_position_in_grid]]) { \
     gguf_embedding<F>(tokens, table, output, p, index); \
   }
-// One gather per gguf_embedding_format (metal/abi/Gguf.h), named by its kQuantFormats token.
+// One gather per gguf_embedding_format (metal/abi/Gguf.h), named by its kQuantFormats token, and one of bf16 rows.
 GGUF_EMBEDDING_ENTRY(gguf_embed_q4k, GgufEmbedQ4K)
 GGUF_EMBEDDING_ENTRY(gguf_embed_q6k, GgufEmbedQ6K)
 GGUF_EMBEDDING_ENTRY(gguf_embed_q80, GgufEmbedQ80)

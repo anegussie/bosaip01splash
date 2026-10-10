@@ -45,16 +45,19 @@
 // reads: s, z, then the group's codes as MLX packs a row's, a little-endian
 // bit string of b bits per code.
 //
-// NVFP4 (NVIDIA's Model Optimizer, MLX's mode "nvfp4") holds E2M1 codes with
-// an E4M3 scale per 16 elements and an FP32 scale g per tensor: value = g *
-// e4m3 * e2m1. FP8 (Model Optimizer's) holds E4M3 values with an FP32 scale g
-// per tensor: value = g * e4m3. Their meta unit spans eight groups and holds
-// g, as a K-quant's super-block holds its d, so the kernels read every scale
-// a value needs from its meta unit. The loader writes each 256 elements as
-// the native block the repack reads: NVFP4's 16 E4M3 scales (byte i scaling
-// elements 16i..16i+15), g, then the codes as a row packs them (element e in
-// bits 4 (e % 2) of byte e / 2); FP8's g, then the 256 E4M3 bytes. Their
-// planes hold the codes as MXFP4's indices and the values as Q8_0's.
+// NVFP4 (NVIDIA's Model Optimizer and compressed-tensors, MLX's mode "nvfp4",
+// llama.cpp's type 40) holds E2M1 codes with an E4M3 scale per 16 elements and
+// an FP32 scale g: value = g * e4m3 * e2m1. FP8 (Model Optimizer's and
+// compressed-tensors') holds E4M3 values with an FP32 scale g: value = g *
+// e4m3. g is the tensor's, or each row's or expert's when a checkpoint scales
+// those apart. Their meta unit spans eight groups and holds g, as a K-quant's
+// super-block holds its d, so the kernels read every scale a value needs from
+// its meta unit. The loader writes each 256 elements of a row as the native
+// block the repack reads: NVFP4's 16 E4M3 scales (byte i scaling elements
+// 16i..16i+15), g at QUANT_NVFP4_G, then from QUANT_NVFP4_CODES the codes as a
+// row packs them (element e in bits 4 (e % 2) of byte e / 2); FP8's g, then
+// from QUANT_FP8_VALUES the 256 E4M3 bytes. Their planes hold the codes as
+// MXFP4's indices and the values as Q8_0's.
 #ifdef __METAL_VERSION__
 #include <metal_stdlib>
 #define QUANT_CONSTANT constant constexpr
@@ -114,12 +117,10 @@
 // writes ("NVF4", "FP8E"): no GGUF type is either.
 #define QUANT_NVFP4_TYPE 0x4E564634u
 #define QUANT_FP8_TYPE 0x46503845u
-// llama.cpp's NVFP4 tensor type: block_nvfp4 of 64 elements, a UE4M3 scale per
-// 16 and the E2M1 codes of each 16, element j in the low nibble of its byte j
-// and element j + 8 in the high one; the loader writes its rows into NVFP4's
-// native blocks (model/GgufPreparation.cpp) rather than repacking them as
-// stored.
-#define GGML_TYPE_NVFP4 40u
+// Byte offsets in NVFP4's native block (its scales at 0) and FP8's (its g at 0).
+#define QUANT_NVFP4_G 16u
+#define QUANT_NVFP4_CODES 20u
+#define QUANT_FP8_VALUES 4u
 
 struct QuantFormat {
   uint32_t ggml_type;      // GGUF tensor type, or a loader's (QUANT_AFFINE_TYPE, QUANT_NVFP4_TYPE, QUANT_FP8_TYPE)
@@ -176,10 +177,9 @@ QUANT_CONSTANT QuantFormat kQuantFormats[GGUF_FMT_COUNT] = {
     {QUANT_FP8_TYPE, 256, 260, 32, 0, 4, 8, "fp8"},        // meta: g
 };
 
-// The format that stores a GGUF tensor type (or a loader's), NVFP4 llama.cpp's
-// NVFP4 too; GGUF_FMT_COUNT when none does.
+// The format that stores a GGUF tensor type (or a loader's);
+// GGUF_FMT_COUNT when none does.
 inline constexpr uint32_t gguf_format_of(uint32_t ggml_type) {
-  if (ggml_type == GGML_TYPE_NVFP4) return GGUF_FMT_NVFP4;
   for (uint32_t format = 0; format < GGUF_FMT_COUNT; ++format)
     if (kQuantFormats[format].ggml_type == ggml_type) return format;
   return GGUF_FMT_COUNT;

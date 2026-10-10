@@ -33,48 +33,44 @@ struct RowOrder {
   uint32_t valueHeadsPerKey = 0;
 };
 
-// How the tensor scale g of an nvfp4 or fp8 tensor comes from its F32 or
-// BF16 tensorScale tensor: as its one value (Model Optimizer's
-// weight_scale_2, a per-tensor fp8 weight_scale), as the reciprocal of its
-// one value (compressed-tensors' weight_global_scale), or as each row's value
-// (compressed-tensors' per-channel fp8 weight_scale [rows, 1]).
-enum class TensorScale : uint8_t { Value, Reciprocal, Rows };
-// A quantized safetensors tensor's codes and scales, an affine one's biases
-// and an nvfp4 or fp8 one's tensor scale, which the writer interleaves into
-// the native rows of its format (metal/abi/QuantFormat.h): per group an
-// affine tensor's bf16 scale, its bias and its codes, or an mxfp4 tensor's
-// block_mxfp4, its E8M0 scale and codes (GGUF_FMT_MXFP4); per 256 elements an
-// nvfp4 tensor's E4M3 scales, its row's tensor scale (1 for MLX's, which has
-// none) and codes, or an fp8 tensor's row's tensor scale and E4M3 values. Or
-// a BF16 weight, which the writer quantizes into native af4g64 rows as MLX's
-// affine quantization rounds it (a DFlash2 draft's projections).
+// A quantized safetensors tensor's codes and scales, and an affine one's
+// biases, which the writer interleaves into the native rows of its format
+// (metal/abi/QuantFormat.h): per group an affine tensor's bf16 scale, its
+// bias and its codes, or an mxfp4 tensor's block_mxfp4, its E8M0 scale and
+// codes (GGUF_FMT_MXFP4); per 256 elements an nvfp4 tensor's E4M3 scales, its
+// row's tensor scale (TensorScale) and codes, or an fp8 tensor's row's tensor
+// scale and E4M3 values. Or a BF16 weight, which the writer quantizes into
+// native af4g64 rows as MLX's affine quantization rounds it (a DFlash2
+// draft's projections).
 struct MlxSource {
   const SourceTensor *codes = nullptr, *scales = nullptr, *biases = nullptr;
   const SourceTensor *bfloat16 = nullptr;
-  const SourceTensor *tensorScale = nullptr;
-  TensorScale scaleOf = TensorScale::Value;
 };
 // Whether a quantized safetensors tensor may be in a format: MLX affine,
-// mxfp4, nvfp4 (MLX's or Model Optimizer's) or fp8 (Model Optimizer's).
+// mxfp4, nvfp4 or fp8.
 [[nodiscard]] constexpr bool safetensorsFormat(uint32_t format) {
   return quant_loader_format(format) || format == GGUF_FMT_MXFP4;
 }
 
-// llama.cpp's NVFP4 rows (GGML_TYPE_NVFP4), from which the writer builds
-// NVFP4's native rows: each row of block_nvfp4 rowBytes long from the
-// tensor's offset on, and the F32 tensor scale g that llama.cpp multiplies
-// the tensor's products by, its .scale tensor's (at scaleOffset) value of
-// every rowsPerScale rows: one for the tensor, or one per expert; without a
-// .scale tensor g is 1.
-struct GgufNvfp4Source {
-  uint64_t rowBytes = 0;                      // 0: not llama.cpp's NVFP4 rows
-  uint64_t scaleOffset = 0, rowsPerScale = 0; // rowsPerScale 0: no .scale tensor
+// The tensor scale g of an nvfp4 or fp8 tensor's rows: the F32 or BF16 values
+// at `offset` of file's tensor data (`bytes` long), one for every
+// rowsPerValue rows, or their reciprocals. Model Optimizer's weight_scale_2 or
+// per-tensor fp8 weight_scale holds the tensor's g, compressed-tensors'
+// weight_global_scale its 1 / g and its per-channel fp8 weight_scale each
+// row's g [rows, 1], and a llama.cpp NVFP4 projection's .scale its g or
+// each expert's. Without one (rowsPerValue 0), as in MLX's nvfp4, g is 1.
+struct TensorScale {
+  const WeightSource *file = nullptr;
+  uint64_t offset = 0, bytes = 0;
+  uint64_t rowsPerValue = 0;
+  bool bfloat16 = false, reciprocal = false;
 };
 
 // Rows [0, rows) of one source tensor in image order, read from `file`: rows
-// of rowBytes bytes at `offset` of its tensor data, or, for a quantized
-// safetensors tensor (mlx.codes or mlx.bfloat16 set) and llama.cpp's NVFP4
-// (ggufNvfp4.rowBytes set), its format's native rows.
+// of rowBytes bytes at `offset` of its tensor data, or its format's native
+// rows, which the writer builds from a quantized safetensors tensor's
+// tensors (mlx.codes or mlx.bfloat16 set) or from llama.cpp's NVFP4 rows
+// (ggufNvfp4RowBytes set: rows of block_nvfp4 that long from `offset` on).
 struct TensorRows {
   std::string name;
   uint32_t type = 0;   // ggml type, or a loader's (metal/abi/QuantFormat.h)
@@ -84,7 +80,8 @@ struct TensorRows {
   RowOrder order{};
   const WeightSource *file = nullptr;
   MlxSource mlx{};
-  GgufNvfp4Source ggufNvfp4{};
+  TensorScale scale{};
+  uint64_t ggufNvfp4RowBytes = 0;
 };
 
 // Header and descriptor bytes.

@@ -2165,14 +2165,16 @@ int main(int argc, char **argv) {
                      std::span<const uint32_t>(samplingPrompt).subspan(128, 1),
                      coldSamplingPages),
         32, samplingPrompt.size(), coldSamplingPages);
-    require(coldSample.outputTokens.front() == replayedSample.outputTokens.front(),
+    require(!coldSample.outputTokens.empty() &&
+                coldSample.outputTokens.front() == replayedSample.outputTokens.front(),
             "sampling restore replay did not select from the regenerated final hidden");
     executor.end(32);
     samplingPromptSnapshot.reset();
 
     EngineRequest otherSource = samplingSource;
     otherSource.id = 33;
-    otherSource.sampling.seed = 27183;
+    otherSource.sampling = {
+        .temperature = 0.7F, .topP = 0.9F, .topK = 8, .seed = 27183};
     beginCold(executor, otherSource, 0);
     prefillChunk(executor, 33, 0,
                  std::span<const uint32_t>(samplingPrefix).first(120),

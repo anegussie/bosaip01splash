@@ -325,51 +325,76 @@ void testQuantization(const std::filesystem::path &fixtures) {
             "quantization " + unquantized.module +
                 " is unquantized; Splash loads quantized MLX projections",
             "an unquantized " + unquantized.module + " was accepted");
-  // Model Optimizer: the dense config with its quantization_config in place
-  // of MLX's objects.
-  const std::string_view mlxObjects = R"("quantization": {
-    "group_size": 64,
-    "bits": 4,
-    "mode": "affine"
-  },
-  "quantization_config": {
-    "group_size": 64,
-    "bits": 4,
-    "mode": "affine"
-  })";
-  const auto modelOptimizer = [&](std::string_view quantization) {
-    return dense.with(&SourceModel::config, mlxObjects,
-                      std::string(R"("quantization_config": {"quant_method": "modelopt", )") + std::string(quantization) +
-                          "}");
+  // Model Optimizer, as NVIDIA's releases state it: NVFP4 or FP8 for every
+  // layer its ignore patterns leave, or each layer's own by quantized_layers,
+  // a MoE layer's routed experts the one layer mlp.experts. Another algorithm
+  // or group size, and a projection, the head or an expert's projection left
+  // out of the layers or named by an ignore pattern, are refused.
+  const auto modelOptimizer = [&](const SourceModel &model, std::string_view quantization) {
+    return withQuantizationConfig(model, R"({"quant_method": "modelopt", )" + std::string(quantization) + "}");
   };
-  for (std::string_view accepted : {R"("quant_algo": "NVFP4", "group_size": 16, "ignore": ["mtp*", "model.visual*"])",
-                                    R"("quant_algo": "W4A16_NVFP4", "group_size": 16)", R"("quant_algo": "FP8")"})
-    static_cast<void>(inspect(modelOptimizer(accepted)));
-  for (const auto &[quantization, error] : std::initializer_list<std::pair<std::string_view, std::string_view>>{
-           {R"("quant_algo": "W4A8_AWQ")",
-            "quantization_config is W4A8_AWQ; Model Optimizer weights load as NVFP4, W4A16_NVFP4 or FP8"},
-           {R"("quant_algo": "NVFP4", "group_size": 32)", "quantization_config is NVFP4 in groups of 32"},
-           {R"("quant_algo": "NVFP4", "ignore": ["*.self_attn.q_proj"])",
-            "quantization_config leaves model.language_model.layers.3.self_attn.q_proj unquantized"},
-           {R"("quant_algo": "MIXED_PRECISION", "quantized_layers": {"lm_head": {"quant_algo": "NVFP4"}})",
-            "quantization_config leaves model.language_model.layers.0.linear_attn.in_proj_qkv unquantized"},
-           {R"("quant_algo": "MIXED_PRECISION", "quantized_layers": {"lm_head": {"quant_algo": "INT4_AWQ"}})",
-            "quantization_config quantized_layers lm_head is INT4_AWQ"},
+  // The MoE fixture's quantized_layers but `leftOut`: its 40 layers, each
+  // fourth full attention.
+  const auto moeLayers = [](std::string_view leftOut) {
+    std::string layers = R"("quantized_layers": {"lm_head": {"quant_algo": "FP8"})";
+    for (int layer = 0; layer < 40; ++layer) {
+      const std::string prefix = "model.language_model.layers." + std::to_string(layer) + ".";
+      std::vector<std::string> modules{"mlp.experts", "mlp.shared_expert.gate_proj", "mlp.shared_expert.up_proj",
+                                       "mlp.shared_expert.down_proj"};
+      if (layer % 4 == 3)
+        modules.insert(modules.end(), {"self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj", "self_attn.o_proj"});
+      else
+        modules.insert(modules.end(), {"linear_attn.in_proj_qkv", "linear_attn.in_proj_z", "linear_attn.out_proj"});
+      for (const std::string &module : modules)
+        if (prefix + module != leftOut)
+          layers += R"(, ")" + prefix + module + R"(": {"quant_algo": "W4A16_NVFP4", "group_size": 16})";
+    }
+    return R"("quant_algo": "MIXED_PRECISION", "ignore": ["mtp*"], )" + layers + "}";
+  };
+  for (const auto &[model, accepted] : std::initializer_list<std::pair<const SourceModel &, std::string>>{
+           {dense, R"("quant_algo": "NVFP4", "group_size": 16, "ignore": ["mtp*", "model.visual*"])"},
+           {dense, R"("quant_algo": "W4A16_NVFP4", "group_size": 16)"},
+           {dense, R"("quant_algo": "FP8")"},
+           {moe, moeLayers("")},
+           {moe, R"("quant_algo": "NVFP4", "ignore": ["mtp*", "*mlp.gate", "*shared_expert_gate"])"},
        })
-    refuses(modelOptimizer(quantization), error,
-            "a Model Optimizer quantization was accepted with " + std::string(quantization));
+    static_cast<void>(inspect(modelOptimizer(model, accepted)));
+  struct RefusedModelOptimizer final {
+    const SourceModel &model;
+    std::string quantization;
+    std::string_view error;
+  };
+  for (const RefusedModelOptimizer &refused : std::initializer_list<RefusedModelOptimizer>{
+           {dense, R"("quant_algo": "W4A8_AWQ")",
+            "quantization_config is W4A8_AWQ; Model Optimizer weights load as NVFP4, W4A16_NVFP4 or FP8"},
+           {dense, R"("quant_algo": "NVFP4", "group_size": 32)", "quantization_config is NVFP4 in groups of 32"},
+           {dense, R"("quant_algo": "NVFP4", "ignore": ["*.self_attn.q_proj"])",
+            "quantization_config leaves model.language_model.layers.3.self_attn.q_proj unquantized"},
+           {dense, R"("quant_algo": "MIXED_PRECISION", "quantized_layers": {"lm_head": {"quant_algo": "NVFP4"}})",
+            "quantization_config leaves model.language_model.layers.0.linear_attn.in_proj_qkv unquantized"},
+           {dense, R"("quant_algo": "MIXED_PRECISION", "quantized_layers": {"lm_head": {"quant_algo": "INT4_AWQ"}})",
+            "quantization_config quantized_layers lm_head is INT4_AWQ"},
+           {moe, moeLayers("model.language_model.layers.0.mlp.experts"),
+            "quantization_config leaves model.language_model.layers.0.mlp.experts unquantized"},
+           {moe, R"("quant_algo": "NVFP4", "ignore": ["*.experts.*.down_proj"])",
+            "quantization_config leaves model.language_model.layers.0.mlp.experts.0.down_proj unquantized"},
+       })
+    refuses(modelOptimizer(refused.model, refused.quantization), refused.error,
+            "a Model Optimizer quantization was accepted with " + refused.quantization.substr(0, 200));
   // compressed-tensors, as unsloth's NVFP4 releases state it: FP8 per channel
   // for the attention and GDN projections and the head, NVFP4 for the FFN and
   // the experts, the last layers' experts FP8; or every projection NVFP4 by
   // class. A group of another format, ordered by activation groups or with a
-  // target that is no regular expression, and a projection no group targets
-  // or an ignore entry names, are refused.
+  // target that is no regular expression, a pattern past 512 bytes or too
+  // complex to match, and a projection (the first's or the last expert's) no
+  // group targets or an ignore entry names, are refused.
   const auto compressedTensors = [&](const SourceModel &model, std::string_view groups, std::string_view ignore) {
     return withQuantizationConfig(
-        model, std::string(R"({"quant_method": "compressed-tensors", "format": "mixed-precision", "config_groups": {)") +
-                   std::string(groups) + R"(}, "ignore": )" + std::string(ignore) + "}");
+        model,
+        std::string(R"({"quant_method": "compressed-tensors", "format": "mixed-precision", "config_groups": {)") +
+            std::string(groups) + R"(}, "ignore": )" + std::string(ignore) + "}");
   };
-  const std::string_view ignore = R"(["re:^mtp.*", "model.language_model.layers.0.linear_attn.in_proj_a"])";
+  const std::string ignore = R"(["re:^mtp.*", "model.language_model.layers.0.linear_attn.in_proj_a"])";
   const std::string fp8Group =
       R"("group_0": {"format": "float-quantized", "targets": ["re:.*self_attn\\.(q|k|v|o)_proj$", )"
       R"("re:.*linear_attn\\.(in_proj_qkv|in_proj_z|out_proj)$", "re:.*lm_head", )"
@@ -380,25 +405,28 @@ void testQuantization(const std::filesystem::path &fixtures) {
            R"(, "weights": {"num_bits": 4, "type": "float", "strategy": "tensor_group", )" + std::string(weights) +
            "}}";
   };
-  const std::string ffn = nvfp4Group(R"(["re:.*mlp\\.(gate|up|down)_proj$", "re:.*mlp\\.experts\\.\\d+\\.(gate|up|down)_proj$", )"
-                                R"("re:.*shared_expert\\.(gate|up|down)_proj$"])",
-                                R"("group_size": 16, "symmetric": true, "actorder": "static")");
+  const std::string ffn = nvfp4Group(R"(["re:.*mlp\\.(gate|up|down)_proj$", )"
+                                     R"("re:.*mlp\\.experts\\.\\d+\\.(gate|up|down)_proj$", )"
+                                     R"("re:.*shared_expert\\.(gate|up|down)_proj$"])",
+                                     R"("group_size": 16, "symmetric": true, "actorder": "static")");
   static_cast<void>(inspect(compressedTensors(dense, fp8Group + ", " + ffn, ignore)));
   static_cast<void>(inspect(compressedTensors(moe, fp8Group + ", " + ffn, ignore)));
   static_cast<void>(inspect(compressedTensors(dense, nvfp4Group(R"(["Linear"])"), "[]")));
   struct RefusedGroups final {
     const SourceModel &model;
-    std::string groups;
-    std::string_view ignore, error;
+    std::string groups, ignore;
+    std::string_view error;
   };
   for (const RefusedGroups &refused : std::initializer_list<RefusedGroups>{
            {dense, fp8Group + ", " + ffn, R"(["lm_head"])", "quantization_config leaves lm_head unquantized"},
            {moe,
             fp8Group + ", " +
-                nvfp4Group(R"(["re:.*mlp\\.experts\\.\\d+\\.(gate|up)_proj$", "re:.*shared_expert\\.(gate|up|down)_proj$"])"),
+                nvfp4Group(R"(["re:.*mlp\\.experts\\.\\d+\\.(gate|up)_proj$", )"
+                           R"("re:.*shared_expert\\.(gate|up|down)_proj$"])"),
             ignore, "quantization_config leaves model.language_model.layers.0.mlp.experts.0.down_proj unquantized"},
            {dense,
-            R"("group_1": {"format": "pack-quantized", "targets": ["Linear"], "weights": {"num_bits": 4, "type": "int", )"
+            R"("group_1": {"format": "pack-quantized", "targets": ["Linear"], )"
+            R"("weights": {"num_bits": 4, "type": "int", )"
             R"("strategy": "group", "group_size": 128}})",
             "[]",
             "quantization_config config_groups group_1 is pack-quantized: int 4-bit by group in groups of 128; "
@@ -411,6 +439,13 @@ void testQuantization(const std::filesystem::path &fixtures) {
            {dense, nvfp4Group(R"(["re:(lm_head"])"), "[]",
             "quantization_config config_groups group_1 targets entry re:(lm_head is not a regular expression Splash "
             "reads"},
+           {moe, fp8Group + ", " + ffn, R"(["re:.*mlp\\.experts\\.255\\.down_proj$"])",
+            "quantization_config leaves model.language_model.layers.0.mlp.experts.255.down_proj unquantized"},
+           {dense, nvfp4Group(R"(["Linear"])"), R"(["re:)" + std::string(600, 'x') + R"("])",
+            "quantization_config ignore entry exceeds 512 bytes"},
+           {dense, nvfp4Group(R"(["Linear"])"), R"(["re:(.+)+x$"])",
+            "quantization_config ignore holds a regular expression too complex to match "
+            "model.language_model.layers.0.linear_attn.in_proj_qkv"},
        })
     refuses(compressedTensors(refused.model, refused.groups, refused.ignore), refused.error,
             "a compressed-tensors quantization was accepted with " + refused.groups);

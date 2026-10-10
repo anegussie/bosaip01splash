@@ -167,7 +167,7 @@ struct GgufEmbedMXFP4 {
 // and its 16-group's E4M3 scale scales[l / 16]; value = kFP4Values[code] (twice the E2M1 value) times the scale the
 // projections' coefficient rounds once (kernels/common/quant_formats.h), (e4m3 / 2^8) (128 g).
 struct GgufEmbedNVFP4 {
-  enum : uint { Weights = 256, Bytes = 148, Scales = 0, G = 16, Codes = 20 };
+  enum : uint { Weights = 256, Bytes = 148, Scales = 0, G = QUANT_NVFP4_G, Codes = QUANT_NVFP4_CODES };
   __attribute__((always_inline)) static bfloat value(device const uchar *block, uint dim) {
 #pragma clang fp reassociate(off)
     const uint l = dim % Weights;

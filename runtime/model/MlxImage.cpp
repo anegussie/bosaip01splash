@@ -38,19 +38,13 @@ public:
   // An RMSNorm's weight, which the norm kernels read (ops::NormWeights): as
   // stored (bf16) from MLX names, or the F32 1 + w of the w transformers
   // stores.
-  void norm(const std::string &name, uint64_t elements) {
-    if (!float32Norms(names_)) return stored(name + ".weight", {"BF16"}, {elements});
-    const SourceTensor &tensor = require(name + ".weight", {"BF16"}, {elements});
-    image_.copy(rows(name + ".weight", tensor, ggml::kBF16, 1, tensor.bytes), Conversion::CenteredNorm);
-  }
+  void norm(const std::string &name, uint64_t elements) { normWeight(name, elements, Conversion::CenteredNorm); }
 
   // The GDN's gated norm, whose weight both store as the norm multiplies by:
   // as stored (bf16) from MLX names, or widened to F32 as the other norms of
   // a transformers checkpoint's images are.
   void gatedNorm(const std::string &name, uint64_t elements) {
-    if (!float32Norms(names_)) return stored(name + ".weight", {"BF16"}, {elements});
-    const SourceTensor &tensor = require(name + ".weight", {"BF16"}, {elements});
-    image_.copy(rows(name + ".weight", tensor, ggml::kBF16, 1, tensor.bytes), Conversion::WidenToFloat32);
+    normWeight(name, elements, Conversion::WidenToFloat32);
   }
 
   // The convolution taps of every channel, as stored: q and k channels, then
@@ -60,7 +54,8 @@ public:
   void convolution(const std::string &name) {
     const uint64_t channels = geometry_.convolutionDimension, taps = kGdnConvolutionTaps;
     stored(name + ".weight", {"BF16"},
-           names_ == ModuleNames::Mlx ? std::vector<uint64_t>{channels, taps, 1} : std::vector<uint64_t>{channels, 1, taps});
+           names_ == ModuleNames::Mlx ? std::vector<uint64_t>{channels, taps, 1}
+                                      : std::vector<uint64_t>{channels, 1, taps});
   }
 
   // The bf16 GDN time-step bias of every value head, as stored.
@@ -172,6 +167,14 @@ private:
     image_.copy(rows(name, tensor, ggml::kBF16, 1, tensor.bytes));
   }
 
+  // A norm's bf16 weight, as stored from MLX names, or converted to F32 as
+  // `transformers` says from transformers names.
+  void normWeight(const std::string &name, uint64_t elements, Conversion transformers) {
+    if (!float32Norms(names_)) return stored(name + ".weight", {"BF16"}, {elements});
+    const SourceTensor &tensor = require(name + ".weight", {"BF16"}, {elements});
+    image_.copy(rows(name + ".weight", tensor, ggml::kBF16, 1, tensor.bytes), transformers);
+  }
+
   // The module's native rows, which must be quantized.
   TensorRows requireQuantized(const std::string &module, uint64_t rows, uint64_t columns) const {
     const std::optional<TensorRows> source = quantized(module, rows, columns);
@@ -236,27 +239,29 @@ private:
     const std::string codes = module + (packed ? ".weight_packed" : ".weight");
     const SourceTensor &weight = checkpoint_.require(codes);
     MlxSource source{&weight};
+    const SourceTensor *scale = nullptr;
+    bool perRow = false;
     uint32_t format;
     if (weight.dtype == "U8") {
       format = GGUF_FMT_NVFP4;
       require(codes, {"U8"}, {rows, columns / 2});
       source.scales = &require(module + ".weight_scale", {"F8_E4M3"}, {rows, columns / 16});
-      source.tensorScale = &scalar(module + (packed ? ".weight_global_scale" : ".weight_scale_2"), {"F32"});
-      if (packed) source.scaleOf = gguf::TensorScale::Reciprocal;
+      scale = &scalar(module + (packed ? ".weight_global_scale" : ".weight_scale_2"), {"F32"});
     } else if (weight.dtype == "F8_E4M3" && !packed) {
       format = GGUF_FMT_FP8;
       require(codes, {"F8_E4M3"}, {rows, columns});
-      const bool perRow = checkpoint_.require(module + ".weight_scale").shape == std::vector<uint64_t>{rows, 1};
-      source.tensorScale = perRow ? &require(module + ".weight_scale", {"F32", "BF16"}, {rows, 1})
-                                  : &scalar(module + ".weight_scale", {"F32", "BF16"});
-      if (perRow) source.scaleOf = gguf::TensorScale::Rows;
+      perRow = checkpoint_.require(module + ".weight_scale").shape == std::vector<uint64_t>{rows, 1};
+      scale = perRow ? &require(module + ".weight_scale", {"F32", "BF16"}, {rows, 1})
+                     : &scalar(module + ".weight_scale", {"F32", "BF16"});
     } else {
       throw WeightStoreError(codes + " is " + weight.dtype + "; Splash loads NVFP4 (U8 codes) and FP8 (F8_E4M3 "
                              "values) as Model Optimizer and compressed-tensors store them");
     }
     requireWholeBlocks(module, format, columns);
-    return TensorRows{module, kQuantFormats[format].ggml_type, 0, rows, ggufRowBytes(kQuantFormats[format], columns),
+    TensorRows result{module, kQuantFormats[format].ggml_type, 0, rows, ggufRowBytes(kQuantFormats[format], columns),
                       {}, weight.file, source};
+    result.scale = {scale->file, scale->offset, scale->bytes, perRow ? 1 : rows, scale->dtype == "BF16", packed};
+    return result;
   }
 
   // A tensor of one value, of shape [] or [1].
@@ -367,7 +372,9 @@ template <class Walk> void walkHead(Walk &b, const QwenTargetDimensions &g, Modu
   b.projection(headName(names), g.vocabularySize, g.hiddenSize);
 }
 
-template <class Walk> void walkEmbedding(Walk &b, ModuleNames names) { b.embedding(modelPrefix(names) + "embed_tokens"); }
+template <class Walk> void walkEmbedding(Walk &b, ModuleNames names) {
+  b.embedding(modelPrefix(names) + "embed_tokens");
+}
 
 } // namespace
 

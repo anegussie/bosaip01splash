@@ -708,9 +708,10 @@ std::string checkpointName(splash::test::FloatCheckpoint checkpoint) {
 
 // A target of transformers names in NVFP4 and FP8, as Model Optimizer or
 // compressed-tensors stores them, loads as block images: each module in its
-// format, GDN alpha and beta of bf16 as F32, the RMSNorms as the F32 1 + w of
-// the w stored but the GDN's gated norm as its w, the bf16 token table as its
-// bf16 rows, and modelWeightBytes plans the bytes it loads.
+// format with its convention's tensor scale, GDN alpha and beta of bf16 as
+// F32, the RMSNorms as the F32 1 + w of the w stored but the GDN's gated norm
+// as its w, the bf16 token table as its bf16 rows, and modelWeightBytes plans
+// the bytes it loads.
 void testSyntheticFloatModel(MetalBackend &backend, const std::filesystem::path &root,
                              splash::test::FloatCheckpoint checkpoint) {
     const Qwen3_8Layout target = syntheticTarget();
@@ -748,6 +749,25 @@ void testSyntheticFloatModel(MetalBackend &backend, const std::filesystem::path 
                 first(attention.queryNorm) == 1.0f && first(attention.keyNorm) == 1.0f &&
                 first(weights.finalNorm) == 1.0f && first(gdn.mixerNorm) == 0.0f,
             "a " + name + " target's norms are not the F32 1 + w, its gated norm the F32 w");
+    // The tensor scale g each convention stores: Model Optimizer's NVFP4
+    // weight_scale_2 and FP8 weight_scale, g of the tensor; compressed-tensors'
+    // weight_global_scale, 1 / g, and its bf16 FP8 weight_scale, each row's g.
+    const splash::model::SafetensorsCheckpoint safetensors(root / "target");
+    const std::vector<splash::model::gguf::Image> images = splash::model::mlx::planImages(safetensors, target);
+    const auto rowsOf = [&](const std::string &module) {
+        for (const splash::model::gguf::Image &image : images)
+            for (const splash::model::gguf::Repack &repack : image.repacks)
+                for (const splash::model::gguf::TensorRows &rows : repack.sources)
+                    if (rows.name == module) return rows;
+        throw std::runtime_error("no planned rows of " + module);
+    };
+    const bool compressed = checkpoint == splash::test::FloatCheckpoint::CompressedTensors;
+    const splash::model::gguf::TensorRows nvfp4Rows = rowsOf("model.language_model.layers.1.mlp.gate_proj"),
+                                          fp8Rows = rowsOf("lm_head");
+    const auto &g4 = nvfp4Rows.scale, &g8 = fp8Rows.scale;
+    require(g4.rowsPerValue == nvfp4Rows.rows && !g4.bfloat16 && g4.reciprocal == compressed &&
+                g8.rowsPerValue == (compressed ? 1 : fp8Rows.rows) && g8.bfloat16 == compressed && !g8.reciprocal,
+            "a " + name + " target's tensor scales are not read as its convention stores them");
     require(declaredBytes(weights.files) + declaredBytes(model.draft.files) == planned,
             "modelWeightBytes is not what a " + name + " target loads");
 }
@@ -785,7 +805,8 @@ void testSyntheticFloatMoeModel(MetalBackend &backend, const std::filesystem::pa
             ++stacks;
             require(repack.sources.size() == target.experts, "a " + name + " layer did not stack all its experts");
             for (uint32_t expert = 0; expert < target.experts; ++expert)
-                require(repack.sources[expert].name.find(".experts." + std::to_string(expert) + ".") != std::string::npos,
+                require(repack.sources[expert].name.find(".experts." + std::to_string(expert) + ".") !=
+                            std::string::npos,
                         "a " + name + " layer's experts are not stacked in their index order");
         }
     require(stacks == 3 * target.layers, "a " + name + " layer's experts did not stack into three tensors");

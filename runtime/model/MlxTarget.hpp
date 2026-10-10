@@ -1,8 +1,9 @@
 #pragma once
 
-// Source adapter for a safetensors target, MLX's or Model Optimizer's: its
-// block images (model/MlxImage.hpp) are written into memory, and
-// QwenTargetLoader reads them as block-quantized weights (BlockTargetFormat).
+// Source adapter for a safetensors target (MLX's, Model Optimizer's or
+// compressed-tensors'): its block images (model/MlxImage.hpp) are written into
+// memory, and QwenTargetLoader reads them as block-quantized weights
+// (BlockTargetFormat).
 
 #include "model/GgufImage.hpp"
 #include "model/QwenHybridLayout.hpp"

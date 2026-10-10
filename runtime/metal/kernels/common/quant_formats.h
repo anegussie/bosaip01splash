@@ -454,7 +454,7 @@ struct FmtNVFP4 {
   static uint indices(Chunk q) { return q; }
   static QuantCoef coef(Meta mt, ushort j) {
     const uint pair = quant_scale_pair(mt.sc, j);   // the E4M3 scales of both 16-groups
-    return {float2(quant_e4m3_pair((pair & 0xFFu) | (pair & 0xFF00u) << 8)) * (128.0f * mt.g)};
+    return {float2(quant_e4m3_pair(quant_byte_pairs(pair).x)) * (128.0f * mt.g)};
   }
 };
 // FP8: plane0 E4M3 values (bytes 8c..8c+7 = chunk c, as Q8_0's); meta the tensor's FP32 scale g. value = g * e4m3,

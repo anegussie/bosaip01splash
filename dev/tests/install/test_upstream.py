@@ -401,7 +401,38 @@ class UpstreamTest(unittest.TestCase):
                     self.prepare(selection(self.root, f"someone/{name}"))
                 self.assertEqual(fake.downloads, [f"someone/{name}/config.json"])
         # MLX writes both keys, and states the mode only in newer versions; a
-        # module's entry gives it its own format, affine unless it says.
+        # module's entry gives it its own format, affine unless it says. Model
+        # Optimizer and compressed-tensors write a quantization_config alone.
+        modelopt = {
+            "quant_method": "modelopt",
+            "quant_algo": "NVFP4",
+            "group_size": 16,
+            "ignore": ["mtp*"],
+        }
+        compressed_tensors = {
+            "quant_method": "compressed-tensors",
+            "format": "nvfp4-pack-quantized",
+            "config_groups": {
+                "group_0": {
+                    "targets": ["Linear"],
+                    "weights": {
+                        "num_bits": 4,
+                        "type": "float",
+                        "strategy": "tensor_group",
+                        "group_size": 16,
+                        "symmetric": True,
+                    },
+                }
+            },
+            "ignore": ["re:.*mlp\\.gate$"],
+        }
+        for name, quantization in (
+            ("modelopt", {"quantization_config": modelopt}),
+            ("compressed-tensors", {"quantization_config": compressed_tensors}),
+        ):
+            fake.publish(f"someone/{name}", "c" * 40, target(quantization))
+            self.prepare(selection(self.root, f"someone/{name}"))
+            assembly.verify(selection(self.root, f"someone/{name}").link)
         for name, affine in (
             ("mlx", {"bits": 4, "group_size": 64, "mode": "affine"}),
             ("older-mlx", {"bits": 4, "group_size": 64}),

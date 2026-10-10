@@ -1,14 +1,14 @@
 #pragma once
 
-// Plans the images of a safetensors target, MLX's or Model Optimizer's: the
-// sections a GGUF target's images hold (model/GgufImage.hpp), in their order,
-// which writeGgufImage writes from the checkpoint's tensors and
-// BlockTargetFormat reads with the GDN value heads grouped, as both keep
-// them. Every quantized tensor keeps the format its tensors hold: MLX affine
-// (metal/abi/QuantFormat.h), mxfp4 or nvfp4 as MLX infers it, or Model
-// Optimizer's NVFP4 or FP8: projections and experts as planes, a quantized
-// token table as native rows. An unquantized token table is copied as its
-// bf16 rows. Norms are bf16 as MLX stores them, or the F32 1 + w of the w
+// Plans the images of a safetensors target, MLX's, Model Optimizer's or
+// compressed-tensors': the sections a GGUF target's images hold
+// (model/GgufImage.hpp), in their order, which writeGgufImage writes from the
+// checkpoint's tensors and BlockTargetFormat reads with the GDN value heads
+// grouped, as all keep them. Every quantized tensor keeps the format its
+// tensors hold: MLX affine (metal/abi/QuantFormat.h), mxfp4 or nvfp4 as MLX
+// infers it, or NVFP4 or FP8 as the other two store them: projections and
+// experts as planes, a quantized token table as native rows. An unquantized
+// token table is copied as its bf16 rows. Norms are bf16 as MLX stores them, or the F32 1 + w of the w
 // transformers stores; the convolution and dt_bias are copied as stored, and
 // the GDN decay is float(-exp(double(A_log))). The MoE router and the
 // shared-expert gate, which the block kernels read in F32, become the F32

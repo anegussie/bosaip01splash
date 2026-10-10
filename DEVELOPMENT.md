@@ -21,10 +21,12 @@ make -j4
 ```
 
 `--model` names an upstream Hugging Face model: an MLX repository
-([MLX targets](#mlx-targets)) such as `mlx-community/Qwen3.8-27B-4bit`, a Model Optimizer
-NVFP4 repository ([Model Optimizer targets](#model-optimizer-targets)) such as
-`nvidia/Qwen3.8-27B-NVFP4`, or a GGUF repository and
-variant, `OWNER/REPO:VARIANT`, such as `unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_M`.
+([MLX targets](#mlx-targets)) such as `mlx-community/Qwen3.8-27B-4bit`, an NVFP4
+repository of Model Optimizer ([Model Optimizer targets](#model-optimizer-targets))
+or compressed-tensors ([Compressed-tensors targets](#compressed-tensors-targets))
+such as `nvidia/Qwen3.8-27B-NVFP4` or `unsloth/Qwen3.8-27B-NVFP4`, or a GGUF
+repository and variant, `OWNER/REPO:VARIANT`, such as
+`unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_M`.
 Splash identifies the model from its own metadata and pairs the DFlash2 draft
 trained for it. The first serve sets up Python dependencies and downloads the
 model and its draft; each start loads the weights into memory
@@ -1103,10 +1105,11 @@ llm-compressor's checkpoints (`quantization_config` with `quant_method`
 group's weights must be NVFP4 (`nvfp4-pack-quantized`: float 4-bit by
 `tensor_group` in groups of 16) or FP8 (`float-quantized`: float 8-bit by
 `channel` or `tensor`), symmetric and in their stored column order, and every
-projection and the head, each routed expert's by its own name, must be a
-group's target that no `ignore` entry names; a target or entry is a module's
-name, a regular expression after `re:` matched from the start of the name, or
-the class `Linear`. Anything else is refused before any weight download,
+projection and the head, each routed expert's by its own name (the first and
+the last expert's before the download, every expert's when its tensors load),
+must be a group's target that no `ignore` entry names; a target or entry is a
+module's name, a regular expression after `re:` matched from the start of the
+name (at most 512 bytes), or the class `Linear`. Anything else is refused before any weight download,
 naming the group or the module, so checkpoints that keep the head or a
 projection in BF16 (RedHatAI's) are refused. An NVFP4 weight's codes are
 `.weight_packed`, its `g` the reciprocal of the F32 `.weight_global_scale`;
@@ -1146,10 +1149,12 @@ per weight of its GGUF blocks, but for Q3_K's and Q6_K's padded meta units (1/16
 bit more) and IQ3_S's chunk words (4.06 bits for its 3.44).
 
 llama.cpp's NVFP4 (type 40, as in `cdiamond/Qwen3.8-27B-iMatrix-NVFP4-MTP-GGUF`)
-is `block_nvfp4`: 64 elements, a UE4M3 scale per 16 (an E4M3 scale without its
-sign; llama.cpp reads 0x7F as 0) and E2M1 codes, beside an optional F32
-`.scale` tensor, one value per tensor or per expert, which llama.cpp multiplies
-the products by. It loads as Model Optimizer's NVFP4 does
+is `block_nvfp4`: 64 elements, a UE4M3 scale per 16 (an E4M3 byte whose bit 7
+llama.cpp ignores, reading 0x7F as 0) and E2M1 codes, beside an optional F32
+`.scale` tensor, one value for a projection or one per expert for an experts
+tensor (`_exps`), which llama.cpp multiplies the products by; a `.scale` beside
+a weight of another type is refused, as only NVFP4's rows hold one. It loads as
+Model Optimizer's NVFP4 does
 ([Model Optimizer targets](#model-optimizer-targets)): four blocks make one
 256-element NVFP4 block, whose meta unit holds the `.scale` value as its `g`
 (1 without one), at 4.625 bits per weight for the file's 4.5.

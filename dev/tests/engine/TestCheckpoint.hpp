@@ -67,7 +67,8 @@ inline void writeSyntheticShard(const std::filesystem::path &path,
   for (size_t index = 0; index < tensors.size(); ++index)
     if (!tensors[index].data.empty()) {
       file.seekp(std::streamoff(sizeof(uint64_t) + header.size() + offsets[index]));
-      file.write(reinterpret_cast<const char *>(tensors[index].data.data()), std::streamsize(tensors[index].data.size()));
+      file.write(reinterpret_cast<const char *>(tensors[index].data.data()),
+                 std::streamsize(tensors[index].data.size()));
     }
   require(bool(file), "unable to write a synthetic safetensors shard's data");
 }

@@ -68,7 +68,7 @@ inline float e4m3(uint8_t b) {
 }
 // NVFP4's and FP8's native blocks (metal/abi/QuantFormat.h): an NVFP4 block's 16 E4M3 scales, its tensor scale g
 // and its 128 code bytes (element e in bits 4 (e % 2) of byte e / 2); an FP8 block's g and its 256 E4M3 values.
-constexpr uint32_t kNvfp4Scale = 16, kNvfp4Codes = 20, kFp8Values = 4;
+constexpr uint32_t kNvfp4Scale = QUANT_NVFP4_G, kNvfp4Codes = QUANT_NVFP4_CODES, kFp8Values = QUANT_FP8_VALUES;
 inline float blockScale(const uint8_t *blk, uint32_t at) { float g; memcpy(&g, blk + at, 4); return g; }
 // N native rows of random codes and random positive E4M3 scales (NVFP4) or random E4M3 values (FP8, NaN left out),
 // whose tensor scale g is drawn from `scale`, so the weights take a model's magnitudes (a few hundredths).
@@ -91,6 +91,53 @@ std::vector<uint8_t> makeFloatNative(Fmt f, uint32_t N, uint32_t K, std::mt19937
     }
   }
   return v;
+}
+// Sets the tensor scale g of each row r of native NVFP4 or FP8 rows of K elements to g(r).
+template <class G> void setTensorScales(std::vector<uint8_t> &native, Fmt f, uint32_t K, G g) {
+  const QuantFormat &fi = kQuantFormats[f];
+  const uint32_t blocks = K / fi.block_elements;
+  for (size_t b = 0; b < native.size() / fi.block_bytes; ++b) {
+    const float value = g(uint32_t(b / blocks));
+    memcpy(native.data() + b * fi.block_bytes + (f == NVFP4 ? kNvfp4Scale : 0), &value, 4);
+  }
+}
+
+// llama.cpp's NVFP4 tensor type (ggml type 40), which the loader converts into NVFP4's native rows
+// (model/GgufPreparation.cpp): block_nvfp4 of 64 elements, the UE4M3 scales of its four 16s, then 32 code bytes,
+// element j of each 16 in the low nibble of the 16's byte j and element j + 8 in its high one.
+constexpr uint32_t kBlockNvfp4Bytes = 36;
+// The block_nvfp4 rows of native NVFP4 rows whose E4M3 scales are positive and below 0x7F, as UE4M3 reads them;
+// their tensor scale g, which a .scale tensor holds in llama.cpp, is left out.
+inline std::vector<uint8_t> blockNvfp4Rows(const std::vector<uint8_t> &native) {
+  std::vector<uint8_t> rows;
+  for (size_t at = 0; at < native.size(); at += kQuantFormats[NVFP4].block_bytes) {
+    const uint8_t *blk = native.data() + at;
+    const auto code = [&](uint32_t e) { return (blk[kNvfp4Codes + e / 2] >> (4 * (e % 2))) & 15; };
+    for (uint32_t q = 0; q < 4; ++q) {
+      rows.insert(rows.end(), blk + 4 * q, blk + 4 * q + 4);
+      for (uint32_t s = 0; s < 4; ++s)
+        for (uint32_t j = 0; j < 8; ++j)
+          rows.push_back(uint8_t(code(64 * q + 16 * s + j) | code(64 * q + 16 * s + j + 8) << 4));
+    }
+  }
+  return rows;
+}
+// The fp32 values of block_nvfp4 rows as dequantize_row_nvfp4 computes them: kvalues_mxfp4[code] (twice the E2M1
+// value) times half the value of its 16's UE4M3 scale, an E4M3 byte read without bit 7, 0x7F read as 0.
+inline std::vector<float> blockNvfp4Values(const std::vector<uint8_t> &rows) {
+  std::vector<float> values(rows.size() / kBlockNvfp4Bytes * 64);
+  for (size_t b = 0; b < rows.size() / kBlockNvfp4Bytes; ++b) {
+    const uint8_t *blk = rows.data() + b * kBlockNvfp4Bytes;
+    for (uint32_t s = 0; s < 4; ++s) {
+      const float d = blk[s] == 0x7F ? 0.0f : e4m3(blk[s] & 0x7F) * 0.5f;
+      for (uint32_t j = 0; j < 8; ++j) {
+        const uint8_t pair = blk[4 + 8 * s + j];
+        values[64 * b + 16 * s + j] = float(kFP4Values[pair & 15]) * d;
+        values[64 * b + 16 * s + j + 8] = float(kFP4Values[pair >> 4]) * d;
+      }
+    }
+  }
+  return values;
 }
 
 // N native rows of random bytes whose half scales (d, and dmin or m for Q4_K, Q5_K, Q2_K and Q4_1) are scale(), and
@@ -143,9 +190,11 @@ inline std::vector<uint8_t> mlxNative(Fmt f, uint32_t rows, uint32_t K, const st
     const float one = 1.0f;
     for (uint32_t r = 0; r < rows; ++r)
       for (uint32_t b = 0; b < K / 256; ++b) {
-        const uint8_t *s = scales.data() + size_t(r) * (K / 16) + 16 * b, *codes = weight.data() + size_t(r) * (K / 2) + 128 * b;
+        const uint8_t *s = scales.data() + size_t(r) * (K / 16) + 16 * b;
+        const uint8_t *codes = weight.data() + size_t(r) * (K / 2) + 128 * b;
+        const auto *g = reinterpret_cast<const uint8_t *>(&one);
         native.insert(native.end(), s, s + 16);
-        native.insert(native.end(), reinterpret_cast<const uint8_t *>(&one), reinterpret_cast<const uint8_t *>(&one) + 4);
+        native.insert(native.end(), g, g + 4);
         native.insert(native.end(), codes, codes + 128);
       }
     return native;
@@ -547,6 +596,17 @@ inline Packed repack(Fmt f, const std::vector<uint8_t> &native, uint32_t N, uint
 // Upstream GGML's fp32 dequantization of native rows from an unmodified libggml-base (for example
 // llama.cpp 7ab4ee7) loaded with dlopen; false and a message when it lacks the format's symbol, as for every MLX
 // affine format. PQ2_0's symbol needs PrismML-Eng/llama.cpp 01ae597's libggml.
+// GGML's fp32 values of the first `elements` elements of blocks, through its function `symbol`
+// (dequantize_row_<type>).
+inline bool ggmlDequantizeRows(void *ggml, const char *symbol, const std::vector<uint8_t> &blocks, size_t elements,
+                               std::vector<float> &values, std::string &error) {
+  using Dequantize = void (*)(const void *, float *, int64_t);
+  auto decode = reinterpret_cast<Dequantize>(dlsym(ggml, symbol));
+  if (!decode) { error = dlerror(); return false; }
+  values.assign(elements, 0.f);
+  decode(blocks.data(), values.data(), (int64_t)values.size());
+  return true;
+}
 inline bool ggmlDequantize(void *ggml, Fmt f, const std::vector<uint8_t> &native, std::vector<float> &values,
                            std::string &error) {
   static const char *const symbols[] = {
@@ -557,12 +617,9 @@ inline bool ggmlDequantize(void *ggml, Fmt f, const std::vector<uint8_t> &native
     "dequantize_row_q4_1", "dequantize_row_mxfp4", "dequantize_row_pq2_0"};
   static_assert(std::size(symbols) == GGUF_FMT_AF2G32, "a GGML dequantize_row_* symbol per GGUF format");
   if (quant_loader_format(f)) { error = std::string("GGML has no ") + fmtName(f); return false; }
-  using Dequantize = void (*)(const void *, float *, int64_t);
-  auto decode = reinterpret_cast<Dequantize>(dlsym(ggml, symbols[f]));
-  if (!decode) { error = dlerror(); return false; }
-  values.assign(native.size() / kQuantFormats[f].block_bytes * kQuantFormats[f].block_elements, 0.f);
-  decode(native.data(), values.data(), (int64_t)values.size());
-  return true;
+  return ggmlDequantizeRows(ggml, symbols[f], native,
+                            native.size() / kQuantFormats[f].block_bytes * kQuantFormats[f].block_elements, values,
+                            error);
 }
 
 // The fp64 dot product of a bf16 row with a weight row and the magnitudes its
