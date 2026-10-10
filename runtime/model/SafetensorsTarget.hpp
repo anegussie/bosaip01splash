@@ -1,9 +1,9 @@
 #pragma once
 
 // Source adapter for a safetensors target (MLX's, Model Optimizer's or
-// compressed-tensors'): its block images (model/MlxImage.hpp) are written into
-// memory, and QwenTargetLoader reads them as block-quantized weights
-// (BlockTargetFormat).
+// compressed-tensors'): its block images (model/SafetensorsImage.hpp) are
+// written into memory, and QwenTargetLoader reads them as block-quantized
+// weights (BlockTargetFormat).
 
 #include "model/GgufImage.hpp"
 #include "model/QwenHybridLayout.hpp"
@@ -16,18 +16,18 @@
 
 namespace splash::model {
 
-class MlxTargetLoader final {
+class SafetensorsTargetLoader final {
 public:
   // Plans every image of the checkpoint in directory once.
-  MlxTargetLoader(metal::MetalBackend &backend, WeightImages &images, const std::filesystem::path &directory,
-                  const QwenTargetDimensions &geometry);
-  MlxTargetLoader(const MlxTargetLoader &) = delete;
-  MlxTargetLoader &operator=(const MlxTargetLoader &) = delete;
+  SafetensorsTargetLoader(metal::MetalBackend &backend, WeightImages &images, const std::filesystem::path &directory,
+                          const QwenTargetDimensions &geometry);
+  SafetensorsTargetLoader(const SafetensorsTargetLoader &) = delete;
+  SafetensorsTargetLoader &operator=(const SafetensorsTargetLoader &) = delete;
 
   [[nodiscard]] WeightFile layer(uint32_t index);
   [[nodiscard]] WeightFile head();
   [[nodiscard]] WeightFile embedding();
-  // Whether its images hold F32 norms (mlx::float32Norms).
+  // Whether its images hold F32 norms (safetensors::float32Norms).
   [[nodiscard]] bool float32Norms() const noexcept { return float32Norms_; }
 
 private:
@@ -46,7 +46,7 @@ private:
 };
 
 // The bytes of every image of the safetensors target in directory.
-[[nodiscard]] uint64_t mlxTargetImageBytes(const std::filesystem::path &directory,
-                                           const QwenTargetDimensions &geometry);
+[[nodiscard]] uint64_t safetensorsTargetImageBytes(const std::filesystem::path &directory,
+                                                   const QwenTargetDimensions &geometry);
 
 } // namespace splash::model

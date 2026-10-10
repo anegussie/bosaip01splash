@@ -1,4 +1,4 @@
-#include "model/MlxImage.hpp"
+#include "model/SafetensorsImage.hpp"
 
 #include "metal/abi/Gguf.h"
 #include "model/StateLayout.hpp"
@@ -10,11 +10,11 @@
 #include <optional>
 #include <string_view>
 
-namespace splash::model::mlx {
+namespace splash::model::safetensors {
 namespace {
 
 using gguf::Conversion;
-using gguf::MlxSource;
+using gguf::SafetensorsSource;
 using gguf::Repack;
 using gguf::TensorRows;
 
@@ -238,7 +238,7 @@ private:
     const bool packed = checkpoint_.find(module + ".weight_packed") != nullptr;
     const std::string codes = module + (packed ? ".weight_packed" : ".weight");
     const SourceTensor &weight = checkpoint_.require(codes);
-    MlxSource source{&weight};
+    SafetensorsSource source{&weight};
     const SourceTensor *scale = nullptr;
     bool perRow = false;
     uint32_t format;
@@ -409,4 +409,4 @@ std::vector<std::string> quantizedModules(const QwenTargetDimensions &geometry, 
   return std::move(walk.modules);
 }
 
-} // namespace splash::model::mlx
+} // namespace splash::model::safetensors

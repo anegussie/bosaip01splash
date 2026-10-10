@@ -1,6 +1,6 @@
 #include "ModelDescriptor.hpp"
 #include "GgufImage.hpp"
-#include "MlxImage.hpp"
+#include "SafetensorsImage.hpp"
 #include "WeightStore.hpp"
 #include "metal/abi/DraftAttention.h"
 #include "metal/abi/ExecutionGeometry.h"
@@ -226,7 +226,7 @@ ModelDescriptor qwen36Descriptor(std::string name, TargetSource targetSource,
 
 // The name errors give an upstream target's source.
 std::string_view sourceName(TargetSource source) {
-  return source == TargetSource::Mlx ? "MLX" : "GGUF";
+  return source == TargetSource::Safetensors ? "MLX" : "GGUF";
 }
 
 // The refusal of a model of none of the families Splash serves: what tells it
@@ -238,10 +238,10 @@ std::invalid_argument unsupportedModel(const std::string &difference) {
 
 // The target's text configuration, of the family its model type names. Every
 // one holds the sizes the descriptor shares with it, which tell the family's
-// target from other models of its architecture. An MLX target's config.json
-// also holds the rest of what the kernels compute; a GGUF's is what the
-// installer derived from the GGUF's metadata, which the GGUF planner checks
-// (gguf::requireMetadata).
+// target from other models of its architecture. A safetensors target's
+// config.json also holds the rest of what the kernels compute; a GGUF's is
+// what the installer derived from the GGUF's metadata, which the GGUF planner
+// checks (gguf::requireMetadata).
 void validateTextConfig(NSDictionary *text, const QwenTargetDimensions &target, std::string_view family,
                         TargetSource source) {
   const std::string_view name = sourceName(source);
@@ -259,7 +259,7 @@ void validateTextConfig(NSDictionary *text, const QwenTargetDimensions &target, 
       throw unsupportedModel(label + ": " + std::string(name) + " " + value.description.UTF8String + ", " +
                              std::string(family) + " " + @(size.value).description.UTF8String);
   }
-  if (source != TargetSource::Mlx) return;
+  if (source != TargetSource::Safetensors) return;
   requireNumbers(text, name, "text config",
                  {{"linear_num_key_heads", target.gdnKeyHeads},
                   {"linear_num_value_heads", target.gdnValueHeads},
@@ -302,14 +302,14 @@ void validateTextConfig(NSDictionary *text, const QwenTargetDimensions &target, 
 
 // An MLX target's quantization, the "quantization" object of its config.json:
 // the object and each module's own entry name a format the block kernels hold
-// (metal/abi/QuantFormat.h), as MLX loads it: an entry's mode is MLX's
-// default, affine, unless it names another. The object states its bits and
-// group size; a module's entry that omits either takes its mode's default, as
-// MLX's to_quantized does: affine 4 bits in groups of 64, mxfp4 4 bits in
-// groups of 32, nvfp4 4 bits in groups of 16. The images read each module's
-// format from its tensors, as MLX does (model/MlxImage.hpp). An entry that is
-// not an object, false as MLX writes for a module it leaves unquantized, is
-// refused for a module the images read only quantized (mlx::quantizedModules:
+// (metal/abi/QuantFormat.h), as MLX loads it: an entry's mode is MLX's default,
+// affine, unless it names another. The object states its bits and group size; a
+// module's entry that omits either takes its mode's default, as MLX's
+// to_quantized does: affine 4 bits in groups of 64, mxfp4 4 bits in groups of
+// 32, nvfp4 4 bits in groups of 16. The images read each module's format from
+// its tensors, as MLX does (model/SafetensorsImage.hpp). An entry that is not
+// an object, false as MLX writes for a module it leaves unquantized, is refused
+// for a module the images read only quantized (safetensors::quantizedModules:
 // each projection and the head), so before any weight download; any other
 // module's, such as the router's, the shared-expert gate's, GDN alpha's and
 // beta's or the token table's, which the images read unquantized too, is
@@ -335,7 +335,7 @@ void requireMlxQuantization(NSDictionary *quantization, const QwenTargetDimensio
   for (NSString *module in quantization)
     if ([quantization[module] isKindOfClass:[NSDictionary class]])
       require(quantization[module], "quantization " + std::string(module.UTF8String ?: ""), true);
-  for (const std::string &module : mlx::quantizedModules(geometry, mlx::ModuleNames::Mlx)) {
+  for (const std::string &module : safetensors::quantizedModules(geometry, safetensors::ModuleNames::Mlx)) {
     id entry = quantization[@(module.c_str())];
     if (entry && ![entry isKindOfClass:[NSDictionary class]])
       throw std::invalid_argument("quantization " + module +
@@ -344,10 +344,11 @@ void requireMlxQuantization(NSDictionary *quantization, const QwenTargetDimensio
 }
 
 // The projections a configuration names for a layer's routed experts
-// (mlx::quantizedModules' mlp.experts by transformers names) as each expert's
-// own modules: the first and the last expert's stand for every expert's, as
-// matching all names of 256 experts in 40 layers takes half a second, and the
-// images refuse any other expert left unquantized when they read its tensors.
+// (safetensors::quantizedModules' mlp.experts by transformers names) as each
+// expert's own modules: the first and the last expert's stand for every
+// expert's, as matching all names of 256 experts in 40 layers takes half a
+// second, and the images refuse any other expert left unquantized when they
+// read its tensors.
 std::vector<std::string> expertProjections(const std::string &experts, const QwenTargetDimensions &geometry) {
   std::vector<std::string> names;
   for (const uint32_t expert : {0u, geometry.experts - 1})
@@ -357,17 +358,16 @@ std::vector<std::string> expertProjections(const std::string &experts, const Qwe
 }
 
 // A Model Optimizer target's quantization, its config.json's
-// quantization_config of quant_method "modelopt": each layer it quantizes,
-// by its quantized_layers or else by its quant_algo for every layer its
-// ignore patterns leave, holds NVFP4 in groups of 16 (NVFP4, W4A16_NVFP4) or
-// FP8 with a scale per tensor (FP8), which the block kernels read
-// weights-only, and each module the images read only quantized
-// (mlx::quantizedModules by transformers names, a layer's routed experts as
-// the one layer mlp.experts, as quantized_layers keys them) is such a layer:
-// a key of quantized_layers, or else a module no ignore pattern names, nor
-// its experts' projections (expertProjections). Its activation and KV cache
-// quantization play no part: the kernels read activations in bf16 and keep
-// Splash's own KV formats.
+// quantization_config of quant_method "modelopt": each layer it quantizes, by
+// its quantized_layers or else by its quant_algo for every layer its ignore
+// patterns leave, holds NVFP4 in groups of 16 (NVFP4, W4A16_NVFP4) or FP8 with
+// a scale per tensor (FP8), which the block kernels read weights-only, and each
+// module the images read only quantized (safetensors::quantizedModules by
+// transformers names, a layer's routed experts as the one layer mlp.experts, as
+// quantized_layers keys them) is such a layer: a key of quantized_layers, or
+// else a module no ignore pattern names, nor its experts' projections
+// (expertProjections). Its activation and KV cache quantization play no part:
+// the kernels read activations in bf16 and keep Splash's own KV formats.
 void requireModelOptimizerQuantization(NSDictionary *quantization, const QwenTargetDimensions &geometry) {
   const auto requireAlgorithm = [](NSDictionary *entry, const std::string &label) {
     const std::string algorithm = requireString(entry, @"quant_algo", label + " quant_algo");
@@ -380,7 +380,8 @@ void requireModelOptimizerQuantization(NSDictionary *quantization, const QwenTar
                                   std::to_string(requireWhole(entry[@"group_size"], label + " group_size")) +
                                   "; Model Optimizer NVFP4 loads in groups of 16");
   };
-  const std::vector<std::string> required = mlx::quantizedModules(geometry, mlx::ModuleNames::Transformers);
+  const std::vector<std::string> required =
+      safetensors::quantizedModules(geometry, safetensors::ModuleNames::Transformers);
   NSDictionary *layers = quantization[@"quantized_layers"];
   if ([layers isKindOfClass:[NSDictionary class]]) {
     for (NSString *module in layers) {
@@ -465,9 +466,10 @@ private:
 // (nvfp4-pack-quantized: float 4-bit by tensor_group in groups of 16) or FP8
 // (float-quantized: float 8-bit by channel or tensor), symmetric and in their
 // stored column order, and each module the images read only quantized
-// (mlx::quantizedModules by transformers names, the routed experts by their
-// projections, expertProjections) is a group's target that no ignore entry
-// names (ModuleMatcher). Its activation and KV cache schemes play no part.
+// (safetensors::quantizedModules by transformers names, the routed experts by
+// their projections, expertProjections) is a group's target that no ignore
+// entry names (ModuleMatcher). Its activation and KV cache schemes play no
+// part.
 void requireCompressedTensorsQuantization(NSDictionary *quantization, const QwenTargetDimensions &geometry) {
   NSDictionary *groups = quantization[@"config_groups"];
   if (![groups isKindOfClass:[NSDictionary class]] || !groups.count)
@@ -508,7 +510,7 @@ void requireCompressedTensorsQuantization(NSDictionary *quantization, const Qwen
   if (![ignoreEntries isKindOfClass:[NSArray class]])
     throw std::invalid_argument("quantization_config ignore must be an array");
   const ModuleMatcher ignore(ignoreEntries, "quantization_config ignore");
-  for (const std::string &module : mlx::quantizedModules(geometry, mlx::ModuleNames::Transformers)) {
+  for (const std::string &module : safetensors::quantizedModules(geometry, safetensors::ModuleNames::Transformers)) {
     const std::vector<std::string> names =
         module.ends_with(".experts") ? expertProjections(module, geometry) : std::vector<std::string>{module};
     for (const std::string &name : names)
@@ -622,19 +624,20 @@ ModelDescriptor describeSourceModel(std::string name, std::string_view targetFor
   const bool moe = type == "qwen3_5_moe_text";
   if (!moe && type != "qwen3_5_text") throw unsupportedModel("text model type " + type);
   TargetSource targetSource;
-  if (targetFormat == "mlx-affine") targetSource = TargetSource::Mlx;
+  // "mlx-affine" names every safetensors target, as installations record it.
+  if (targetFormat == "mlx-affine") targetSource = TargetSource::Safetensors;
   else if (targetFormat == "gguf") targetSource = TargetSource::Gguf;
   else throw std::invalid_argument("unsupported target source format: " + std::string(targetFormat));
   VisionSource visionSource;
   if (visionFormat == "none") visionSource = VisionSource::None;
-  else if (visionFormat == "safetensors") visionSource = VisionSource::Mlx;
+  else if (visionFormat == "safetensors") visionSource = VisionSource::Safetensors;
   else if (visionFormat == "gguf") visionSource = VisionSource::Gguf;
   else throw std::invalid_argument("unsupported vision source format: " + std::string(visionFormat));
   ModelDescriptor result = moe ? qwen36Descriptor(std::move(name), targetSource, visionSource)
                                : qwen38Descriptor(std::move(name), targetSource, visionSource);
   std::visit([&](const auto &layout) {
     validateTextConfig(text, layout, layout.family, result.targetSource);
-    if (result.targetSource == TargetSource::Mlx) requireQuantization(config, layout);
+    if (result.targetSource == TargetSource::Safetensors) requireQuantization(config, layout);
     if (draft) validateDraftConfig(draft, result.draft, layout.maskToken, layout.hiddenCaptureLayers);
   }, result.target);
   if (result.hasVision())

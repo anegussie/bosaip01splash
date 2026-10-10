@@ -22,7 +22,7 @@
 #include <string>
 #include <vector>
 
-namespace splash::model::mlx {
+namespace splash::model::safetensors {
 
 // The names a checkpoint's language-model modules take: MLX's (mlx-lm,
 // mlx-vlm: language_model.model.*, the routed experts stacked under
@@ -55,4 +55,4 @@ enum class ModuleNames : uint8_t { Mlx, Transformers };
 // GDN alpha and beta and the token table are not among them.
 [[nodiscard]] std::vector<std::string> quantizedModules(const QwenTargetDimensions &geometry, ModuleNames names);
 
-} // namespace splash::model::mlx
+} // namespace splash::model::safetensors

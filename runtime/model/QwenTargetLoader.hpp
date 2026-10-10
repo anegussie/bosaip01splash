@@ -1,10 +1,10 @@
 #pragma once
 
 #include "model/GgufTarget.hpp"
-#include "model/MlxTarget.hpp"
 #include "model/QwenHybridLayout.hpp"
 #include "model/QwenTarget.hpp"
 #include "model/QwenTargetFiles.hpp"
+#include "model/SafetensorsTarget.hpp"
 #include "model/WeightStore.hpp"
 #include "ops/GDN.hpp"
 #include "ops/Linear.hpp"
@@ -26,8 +26,8 @@ namespace splash::model {
 // columns in llama.cpp's tiled value-head order, so the GDN writes its output
 // in it (a rotated Prism ML GGUF keeps them grouped, and rotateInputs,
 // Qwen3_8.cpp, switches its GDN to that order); a safetensors target's
-// (model/MlxImage.hpp) keep its grouped value heads and MLX's bf16 norms, or
-// the F32 norms of a checkpoint of transformers names.
+// (model/SafetensorsImage.hpp) keep its grouped value heads and MLX's bf16
+// norms, or the F32 norms of a checkpoint of transformers names.
 struct BlockTargetFormat final {
   bool float32Norms = true;
   ops::GdnHeadOrder gdnOutputOrder = ops::GdnHeadOrder::Tiled;
@@ -141,7 +141,7 @@ loadQwenTarget(metal::MetalBackend &backend, const Layout &layout, const QwenTar
   requireQwenLayout(layout);
   if (const auto *gguf = std::get_if<std::reference_wrapper<GgufTargetLoader>>(&files))
     return readQwenTargetWeights<Weights>(backend, layout, gguf->get(), BlockTargetFormat{}, readFfn);
-  MlxTargetLoader &safetensors = std::get<std::reference_wrapper<MlxTargetLoader>>(files).get();
+  SafetensorsTargetLoader &safetensors = std::get<std::reference_wrapper<SafetensorsTargetLoader>>(files).get();
   return readQwenTargetWeights<Weights>(backend, layout, safetensors,
                                         BlockTargetFormat{safetensors.float32Norms(), ops::GdnHeadOrder::Grouped},
                                         readFfn);

@@ -176,7 +176,7 @@ VisionLoader::VisionLoader(const std::filesystem::path &directory, VisionSource 
   auto planned = std::make_shared<Planned>();
   planned->layout = layout;
   planned->plan = plan(layout);
-  if (source == VisionSource::Mlx) {
+  if (source == VisionSource::Safetensors) {
     planned->checkpoint = std::make_unique<SafetensorsCheckpoint>(directory);
     bindCheckpoint(*planned->checkpoint, layout, planned->plan);
   } else if (source == VisionSource::Gguf) {

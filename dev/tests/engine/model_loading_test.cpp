@@ -3,8 +3,8 @@
 #include "TestChecks.hpp"
 #include "TestCheckpoint.hpp"
 #include "model/GgufImageLayout.hpp"
-#include "model/MlxImage.hpp"
 #include "model/ModelFactory.hpp"
+#include "model/SafetensorsImage.hpp"
 #include "model/WeightImages.hpp"
 #include "model/WeightLayout.hpp"
 #include "model/WeightSource.hpp"
@@ -492,7 +492,7 @@ void testSyntheticModel(MetalBackend &backend,
     {
         ModelDescriptor descriptor =
             makeModelDescriptor("Qwen dense loader oracle", target, draft, vision,
-                                TargetSource::Mlx, VisionSource::Mlx);
+                                TargetSource::Safetensors, VisionSource::Safetensors);
         descriptor.sourceIdentity = "sources";
         auto model = loadModel(backend, root, descriptor);
         const auto &loadedTarget = std::get<Qwen3_8Weights>(model.target);
@@ -621,7 +621,7 @@ ModelDescriptor writeBlockModel(const std::filesystem::path &root, const Layout 
     splash::test::writeSyntheticShard(root / "target" / "model.safetensors", tensors);
     splash::test::writeSyntheticShard(root / "draft" / "model.safetensors", splash::test::draftTensors(draft));
     ModelDescriptor descriptor = makeModelDescriptor("Qwen block loader", target, draft, syntheticVision(),
-                                                     TargetSource::Mlx, VisionSource::None);
+                                                     TargetSource::Safetensors, VisionSource::None);
     descriptor.sourceIdentity = "sources";
     return descriptor;
 }
@@ -753,7 +753,7 @@ void testSyntheticFloatModel(MetalBackend &backend, const std::filesystem::path 
     // weight_scale_2 and FP8 weight_scale, g of the tensor; compressed-tensors'
     // weight_global_scale, 1 / g, and its bf16 FP8 weight_scale, each row's g.
     const splash::model::SafetensorsCheckpoint safetensors(root / "target");
-    const std::vector<splash::model::gguf::Image> images = splash::model::mlx::planImages(safetensors, target);
+    const std::vector<splash::model::gguf::Image> images = splash::model::safetensors::planImages(safetensors, target);
     const auto rowsOf = [&](const std::string &module) {
         for (const splash::model::gguf::Image &image : images)
             for (const splash::model::gguf::Repack &repack : image.repacks)
@@ -799,7 +799,7 @@ void testSyntheticFloatMoeModel(MetalBackend &backend, const std::filesystem::pa
     }
     const splash::model::SafetensorsCheckpoint safetensors(root / "target");
     uint32_t stacks = 0;
-    for (const splash::model::gguf::Image &image : splash::model::mlx::planImages(safetensors, target))
+    for (const splash::model::gguf::Image &image : splash::model::safetensors::planImages(safetensors, target))
         for (const splash::model::gguf::Repack &repack : image.repacks) {
             if (repack.sources.empty() || repack.sources.front().name.find(".experts.") == std::string::npos) continue;
             ++stacks;

@@ -204,8 +204,8 @@ def quantized_scales(source):
 
 
 def prepare(binary, directory, source):
-    # Both safetensors sources are the vision loader's "mlx" source.
-    loader = "gguf" if source == "gguf" else "mlx"
+    # MLX's and transformers' towers are both the loader's safetensors source.
+    loader = "gguf" if source == "gguf" else "safetensors"
     command = [binary, loader, str(directory), str(directory / "expected.bin")]
     return subprocess.run(command, text=True, capture_output=True)
 

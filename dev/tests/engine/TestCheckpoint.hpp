@@ -10,7 +10,7 @@
 #include "metal/abi/QuantFormat.h"
 #include "model/DFlashDraft.hpp"
 #include "model/DraftCheckpoint.hpp"
-#include "model/MlxTarget.hpp"
+#include "model/SafetensorsTarget.hpp"
 #include "model/VisionLoader.hpp"
 #include "ops/Vision.hpp"
 
@@ -111,9 +111,9 @@ inline std::vector<SyntheticTensor> draftTensors(const model::DFlashDraftLayout 
 }
 
 // The tensors of an MLX target of layout as mlx-lm saves it, which
-// model/MlxImage.cpp reads: bf16 norms, convolution, A_log and dt_bias, and
-// each quantized module's codes, scales and biases in the bits and group size
-// quantization(module) gives, as MLX packs them.
+// model/SafetensorsImage.cpp reads: bf16 norms, convolution, A_log and
+// dt_bias, and each quantized module's codes, scales and biases in the bits
+// and group size quantization(module) gives, as MLX packs them.
 template <class Layout, class Quantization>
 std::vector<SyntheticTensor> mlxTargetTensors(const Layout &layout, Quantization quantization) {
   std::vector<SyntheticTensor> result;
@@ -176,7 +176,7 @@ std::vector<SyntheticTensor> mlxTargetTensors(const Layout &layout, Quantization
   return result;
 }
 
-// How a checkpoint stores NVFP4 and FP8 modules (model/MlxImage.cpp,
+// How a checkpoint stores NVFP4 and FP8 modules (model/SafetensorsImage.cpp,
 // floatQuantized): as Model Optimizer does, NVFP4's .weight beside the F32
 // tensor scale weight_scale_2 and FP8 with one F32 weight_scale, or as
 // compressed-tensors does, NVFP4's .weight_packed beside the F32
@@ -184,12 +184,13 @@ std::vector<SyntheticTensor> mlxTargetTensors(const Layout &layout, Quantization
 enum class FloatCheckpoint { ModelOptimizer, CompressedTensors };
 
 // The tensors of a target of layout in NVFP4 and FP8, as `checkpoint` saves
-// them, which model/MlxImage.cpp reads by transformers names: bf16 norms
-// (each stored 1 below the weight the norm multiplies by), convolution
-// [channels, 1, taps], GDN alpha and beta, router, shared-expert gate and token
-// table, each routed expert a module of its own, and each quantized module in
-// the format format(module) gives, its codes and E4M3 scales beside its tensor
-// scales; a compressed-tensors global scale is 1, as its reciprocal is g.
+// them, which model/SafetensorsImage.cpp reads by transformers names: bf16
+// norms (each stored 1 below the weight the norm multiplies by), convolution
+// [channels, 1, taps], GDN alpha and beta, router, shared-expert gate and
+// token table, each routed expert a module of its own, and each quantized
+// module in the format format(module) gives, its codes and E4M3 scales beside
+// its tensor scales; a compressed-tensors global scale is 1, as its
+// reciprocal is g.
 template <class Layout, class Format>
 std::vector<SyntheticTensor> floatTargetTensors(const Layout &layout, Format format, FloatCheckpoint checkpoint) {
   std::vector<SyntheticTensor> result;
@@ -327,7 +328,7 @@ SyntheticAccounting writeSyntheticModel(const std::filesystem::path &root, const
                                         const ops::VisionLayout &vision) {
   writeSyntheticCheckpoints(root, target, draft);
   writeSyntheticShard(root / "vision" / "model.safetensors", visionTensors(vision));
-  return {model::mlxTargetImageBytes(root / "target", target), model::draftImageBytes(root / "draft", draft),
+  return {model::safetensorsTargetImageBytes(root / "target", target), model::draftImageBytes(root / "draft", draft),
           model::visionImageBytes(vision)};
 }
 

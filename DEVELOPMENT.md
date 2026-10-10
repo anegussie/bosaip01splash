@@ -1048,7 +1048,7 @@ defaults to affine. The engine loads affine 2, 3, 4, 5, 6 or 8 bits in groups
 of 32, 64 or 128, mxfp4 (4 bits in groups of 32) and nvfp4 (4 bits in groups
 of 16), mixed in any way across modules, and refuses any other format, naming
 the module (mxfp8). Every projection, the experts' too, and the head load only
-quantized (`mlx::quantizedModules`): an entry `false`, which mlx-lm writes for
+quantized (`safetensors::quantizedModules`): an entry `false`, which mlx-lm writes for
 a module it leaves unquantized, is refused for any of them before any weight
 download, naming it, and the loader refuses one the checkpoint holds
 unquantized. The router, the shared-expert gate, GDN alpha and beta and the
@@ -1060,7 +1060,7 @@ is an E2M1 code times its 16 elements' E4M3 scale, a uint8, which is NVFP4
 with a tensor scale of 1.
 
 An MLX target loads into the `MDGG0001` images a GGUF target's do
-(`MlxTargetLoader`, [Weight loading](#weight-loading)):
+(`SafetensorsTargetLoader`, [Weight loading](#weight-loading)):
 each quantized tensor in the format mlx-lm infers from its tensors, an affine
 `af<bits>g<group>` format of `runtime/metal/abi/QuantFormat.h`, MXFP4 or
 NVFP4, at the checkpoint's bits per weight (NVFP4's at 4.625, its tensor scale
@@ -1402,19 +1402,21 @@ never rewrites upstream files.
 
 Every start writes a model's target, draft and vision tensors into weight
 images in memory, in the layouts the kernels read: any vision tower in the
-BF16 layout of the vision operator, and the target, MLX or GGUF, and the
-DFlash2 draft in the `MDGG0001` layout of the GGUF kernels ([MLX
+BF16 layout of the vision operator, and the target, safetensors or GGUF, and
+the DFlash2 draft in the `MDGG0001` layout of the GGUF kernels ([MLX
 targets](#mlx-targets)). Each source adapter is a loader, which validates the
-source's metadata and plans its images, and a writer: `MlxTargetLoader`
-(`MlxTarget.cpp`, planned by `MlxImage.cpp`) and `GgufPreparation` for an MLX
-target, `DraftCheckpointLoader` (`DraftCheckpoint.cpp`) and `GgufPreparation`
+source's metadata and plans its images, and a writer:
+`SafetensorsTargetLoader` (`SafetensorsTarget.cpp`, planned by
+`SafetensorsImage.cpp`) and `GgufPreparation` for a safetensors target,
+`DraftCheckpointLoader` (`DraftCheckpoint.cpp`) and `GgufPreparation`
 for the draft, `GgufTargetLoader` (`GgufTarget.cpp`, planned by
 `GgufImage.cpp`) and `GgufPreparation` for a GGUF target, `VisionLoader` and
-`VisionPreparation` for an MLX or GGUF vision tower. `GgufPreparation` repacks
-GGUF blocks ([GGUF targets](#gguf-targets)) and MLX tensors without
-requantization, quantizes the draft's BF16 projections ([Drafts](#drafts)),
-and computes an MLX target's GDN decay as `float(-exp(double(A_log)))`, which
-may differ by one float ULP from MLX's float exponential.
+`VisionPreparation` for a safetensors or GGUF vision tower. `GgufPreparation`
+repacks GGUF blocks ([GGUF targets](#gguf-targets)) and safetensors tensors
+without requantization, quantizes the draft's BF16 projections
+([Drafts](#drafts)), and computes a safetensors target's GDN decay as
+`float(-exp(double(A_log)))`, which may differ by one float ULP from MLX's float
+exponential.
 
 Loading never rounds a target or vision weight but in the F32 values of an MLX
 target's quantized router, shared-expert gate or GDN alpha and beta ([MLX
@@ -1494,7 +1496,7 @@ images, and the restore loads it again in one tick more, after the last image
 (`ReleasableMemory`).
 
 `loadQwenTarget` (`QwenTargetLoader.hpp`) reads a target's images
-(`QwenTargetFiles`: the images `MlxTargetLoader` or `GgufTargetLoader` plans)
+(`QwenTargetFiles`: the images `SafetensorsTargetLoader` or `GgufTargetLoader` plans)
 through `BlockTargetFormat`, which reads each tensor as one block-quantized
 `QuantizedSegment` (a fused projection's tensors in output column order), the
 norms as F32 (bf16 for an MLX checkpoint), and keeps the GDN output projection's

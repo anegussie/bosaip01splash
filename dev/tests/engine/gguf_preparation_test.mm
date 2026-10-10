@@ -466,9 +466,9 @@ void checkExecutor(MetalBackend &backend, const std::filesystem::path &directory
 }
 
 // Each MLX fixture tensor through the production writer, read from a
-// safetensors checkpoint as the MLX planner binds it (model/MlxImage.hpp): its
-// planes in one 256-row tile, the native rows the token gather reads and, for
-// an affine tensor, the F32 values the MoE router's dequantization writes,
+// safetensors checkpoint as the planner binds it (model/SafetensorsImage.hpp):
+// its planes in one 256-row tile, the native rows the token gather reads and,
+// for an affine tensor, the F32 values the MoE router's dequantization writes,
 // against the CPU reference's planes of the loader's native rows (mlxNative)
 // and MLX's own values.
 void checkMlxSources(MetalBackend &backend, const std::filesystem::path &directory, const char *fixture) {

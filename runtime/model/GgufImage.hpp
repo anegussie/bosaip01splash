@@ -42,7 +42,7 @@ struct RowOrder {
 // scale and E4M3 values. Or a BF16 weight, which the writer quantizes into
 // native af4g64 rows as MLX's affine quantization rounds it (a DFlash2
 // draft's projections).
-struct MlxSource {
+struct SafetensorsSource {
   const SourceTensor *codes = nullptr, *scales = nullptr, *biases = nullptr;
   const SourceTensor *bfloat16 = nullptr;
 };
@@ -66,11 +66,11 @@ struct TensorScale {
   bool bfloat16 = false, reciprocal = false;
 };
 
-// Rows [0, rows) of one source tensor in image order, read from `file`: rows
-// of rowBytes bytes at `offset` of its tensor data, or its format's native
-// rows, which the writer builds from a quantized safetensors tensor's
-// tensors (mlx.codes or mlx.bfloat16 set) or from llama.cpp's NVFP4 rows
-// (ggufNvfp4RowBytes set: rows of block_nvfp4 that long from `offset` on).
+// Rows [0, rows) of one source tensor in image order, read from `file`: rows of
+// rowBytes bytes at `offset` of its tensor data, or its format's native rows,
+// which the writer builds from a quantized safetensors tensor's tensors
+// (safetensors.codes or safetensors.bfloat16 set) or from llama.cpp's NVFP4
+// rows (ggufNvfp4RowBytes set: rows of block_nvfp4 that long from `offset` on).
 struct TensorRows {
   std::string name;
   uint32_t type = 0;   // ggml type, or a loader's (metal/abi/QuantFormat.h)
@@ -79,7 +79,7 @@ struct TensorRows {
   uint64_t rowBytes = 0;
   RowOrder order{};
   const WeightSource *file = nullptr;
-  MlxSource mlx{};
+  SafetensorsSource safetensors{};
   TensorScale scale{};
   uint64_t ggufNvfp4RowBytes = 0;
 };
@@ -92,13 +92,13 @@ struct Fill {
 // How a copy writes each value: as stored, narrowed from F32 to the bf16
 // value it equals exactly (rows the kernels read as bf16), widened from BF16
 // to the F32 value it equals (rows the kernels read as F32), as the F32 decay
-// -exp(A_log) of an MLX GDN's A_log, BF16 or F32, which float(-exp(double))
-// rounds once, as the F32 values of a quantized safetensors tensor's rows
-// (affine s * code + z, mxfp4, nvfp4 or fp8), which the kernels read
-// unquantized (its MoE router and shared-expert gate, GDN alpha and beta of
-// two formats), or as the F32 1 + w of a BF16 RMSNorm weight w, which
-// transformers stores 1 below the weight the norm multiplies by (exact but
-// for |w| < 2^-16, which it rounds once).
+// -exp(A_log) of a safetensors GDN's A_log, BF16 or F32, which
+// float(-exp(double)) rounds once, as the F32 values of a quantized
+// safetensors tensor's rows (affine s * code + z, mxfp4, nvfp4 or fp8), which
+// the kernels read unquantized (its MoE router and shared-expert gate, GDN
+// alpha and beta of two formats), or as the F32 1 + w of a BF16 RMSNorm
+// weight w, which transformers stores 1 below the weight the norm multiplies
+// by (exact but for |w| < 2^-16, which it rounds once).
 enum class Conversion : uint8_t { None, NarrowToBfloat16, WidenToFloat32, Decay, DequantizeToFloat32, CenteredNorm };
 // Rows written back to back, each value converted as `conversion` says.
 struct Copy {
@@ -133,8 +133,8 @@ struct Image {
 
 // Lays out one image: its header block, then 16 KiB-aligned sections, each a
 // descriptor, copied rows or a quantized tensor's planes. The planners of a
-// GGUF target (planImages) and of an MLX target (model/MlxImage.hpp) build
-// their images with it.
+// GGUF target (planImages) and of a safetensors target
+// (model/SafetensorsImage.hpp) build their images with it.
 class ImageBuilder {
 public:
   ImageBuilder(std::string name, uint32_t layer, uint32_t type);

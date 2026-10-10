@@ -48,9 +48,9 @@ void requireRange(uint64_t offset, uint64_t bytes, uint64_t available) {
 // llama.cpp's NVFP4 rows, or by quantizing a BF16 weight.
 enum class RowReader : uint8_t { Stored, Safetensors, GgufNvfp4, QuantizedBfloat16 };
 RowReader rowReader(const gguf::TensorRows &rows) {
-  if (rows.mlx.codes) return RowReader::Safetensors;
+  if (rows.safetensors.codes) return RowReader::Safetensors;
   if (rows.ggufNvfp4RowBytes) return RowReader::GgufNvfp4;
-  if (rows.mlx.bfloat16) return RowReader::QuantizedBfloat16;
+  if (rows.safetensors.bfloat16) return RowReader::QuantizedBfloat16;
   return RowReader::Stored;
 }
 
@@ -91,7 +91,7 @@ std::vector<float> tensorScales(const gguf::TensorRows &rows, uint64_t start, ui
 // packs element j at bits 4 j of the row); an nvfp4 tensor's 16 E4M3 scales,
 // its row's tensor scale and its codes as stored; an fp8 tensor's row's tensor
 // scale and its E4M3 values (metal/abi/QuantFormat.h).
-void readMlxRows(const gguf::TensorRows &rows, uint64_t start, uint64_t count, uint64_t column, uint64_t span,
+void readSafetensorsRows(const gguf::TensorRows &rows, uint64_t start, uint64_t count, uint64_t column, uint64_t span,
                  uint8_t *to) {
   const QuantFormat &format = nativeFormat(rows);
   const uint32_t id = gguf_format_of(rows.type);
@@ -111,9 +111,9 @@ void readMlxRows(const gguf::TensorRows &rows, uint64_t start, uint64_t count, u
   const std::vector<float> g = tensorScales(rows, start, count);
   for (uint64_t row = 0; row < count; row += perRead) {
     const uint64_t at = (start + row) * groups + column / block;
-    rows.mlx.codes->read(at * codes, codeBytes);
-    if (scaleBytes) rows.mlx.scales->read(at * scaleBytes, scales);
-    if (affine) rows.mlx.biases->read(at * 2, biases);
+    rows.safetensors.codes->read(at * codes, codeBytes);
+    if (scaleBytes) rows.safetensors.scales->read(at * scaleBytes, scales);
+    if (affine) rows.safetensors.biases->read(at * 2, biases);
     for (uint64_t b = 0; b < perRead * spanBlocks; ++b) {
       uint8_t *out = to + row * span + b * block;
       const uint8_t *in = codeBytes.data() + b * codes;
@@ -201,7 +201,7 @@ void quantizeRows(const gguf::TensorRows &rows, uint64_t start, uint64_t count, 
   const uint64_t perRead = span == rows.rowBytes ? count : 1, spanGroups = span / format.block_bytes;
   std::vector<uint8_t> weights(perRead * spanGroups * groupBytes);
   for (uint64_t row = 0; row < count; row += perRead) {
-    rows.mlx.bfloat16->read(((start + row) * groups + column / format.block_bytes) * groupBytes, weights);
+    rows.safetensors.bfloat16->read(((start + row) * groups + column / format.block_bytes) * groupBytes, weights);
     for (uint64_t group = 0; group < perRead * spanGroups; ++group)
       quantizeGroup(weights.data() + group * groupBytes, to + row * span + group * format.block_bytes);
   }
@@ -262,7 +262,7 @@ void readRows(const gguf::TensorRows &rows, uint64_t first, uint64_t count, uint
     uint8_t *out = to + row * span;
     switch (rowReader(rows)) {
     case RowReader::Stored: rows.file->readData(rows.offset + start * rows.rowBytes + column, {out, run * span}); break;
-    case RowReader::Safetensors: readMlxRows(rows, start, run, column, span, out); break;
+    case RowReader::Safetensors: readSafetensorsRows(rows, start, run, column, span, out); break;
     case RowReader::GgufNvfp4: readGgufNvfp4Rows(rows, start, run, column, span, out); break;
     case RowReader::QuantizedBfloat16: quantizeRows(rows, start, run, column, span, out); break;
     }

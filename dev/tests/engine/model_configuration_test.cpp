@@ -87,7 +87,7 @@ void testFamilies(const std::filesystem::path &fixtures) {
   const model::ModelDescriptor denseDescriptor = inspect(dense);
   require(denseDescriptor.name == "community/fine-tune" &&
               std::holds_alternative<model::Qwen3_8Layout>(denseDescriptor.target) &&
-              denseDescriptor.targetSource == model::TargetSource::Mlx && !denseDescriptor.hasVision() &&
+              denseDescriptor.targetSource == model::TargetSource::Safetensors && !denseDescriptor.hasVision() &&
               denseDescriptor.draft == model::kQwen3_8DraftLayout,
           "an MLX Qwen3.8-27B made another descriptor");
   // The sources' identity is the digest of the record naming them.
@@ -96,13 +96,13 @@ void testFamilies(const std::filesystem::path &fixtures) {
                       .sourceIdentity != denseDescriptor.sourceIdentity,
           "the sources' identity is not the digest of the record naming them");
   require(inspect(dense.with(&SourceModel::record, R"("none")", R"("safetensors")")).visionSource ==
-              model::VisionSource::Mlx,
+              model::VisionSource::Safetensors,
           "an MLX Qwen3.8-27B with its vision tower made another descriptor");
   const SourceModel moe = mlxModel(fixtures, "qwen3.6-35b-a3b");
   const model::ModelDescriptor moeDescriptor =
       inspect(moe.with(&SourceModel::record, R"("none")", R"("safetensors")"));
   require(std::holds_alternative<model::Qwen3_6MoeLayout>(moeDescriptor.target) &&
-              moeDescriptor.visionSource == model::VisionSource::Mlx &&
+              moeDescriptor.visionSource == model::VisionSource::Safetensors &&
               moeDescriptor.draft == model::kQwen3_6MoeDraftLayout,
           "an MLX Qwen3.6-35B-A3B made another descriptor");
   // The model type names the family; the sizes every source's config states
@@ -132,10 +132,10 @@ void testSources() {
     return model::makeModelDescriptor("sources", model::Qwen3_8Layout{}, model::kQwen3_8DraftLayout,
                                       model::kQwen3_8VisionLayout, target, vision);
   };
-  require(described(model::TargetSource::Mlx, model::VisionSource::None).valid(),
+  require(described(model::TargetSource::Safetensors, model::VisionSource::None).valid(),
           "a descriptor of its sources was not valid");
   require(!described(model::TargetSource{}, model::VisionSource::None).valid() &&
-              !described(model::TargetSource::Mlx, model::VisionSource{}).valid(),
+              !described(model::TargetSource::Safetensors, model::VisionSource{}).valid(),
           "a descriptor without a source was valid");
 }
 
