@@ -33,19 +33,26 @@ struct RowOrder {
   uint32_t valueHeadsPerKey = 0;
 };
 
+// How the tensor scale g of an nvfp4 or fp8 tensor comes from its F32 or
+// BF16 tensorScale tensor: as its one value (Model Optimizer's
+// weight_scale_2, a per-tensor fp8 weight_scale), as the reciprocal of its
+// one value (compressed-tensors' weight_global_scale), or as each row's value
+// (compressed-tensors' per-channel fp8 weight_scale [rows, 1]).
+enum class TensorScale : uint8_t { Value, Reciprocal, Rows };
 // A quantized safetensors tensor's codes and scales, an affine one's biases
-// and a Model Optimizer one's FP32 tensor scale, which the writer interleaves
-// into the native rows of its format (metal/abi/QuantFormat.h): per group an
+// and an nvfp4 or fp8 one's tensor scale, which the writer interleaves into
+// the native rows of its format (metal/abi/QuantFormat.h): per group an
 // affine tensor's bf16 scale, its bias and its codes, or an mxfp4 tensor's
 // block_mxfp4, its E8M0 scale and codes (GGUF_FMT_MXFP4); per 256 elements an
-// nvfp4 tensor's E4M3 scales, its tensor scale (1 for MLX's, which has none)
-// and codes, or an fp8 tensor's tensor scale and E4M3 values. Or a BF16
-// weight, which the writer quantizes into native af4g64 rows as MLX's affine
-// quantization rounds it (a DFlash2 draft's projections).
+// nvfp4 tensor's E4M3 scales, its row's tensor scale (1 for MLX's, which has
+// none) and codes, or an fp8 tensor's row's tensor scale and E4M3 values. Or
+// a BF16 weight, which the writer quantizes into native af4g64 rows as MLX's
+// affine quantization rounds it (a DFlash2 draft's projections).
 struct MlxSource {
   const SourceTensor *codes = nullptr, *scales = nullptr, *biases = nullptr;
   const SourceTensor *bfloat16 = nullptr;
   const SourceTensor *tensorScale = nullptr;
+  TensorScale scaleOf = TensorScale::Value;
 };
 // Whether a quantized safetensors tensor may be in a format: MLX affine,
 // mxfp4, nvfp4 (MLX's or Model Optimizer's) or fp8 (Model Optimizer's).

@@ -7,15 +7,18 @@
 
 #import <Foundation/Foundation.h>
 
+#include <algorithm>
 #include <cmath>
 #include <fnmatch.h>
 #include <cstdint>
 #include <initializer_list>
+#include <regex>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <unordered_set>
 #include <utility>
 
 namespace splash::model {
@@ -387,19 +390,121 @@ void requireModelOptimizerQuantization(NSDictionary *quantization, const QwenTar
   }
 }
 
-// A safetensors target's quantization: MLX's "quantization" object, or Model
-// Optimizer's quantization_config. A checkpoint with neither holds BF16
-// weights, or another method's that a transformers quantization_config states
-// (GPTQ, AWQ, ...).
+// The modules compressed-tensors names by a configuration's targets and
+// ignore entries: a module's own name, a regular expression after "re:"
+// matched from the start of a name (as Python's re.match), or a class, of
+// which Linear is every projection's.
+class ModuleMatcher {
+public:
+  ModuleMatcher(NSArray *entries, const std::string &label) {
+    for (id entry in entries) {
+      const std::string text = requireText(entry, label + " entry");
+      if (text == "Linear") {
+        linear_ = true;
+      } else if (text.starts_with("re:")) {
+        try {
+          patterns_.emplace_back(text.substr(3));
+        } catch (const std::regex_error &) {
+          throw std::invalid_argument(label + " entry " + text + " is not a regular expression Splash reads");
+        }
+      } else {
+        names_.insert(text);
+      }
+    }
+  }
+  [[nodiscard]] bool matches(const std::string &module) const {
+    return linear_ || names_.contains(module) || std::ranges::any_of(patterns_, [&](const std::regex &pattern) {
+             return std::regex_search(module, pattern, std::regex_constants::match_continuous);
+           });
+  }
+
+private:
+  bool linear_ = false;
+  std::unordered_set<std::string> names_;
+  std::vector<std::regex> patterns_;
+};
+
+// A compressed-tensors target's quantization, its config.json's
+// quantization_config of quant_method "compressed-tensors" (llm-compressor's,
+// as unsloth's NVFP4 releases are): each config group's weights are NVFP4
+// (nvfp4-pack-quantized: float 4-bit by tensor_group in groups of 16) or FP8
+// (float-quantized: float 8-bit by channel or tensor), symmetric and in their
+// stored column order, and each module the images read only quantized
+// (mlx::quantizedModules by transformers names, the routed experts by each
+// expert's projections) is a group's target that no ignore entry names
+// (ModuleMatcher). Its activation and KV cache schemes play no part.
+void requireCompressedTensorsQuantization(NSDictionary *quantization, const QwenTargetDimensions &geometry) {
+  NSDictionary *groups = quantization[@"config_groups"];
+  if (![groups isKindOfClass:[NSDictionary class]] || !groups.count)
+    throw std::invalid_argument("quantization_config config_groups must be a non-empty object");
+  const std::string format =
+      quantization[@"format"] ? requireString(quantization, @"format", "quantization_config format") : "";
+  std::vector<ModuleMatcher> targets;
+  for (NSString *name in groups) {
+    const std::string label = "quantization_config config_groups " + std::string(name.UTF8String ?: "");
+    NSDictionary *group = groups[name], *weights = nil;
+    if ([group isKindOfClass:[NSDictionary class]]) weights = group[@"weights"];
+    if (![weights isKindOfClass:[NSDictionary class]]) throw std::invalid_argument(label + " weights must be an object");
+    const std::string groupFormat = group[@"format"] ? requireString(group, @"format", label + " format") : format;
+    const std::string type = requireString(weights, @"type", label + " weights type");
+    const std::string strategy = requireString(weights, @"strategy", label + " weights strategy");
+    const uint64_t bits = requireWhole(weights[@"num_bits"], label + " weights num_bits");
+    const uint64_t groupSize = weights[@"group_size"] && weights[@"group_size"] != [NSNull null]
+                                   ? requireWhole(weights[@"group_size"], label + " weights group_size")
+                                   : 0;
+    const bool nvfp4 = groupFormat == "nvfp4-pack-quantized" && type == "float" && bits == 4 &&
+                       strategy == "tensor_group" && groupSize == 16;
+    const bool fp8 = groupFormat == "float-quantized" && type == "float" && bits == 8 &&
+                     (strategy == "channel" || strategy == "tensor");
+    if (!nvfp4 && !fp8)
+      throw std::invalid_argument(label + " is " + groupFormat + ": " + type + " " + std::to_string(bits) + "-bit by " +
+                                  strategy + (groupSize ? " in groups of " + std::to_string(groupSize) : "") +
+                                  "; compressed-tensors weights load as NVFP4 (nvfp4-pack-quantized: float 4-bit by "
+                                  "tensor_group in groups of 16) or FP8 (float-quantized: float 8-bit by channel or "
+                                  "tensor)");
+    if ([weights[@"symmetric"] isEqual:@NO] || [weights[@"actorder"] isEqual:@"group"] ||
+        [weights[@"actorder"] isEqual:@YES])
+      throw std::invalid_argument(label + " is asymmetric or ordered by activation groups; Splash loads symmetric "
+                                  "compressed-tensors weights in their stored column order");
+    targets.emplace_back(requireArray(group, @"targets", label + " targets"), label + " targets");
+  }
+  NSArray *ignoreEntries = quantization[@"ignore"] ?: @[];
+  if (![ignoreEntries isKindOfClass:[NSArray class]])
+    throw std::invalid_argument("quantization_config ignore must be an array");
+  const ModuleMatcher ignore(ignoreEntries, "quantization_config ignore");
+  for (const std::string &module : mlx::quantizedModules(geometry, mlx::ModuleNames::Transformers)) {
+    std::vector<std::string> modules{module};
+    if (module.ends_with(".experts")) {
+      modules.clear();
+      for (uint32_t expert = 0; expert < geometry.experts; ++expert)
+        for (const char *projection : {"gate_proj", "up_proj", "down_proj"})
+          modules.push_back(module + "." + std::to_string(expert) + "." + projection);
+    }
+    for (const std::string &name : modules)
+      if (ignore.matches(name) ||
+          std::ranges::none_of(targets, [&](const ModuleMatcher &target) { return target.matches(name); }))
+        throw std::invalid_argument("quantization_config leaves " + name +
+                                    " unquantized; Splash loads quantized projections");
+  }
+}
+
+// A safetensors target's quantization: MLX's "quantization" object, or the
+// quantization_config of Model Optimizer or compressed-tensors. A checkpoint
+// with none of them holds BF16 weights, or another method's that a
+// transformers quantization_config states (GPTQ, AWQ, ...).
 void requireQuantization(NSDictionary *config, const QwenTargetDimensions &geometry) {
   NSDictionary *mlxQuantization = config[@"quantization"];
   if ([mlxQuantization isKindOfClass:[NSDictionary class]]) return requireMlxQuantization(mlxQuantization, geometry);
-  NSDictionary *modelOptimizer = config[@"quantization_config"];
-  if ([modelOptimizer isKindOfClass:[NSDictionary class]] && [modelOptimizer[@"quant_method"] isEqual:@"modelopt"])
-    return requireModelOptimizerQuantization(modelOptimizer, geometry);
+  NSDictionary *quantization = config[@"quantization_config"];
+  if ([quantization isKindOfClass:[NSDictionary class]]) {
+    if ([quantization[@"quant_method"] isEqual:@"modelopt"])
+      return requireModelOptimizerQuantization(quantization, geometry);
+    if ([quantization[@"quant_method"] isEqual:@"compressed-tensors"])
+      return requireCompressedTensorsQuantization(quantization, geometry);
+  }
   throw std::invalid_argument(
       "this model requires an MLX checkpoint (affine 2, 3, 4, 5, 6 or 8 bits in groups of 32, 64 or 128, mxfp4 or "
-      "nvfp4), a Model Optimizer NVFP4 checkpoint or a supported GGUF");
+      "nvfp4), an NVFP4 checkpoint of Model Optimizer or compressed-tensors, or a supported GGUF");
 }
 
 // A DFlash2 checkpoint's config: the draft's layout; the block, window,

@@ -33,7 +33,7 @@ namespace splash::model::mlx {
 enum class ModuleNames : uint8_t { Mlx, Transformers };
 
 // The names the checkpoint's tensors take: transformers' when it holds
-// lm_head.weight.
+// lm_head.weight (or compressed-tensors' NVFP4 lm_head.weight_packed).
 [[nodiscard]] ModuleNames moduleNames(const SafetensorsCheckpoint &checkpoint);
 
 // Whether the images hold the norms as F32, as they hold a checkpoint's of
@@ -48,7 +48,7 @@ enum class ModuleNames : uint8_t { Mlx, Transformers };
 
 // The modules the images read only quantized, in their order and by `names`:
 // the layers' projections, the routed experts' (as a configuration names
-// them: MLX's stacked tensor per projection, transformers' mlp.experts) and
+// them: MLX's stacked tensor per projection, once transformers' mlp.experts) and
 // the shared expert's, and the head. planImages refuses a checkpoint holding
 // one unquantized, and the configuration check one its config.json states
 // unquantized (model/ModelDescriptor.mm). The router, the shared-expert gate,

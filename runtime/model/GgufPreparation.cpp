@@ -50,15 +50,26 @@ const QuantFormat &mlxFormat(const gguf::TensorRows &rows) {
   return kQuantFormats[format];
 }
 
-// The FP32 tensor scale of a quantized safetensors tensor: its tensorScale
-// tensor's, or 1 for a tensor without one (MLX's).
-float tensorScale(const gguf::TensorRows &rows) {
-  if (!rows.mlx.tensorScale) return 1.0F;
-  std::array<uint8_t, 4> bytes;
-  rows.mlx.tensorScale->read(0, bytes);
-  const float scale = std::bit_cast<float>(bytes);
-  if (!std::isfinite(scale)) throw GgufError("non-finite tensor scale of " + rows.name);
-  return scale;
+// The tensor scale g of rows [start, start + count) of a quantized
+// safetensors tensor, each finite, as its tensorScale tensor gives it
+// (gguf::TensorScale); 1 for a tensor without one (MLX's).
+std::vector<float> tensorScales(const gguf::TensorRows &rows, uint64_t start, uint64_t count) {
+  const gguf::MlxSource &source = rows.mlx;
+  if (!source.tensorScale) return std::vector<float>(count, 1.0F);
+  const bool perRow = source.scaleOf == gguf::TensorScale::Rows, bfloat16 = source.tensorScale->dtype == "BF16";
+  const uint64_t valueBytes = bfloat16 ? 2 : 4;
+  std::vector<uint8_t> bytes((perRow ? count : 1) * valueBytes);
+  source.tensorScale->read(perRow ? start * valueBytes : 0, bytes);
+  std::vector<float> result(count);
+  for (uint64_t row = 0; row < count; ++row) {
+    uint32_t bits = 0;
+    std::memcpy(&bits, bytes.data() + (perRow ? row * valueBytes : 0), valueBytes);
+    float value = bfloat16 ? widenBfloat16(uint16_t(bits)) : std::bit_cast<float>(bits);
+    if (source.scaleOf == gguf::TensorScale::Reciprocal) value = 1.0F / value;
+    if (!std::isfinite(value)) throw GgufError("non-finite tensor scale of " + rows.name);
+    result[row] = value;
+  }
+  return result;
 }
 
 // Native bytes [column, column + span) of `count` source rows of a quantized
@@ -67,8 +78,8 @@ float tensorScale(const gguf::TensorRows &rows) {
 // mxfp4 tensor's block_mxfp4, its exponent and its codes with element j in
 // the low nibble of byte j % 16 when j < 16, else in its high nibble (MLX
 // packs element j at bits 4 j of the row); an nvfp4 tensor's 16 E4M3 scales,
-// its tensor scale and its codes as stored; an fp8 tensor's tensor scale and
-// its E4M3 values (metal/abi/QuantFormat.h).
+// its row's tensor scale and its codes as stored; an fp8 tensor's row's tensor
+// scale and its E4M3 values (metal/abi/QuantFormat.h).
 void readMlxRows(const gguf::TensorRows &rows, uint64_t start, uint64_t count, uint64_t column, uint64_t span,
                  uint8_t *to) {
   const QuantFormat &format = mlxFormat(rows);
@@ -80,7 +91,6 @@ void readMlxRows(const gguf::TensorRows &rows, uint64_t start, uint64_t count, u
   const uint64_t scaleBytes = affine ? 2 : id == GGUF_FMT_NVFP4 ? 16 : id == GGUF_FMT_FP8 ? 0 : 1;
   const uint64_t codes = affine ? block - 4 : id == GGUF_FMT_NVFP4 ? 128 : id == GGUF_FMT_FP8 ? 256 : block - 1;
   if (column % block || span % block) throw GgufError("quantized safetensors rows are read by whole blocks: " + rows.name);
-  const float scale = tensorScale(rows);
   // One read of each tensor per run of rows when they are read whole, else per row.
   const uint64_t perRead = span == rows.rowBytes ? count : 1, spanBlocks = span / block;
   std::vector<uint8_t> codeBytes(perRead * spanBlocks * codes), scales(perRead * spanBlocks * scaleBytes),
@@ -90,9 +100,11 @@ void readMlxRows(const gguf::TensorRows &rows, uint64_t start, uint64_t count, u
     rows.mlx.codes->read(at * codes, codeBytes);
     if (scaleBytes) rows.mlx.scales->read(at * scaleBytes, scales);
     if (affine) rows.mlx.biases->read(at * 2, biases);
+    const std::vector<float> rowScales = tensorScales(rows, start + row, perRead);
     for (uint64_t b = 0; b < perRead * spanBlocks; ++b) {
       uint8_t *out = to + row * span + b * block;
       const uint8_t *in = codeBytes.data() + b * codes;
+      const float scale = rowScales[b / spanBlocks];
       if (affine) {
         std::memcpy(out, scales.data() + 2 * b, 2);
         std::memcpy(out + 2, biases.data() + 2 * b, 2);

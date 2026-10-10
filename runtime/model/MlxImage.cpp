@@ -185,11 +185,11 @@ private:
   // MLX infers from codes [experts, rows, columns * bits / 32] (U32) and
   // scales [experts, rows, columns / group size]: bf16 with bf16 biases
   // (affine), uint8 E8M0 exponents (mxfp4, 4 bits in groups of 32) or uint8
-  // E4M3 scales (nvfp4, 4 bits in groups of 16). Model Optimizer's
-  // (modelOptimizer) is the one its tensor types state.
+  // E4M3 scales (nvfp4, 4 bits in groups of 16). Model Optimizer's and
+  // compressed-tensors' (floatQuantized) is the one their tensor types state.
   std::optional<TensorRows> quantized(const std::string &module, uint64_t rows, uint64_t columns,
                                       uint64_t experts = 1) const {
-    if (experts == 1 && checkpoint_.find(module + ".weight_scale")) return modelOptimizer(module, rows, columns);
+    if (experts == 1 && checkpoint_.find(module + ".weight_scale")) return floatQuantized(module, rows, columns);
     const SourceTensor *scales = checkpoint_.find(module + ".scales");
     if (!scales) return std::nullopt;
     const SourceTensor &codes = checkpoint_.require(module + ".weight");
@@ -222,31 +222,47 @@ private:
                       ggufRowBytes(kQuantFormats[format], columns), {}, codes.file, {&codes, scales, biases}};
   }
 
-  // A Model Optimizer module's native rows: NVFP4 as U8 codes [rows, columns
-  // / 2] (element e in bits 4 (e % 2) of byte e / 2) with F8_E4M3 scales
-  // [rows, columns / 16] and an F32 weight_scale_2, or FP8 as F8_E4M3 values
-  // [rows, columns] with an F32 weight_scale. Its input_scale, which scales
-  // activations, plays no part in weights-only kernels.
-  TensorRows modelOptimizer(const std::string &module, uint64_t rows, uint64_t columns) const {
-    const SourceTensor &weight = checkpoint_.require(module + ".weight");
+  // A module's native rows in NVFP4 or FP8 as Model Optimizer and
+  // compressed-tensors store them. NVFP4: U8 codes [rows, columns / 2]
+  // (element e in bits 4 (e % 2) of byte e / 2) and F8_E4M3 scales [rows,
+  // columns / 16] beside the tensor scale g, Model Optimizer's .weight with g
+  // its F32 weight_scale_2, compressed-tensors' .weight_packed with g the
+  // reciprocal of its F32 weight_global_scale. FP8: F8_E4M3 values [rows,
+  // columns] with an F32 or BF16 weight_scale g, the tensor's or (the
+  // channel strategy of compressed-tensors) each row's. Input scales, which
+  // scale activations, play no part in weights-only kernels.
+  TensorRows floatQuantized(const std::string &module, uint64_t rows, uint64_t columns) const {
+    const bool packed = checkpoint_.find(module + ".weight_packed") != nullptr;
+    const std::string codes = module + (packed ? ".weight_packed" : ".weight");
+    const SourceTensor &weight = checkpoint_.require(codes);
     MlxSource source{&weight};
     uint32_t format;
     if (weight.dtype == "U8") {
       format = GGUF_FMT_NVFP4;
-      require(module + ".weight", {"U8"}, {rows, columns / 2});
+      require(codes, {"U8"}, {rows, columns / 2});
       source.scales = &require(module + ".weight_scale", {"F8_E4M3"}, {rows, columns / 16});
-      source.tensorScale = &require(module + ".weight_scale_2", {"F32"}, {});
-    } else if (weight.dtype == "F8_E4M3") {
+      source.tensorScale = &scalar(module + (packed ? ".weight_global_scale" : ".weight_scale_2"), {"F32"});
+      if (packed) source.scaleOf = gguf::TensorScale::Reciprocal;
+    } else if (weight.dtype == "F8_E4M3" && !packed) {
       format = GGUF_FMT_FP8;
-      require(module + ".weight", {"F8_E4M3"}, {rows, columns});
-      source.tensorScale = &require(module + ".weight_scale", {"F32"}, {});
+      require(codes, {"F8_E4M3"}, {rows, columns});
+      const bool perRow = checkpoint_.require(module + ".weight_scale").shape == std::vector<uint64_t>{rows, 1};
+      source.tensorScale = perRow ? &require(module + ".weight_scale", {"F32", "BF16"}, {rows, 1})
+                                  : &scalar(module + ".weight_scale", {"F32", "BF16"});
+      if (perRow) source.scaleOf = gguf::TensorScale::Rows;
     } else {
-      throw WeightStoreError(module + " is " + weight.dtype + " with Model Optimizer scales; Splash loads its NVFP4 "
-                             "(U8 codes) and per-tensor FP8 (F8_E4M3 values)");
+      throw WeightStoreError(codes + " is " + weight.dtype + "; Splash loads NVFP4 (U8 codes) and FP8 (F8_E4M3 "
+                             "values) as Model Optimizer and compressed-tensors store them");
     }
     requireWholeBlocks(module, format, columns);
     return TensorRows{module, kQuantFormats[format].ggml_type, 0, rows, ggufRowBytes(kQuantFormats[format], columns),
                       {}, weight.file, source};
+  }
+
+  // A tensor of one value, of shape [] or [1].
+  const SourceTensor &scalar(const std::string &name, std::initializer_list<std::string_view> dtypes) const {
+    return require(name, dtypes,
+                   checkpoint_.require(name).shape.empty() ? std::vector<uint64_t>{} : std::vector<uint64_t>{1});
   }
 
   // Native rows hold whole native blocks of the module's format; only nvfp4's
@@ -278,7 +294,7 @@ private:
 
 // Plans nothing, and names the modules a walk of the images reads only
 // quantized (quantizedModules): the projections, a layer's routed experts
-// once per projection (MLX's stacked tensor, or transformers' module
+// (MLX's stacked tensor of each projection, or once transformers' module
 // mlp.experts, which holds them), and the head, which Builder refuses
 // unquantized.
 struct QuantizedModules {
@@ -290,7 +306,8 @@ struct QuantizedModules {
   void decay(const std::string &) {}
   void projection(const std::string &module, uint64_t, uint64_t) { modules.push_back(module); }
   void experts(const std::string &mlp, const std::string &projection, uint64_t, uint64_t) {
-    modules.push_back(names == ModuleNames::Mlx ? mlp + "switch_mlp." + projection : mlp + "experts");
+    const std::string module = names == ModuleNames::Mlx ? mlp + "switch_mlp." + projection : mlp + "experts";
+    if (modules.empty() || modules.back() != module) modules.push_back(module);
   }
   void alphaBeta(const std::string &, const std::string &) {}
   void floatTensor(const std::string &, uint64_t, uint64_t) {}
@@ -355,7 +372,8 @@ template <class Walk> void walkEmbedding(Walk &b, ModuleNames names) { b.embeddi
 } // namespace
 
 ModuleNames moduleNames(const SafetensorsCheckpoint &checkpoint) {
-  return checkpoint.find("lm_head.weight") ? ModuleNames::Transformers : ModuleNames::Mlx;
+  return checkpoint.find("lm_head.weight") || checkpoint.find("lm_head.weight_packed") ? ModuleNames::Transformers
+                                                                                         : ModuleNames::Mlx;
 }
 
 std::vector<gguf::Image> planImages(const SafetensorsCheckpoint &checkpoint, const QwenTargetDimensions &geometry) {

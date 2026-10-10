@@ -701,21 +701,28 @@ void testSyntheticBlockModel(MetalBackend &backend, const std::filesystem::path 
             "a bf16 token table did not load as its bf16 rows");
 }
 
-// A Model Optimizer target of transformers names loads as block images: each
-// module in its NVFP4 or FP8 format, GDN alpha and beta of bf16 as F32, the
-// RMSNorms as the F32 1 + w of the w stored but the GDN's gated norm as its w,
-// the bf16 token table as its bf16 rows, and modelWeightBytes plans the bytes
-// it loads.
-void testSyntheticModelOptimizerModel(MetalBackend &backend, const std::filesystem::path &root) {
+// The name of a convention of NVFP4 and FP8 checkpoints.
+std::string checkpointName(splash::test::FloatCheckpoint checkpoint) {
+    return checkpoint == splash::test::FloatCheckpoint::ModelOptimizer ? "Model Optimizer" : "compressed-tensors";
+}
+
+// A target of transformers names in NVFP4 and FP8, as Model Optimizer or
+// compressed-tensors stores them, loads as block images: each module in its
+// format, GDN alpha and beta of bf16 as F32, the RMSNorms as the F32 1 + w of
+// the w stored but the GDN's gated norm as its w, the bf16 token table as its
+// bf16 rows, and modelWeightBytes plans the bytes it loads.
+void testSyntheticFloatModel(MetalBackend &backend, const std::filesystem::path &root,
+                             splash::test::FloatCheckpoint checkpoint) {
     const Qwen3_8Layout target = syntheticTarget();
-    // FP8 for the output projections and the head, as NVIDIA's checkpoints keep
-    // some layers, NVFP4 for the others.
+    const std::string name = checkpointName(checkpoint);
+    // FP8 for the output projections and the head, as NVIDIA's and unsloth's
+    // checkpoints keep some layers, NVFP4 for the others.
     const auto format = [](const std::string &module) -> uint32_t {
         return module.ends_with("o_proj") || module.ends_with("out_proj") || module == "lm_head" ? GGUF_FMT_FP8
                                                                                                  : GGUF_FMT_NVFP4;
     };
     const ModelDescriptor descriptor =
-        writeBlockModel(root, target, splash::test::modelOptimizerTargetTensors(target, format));
+        writeBlockModel(root, target, splash::test::floatTargetTensors(target, format, checkpoint));
     const uint64_t planned = splash::model::modelWeightBytes(root, descriptor);
     auto model = loadModel(backend, root, descriptor);
     const auto &weights = std::get<Qwen3_8Weights>(model.target);
@@ -732,7 +739,7 @@ void testSyntheticModelOptimizerModel(MetalBackend &backend, const std::filesyst
                 segmentFormats(weights.layers[1].upProjection) == nvfp4 &&
                 segmentFormats(weights.layers[1].downProjection) == nvfp4 &&
                 segmentFormats(weights.logitsProjection) == fp8 && weights.tokenEmbedding.blocks().isBfloat16(),
-            "a Model Optimizer target did not keep its modules' formats and its bf16 token table");
+            "a " + name + " target did not keep its modules' formats and its bf16 token table");
     // Every stored norm weight is zero: 1 + w is 1, the gated norm's w 0.
     const auto first = [](const splash::ops::NormWeights &norm) {
         return norm.float32 ? static_cast<const float *>(norm.buffer.contents())[0] : -1.0f;
@@ -740,22 +747,25 @@ void testSyntheticModelOptimizerModel(MetalBackend &backend, const std::filesyst
     require(first(weights.layers[0].inputNorm) == 1.0f && first(weights.layers[0].postAttentionNorm) == 1.0f &&
                 first(attention.queryNorm) == 1.0f && first(attention.keyNorm) == 1.0f &&
                 first(weights.finalNorm) == 1.0f && first(gdn.mixerNorm) == 0.0f,
-            "a Model Optimizer target's norms are not the F32 1 + w, its gated norm the F32 w");
+            "a " + name + " target's norms are not the F32 1 + w, its gated norm the F32 w");
     require(declaredBytes(weights.files) + declaredBytes(model.draft.files) == planned,
-            "modelWeightBytes is not what a Model Optimizer target loads");
+            "modelWeightBytes is not what a " + name + " target loads");
 }
 
-// A Model Optimizer MoE target loads as block images: each layer's routed
-// experts, modules of their own, stacked in index order into the planes of
-// their shared format, the shared expert in its own, the bf16 router and
-// shared-expert gate as F32, and modelWeightBytes plans the bytes it loads.
-void testSyntheticModelOptimizerMoeModel(MetalBackend &backend, const std::filesystem::path &root) {
+// A MoE target in NVFP4 and FP8, as Model Optimizer or compressed-tensors
+// stores it, loads as block images: each layer's routed experts, modules of
+// their own, stacked in index order into the planes of their shared format,
+// the shared expert in its own, the bf16 router and shared-expert gate as
+// F32, and modelWeightBytes plans the bytes it loads.
+void testSyntheticFloatMoeModel(MetalBackend &backend, const std::filesystem::path &root,
+                                splash::test::FloatCheckpoint checkpoint) {
     const auto target = syntheticTarget<Qwen3_6MoeLayout>();
+    const std::string name = checkpointName(checkpoint);
     const auto format = [](const std::string &module) -> uint32_t {
         return module.find(".shared_expert.") != std::string::npos ? GGUF_FMT_FP8 : GGUF_FMT_NVFP4;
     };
     const ModelDescriptor descriptor =
-        writeBlockModel(root, target, splash::test::modelOptimizerTargetTensors(target, format));
+        writeBlockModel(root, target, splash::test::floatTargetTensors(target, format, checkpoint));
     const uint64_t planned = splash::model::modelWeightBytes(root, descriptor);
     const auto model = loadModel(backend, root, descriptor);
     const auto &weights = std::get<Qwen3_6MoeWeights>(model.target);
@@ -765,22 +775,22 @@ void testSyntheticModelOptimizerMoeModel(MetalBackend &backend, const std::files
                     ffn.down.routed.formatId == GGUF_FMT_NVFP4 && ffn.gate.shared.formatId == GGUF_FMT_FP8 &&
                     ffn.up.shared.formatId == GGUF_FMT_FP8 && ffn.down.shared.formatId == GGUF_FMT_FP8 &&
                     ffn.router.isFloat() && ffn.sharedScalarGate.isFloat(),
-                "a Model Optimizer MoE did not keep its experts' formats and its F32 router and shared-expert gate");
+                "a " + name + " MoE did not keep its experts' formats and its F32 router and shared-expert gate");
     }
-    const splash::model::SafetensorsCheckpoint checkpoint(root / "target");
+    const splash::model::SafetensorsCheckpoint safetensors(root / "target");
     uint32_t stacks = 0;
-    for (const splash::model::gguf::Image &image : splash::model::mlx::planImages(checkpoint, target))
+    for (const splash::model::gguf::Image &image : splash::model::mlx::planImages(safetensors, target))
         for (const splash::model::gguf::Repack &repack : image.repacks) {
             if (repack.sources.empty() || repack.sources.front().name.find(".experts.") == std::string::npos) continue;
             ++stacks;
-            require(repack.sources.size() == target.experts, "a Model Optimizer layer did not stack all its experts");
+            require(repack.sources.size() == target.experts, "a " + name + " layer did not stack all its experts");
             for (uint32_t expert = 0; expert < target.experts; ++expert)
                 require(repack.sources[expert].name.find(".experts." + std::to_string(expert) + ".") != std::string::npos,
-                        "a Model Optimizer layer's experts are not stacked in their index order");
+                        "a " + name + " layer's experts are not stacked in their index order");
         }
-    require(stacks == 3 * target.layers, "a Model Optimizer layer's experts did not stack into three tensors");
+    require(stacks == 3 * target.layers, "a " + name + " layer's experts did not stack into three tensors");
     require(declaredBytes(weights.files) + declaredBytes(model.draft.files) == planned,
-            "modelWeightBytes is not what a Model Optimizer MoE target loads");
+            "modelWeightBytes is not what a " + name + " MoE target loads");
 }
 
 // An MLX MoE target loads as block images: the experts in mixed formats, the
@@ -860,8 +870,13 @@ int main(int argc, const char *argv[]) {
         testSyntheticModel(production, temporary.path() / "model");
         testSyntheticBlockModel(production, temporary.path() / "block-model");
         testSyntheticBlockMoeModel(production, temporary.path() / "block-moe-model");
-        testSyntheticModelOptimizerModel(production, temporary.path() / "model-optimizer-model");
-        testSyntheticModelOptimizerMoeModel(production, temporary.path() / "model-optimizer-moe-model");
+        for (const auto checkpoint : {splash::test::FloatCheckpoint::ModelOptimizer,
+                                      splash::test::FloatCheckpoint::CompressedTensors}) {
+            const std::string at = checkpoint == splash::test::FloatCheckpoint::ModelOptimizer ? "model-optimizer"
+                                                                                               : "compressed-tensors";
+            testSyntheticFloatModel(production, temporary.path() / (at + "-model"), checkpoint);
+            testSyntheticFloatMoeModel(production, temporary.path() / (at + "-moe-model"), checkpoint);
+        }
         std::cout << "PASS model-loading\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL: unexpected exception: " << error.what() << '\n';

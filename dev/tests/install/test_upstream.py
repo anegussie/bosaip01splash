@@ -307,8 +307,8 @@ class UpstreamTest(unittest.TestCase):
         fake = fake_hub(self, self.cache)
         required = (
             r"this model requires an MLX checkpoint \(affine 2, 3, 4, 5, 6 or 8 bits "
-            r"in groups of 32, 64 or 128, mxfp4 or nvfp4\), a Model Optimizer NVFP4 "
-            r"checkpoint or a supported GGUF"
+            r"in groups of 32, 64 or 128, mxfp4 or nvfp4\), an NVFP4 checkpoint of "
+            r"Model Optimizer or compressed-tensors, or a supported GGUF"
         )
         formats = (
             r"; MLX weights load as affine 2, 3, 4, 5, 6 or 8 bits in groups of 32, "
@@ -470,8 +470,9 @@ class UpstreamTest(unittest.TestCase):
                 "Qwen/Qwen3.8-27B",
                 transformers_release,
                 r"this model requires an MLX checkpoint \(affine 2, 3, 4, 5, 6 or 8 "
-                r"bits in groups of 32, 64 or 128, mxfp4 or nvfp4\), a Model "
-                r"Optimizer NVFP4 checkpoint or a supported GGUF",
+                r"bits in groups of 32, 64 or 128, mxfp4 or nvfp4\), an NVFP4 "
+                r"checkpoint of Model Optimizer or compressed-tensors, or a supported "
+                r"GGUF",
             ),
             (
                 "mlx-community/Qwen3.5-4B-MLX-4bit",

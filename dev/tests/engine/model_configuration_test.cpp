@@ -195,6 +195,24 @@ void testOneRulePerValue(const std::filesystem::path &fixtures) {
           "upstream model config exceeds 1048576 bytes", "an oversized config was read");
 }
 
+// The model with a transformers quantization_config in place of MLX's
+// objects: its "quantization" object renamed, which no check reads, and its
+// "quantization_config" object replaced.
+SourceModel withQuantizationConfig(const SourceModel &model, std::string_view quantizationConfig) {
+  SourceModel result = model.with(&SourceModel::config, R"("quantization": {)", R"("unused": {)");
+  std::string &config = result.config;
+  const size_t at = config.find(R"("quantization_config": {)");
+  require(at != std::string::npos, "the source model has no quantization_config");
+  size_t end = config.find('{', at);
+  for (int depth = 0; end < config.size(); ++end)
+    if (config[end] == '{')
+      ++depth;
+    else if (config[end] == '}' && --depth == 0)
+      break;
+  config.replace(at, end + 1 - at, R"("quantization_config": )" + std::string(quantizationConfig));
+  return result;
+}
+
 // An MLX target's quantization is MLX's own object: the object and each
 // module's own entry name affine 2, 3, 4, 5, 6 or 8 bits in groups of 32, 64
 // or 128, mxfp4 or nvfp4; an entry is affine unless it names its mode, and
@@ -204,8 +222,10 @@ void testOneRulePerValue(const std::filesystem::path &fixtures) {
 // projection and the head, and accepted for the router, the shared-expert
 // gate, GDN alpha and beta and the token table. A Model Optimizer target's is
 // its quantization_config: NVFP4 in groups of 16 or per-tensor FP8 for each
-// layer it quantizes, every projection and the head among them. A GGUF target
-// has none (above).
+// layer it quantizes, every projection and the head among them. So is a
+// compressed-tensors target's: each config group NVFP4 or FP8 per channel or
+// tensor, every projection and the head a group's target that no ignore entry
+// names. A GGUF target has none (above).
 void testQuantization(const std::filesystem::path &fixtures) {
   const SourceModel dense = mlxModel(fixtures, "qwen3.8-27b");
   const SourceModel moe = mlxModel(fixtures, "qwen3.6-35b-a3b");
@@ -272,7 +292,7 @@ void testQuantization(const std::filesystem::path &fixtures) {
            // checkpoint (GPTQ, AWQ, ...) states.
            {dense, R"("quantization": {)", R"("unused": {)",
             "this model requires an MLX checkpoint (affine 2, 3, 4, 5, 6 or 8 bits in groups of 32, 64 or 128, mxfp4 "
-            "or nvfp4), a Model Optimizer NVFP4 checkpoint or a supported GGUF"},
+            "or nvfp4), an NVFP4 checkpoint of Model Optimizer or compressed-tensors, or a supported GGUF"},
            {dense, R"("bits": 4)", R"("bits": 7)",
             "quantization is affine 7-bit in groups of 64; MLX weights load as affine 2, 3, 4, 5, 6 or 8 bits in "
             "groups of 32, 64 or 128, or as mxfp4 or nvfp4"},
@@ -338,6 +358,62 @@ void testQuantization(const std::filesystem::path &fixtures) {
        })
     refuses(modelOptimizer(quantization), error,
             "a Model Optimizer quantization was accepted with " + std::string(quantization));
+  // compressed-tensors, as unsloth's NVFP4 releases state it: FP8 per channel
+  // for the attention and GDN projections and the head, NVFP4 for the FFN and
+  // the experts, the last layers' experts FP8; or every projection NVFP4 by
+  // class. A group of another format, ordered by activation groups or with a
+  // target that is no regular expression, and a projection no group targets
+  // or an ignore entry names, are refused.
+  const auto compressedTensors = [&](const SourceModel &model, std::string_view groups, std::string_view ignore) {
+    return withQuantizationConfig(
+        model, std::string(R"({"quant_method": "compressed-tensors", "format": "mixed-precision", "config_groups": {)") +
+                   std::string(groups) + R"(}, "ignore": )" + std::string(ignore) + "}");
+  };
+  const std::string_view ignore = R"(["re:^mtp.*", "model.language_model.layers.0.linear_attn.in_proj_a"])";
+  const std::string fp8Group =
+      R"("group_0": {"format": "float-quantized", "targets": ["re:.*self_attn\\.(q|k|v|o)_proj$", )"
+      R"("re:.*linear_attn\\.(in_proj_qkv|in_proj_z|out_proj)$", "re:.*lm_head", )"
+      R"("re:.*layers\\.(38|39)\\.mlp\\.experts\\.\\d+\\.(gate|up|down)_proj$"], )"
+      R"("weights": {"num_bits": 8, "type": "float", "strategy": "channel", "symmetric": true}})";
+  const auto nvfp4Group = [](std::string_view targets, std::string_view weights = R"("group_size": 16)") {
+    return std::string(R"("group_1": {"format": "nvfp4-pack-quantized", "targets": )") + std::string(targets) +
+           R"(, "weights": {"num_bits": 4, "type": "float", "strategy": "tensor_group", )" + std::string(weights) +
+           "}}";
+  };
+  const std::string ffn = nvfp4Group(R"(["re:.*mlp\\.(gate|up|down)_proj$", "re:.*mlp\\.experts\\.\\d+\\.(gate|up|down)_proj$", )"
+                                R"("re:.*shared_expert\\.(gate|up|down)_proj$"])",
+                                R"("group_size": 16, "symmetric": true, "actorder": "static")");
+  static_cast<void>(inspect(compressedTensors(dense, fp8Group + ", " + ffn, ignore)));
+  static_cast<void>(inspect(compressedTensors(moe, fp8Group + ", " + ffn, ignore)));
+  static_cast<void>(inspect(compressedTensors(dense, nvfp4Group(R"(["Linear"])"), "[]")));
+  struct RefusedGroups final {
+    const SourceModel &model;
+    std::string groups;
+    std::string_view ignore, error;
+  };
+  for (const RefusedGroups &refused : std::initializer_list<RefusedGroups>{
+           {dense, fp8Group + ", " + ffn, R"(["lm_head"])", "quantization_config leaves lm_head unquantized"},
+           {moe,
+            fp8Group + ", " +
+                nvfp4Group(R"(["re:.*mlp\\.experts\\.\\d+\\.(gate|up)_proj$", "re:.*shared_expert\\.(gate|up|down)_proj$"])"),
+            ignore, "quantization_config leaves model.language_model.layers.0.mlp.experts.0.down_proj unquantized"},
+           {dense,
+            R"("group_1": {"format": "pack-quantized", "targets": ["Linear"], "weights": {"num_bits": 4, "type": "int", )"
+            R"("strategy": "group", "group_size": 128}})",
+            "[]",
+            "quantization_config config_groups group_1 is pack-quantized: int 4-bit by group in groups of 128; "
+            "compressed-tensors weights load as NVFP4"},
+           {dense, nvfp4Group(R"(["Linear"])", R"("group_size": 32)"), "[]",
+            "quantization_config config_groups group_1 is nvfp4-pack-quantized: float 4-bit by tensor_group in "
+            "groups of 32"},
+           {dense, nvfp4Group(R"(["Linear"])", R"("group_size": 16, "actorder": "group")"), "[]",
+            "quantization_config config_groups group_1 is asymmetric or ordered by activation groups"},
+           {dense, nvfp4Group(R"(["re:(lm_head"])"), "[]",
+            "quantization_config config_groups group_1 targets entry re:(lm_head is not a regular expression Splash "
+            "reads"},
+       })
+    refuses(compressedTensors(refused.model, refused.groups, refused.ignore), refused.error,
+            "a compressed-tensors quantization was accepted with " + refused.groups);
 }
 
 // The vision tower the record names is the family's, over RGB patches of two

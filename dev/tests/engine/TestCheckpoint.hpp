@@ -2,8 +2,8 @@
 
 // Synthetic installed models: the target/, draft/ and vision/ directories of
 // an MLX model of given layouts, each a safetensors shard holding every tensor
-// its loader reads, all zero, which loadModel loads as it loads an installed
-// model.
+// its loader reads, all zero but the few given data, which loadModel loads as
+// it loads an installed model.
 
 #include "TestChecks.hpp"
 #include "metal/abi/DraftAttention.h"
@@ -27,14 +27,16 @@ struct SyntheticTensor final {
   std::string name;
   std::string dtype;
   std::vector<uint64_t> shape;
+  std::vector<uint8_t> data{}; // its bytes, or none for zeros
 };
 
-// A safetensors shard of tensors whose values are all zero: the data is a
-// hole in the file, so a large model costs no disk.
+// A safetensors shard of tensors whose values are all zero but those given
+// data: the zeros are a hole in the file, so a large model costs no disk.
 inline void writeSyntheticShard(const std::filesystem::path &path,
                                 const std::vector<SyntheticTensor> &tensors) {
   std::string header = "{";
   uint64_t offset = 0;
+  std::vector<uint64_t> offsets;
   for (const SyntheticTensor &tensor : tensors) {
     uint64_t bytes = tensor.dtype == "U32" || tensor.dtype == "F32"     ? 4
                      : tensor.dtype == "U8" || tensor.dtype == "F8_E4M3" ? 1
@@ -44,9 +46,11 @@ inline void writeSyntheticShard(const std::filesystem::path &path,
       bytes *= dimension;
       shape += (shape.empty() ? "" : ",") + std::to_string(dimension);
     }
+    require(tensor.data.empty() || tensor.data.size() == bytes, "synthetic tensor data does not fill its shape");
     header += (header.size() > 1 ? ",\"" : "\"") + tensor.name + R"(":{"dtype":")" + tensor.dtype +
               R"(","shape":[)" + shape + R"(],"data_offsets":[)" + std::to_string(offset) + "," +
               std::to_string(offset + bytes) + "]}";
+    offsets.push_back(offset);
     offset += bytes;
   }
   header += "}";
@@ -59,6 +63,13 @@ inline void writeSyntheticShard(const std::filesystem::path &path,
     require(bool(file), "unable to write a synthetic safetensors shard");
   }
   std::filesystem::resize_file(path, sizeof(uint64_t) + header.size() + offset);
+  std::fstream file(path, std::ios::binary | std::ios::in | std::ios::out);
+  for (size_t index = 0; index < tensors.size(); ++index)
+    if (!tensors[index].data.empty()) {
+      file.seekp(std::streamoff(sizeof(uint64_t) + header.size() + offsets[index]));
+      file.write(reinterpret_cast<const char *>(tensors[index].data.data()), std::streamsize(tensors[index].data.size()));
+    }
+  require(bool(file), "unable to write a synthetic safetensors shard's data");
 }
 
 // The tensors of a DFlash2 draft of layout as its repository releases them,
@@ -164,28 +175,41 @@ std::vector<SyntheticTensor> mlxTargetTensors(const Layout &layout, Quantization
   return result;
 }
 
-// The tensors of a target of layout as NVIDIA's Model Optimizer saves it, which
-// model/MlxImage.cpp reads by transformers names: bf16 norms (each stored 1
-// below the weight the norm multiplies by), convolution [channels, 1, taps],
-// GDN alpha and beta, router, shared-expert gate and token table, each routed
-// expert a module of its own, and each quantized module in the format
-// format(module) gives: NVFP4 (U8 codes, an F8_E4M3 scale per 16 and the F32
-// tensor scale weight_scale_2) or FP8 (F8_E4M3 values and the F32 tensor scale
-// weight_scale).
+// How a checkpoint stores NVFP4 and FP8 modules (model/MlxImage.cpp,
+// floatQuantized): as Model Optimizer does, NVFP4's .weight beside the F32
+// tensor scale weight_scale_2 and FP8 with one F32 weight_scale, or as
+// compressed-tensors does, NVFP4's .weight_packed beside the F32
+// weight_global_scale [1] (1 / g) and FP8 with a BF16 weight_scale per row.
+enum class FloatCheckpoint { ModelOptimizer, CompressedTensors };
+
+// The tensors of a target of layout in NVFP4 and FP8, as `checkpoint` saves
+// them, which model/MlxImage.cpp reads by transformers names: bf16 norms
+// (each stored 1 below the weight the norm multiplies by), convolution
+// [channels, 1, taps], GDN alpha and beta, router, shared-expert gate and token
+// table, each routed expert a module of its own, and each quantized module in
+// the format format(module) gives, its codes and E4M3 scales beside its tensor
+// scales; a compressed-tensors global scale is 1, as its reciprocal is g.
 template <class Layout, class Format>
-std::vector<SyntheticTensor> modelOptimizerTargetTensors(const Layout &layout, Format format) {
+std::vector<SyntheticTensor> floatTargetTensors(const Layout &layout, Format format, FloatCheckpoint checkpoint) {
   std::vector<SyntheticTensor> result;
   const auto bfloat16 = [&](const std::string &name, std::vector<uint64_t> shape) {
     result.push_back({name, "BF16", std::move(shape)});
   };
+  const bool compressed = checkpoint == FloatCheckpoint::CompressedTensors;
   const auto quantized = [&](const std::string &module, uint64_t rows, uint64_t columns) {
     if (format(module) == GGUF_FMT_NVFP4) {
-      result.push_back({module + ".weight", "U8", {rows, columns / 2}});
+      result.push_back({module + (compressed ? ".weight_packed" : ".weight"), "U8", {rows, columns / 2}});
       result.push_back({module + ".weight_scale", "F8_E4M3", {rows, columns / 16}});
-      result.push_back({module + ".weight_scale_2", "F32", {}});
+      if (compressed)
+        result.push_back({module + ".weight_global_scale", "F32", {1}, {0x00, 0x00, 0x80, 0x3F}});
+      else
+        result.push_back({module + ".weight_scale_2", "F32", {}});
     } else {
       result.push_back({module + ".weight", "F8_E4M3", {rows, columns}});
-      result.push_back({module + ".weight_scale", "F32", {}});
+      if (compressed)
+        result.push_back({module + ".weight_scale", "BF16", {rows, 1}});
+      else
+        result.push_back({module + ".weight_scale", "F32", {}});
     }
   };
   const uint64_t hidden = layout.hiddenSize;

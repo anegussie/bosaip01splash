@@ -1095,6 +1095,24 @@ widened to F32). Their unquantized tensors (GDN alpha and beta, the router,
 the shared-expert gate, the bf16 token table) load as an MLX target's do, and
 their MTP modules are not read.
 
+### Compressed-tensors targets
+
+llm-compressor's checkpoints (`quantization_config` with `quant_method`
+`compressed-tensors`), such as `unsloth/Qwen3.8-27B-NVFP4` and
+`unsloth/Qwen3.6-35B-A3B-NVFP4`, load as Model Optimizer's do. Each config
+group's weights must be NVFP4 (`nvfp4-pack-quantized`: float 4-bit by
+`tensor_group` in groups of 16) or FP8 (`float-quantized`: float 8-bit by
+`channel` or `tensor`), symmetric and in their stored column order, and every
+projection and the head, each routed expert's by its own name, must be a
+group's target that no `ignore` entry names; a target or entry is a module's
+name, a regular expression after `re:` matched from the start of the name, or
+the class `Linear`. Anything else is refused before any weight download,
+naming the group or the module, so checkpoints that keep the head or a
+projection in BF16 (RedHatAI's) are refused. An NVFP4 weight's codes are
+`.weight_packed`, its `g` the reciprocal of the F32 `.weight_global_scale`;
+an FP8 weight's F32 or BF16 `.weight_scale` is the tensor's `g` or, `[rows,
+1]`, each row's, which that row's meta units hold.
+
 ### GGUF targets
 
 `--model unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_M` selects the repository's
