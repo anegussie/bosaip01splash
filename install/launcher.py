@@ -26,7 +26,7 @@ if __name__ == "__main__" and not __package__:
 # library alone: the launcher runs before .venv exists.
 from server import serve_options
 
-from . import assembly, catalog, clients, paths
+from . import assembly, clients, paths
 from . import models as model_artifacts
 
 ROOT = paths.ROOT
@@ -193,7 +193,7 @@ def serve(args):
     for number in STOP_SIGNALS:
         signal.signal(number, _interrupt)
     if args.offline:
-        # The installer, the catalog refresh and the server all read it.
+        # The installer and the server both read it.
         os.environ["HF_HUB_OFFLINE"] = "1"
     # Keep both locks across exec until the foreground server exits.
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
@@ -270,9 +270,6 @@ def serve(args):
             PYTHONPATH=str(ROOT),
             **serve_options.serve_environment(args),
         )
-        # Detached, because execve replaces this process a line later and a
-        # thread would not survive it. Failure is silent by design.
-        catalog.spawn_refresh()
         os.set_inheritable(installation.fileno(), True)
         os.set_inheritable(lock.fileno(), True)
         # The exec resets the handlers; the server unblocks the signals once

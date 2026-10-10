@@ -90,7 +90,10 @@ class ServerMainTests(unittest.TestCase):
             pending_limit=1,
         )
         backend_type.assert_called_once_with(
-            runtime, tokenizer, request_logger=diagnostics.print_request, max_active_requests=0
+            runtime,
+            tokenizer,
+            request_logger=diagnostics.print_request,
+            max_active_requests=0,
         )
         self.assertEqual(app_type.call_args.args[3], 262144)
         # No --request-timeout, no deadline.

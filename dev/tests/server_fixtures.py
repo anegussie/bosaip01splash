@@ -867,7 +867,9 @@ class Harness:
         self.tokenizer = tokenizer or FakeTokenizer()
         runtime.pending_limit = queue_size
         self.backend = backend_api.NativeBackend(
-            runtime, self.tokenizer, request_logger=request_logger,
+            runtime,
+            self.tokenizer,
+            request_logger=request_logger,
             max_active_requests=max_active_requests,
         )
         self.app = make_frontend(

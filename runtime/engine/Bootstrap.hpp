@@ -5,6 +5,7 @@
 #include "engine/NativeRuntime.hpp"
 #include "engine/RuntimeResources.hpp"
 #include "engine/Status.hpp"
+#include "engine/ThermalState.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -139,8 +140,9 @@ public:
     }
 
     // The memory control pass the transport runs at a command-free point
-    // (MemoryControl::run).
+    // (MemoryControl::run), after it samples the thermal state.
     [[nodiscard]] bool controlPass(MemoryPressure pressure) {
+        sampleThermalState();
         return memoryControl_.run(pressure);
     }
     // The status document, with the metrics and the loop timing the
@@ -154,12 +156,19 @@ private:
                      std::unique_ptr<NativeRuntime> nativeLoop,
                      RuntimeBootstrapReport report);
 
+    // Records the thermal state macOS reports for the status document, and
+    // logs a change: nothing else tells why serving slowed down. The control
+    // pass is the loop's regular tick, so a polled state needs no observer
+    // of its own.
+    void sampleThermalState();
+
     // Reverse destruction order is loop -> modelRuntime -> resources.
     std::unique_ptr<RuntimeResources> resources_;
     std::unique_ptr<model::RuntimeModel> model_;
     std::unique_ptr<NativeRuntime> nativeLoop_;
     MemoryControl memoryControl_;
     RuntimeBootstrapReport report_;
+    ThermalStateReporter thermalState_;
 };
 
 }  // namespace splash::engine

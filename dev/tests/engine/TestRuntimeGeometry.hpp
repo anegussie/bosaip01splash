@@ -2,6 +2,7 @@
 
 #include "model/ModelFactory.hpp"
 #include "model/QwenTargetLoader.hpp"
+#include "metal/abi/QuantFormat.h"
 
 #include <type_traits>
 
@@ -16,7 +17,7 @@ model::LoadedModel runtimeGeometryPackage() {
                                              ? model::kQwen3_6MoeDraftLayout
                                              : model::kQwen3_8DraftLayout;
   const auto projection = [](uint32_t n, uint32_t k) {
-    return ops::Projection(n, k, ops::AffineWeights{});
+    return ops::Projection(n, k, ops::BlockWeights{{ops::QuantizedSegment::planes(GGUF_FMT_AF4G64, n, k, {}, {}, {})}});
   };
   const auto &layout = target.layout;
   target.logitsProjection = projection(layout.vocabularySize, layout.hiddenSize);
@@ -44,7 +45,7 @@ model::LoadedModel runtimeGeometryPackage() {
   vision.outputHiddenSize = target.layout.hiddenSize;
   result.descriptor = model::makeModelDescriptor(
       "operator workspace test", target.layout, draft, vision,
-      model::TargetSource::Package, model::VisionSource::Package);
+      model::TargetSource::Safetensors, model::VisionSource::Safetensors);
   result.target = std::move(target);
   result.draft.layout = draft;
   return result;

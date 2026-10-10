@@ -155,6 +155,14 @@ def main():
             restored = generate("after_restart", prefix, 96)
             assert "ORCHID" in restored["choices"][0]["message"]["content"], restored
             assert (
+                restored["choices"][0]["message"]["content"]
+                == first["choices"][0]["message"]["content"]
+            ), ("cache restart changed deterministic output", first, restored)
+            metrics = results["after_restart"]["status"]["metrics"]
+            assert (
+                metrics["drafted_tokens"] > 0 and metrics["accepted_draft_tokens"] > 0
+            ), metrics
+            assert (
                 restored["usage"]["prompt_tokens_details"]["cached_tokens"] >= 4800
             ), restored
             long_prompt = (

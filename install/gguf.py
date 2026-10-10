@@ -417,6 +417,7 @@ TENSOR_TYPES = {
     29: "IQ1_M",
     30: "BF16",
     39: "MXFP4",
+    40: "NVFP4",
     142: "PQ2_0",
     143: "PTQ1_0",
 }
@@ -439,6 +440,7 @@ QUANTIZED_TYPES = {
     "IQ4_NL",
     "IQ4_XS",
     "MXFP4",
+    "NVFP4",
     "PQ2_0",
     "PTQ1_0",
 }
@@ -456,6 +458,8 @@ EMBEDDING_TYPES = {
     "IQ3_S",
     "IQ4_NL",
     "IQ4_XS",
+    "MXFP4",
+    "NVFP4",
     "PQ2_0",
     "PTQ1_0",
 }
@@ -572,10 +576,15 @@ def require_loadable(metadata):
     for name, types in loaded_tensors(metadata).items():
         kind = metadata.tensors.get(name)
         found = "missing" if kind is None else TENSOR_TYPES.get(kind, f"type {kind}")
+        short = name.split(".", 2)[-1] if name.startswith("blk.") else name
         if found not in types:
-            unsupported[
-                name.split(".", 2)[-1] if name.startswith("blk.") else name, found
-            ] += 1
+            unsupported[short, found] += 1
+        # llama.cpp multiplies a weight's products by a .scale tensor beside
+        # it; the loader folds one into NVFP4's rows only.
+        stem = name.removesuffix(".weight")
+        if stem != name and stem + ".scale" in metadata.tensors and found != "NVFP4":
+            scale = short.removesuffix(".weight") + ".scale"
+            unsupported[scale, f"beside {found}"] += 1
         # The two GDN input gates run as one segment of their shared format.
         if name.endswith(".ssm_beta.weight") and kind != metadata.tensors.get(
             name.replace("ssm_beta", "ssm_alpha")

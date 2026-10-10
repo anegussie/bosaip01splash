@@ -1,4 +1,5 @@
 """Exhaustive coverage of the packed PTQ1_0 digit lookup's byte domain."""
+
 import re
 import unittest
 from pathlib import Path
@@ -6,7 +7,10 @@ from pathlib import Path
 
 class PTQDecodeTableTests(unittest.TestCase):
     def test_every_byte_preserves_the_five_base_three_digits(self):
-        header = Path(__file__).resolve().parents[3] / "runtime/metal/kernels/common/quant_formats.h"
+        header = (
+            Path(__file__).resolve().parents[3]
+            / "runtime/metal/kernels/common/quant_formats.h"
+        )
         source = header.read_text()
         match = re.search(r"quant_ptq10_digits\[256\]\s*=\s*\{([^}]*)\}", source)
         self.assertIsNotNone(match)
