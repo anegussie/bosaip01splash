@@ -368,24 +368,21 @@ EngineSnapshot Engine::snapshot() const {
   result.scheduler = scheduler_.snapshot();
   result.resources = cache_.snapshot();
   result.writeBehind = writeBehind_.snapshot();
-  const auto now = AwakeClock::now();
-  std::vector<const std::pair<const uint64_t, Request> *> live;
-  for (const auto &entry : requests_)
-    if (!entry.second.finalized) live.push_back(&entry);
-  std::sort(live.begin(), live.end(), [](const auto *a, const auto *b) { return a->first < b->first; });
-  for (const auto *entry : live) {
-    const Request &active = entry->second;
-    ActiveRequestSnapshot request;
-    request.id = entry->first;
-    request.phase = scheduler_.phase(entry->first);
-    request.priority = active.request.priority;
-    request.promptTokens = active.promptTokens;
-    request.promptProcessed = std::min(scheduler_.promptProcessed(entry->first), active.promptTokens);
-    request.generatedTokens = active.generatedTokens;
-    request.maxNewTokens = active.request.maxNewTokens;
-    request.ageMilliseconds = std::chrono::duration<double, std::milli>(now - active.submittedAt).count();
-    result.activeRequests.push_back(request);
+  for (const auto &[id, active] : requests_) {
+    if (active.finalized)
+      continue;
+    result.activeRequests.push_back(
+        {.id = id,
+         .phase = scheduler_.phase(id),
+         .priority = active.request.priority,
+         .promptTokens = active.promptTokens,
+         .promptProcessed =
+             std::min(scheduler_.promptProcessed(id), active.promptTokens),
+         .generatedTokens = static_cast<uint32_t>(active.exactTokens.size() -
+                                                  active.promptTokens),
+         .maxNewTokens = active.request.maxNewTokens});
   }
+  std::ranges::sort(result.activeRequests, {}, &ActiveRequestSnapshot::id);
   return result;
 }
 
@@ -1635,7 +1632,6 @@ void Engine::apply(const BatchPlan &plan,
                                 result.outputTokens.begin(),
                                 result.outputTokens.end());
       outputTokens += static_cast<uint32_t>(result.outputTokens.size());
-      active.generatedTokens += static_cast<uint32_t>(result.outputTokens.size());
       events_.tokens(active.request.id, result.outputTokens);
     }
     if (plan.kind == WorkKind::Decode) {

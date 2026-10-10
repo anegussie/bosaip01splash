@@ -306,17 +306,17 @@ std::string runtimeStatusJson(
       << ",\"b2\":" << scheduler.decodeBatchesByWidth[1]
       << ",\"b3\":" << scheduler.decodeBatchesByWidth[2]
       << ",\"b4\":" << scheduler.decodeBatchesByWidth[3] << "}}";
-  // Each live request's progress: phase, priority, encoded prompt tokens and
-  // generated tokens.
   out << ",\"active_requests\":[";
   for (size_t index = 0; index < core.activeRequests.size(); ++index) {
     const engine::ActiveRequestSnapshot &request = core.activeRequests[index];
-    out << (index ? "," : "") << "{\"id\":" << request.id << ",\"phase\":\"" << phaseName(request.phase)
+    out << (index ? "," : "") << "{\"id\":" << request.id
+        << ",\"phase\":\"" << phaseName(request.phase)
         << "\",\"priority\":\"" << priorityName(request.priority)
         << "\",\"prompt_tokens\":" << request.promptTokens
         << ",\"prompt_processed\":" << request.promptProcessed
         << ",\"generated_tokens\":" << request.generatedTokens
-        << ",\"max_new_tokens\":" << request.maxNewTokens << ",\"age_ms\":" << request.ageMilliseconds << "}";
+        << ",\"max_new_tokens\":" << request.maxNewTokens
+        << ",\"age_ms\":" << request.ageMilliseconds << '}';
   }
   out << "]"
       << ",\"requests\":{\"submitted\":" << core.submitted

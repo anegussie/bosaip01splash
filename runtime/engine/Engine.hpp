@@ -1,6 +1,5 @@
 #pragma once
 
-#include "AwakeClock.hpp"
 #include "ops/Vision.hpp"
 #include "engine/Cache.hpp"
 #include "engine/MemoryGovernor.hpp"
@@ -126,7 +125,8 @@ struct ResourceWaitSnapshot final {
 
 // One live request's progress, for /status active_requests: its phase and
 // priority, how many prompt tokens are encoded (cached ones included) and
-// generated.
+// generated, and its age since it arrived, which the native runtime that
+// received it adds (NativeRuntime::statusSnapshot).
 struct ActiveRequestSnapshot final {
   uint64_t id = 0;
   Phase phase = Phase::Queued;
@@ -282,9 +282,6 @@ private:
     // its wait's limit.
     uint64_t admission = 0;
     std::optional<uint32_t> lane;
-    AwakeClock::time_point submittedAt = AwakeClock::now();
-    // Output tokens emitted so far (/status active_requests).
-    uint32_t generatedTokens = 0;
     uint32_t promptTokens = 0;
     uint32_t reportedPromptTokens = 0;
     uint32_t replayTokens = 0;
