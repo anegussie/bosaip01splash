@@ -123,8 +123,25 @@ struct ResourceWaitSnapshot final {
   bool draining = false;
 };
 
+// One live request's progress, for /status active_requests: its phase and
+// priority, how many prompt tokens are encoded (cached ones included) and
+// generated, and its age since it arrived, which the native runtime that
+// received it adds (NativeRuntime::statusSnapshot).
+struct ActiveRequestSnapshot final {
+  uint64_t id = 0;
+  Phase phase = Phase::Queued;
+  RequestPriority priority = RequestPriority::Normal;
+  uint32_t promptTokens = 0;
+  uint32_t promptProcessed = 0;
+  uint32_t generatedTokens = 0;
+  uint32_t maxNewTokens = 0;
+  double ageMilliseconds = 0.0;
+};
+
 struct EngineSnapshot final {
   SchedulerSnapshot scheduler;
+  // Requests not yet finalized, in submission (id) order.
+  std::vector<ActiveRequestSnapshot> activeRequests;
   CacheSnapshot resources;
   uint32_t maximumContextTokens = 0;
   uint64_t submitted = 0;
