@@ -8,7 +8,7 @@ MlxTargetLoader::MlxTargetLoader(metal::MetalBackend &backend, WeightImages &ima
                                  const std::filesystem::path &directory, const QwenTargetDimensions &geometry)
     : backend_(backend), images_(images), planned_(std::make_shared<Planned>(directory)) {
   planned_->images = mlx::planImages(planned_->checkpoint, geometry);
-  float32Norms_ = mlx::moduleNames(planned_->checkpoint) == mlx::ModuleNames::Transformers;
+  float32Norms_ = mlx::float32Norms(mlx::moduleNames(planned_->checkpoint));
 }
 
 WeightFile MlxTargetLoader::open(size_t index) {

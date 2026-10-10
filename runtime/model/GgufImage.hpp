@@ -54,11 +54,12 @@ struct MlxSource {
 }
 
 // Rows [0, rows) of one source tensor in image order, read from `file`: rows
-// of rowBytes bytes at `offset` of its tensor data, or, for an MLX tensor
-// (mlx.codes or mlx.bfloat16 set), its format's native rows.
+// of rowBytes bytes at `offset` of its tensor data, or, for a quantized
+// safetensors tensor (mlx.codes or mlx.bfloat16 set), its format's native
+// rows.
 struct TensorRows {
   std::string name;
-  uint32_t type = 0;   // ggml type, or QUANT_AFFINE_TYPE
+  uint32_t type = 0;   // ggml type, or a loader's (metal/abi/QuantFormat.h)
   uint64_t offset = 0; // in the file's tensor data
   uint64_t rows = 0;
   uint64_t rowBytes = 0;

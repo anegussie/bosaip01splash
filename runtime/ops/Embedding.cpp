@@ -12,13 +12,8 @@
 namespace splash::ops {
 
 NativeRows::NativeRows(metal::MetalBuffer rows, uint32_t formatId) : rows(std::move(rows)), formatId(formatId) {
-  if (!gguf_embedding_format(formatId)) throw std::invalid_argument("unsupported native embedding format");
-}
-NativeRows NativeRows::bfloat16(metal::MetalBuffer rows) {
-  NativeRows result;
-  result.rows = std::move(rows);
-  result.formatId = kBfloat16;
-  return result;
+  if (!isBfloat16() && !gguf_embedding_format(formatId))
+    throw std::invalid_argument("unsupported native embedding format");
 }
 const char *NativeRows::name() const noexcept { return isBfloat16() ? "bf16" : kQuantFormats[formatId].name; }
 uint32_t NativeRows::blockElements() const noexcept { return isBfloat16() ? 1 : kQuantFormats[formatId].block_elements; }

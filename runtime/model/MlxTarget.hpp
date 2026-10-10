@@ -26,8 +26,7 @@ public:
   [[nodiscard]] WeightFile layer(uint32_t index);
   [[nodiscard]] WeightFile head();
   [[nodiscard]] WeightFile embedding();
-  // Whether its images hold F32 norms, those of a checkpoint of transformers
-  // names (mlx::ModuleNames), rather than MLX's bf16 norms.
+  // Whether its images hold F32 norms (mlx::float32Norms).
   [[nodiscard]] bool float32Norms() const noexcept { return float32Norms_; }
 
 private:

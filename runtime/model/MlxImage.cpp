@@ -39,7 +39,7 @@ public:
   // stored (bf16) from MLX names, or the F32 1 + w of the w transformers
   // stores.
   void norm(const std::string &name, uint64_t elements) {
-    if (names_ == ModuleNames::Mlx) return stored(name + ".weight", {"BF16"}, {elements});
+    if (!float32Norms(names_)) return stored(name + ".weight", {"BF16"}, {elements});
     const SourceTensor &tensor = require(name + ".weight", {"BF16"}, {elements});
     image_.copy(rows(name + ".weight", tensor, ggml::kBF16, 1, tensor.bytes), Conversion::CenteredNorm);
   }
@@ -48,7 +48,7 @@ public:
   // as stored (bf16) from MLX names, or widened to F32 as the other norms of
   // a transformers checkpoint's images are.
   void gatedNorm(const std::string &name, uint64_t elements) {
-    if (names_ == ModuleNames::Mlx) return stored(name + ".weight", {"BF16"}, {elements});
+    if (!float32Norms(names_)) return stored(name + ".weight", {"BF16"}, {elements});
     const SourceTensor &tensor = require(name + ".weight", {"BF16"}, {elements});
     image_.copy(rows(name + ".weight", tensor, ggml::kBF16, 1, tensor.bytes), Conversion::WidenToFloat32);
   }
@@ -249,7 +249,8 @@ private:
                       {}, weight.file, source};
   }
 
-  // Native rows hold whole native blocks: nvfp4's and fp8's of 256 elements.
+  // Native rows hold whole native blocks of the module's format; only nvfp4's
+  // and fp8's, of 256 elements, are wider than its groups.
   static void requireWholeBlocks(const std::string &module, uint32_t format, uint64_t columns) {
     if (columns % kQuantFormats[format].block_elements)
       throw WeightStoreError(module + "'s rows are not whole " + kQuantFormats[format].name + " blocks of " +

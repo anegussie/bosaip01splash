@@ -134,12 +134,12 @@ private:
 // values, which a safetensors checkpoint may keep unquantized. A default value
 // holds no rows, which a reader replaces.
 struct NativeRows final {
-  // The formatId of bf16 rows.
+  // The formatId of bf16 rows, which no kQuantFormats entry describes.
   static constexpr uint32_t kBfloat16 = 0xffffffff;
 
   NativeRows() = default;
+  // Rows of a gguf_embedding_format or kBfloat16; throws for any other formatId.
   NativeRows(metal::MetalBuffer rows, uint32_t formatId);
-  [[nodiscard]] static NativeRows bfloat16(metal::MetalBuffer rows);
   metal::MetalBuffer rows;
   uint32_t formatId = 0;
   [[nodiscard]] bool isBfloat16() const noexcept { return formatId == kBfloat16; }

@@ -7,6 +7,7 @@
 
 #include "TestChecks.hpp"
 #include "metal/abi/DraftAttention.h"
+#include "metal/abi/QuantFormat.h"
 #include "model/DFlashDraft.hpp"
 #include "model/DraftCheckpoint.hpp"
 #include "model/MlxTarget.hpp"
@@ -35,7 +36,9 @@ inline void writeSyntheticShard(const std::filesystem::path &path,
   std::string header = "{";
   uint64_t offset = 0;
   for (const SyntheticTensor &tensor : tensors) {
-    uint64_t bytes = tensor.dtype == "U32" || tensor.dtype == "F32" ? 4 : tensor.dtype == "U8" ? 1 : 2;
+    uint64_t bytes = tensor.dtype == "U32" || tensor.dtype == "F32"     ? 4
+                     : tensor.dtype == "U8" || tensor.dtype == "F8_E4M3" ? 1
+                                                                         : 2;
     std::string shape;
     for (uint64_t dimension : tensor.shape) {
       bytes *= dimension;
@@ -158,6 +161,78 @@ std::vector<SyntheticTensor> mlxTargetTensors(const Layout &layout, Quantization
   bfloat16("language_model.model.norm.weight", {hidden});
   quantized("language_model.lm_head", layout.vocabularySize, hidden);
   quantized("language_model.model.embed_tokens", layout.vocabularySize, hidden);
+  return result;
+}
+
+// The tensors of a target of layout as NVIDIA's Model Optimizer saves it, which
+// model/MlxImage.cpp reads by transformers names: bf16 norms (each stored 1
+// below the weight the norm multiplies by), convolution [channels, 1, taps],
+// GDN alpha and beta, router, shared-expert gate and token table, each routed
+// expert a module of its own, and each quantized module in the format
+// format(module) gives: NVFP4 (U8 codes, an F8_E4M3 scale per 16 and the F32
+// tensor scale weight_scale_2) or FP8 (F8_E4M3 values and the F32 tensor scale
+// weight_scale).
+template <class Layout, class Format>
+std::vector<SyntheticTensor> modelOptimizerTargetTensors(const Layout &layout, Format format) {
+  std::vector<SyntheticTensor> result;
+  const auto bfloat16 = [&](const std::string &name, std::vector<uint64_t> shape) {
+    result.push_back({name, "BF16", std::move(shape)});
+  };
+  const auto quantized = [&](const std::string &module, uint64_t rows, uint64_t columns) {
+    if (format(module) == GGUF_FMT_NVFP4) {
+      result.push_back({module + ".weight", "U8", {rows, columns / 2}});
+      result.push_back({module + ".weight_scale", "F8_E4M3", {rows, columns / 16}});
+      result.push_back({module + ".weight_scale_2", "F32", {}});
+    } else {
+      result.push_back({module + ".weight", "F8_E4M3", {rows, columns}});
+      result.push_back({module + ".weight_scale", "F32", {}});
+    }
+  };
+  const uint64_t hidden = layout.hiddenSize;
+  for (uint32_t layer = 0; layer < layout.layers; ++layer) {
+    const std::string prefix = "model.language_model.layers." + std::to_string(layer) + ".";
+    bfloat16(prefix + "input_layernorm.weight", {hidden});
+    if (layout.isFullAttentionLayer(layer)) {
+      const std::string attention = prefix + "self_attn.";
+      const uint64_t kv = uint64_t{layout.attentionKvHeads} * layout.attentionHeadDimension;
+      quantized(attention + "q_proj", 2ull * layout.attentionWidth, hidden);
+      quantized(attention + "k_proj", kv, hidden);
+      quantized(attention + "v_proj", kv, hidden);
+      bfloat16(attention + "q_norm.weight", {layout.attentionHeadDimension});
+      bfloat16(attention + "k_norm.weight", {layout.attentionHeadDimension});
+      quantized(attention + "o_proj", hidden, layout.attentionWidth);
+    } else {
+      const std::string gdn = prefix + "linear_attn.";
+      quantized(gdn + "in_proj_qkv", layout.convolutionDimension, hidden);
+      quantized(gdn + "in_proj_z", layout.attentionWidth, hidden);
+      bfloat16(gdn + "in_proj_b.weight", {layout.gdnValueHeads, hidden});
+      bfloat16(gdn + "in_proj_a.weight", {layout.gdnValueHeads, hidden});
+      bfloat16(gdn + "conv1d.weight", {layout.convolutionDimension, 1, model::kGdnConvolutionTaps});
+      bfloat16(gdn + "A_log", {layout.gdnValueHeads});
+      bfloat16(gdn + "dt_bias", {layout.gdnValueHeads});
+      bfloat16(gdn + "norm.weight", {layout.gdnHeadDimension});
+      quantized(gdn + "out_proj", hidden, layout.attentionWidth);
+    }
+    bfloat16(prefix + "post_attention_layernorm.weight", {hidden});
+    const std::string mlp = prefix + "mlp.";
+    const auto ffn = [&](const std::string &projections, uint64_t width) {
+      quantized(projections + "gate_proj", width, hidden);
+      quantized(projections + "up_proj", width, hidden);
+      quantized(projections + "down_proj", hidden, width);
+    };
+    if (layout.ffnKind == model::QwenFfnKind::SparseMoe) {
+      bfloat16(mlp + "gate.weight", {layout.experts, hidden});
+      for (uint32_t expert = 0; expert < layout.experts; ++expert)
+        ffn(mlp + "experts." + std::to_string(expert) + ".", layout.expertIntermediateSize);
+      ffn(mlp + "shared_expert.", layout.expertIntermediateSize);
+      bfloat16(mlp + "shared_expert_gate.weight", {1, hidden});
+    } else {
+      ffn(mlp, layout.intermediateSize);
+    }
+  }
+  bfloat16("model.language_model.norm.weight", {hidden});
+  quantized("lm_head", layout.vocabularySize, hidden);
+  bfloat16("model.language_model.embed_tokens.weight", {layout.vocabularySize, hidden});
   return result;
 }
 

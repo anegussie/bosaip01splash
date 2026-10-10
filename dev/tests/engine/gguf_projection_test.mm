@@ -831,7 +831,7 @@ void tokenGather(MetalBackend &backend) {
   std::vector<uint8_t> rows(size_t{kVocabulary} * kHidden * 2);
   for (auto &b : rows) b = uint8_t(rng());
   for (size_t i = 1; i < rows.size(); i += 2) rows[i] &= 0xBF;   // finite: exponents below 0x7F
-  const EmbeddingWeights table(kVocabulary, kHidden, NativeRows::bfloat16(upload(backend, rows)));
+  const EmbeddingWeights table(kVocabulary, kHidden, NativeRows(upload(backend, rows), NativeRows::kBfloat16));
   const Guarded ids(backend, tokens.size() * sizeof(uint32_t), 0), output(backend, tokens.size() * kHidden * 2, 0xFF);
   std::memcpy(ids.view.contents(), tokens.data(), ids.bytes);
   CommandGraph graph;
@@ -849,8 +849,8 @@ void tokenGather(MetalBackend &backend) {
 
 // Each buffer the token gathers reach, at its extent and one element short:
 // the rows' token ids and bf16 output rows, every token's native blocks (of
-// Q8_0, PQ2_0 and MLX's af4g64) or bf16 values, and the rotation signs of a
-// rotated PQ2_0 table.
+// Q8_0, PQ2_0 and MLX's af4g64 and nvfp4) or bf16 values, and the rotation
+// signs of a rotated PQ2_0 table.
 void gatherExtents(MetalBackend &backend) {
   constexpr uint32_t kVocabulary = 64, kHidden = 1024, kRows = 9;
   const MetalBuffer tokens = test::sharedBuffer(backend, kRows * 4),
@@ -863,7 +863,7 @@ void gatherExtents(MetalBackend &backend) {
     });
   };
   std::vector<EmbeddingWeights> tables;
-  for (const Fmt f : {Q80, PQ20, Fmt(GGUF_FMT_AF4G64)}) {
+  for (const Fmt f : {Q80, PQ20, Fmt(GGUF_FMT_AF4G64), NVFP4}) {
     const QuantFormat &format = kQuantFormats[f];
     const uint64_t rowBytes = uint64_t{kHidden} / format.block_elements * format.block_bytes;
     EmbeddingWeights table(kVocabulary, kHidden, NativeRows(test::sharedBuffer(backend, kVocabulary * rowBytes), f));
@@ -883,9 +883,10 @@ void gatherExtents(MetalBackend &backend) {
     tables.push_back(table);
   }
   const uint64_t bfloat16Bytes = uint64_t{kVocabulary} * kHidden * 2;
-  tables.emplace_back(kVocabulary, kHidden, NativeRows::bfloat16(test::sharedBuffer(backend, bfloat16Bytes)));
+  tables.emplace_back(kVocabulary, kHidden,
+                      NativeRows(test::sharedBuffer(backend, bfloat16Bytes), NativeRows::kBfloat16));
   requireTableExtent(tables.back().blocks().rows, bfloat16Bytes, 2, "token table", [&](const MetalBuffer &rows) {
-    return EmbeddingWeights(kVocabulary, kHidden, NativeRows::bfloat16(rows));
+    return EmbeddingWeights(kVocabulary, kHidden, NativeRows(rows, NativeRows::kBfloat16));
   });
   for (const EmbeddingWeights &table : tables) {
     test::requireExtent(backend, tokens, kRows * 4, 4, "embedding token", [&](CommandGraph &graph, const MetalBuffer &view) {

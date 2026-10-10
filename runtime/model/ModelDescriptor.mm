@@ -92,6 +92,13 @@ std::string requireString(NSDictionary *object, NSString *key,
   return text;
 }
 
+// The text of a JSON string, which a lone surrogate escape leaves without one.
+std::string requireText(id value, std::string_view label) {
+  const char *text = [value isKindOfClass:[NSString class]] ? static_cast<NSString *>(value).UTF8String : nullptr;
+  if (!text) throw std::invalid_argument(std::string(label) + " must be a string");
+  return text;
+}
+
 // A value that is not the runtime's is refused naming its source, what the
 // model was installed from or the assembly's own record, beside the runtime:
 // "mismatch: MLX 47, runtime 48".
@@ -371,14 +378,13 @@ void requireModelOptimizerQuantization(NSDictionary *quantization, const QwenTar
   NSArray *ignore = quantization[@"ignore"] ?: quantization[@"exclude_modules"];
   if (ignore && ![ignore isKindOfClass:[NSArray class]])
     throw std::invalid_argument("quantization_config ignore must be an array");
-  for (const std::string &module : required)
-    for (id pattern in ignore) {
-      if (![pattern isKindOfClass:[NSString class]])
-        throw std::invalid_argument("quantization_config ignore must hold strings");
-      if (!fnmatch(static_cast<NSString *>(pattern).UTF8String, module.c_str(), 0))
+  for (id entry in ignore) {
+    const std::string pattern = requireText(entry, "quantization_config ignore entry");
+    for (const std::string &module : required)
+      if (!fnmatch(pattern.c_str(), module.c_str(), 0))
         throw std::invalid_argument("quantization_config leaves " + module +
                                     " unquantized; Splash loads quantized projections");
-    }
+  }
 }
 
 // A safetensors target's quantization: MLX's "quantization" object, or Model
@@ -499,13 +505,6 @@ ModelDescriptor describeSourceModel(std::string name, std::string_view targetFor
     validateVisionConfig(requireObject(config, @"vision_config", "vision config"), result.vision,
                          result.targetSource);
   return result;
-}
-
-// The text of a JSON string, which a lone surrogate escape leaves without one.
-std::string requireText(id value, std::string_view label) {
-  const char *text = [value isKindOfClass:[NSString class]] ? static_cast<NSString *>(value).UTF8String : nullptr;
-  if (!text) throw std::invalid_argument(std::string(label) + " must be a string");
-  return text;
 }
 
 // A GGUF's scalar metadata as the installer copies it from the header it read

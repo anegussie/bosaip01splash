@@ -36,6 +36,11 @@ enum class ModuleNames : uint8_t { Mlx, Transformers };
 // lm_head.weight.
 [[nodiscard]] ModuleNames moduleNames(const SafetensorsCheckpoint &checkpoint);
 
+// Whether the images hold the norms as F32, as they hold a checkpoint's of
+// transformers names (their 1 + w, the GDN's gated norm widened), rather than
+// MLX's bf16 norms as stored.
+[[nodiscard]] constexpr bool float32Norms(ModuleNames names) noexcept { return names == ModuleNames::Transformers; }
+
 // The layers' images, then the head's and the embedding's. The checkpoint
 // outlives them: their rows read its tensors.
 [[nodiscard]] std::vector<gguf::Image> planImages(const SafetensorsCheckpoint &checkpoint,

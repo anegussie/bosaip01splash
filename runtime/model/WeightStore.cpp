@@ -161,7 +161,7 @@ ops::EmbeddingWeights readBlockEmbedding(WeightFile &file, uint32_t outputSize, 
         if (d.plane0Bytes != uint64_t{d.outputSize} * d.inputSize * sizeof(uint16_t))
             throw WeightStoreError("bf16 embedding rows are inconsistent: " + std::string(label));
         return {outputSize, inputSize,
-                ops::NativeRows::bfloat16(file.section(d.plane0Bytes, std::string(label) + "-bf16"))};
+                ops::NativeRows(file.section(d.plane0Bytes, std::string(label) + "-bf16"), ops::NativeRows::kBfloat16)};
     }
     const uint32_t format = gguf_format_of(d.type);
     if (format == GGUF_FMT_COUNT ||
