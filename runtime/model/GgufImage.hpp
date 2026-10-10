@@ -60,10 +60,21 @@ struct MlxSource {
   return quant_loader_format(format) || format == GGUF_FMT_MXFP4;
 }
 
+// llama.cpp's NVFP4 rows (GGML_TYPE_NVFP4), from which the writer builds
+// NVFP4's native rows: each row of block_nvfp4 rowBytes long from the
+// tensor's offset on, and the F32 tensor scale g that llama.cpp multiplies
+// the tensor's products by, its .scale tensor's (at scaleOffset) value of
+// every rowsPerScale rows: one for the tensor, or one per expert; without a
+// .scale tensor g is 1.
+struct GgufNvfp4Source {
+  uint64_t rowBytes = 0;                      // 0: not llama.cpp's NVFP4 rows
+  uint64_t scaleOffset = 0, rowsPerScale = 0; // rowsPerScale 0: no .scale tensor
+};
+
 // Rows [0, rows) of one source tensor in image order, read from `file`: rows
 // of rowBytes bytes at `offset` of its tensor data, or, for a quantized
-// safetensors tensor (mlx.codes or mlx.bfloat16 set), its format's native
-// rows.
+// safetensors tensor (mlx.codes or mlx.bfloat16 set) and llama.cpp's NVFP4
+// (ggufNvfp4.rowBytes set), its format's native rows.
 struct TensorRows {
   std::string name;
   uint32_t type = 0;   // ggml type, or a loader's (metal/abi/QuantFormat.h)
@@ -73,6 +84,7 @@ struct TensorRows {
   RowOrder order{};
   const WeightSource *file = nullptr;
   MlxSource mlx{};
+  GgufNvfp4Source ggufNvfp4{};
 };
 
 // Header and descriptor bytes.

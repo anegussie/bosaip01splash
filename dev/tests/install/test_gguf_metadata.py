@@ -431,19 +431,22 @@ class GgufMetadataTests(unittest.TestCase):
         table = header.split("kQuantFormats[GGUF_FMT_COUNT] = {", 1)[1].split("};", 1)[
             0
         ]
-        # Each format's GGML type, by format id; the loader's own formats (MLX
-        # affine, nvfp4, fp8) have none, and no GGUF tensor is in them.
+        # Each format's GGML type, by format id: its table type, or the GGUF
+        # type the loader converts into it (GGML_TYPE_NVFP4 into NVFP4); the
+        # loader's other formats (MLX affine, fp8) have none.
+        ids = {
+            name: int(value)
+            for name, value in re.findall(r"#define GGUF_FMT_(\w+) (\d+)u", header)
+        }
         rows = re.findall(r"^\s*\{([^,]+),", table, re.M)
         types = {
             index: gguf.TENSOR_TYPES[int(row)]
             for index, row in enumerate(rows)
             if row.isdigit()
         }
+        for name, value in re.findall(r"#define GGML_TYPE_(\w+) (\d+)u", header):
+            types[ids[name]] = gguf.TENSOR_TYPES[int(value)]
         self.assertEqual(set(types.values()), gguf.QUANTIZED_TYPES)
-        ids = {
-            name: int(value)
-            for name, value in re.findall(r"#define GGUF_FMT_(\w+) (\d+)u", header)
-        }
         embedding = (abi / "Gguf.h").read_text().split("gguf_embedding_format", 1)[1]
         embedding = embedding.split("}", 1)[0]
         names = re.findall(r"GGUF_FMT_(\w+)", embedding)

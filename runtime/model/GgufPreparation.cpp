@@ -194,6 +194,58 @@ void quantizeRows(const gguf::TensorRows &rows, uint64_t start, uint64_t count, 
   }
 }
 
+// The tensor scale g of rows [start, start + count) of llama.cpp's NVFP4,
+// each finite: its .scale value of the row (gguf::GgufNvfp4Source), or 1
+// without one.
+std::vector<float> ggufNvfp4Scales(const gguf::TensorRows &rows, uint64_t start, uint64_t count) {
+  const gguf::GgufNvfp4Source &source = rows.ggufNvfp4;
+  if (!source.rowsPerScale) return std::vector<float>(count, 1.0F);
+  const uint64_t first = start / source.rowsPerScale, last = (start + count - 1) / source.rowsPerScale;
+  std::vector<float> values(last - first + 1);
+  rows.file->readData(source.scaleOffset + first * sizeof(float),
+                      {reinterpret_cast<uint8_t *>(values.data()), values.size() * sizeof(float)});
+  std::vector<float> result(count);
+  for (uint64_t row = 0; row < count; ++row) {
+    result[row] = values[(start + row) / source.rowsPerScale - first];
+    if (!std::isfinite(result[row])) throw GgufError("non-finite tensor scale of " + rows.name);
+  }
+  return result;
+}
+
+// Native NVFP4 bytes [column, column + span) of `count` rows of llama.cpp's
+// NVFP4 from source row `start` on, back to back: per 256 elements the 16
+// UE4M3 scales of four block_nvfp4 as the E4M3 scales they are (0x7F, which
+// llama.cpp reads as 0, as 0), the row's tensor scale, and the codes with
+// element e in the low nibble of byte e / 2 when e is even, else in its high
+// one (metal/abi/QuantFormat.h), where a block_nvfp4 holds element j of each
+// 16 in the low nibble of byte j and element j + 8 in its high one.
+void readGgufNvfp4Rows(const gguf::TensorRows &rows, uint64_t start, uint64_t count, uint64_t column, uint64_t span,
+                       uint8_t *to) {
+  const QuantFormat &format = kQuantFormats[GGUF_FMT_NVFP4];
+  const GgmlTypeTraits &blocks = *ggmlTypeTraits(GGML_TYPE_NVFP4);
+  const uint64_t perNative = format.block_elements / blocks.blockElements, nativeBlocks = span / format.block_bytes;
+  std::vector<uint8_t> source(nativeBlocks * perNative * blocks.blockBytes);
+  const std::vector<float> scales = ggufNvfp4Scales(rows, start, count);
+  for (uint64_t row = 0; row < count; ++row) {
+    rows.file->readData(rows.offset + (start + row) * rows.ggufNvfp4.rowBytes +
+                            column / format.block_bytes * perNative * blocks.blockBytes,
+                        source);
+    for (uint64_t b = 0; b < nativeBlocks; ++b) {
+      uint8_t *out = to + row * span + b * format.block_bytes;
+      for (uint64_t q = 0; q < perNative; ++q) {
+        const uint8_t *in = source.data() + (b * perNative + q) * blocks.blockBytes, *codes = in + 4;
+        const auto code = [&](uint64_t e) { return e < 8 ? codes[e] & 15 : codes[e - 8] >> 4; };
+        for (uint64_t s = 0; s < 4; ++s, codes += 8) {
+          const uint8_t scale = in[s] & 0x7F;
+          out[4 * q + s] = scale == 0x7F ? 0 : scale;
+          for (uint64_t i = 0; i < 8; ++i) out[20 + 32 * q + 8 * s + i] = uint8_t(code(2 * i) | code(2 * i + 1) << 4);
+        }
+      }
+      std::memcpy(out + 16, &scales[row], 4);
+    }
+  }
+}
+
 // Image rows [first, first + count) of `rows`, bytes [column, column + span)
 // of each, back to back. Consecutive source rows are read together.
 void readRows(const gguf::TensorRows &rows, uint64_t first, uint64_t count, uint64_t column, uint64_t span,
@@ -206,6 +258,7 @@ void readRows(const gguf::TensorRows &rows, uint64_t first, uint64_t count, uint
     if (span == rows.rowBytes)
       while (row + run < count && sourceRow(rows, first + row + run) == start + run) ++run;
     if (rows.mlx.codes) readMlxRows(rows, start, run, column, span, to + row * span);
+    else if (rows.ggufNvfp4.rowBytes) readGgufNvfp4Rows(rows, start, run, column, span, to + row * span);
     else if (rows.mlx.bfloat16) quantizeRows(rows, start, run, column, span, to + row * span);
     else rows.file->readData(rows.offset + start * rows.rowBytes + column, {to + row * span, run * span});
     row += run;
@@ -315,7 +368,7 @@ uint64_t copyBytes(const gguf::Copy &copy) {
 void addCopyTasks(uint8_t *image, const gguf::Copy &copy,
                   std::vector<std::function<void(std::vector<uint8_t> &)>> &tasks) {
   const gguf::TensorRows &rows = copy.source;
-  const uint64_t unit = rows.mlx.codes ? mlxFormat(rows).block_bytes : 4;
+  const uint64_t unit = rows.mlx.codes || rows.ggufNvfp4.rowBytes ? mlxFormat(rows).block_bytes : 4;
   const uint64_t span = std::min<uint64_t>(rows.rowBytes, kLoadStepBytes / unit * unit);
   const uint64_t batch = span == rows.rowBytes ? kLoadStepBytes / rows.rowBytes : 1;
   for (uint64_t first = 0; first < rows.rows; first += batch) {

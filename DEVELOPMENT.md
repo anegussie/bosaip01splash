@@ -1127,10 +1127,10 @@ and lists every unsupported tensor in one error:
 
 - linears and experts: Q2_K, Q3_K, Q4_K, Q5_K, Q6_K, Q8_0, Q4_0, Q4_1,
   IQ1_S, IQ1_M, IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS, IQ3_S, IQ4_XS, IQ4_NL,
-  MXFP4 or PQ2_0;
+  MXFP4, NVFP4 or PQ2_0;
 - token embeddings: Q2_K, Q3_K, Q4_K, Q5_K, Q6_K, Q8_0, Q4_0, Q4_1, IQ3_S,
   IQ4_NL or IQ4_XS, every type llama-quantize gives a token table by default
-  in a file whose linears load, MXFP4, and Prism's PQ2_0;
+  in a file whose linears load, MXFP4, NVFP4, and Prism's PQ2_0;
 - norms, the MoE router and shared-expert scalar gate, and the GDN
   convolution, decay and time-step bias: F32;
 - GDN alpha and beta: both of one type, any of the linears' formats (one
@@ -1144,6 +1144,15 @@ stores alpha and beta in the file type's format (Q4_K in a Q4_K_M), as in
 lmstudio-community's files, so those load too. A format's image takes the bits
 per weight of its GGUF blocks, but for Q3_K's and Q6_K's padded meta units (1/16
 bit more) and IQ3_S's chunk words (4.06 bits for its 3.44).
+
+llama.cpp's NVFP4 (type 40, as in `cdiamond/Qwen3.8-27B-iMatrix-NVFP4-MTP-GGUF`)
+is `block_nvfp4`: 64 elements, a UE4M3 scale per 16 (an E4M3 scale without its
+sign; llama.cpp reads 0x7F as 0) and E2M1 codes, beside an optional F32
+`.scale` tensor, one value per tensor or per expert, which llama.cpp multiplies
+the products by. It loads as Model Optimizer's NVFP4 does
+([Model Optimizer targets](#model-optimizer-targets)): four blocks make one
+256-element NVFP4 block, whose meta unit holds the `.scale` value as its `g`
+(1 without one), at 4.625 bits per weight for the file's 4.5.
 
 ### PQ2_0
 

@@ -114,6 +114,12 @@
 // writes ("NVF4", "FP8E"): no GGUF type is either.
 #define QUANT_NVFP4_TYPE 0x4E564634u
 #define QUANT_FP8_TYPE 0x46503845u
+// llama.cpp's NVFP4 tensor type: block_nvfp4 of 64 elements, a UE4M3 scale per
+// 16 and the E2M1 codes of each 16, element j in the low nibble of its byte j
+// and element j + 8 in the high one; the loader writes its rows into NVFP4's
+// native blocks (model/GgufPreparation.cpp) rather than repacking them as
+// stored.
+#define GGML_TYPE_NVFP4 40u
 
 struct QuantFormat {
   uint32_t ggml_type;      // GGUF tensor type, or a loader's (QUANT_AFFINE_TYPE, QUANT_NVFP4_TYPE, QUANT_FP8_TYPE)
@@ -170,9 +176,10 @@ QUANT_CONSTANT QuantFormat kQuantFormats[GGUF_FMT_COUNT] = {
     {QUANT_FP8_TYPE, 256, 260, 32, 0, 4, 8, "fp8"},        // meta: g
 };
 
-// The format that stores a GGUF tensor type (or a loader's);
-// GGUF_FMT_COUNT when none does.
+// The format that stores a GGUF tensor type (or a loader's), NVFP4 llama.cpp's
+// NVFP4 too; GGUF_FMT_COUNT when none does.
 inline constexpr uint32_t gguf_format_of(uint32_t ggml_type) {
+  if (ggml_type == GGML_TYPE_NVFP4) return GGUF_FMT_NVFP4;
   for (uint32_t format = 0; format < GGUF_FMT_COUNT; ++format)
     if (kQuantFormats[format].ggml_type == ggml_type) return format;
   return GGUF_FMT_COUNT;

@@ -671,6 +671,97 @@ void checkFloatSources(MetalBackend &backend, const std::filesystem::path &direc
 
 } // namespace
 
+// llama.cpp's NVFP4 (GGML_TYPE_NVFP4): block_nvfp4 rows, made here from
+// reference NVFP4 native rows, prepare into those native rows' planes, with
+// the .scale tensor's g: a dense FFN projection with one value, the MoE's gate
+// experts with one per expert, and the token table, without one (g 1), as its
+// native rows. A .scale tensor of another count is refused.
+void checkGgufNvfp4(MetalBackend &backend, const std::filesystem::path &directory) {
+  std::mt19937 rng(41);
+  const QuantFormat &format = kQuantFormats[NVFP4];
+  // block_nvfp4 rows of native NVFP4 rows: per 256 elements four blocks of
+  // four scales and 32 code bytes, element j of each 16 in the low nibble of
+  // byte j and element j + 8 in its high one.
+  const auto ggufRows = [&](const std::vector<uint8_t> &native) {
+    std::vector<uint8_t> rows;
+    for (size_t at = 0; at < native.size(); at += format.block_bytes) {
+      const uint8_t *blk = native.data() + at;
+      const auto code = [&](uint32_t e) { return (blk[kNvfp4Codes + e / 2] >> (4 * (e % 2))) & 15; };
+      for (uint32_t q = 0; q < 4; ++q) {
+        rows.insert(rows.end(), blk + 4 * q, blk + 4 * q + 4);
+        for (uint32_t s = 0; s < 4; ++s)
+          for (uint32_t j = 0; j < 8; ++j)
+            rows.push_back(uint8_t(code(64 * q + 16 * s + j) | code(64 * q + 16 * s + j + 8) << 4));
+      }
+    }
+    return rows;
+  };
+  struct Converted final {
+    std::string name;
+    uint32_t rows, columns, scales; // scales: the .scale tensor's values, 0 for none
+    std::vector<uint8_t> native{};
+  };
+  for (const bool moe : {false, true}) {
+    SmallTarget target = smallTarget(moe);
+    const model::QwenTargetDimensions &g = target.geometry;
+    std::vector<Converted> tensors =
+        moe ? std::vector<Converted>{{"blk.0.ffn_gate_exps.weight", g.experts * g.expertIntermediateSize, g.hiddenSize,
+                                      g.experts}}
+            : std::vector<Converted>{{"blk.0.ffn_up.weight", g.intermediateSize, g.hiddenSize, 1},
+                                     {"token_embd.weight", g.vocabularySize, g.hiddenSize, 0}};
+    for (Converted &c : tensors) {
+      c.native = makeNative(NVFP4, c.rows, c.columns, rng);
+      std::vector<float> scales(c.scales);
+      for (float &scale : scales) scale = std::uniform_real_distribution<float>(0.5f, 2.0f)(rng);
+      const uint32_t blocks = c.columns / format.block_elements;
+      for (uint32_t r = 0; r < c.rows; ++r) {
+        const float scale = c.scales ? scales[r / (c.rows / c.scales)] : 1.0f;
+        for (uint32_t b = 0; b < blocks; ++b)
+          std::memcpy(c.native.data() + (size_t(r) * blocks + b) * format.block_bytes + kNvfp4Scale, &scale, 4);
+      }
+      Tensor &tensor = tensorNamed(target.tensors, c.name);
+      tensor.type = GGML_TYPE_NVFP4;
+      tensor.data = ggufRows(c.native);
+      if (c.scales) {
+        std::vector<uint8_t> values(scales.size() * 4);
+        std::memcpy(values.data(), scales.data(), values.size());
+        target.tensors.push_back({c.name.substr(0, c.name.rfind(".weight")) + ".scale", {c.scales}, 0, values});
+      }
+    }
+    const auto path = directory / (std::string(moe ? "moe" : "dense") + "-nvfp4.gguf");
+    writeGguf(path, target.tensors, g);
+    const auto images = planned(path, g);
+    const auto prepared = preparedImages(backend, path, g);
+    for (const Converted &c : tensors) {
+      if (c.name == "token_embd.weight") {
+        const model::gguf::Copy *copy = copyOf(images.back(), c.name);
+        check(copy && slice(prepared.back(), copy->destination, c.native.size()) == c.native,
+              "a llama.cpp NVFP4 token table prepares into its NVFP4 native rows");
+        continue;
+      }
+      const model::gguf::Repack *planes = repackOf(images[0], c.name);
+      const Packed expected = repack(NVFP4, c.native, c.rows, c.columns, nullptr);
+      check(planes && planes->format == GGUF_FMT_NVFP4 &&
+                slice(prepared[0], planes->plane0, expected.w0.size()) == expected.w0 &&
+                slice(prepared[0], planes->meta, expected.meta.size()) == expected.meta,
+            "llama.cpp NVFP4 " + c.name + " prepares into the planes of its NVFP4 rows, its .scale as g");
+    }
+    if (!moe) continue;
+    // Two values for four experts.
+    std::vector<Tensor> refused = target.tensors;
+    tensorNamed(refused, "blk.0.ffn_gate_exps.scale") = {"blk.0.ffn_gate_exps.scale", {2}, 0, std::vector<uint8_t>(8, 0)};
+    writeGguf(path, refused, g);
+    std::string error;
+    try {
+      static_cast<void>(planned(path, g));
+    } catch (const model::GgufError &e) {
+      error = e.what();
+    }
+    check(error.find("blk.0.ffn_gate_exps.scale must hold one F32 value, or one per expert") != std::string::npos,
+          "a .scale tensor of another count than the experts' is refused");
+  }
+}
+
 int main(int argc, char **argv) {
   @autoreleasepool {
     if (argc != 4) {
@@ -686,6 +777,7 @@ int main(int argc, char **argv) {
     guarded("preparation of the MoE target", [&] { checkMoe(backend, directory.path(), hashes); });
     guarded("preparation of BF16 alpha/beta", [&] { checkWidenedAlphaBeta(backend, directory.path()); });
     guarded("preparation of quantized alpha/beta", [&] { checkQuantizedAlphaBeta(backend, directory.path()); });
+    guarded("llama.cpp NVFP4", [&] { checkGgufNvfp4(backend, directory.path()); });
     guarded("the target loader", [&] { checkDenseTarget(backend, directory.path()); });
     guarded("MLX sources", [&] { checkMlxSources(backend, directory.path(), argv[3]); });
     guarded("NVFP4 and FP8 sources", [&] { checkFloatSources(backend, directory.path()); });

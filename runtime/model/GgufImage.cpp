@@ -164,15 +164,44 @@ private:
     return tensor;
   }
 
+  // Rows [0, count) of `tensor` as the image holds them, rowBytes each: as
+  // stored, or, of llama.cpp's NVFP4, NVFP4's native rows, which the writer
+  // builds from its block_nvfp4 rows and its .scale tensor, when it has one
+  // value or one per expert (GgufNvfp4Source).
   TensorRows tensorRows(const GgufTensor &tensor, uint64_t count, uint64_t rowBytes, RowOrder order = {}) const {
-    if (!count || count * rowBytes != tensor.bytes) throw GgufError("unexpected size for " + tensor.name);
-    return {tensor.name, tensor.type, tensor.offset, count, rowBytes, order, &file_.source()};
+    if (tensor.type != GGML_TYPE_NVFP4) {
+      if (!count || count * rowBytes != tensor.bytes) throw GgufError("unexpected size for " + tensor.name);
+      return {tensor.name, tensor.type, tensor.offset, count, rowBytes, order, &file_.source()};
+    }
+    const QuantFormat &format = kQuantFormats[GGUF_FMT_NVFP4];
+    const GgmlTypeTraits &blocks = *ggmlTypeTraits(GGML_TYPE_NVFP4);
+    const uint64_t sourceRowBytes =
+        rowBytes / format.block_bytes * (format.block_elements / blocks.blockElements) * blocks.blockBytes;
+    if (!count || rowBytes % format.block_bytes || count * sourceRowBytes != tensor.bytes)
+      throw GgufError(tensor.name + "'s rows are not whole nvfp4 blocks of " + std::to_string(format.block_elements) +
+                      " elements");
+    TensorRows rows{tensor.name, QUANT_NVFP4_TYPE, tensor.offset, count, rowBytes, order, &file_.source()};
+    rows.ggufNvfp4.rowBytes = sourceRowBytes;
+    const std::string scale = tensor.name.substr(0, tensor.name.rfind(".weight")) + ".scale";
+    if (const GgufTensor *values = file_.find(scale)) {
+      const uint64_t scales = values->elements();
+      if (values->type != ggml::kF32 || (scales != 1 && scales != geometry_.experts) || count % scales)
+        throw GgufError(scale + " must hold one F32 value, or one per expert, for " + tensor.name);
+      rows.ggufNvfp4.scaleOffset = values->offset;
+      rows.ggufNvfp4.rowsPerScale = count / scales;
+    }
+    return rows;
   }
 
-  // A tensor's rows as stored, after their descriptor.
+  // A tensor's rows as the image holds them (tensorRows), after their
+  // descriptor.
   void copiedRows(const GgufTensor &tensor) {
-    image_.descriptor(tensor.type, tensor.rows(), tensor.columns(), {}, {tensor.bytes, 0, 0}, tensor.name);
-    image_.copy(tensorRows(tensor, tensor.rows(), tensor.bytes / tensor.rows()));
+    const uint64_t rowBytes = tensor.type == GGML_TYPE_NVFP4
+                                  ? ggufRowBytes(kQuantFormats[GGUF_FMT_NVFP4], tensor.columns())
+                                  : tensor.bytes / tensor.rows();
+    const TensorRows rows = tensorRows(tensor, tensor.rows(), rowBytes);
+    image_.descriptor(rows.type, tensor.rows(), tensor.columns(), {}, {rows.rows * rows.rowBytes, 0, 0}, tensor.name);
+    image_.copy(rows);
   }
 
   const GgufFile &file_;

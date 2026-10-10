@@ -75,7 +75,8 @@ Unsloth GGUF variants span **1–8 bits**, including mixed-precision UD formats;
 is also supported in PQ2_0 (7.2 GB), including vision. Pass `OWNER/REPO:VARIANT`
 to `--model`, as in the quick start. MLX targets can be affine 2–8-bit,
 including mixed precision, mxfp4 or nvfp4, and the NVFP4 checkpoints of NVIDIA
-(`nvidia/Qwen3.8-27B-NVFP4`) and unsloth (`unsloth/Qwen3.8-27B-NVFP4`) load too. Smaller variants run on
+(`nvidia/Qwen3.8-27B-NVFP4`) and unsloth (`unsloth/Qwen3.8-27B-NVFP4`) load too, as do
+NVFP4 GGUFs. Smaller variants run on
 [24 GB Macs](docs/performance.md#smaller-ggufs-on-24-gb-macs).
 [27B variants](https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/tree/main) ·
 [35B variants](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/tree/main)
