@@ -339,7 +339,9 @@ public:
         step.outputTokensWithoutKv = 1;
         step.finished = *prefillAnchor;
       } else if (last && firstTokens && !state.constrained) {
-        step.firstToken = 42;
+        step.firstToken = poisonRequest == item.requestId && poisonToken
+                              ? *poisonToken
+                              : 42;
       }
       result.push_back(std::move(step));
     }

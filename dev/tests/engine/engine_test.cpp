@@ -5533,35 +5533,40 @@ void testPrefillCanCompleteTheRequest() {
 }
 
 void testOutOfVocabularyOutputFailsLaneOnly() {
-  test::TestKvStorage storage(64, 4096, 4);
-  KvPool pool(storage, 0);
-  engine::Cache cache(pool, nullptr, nullptr);
-  Executor model;
-  Events events;
-  EngineConfig config = test::engineConfig();
-  config.vocabularySize = 1000;
-  engine::Engine engine(config, cache, model, events);
-  guardReleases(storage, engine);
-  // The sampling kernels leave 0xffffffff when a logit row is entirely
-  // non-finite; the engine must fail that lane before the sentinel reaches
-  // the token history while the peer request completes normally.
-  model.poisonRequest = 1;
-  model.poisonToken = 0xFFFFFFFFU;
-  engine.submit(request(1, {7, 7, 7}));
-  engine.submit(request(2, {7, 7, 7}));
-  runUntilIdle(engine);
-  require(events.failedCount == 1,
-          "out-of-vocabulary model output did not fail the lane");
-  require(events.failures.size() == 1 &&
-              events.failures[0] == "model_result_invalid",
-          "out-of-vocabulary failure carried the wrong code");
-  require(events.completedCount == 1,
-          "poisoned lane took down the rest of the batch");
-  require(events.outputs[1].empty() &&
-              events.outputs[2] == std::vector<uint32_t>{42},
-          "out-of-vocabulary token reached the event sink");
-  require(events.usage.count(2) == 1,
-          "clean peer request did not complete");
+  for (const bool early : {false, true}) {
+    for (const uint32_t invalidToken : {1000U, 0xFFFFFFFFU}) {
+      test::TestKvStorage storage(64, 4096, 4);
+      KvPool pool(storage, 0);
+      engine::Cache cache(pool, nullptr, nullptr);
+      Executor model;
+      Events events;
+      EngineConfig config = test::engineConfig();
+      config.vocabularySize = 1000;
+      engine::Engine engine(config, cache, model, events);
+      guardReleases(storage, engine);
+      // The sampling kernels leave 0xffffffff when a logit row is entirely
+      // non-finite; the engine must fail that lane before the sentinel reaches
+      // the token history while the peer request completes normally.
+      model.firstTokens = early;
+      model.poisonRequest = 1;
+      model.poisonToken = invalidToken;
+      engine.submit(request(1, {7, 7, 7}));
+      engine.submit(request(2, {7, 7, 7}));
+      runUntilIdle(engine);
+      require(events.failedCount == 1,
+              "out-of-vocabulary model output did not fail the lane");
+      require(events.failures.size() == 1 &&
+                  events.failures[0] == "model_result_invalid",
+              "out-of-vocabulary failure carried the wrong code");
+      require(events.completedCount == 1,
+              "poisoned lane took down the rest of the batch");
+      require(events.outputs[1].empty() &&
+                  events.outputs[2] == std::vector<uint32_t>{42},
+              "out-of-vocabulary token reached the event sink");
+      require(events.usage.count(2) == 1,
+              "clean peer request did not complete");
+    }
+  }
 }
 
 void runUntilCheckpoint(engine::Engine &engine, uint64_t publications) {

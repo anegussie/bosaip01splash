@@ -1590,14 +1590,17 @@ void Engine::apply(const BatchPlan &plan,
       const auto outOfVocabulary = std::find_if(
           result.outputTokens.begin(), result.outputTokens.end(),
           [&](uint32_t token) { return token >= config_.vocabularySize; });
-      if (outOfVocabulary != result.outputTokens.end()) {
+      const bool invalidFirstToken =
+          result.firstToken && *result.firstToken >= config_.vocabularySize;
+      if (outOfVocabulary != result.outputTokens.end() || invalidFirstToken) {
         // A model that emits a token outside the vocabulary without reporting
         // it fails this lane the same way (the Qwen runtime reports its
         // non-finite rows itself).
         active.pendingEnd =
             LaneEnd{LaneOutcome::ModelResultInvalid,
                     "model emitted out-of-vocabulary token " +
-                        std::to_string(*outOfVocabulary)};
+                        std::to_string(invalidFirstToken ? *result.firstToken
+                                                        : *outOfVocabulary)};
       }
     }
     if (active.pendingEnd) {
