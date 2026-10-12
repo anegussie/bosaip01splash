@@ -1,0 +1,50 @@
+--- a/startllamacpp.sh
++++ b/startllamacpp.sh
+@@ -16,6 +16,7 @@
+ SPLASH_BONSAI_MAX_CACHE_DISK="${SPLASH_BONSAI_MAX_CACHE_DISK:-8G}"
+ SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT="${SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT:-60}"
+ SPLASH_BONSAI_PREFILL_CHUNK_TOKENS="${SPLASH_BONSAI_PREFILL_CHUNK_TOKENS:-512}"
++SPLASH_BONSAI_STATE_FORMAT="${SPLASH_BONSAI_STATE_FORMAT:-bf16}"
+ SPLASH_BONSAI_MAX_ACTIVE_REQUESTS="${SPLASH_BONSAI_MAX_ACTIVE_REQUESTS:-1}"
+ SPLASH_BONSAI_STARTUP_RETRY_DELAY="${SPLASH_BONSAI_STARTUP_RETRY_DELAY:-30}"
+ SPLASH_BONSAI_STARTUP_MAX_RETRIES="${SPLASH_BONSAI_STARTUP_MAX_RETRIES:-2}"
+@@ -151,7 +152,7 @@
+   echo "10) Qwen3.5 9B MLX 4-bit — MTP reasoning${mlx_status}${mlx_mtp_status}"
+   echo "   $((MLX_MTP_CONTEXT / 1024))K context | $((MLX_MTP_MAX_TOKENS / 1024))K output | reasoning on (no separate budget) | native MTP width ${MLX_MTP_DRAFT_BLOCK_SIZE} | Q4 KV | ${mlx_apc_status}"
+   echo "14) Ternary Bonsai 2 27B PTQ1_0 — Splash (downloads on first run)${splash_status}"
+-  echo "   ${SPLASH_BONSAI_MAX_CONTEXT} server / ${splash_client_context} OpenCode context | $((SPLASH_BONSAI_MAX_TOKENS / 1024))K output | INT8 KV | ${SPLASH_BONSAI_PREFILL_CHUNK_TOKENS}-token prefill chunks | ${SPLASH_BONSAI_MAX_CACHE_DISK} SSD cache | ${SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT}s resource wait"
++  echo "   ${SPLASH_BONSAI_MAX_CONTEXT} server / ${splash_client_context} OpenCode context | $((SPLASH_BONSAI_MAX_TOKENS / 1024))K output | INT8 KV | ${SPLASH_BONSAI_STATE_FORMAT} state | ${SPLASH_BONSAI_PREFILL_CHUNK_TOKENS}-token prefill chunks | ${SPLASH_BONSAI_MAX_CACHE_DISK} SSD cache | ${SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT}s resource wait"
+   echo "   Persistent prefix cache: ${SPLASH_BONSAI_PERSISTENT_CACHE} (1=keep across restarts, 0=temporary) | startup retries: ${SPLASH_BONSAI_STARTUP_MAX_RETRIES}"
+   echo "   Memory pressure monitor: Splash controls admission/recovery; 24K requires room for other apps"
+   echo "   Source: ${SPLASH_BONSAI_MODEL_ID}"
+@@ -1322,6 +1323,10 @@
+       echo "SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT must be 1-4294967295 seconds." >&2
+       exit 1
+     fi
++    case "$SPLASH_BONSAI_STATE_FORMAT" in
++      fp32|bf16) ;;
++      *) echo "SPLASH_BONSAI_STATE_FORMAT must be fp32 or bf16." >&2; exit 1 ;;
++    esac
+     if ! splash_uint_in_range "$SPLASH_BONSAI_PREFILL_CHUNK_TOKENS" 128 2048 ||
+        (( SPLASH_BONSAI_PREFILL_CHUNK_TOKENS % 128 != 0 )); then
+       echo "SPLASH_BONSAI_PREFILL_CHUNK_TOKENS must be a multiple of 128 in [128, 2048]." >&2
+@@ -1366,9 +1371,9 @@
+     sync_opencode_splash
+     printf 'Native inference concurrency: %s (FIFO queue across clients; no worker tool-call budget)\n' "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+     printf 'Memory safety: run ONE OpenCode job at a time; multiple chats create queue waits and memory replay. Close unused memory-heavy apps before long jobs.\n' | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+-    printf 'Launcher: model=%s alias=%s binary=%s server_context=%s client_context=%s output=%s reasoning=none kv=int8 prefill_chunk=%s cache_disk=%s cache_mode=%s resource_wait=%ss host=%s port=%s\n' \
++    printf 'Launcher: model=%s alias=%s binary=%s server_context=%s client_context=%s output=%s reasoning=none kv=int8 state=%s prefill_chunk=%s cache_disk=%s cache_mode=%s resource_wait=%ss host=%s port=%s\n' \
+       "$SPLASH_BONSAI_MODEL_ID" "$SPLASH_BONSAI_ALIAS" "$SPLASH_BIN" "$SPLASH_BONSAI_MAX_CONTEXT" \
+-      "$SPLASH_BONSAI_OPENCODE_CONTEXT" "$SPLASH_BONSAI_MAX_TOKENS" "$SPLASH_BONSAI_PREFILL_CHUNK_TOKENS" "$SPLASH_BONSAI_MAX_CACHE_DISK" "$splash_cache_mode" "$SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT" "$HOST" "$PORT" |
++      "$SPLASH_BONSAI_OPENCODE_CONTEXT" "$SPLASH_BONSAI_MAX_TOKENS" "$SPLASH_BONSAI_STATE_FORMAT" "$SPLASH_BONSAI_PREFILL_CHUNK_TOKENS" "$SPLASH_BONSAI_MAX_CACHE_DISK" "$splash_cache_mode" "$SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT" "$HOST" "$PORT" |
+       timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+     if [[ "$splash_cache_mode" == "persistent" ]]; then
+       printf 'Prefix cache kept across restarts: %s\n' "$SPLASH_BONSAI_CACHE_DIR" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+@@ -1401,6 +1406,7 @@
+         --language-only \
+         --default-reasoning-effort none \
+         --kv-format int8 \
++        --state-format "$SPLASH_BONSAI_STATE_FORMAT" \
+         --prefill-chunk-tokens "$SPLASH_BONSAI_PREFILL_CHUNK_TOKENS" \
+         --resource-wait-timeout "$SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT" \
+         --max-active-requests "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" \

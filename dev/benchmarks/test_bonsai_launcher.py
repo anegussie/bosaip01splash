@@ -93,6 +93,7 @@ print('Ready test server',flush=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertIn("--persistent-cache", args)
+        self.assertEqual(args[args.index("--state-format") + 1], "bf16")
         self.assertEqual(args[args.index("--max-context") + 1], "24K")
         self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "512")
         self.assertEqual(args[args.index("--max-cache-disk") + 1], "8589934592")
@@ -102,6 +103,17 @@ print('Ready test server',flush=True)
             {"context": 22528, "output": 1024},
         )
         self.assertEqual(config["compaction"]["keep"]["tokens"], 1536)
+
+    def test_state_and_chunk_overrides(self):
+        r = self.run_launcher(
+            SPLASH_BONSAI_STATE_FORMAT="fp32",
+            SPLASH_BONSAI_PREFILL_CHUNK_TOKENS="1024",
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--state-format") + 1], "fp32")
+        self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "1024")
+        self.assertIn("state=fp32 prefill_chunk=1024", r.stdout)
 
     def test_smaller_context_auto_sync(self):
         r = self.run_launcher(SPLASH_BONSAI_MAX_CONTEXT="4K")
@@ -142,6 +154,7 @@ print('Ready test server',flush=True)
                 "18446744073709551618",
             ],
             "SPLASH_BONSAI_PREFILL_CHUNK_TOKENS": ["129", "18446744073709551744"],
+            "SPLASH_BONSAI_STATE_FORMAT": ["fp16", "BF16", "auto"],
             "SPLASH_BONSAI_STARTUP_MAX_RETRIES": ["4", "-1"],
             "SPLASH_BONSAI_PERSISTENT_CACHE": ["2"],
             "SPLASH_BONSAI_MAX_CACHE_DISK": ["9G", "-1", "8GB"],
