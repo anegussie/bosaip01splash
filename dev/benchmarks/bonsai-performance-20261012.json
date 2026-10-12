@@ -1,0 +1,324 @@
+{
+  "commit": "e51378a29d45ee0f912c59a43c6307278bc3b159",
+  "settings": {
+    "kv": "int8",
+    "state": "fp32",
+    "context": 24576,
+    "prefill_chunk": 512,
+    "ane": false,
+    "draft": "DFlash2"
+  },
+  "model_root": "/Users/mymac/splash/splash/install/models/.resolved/c4d7ce6872a3c9423aa905720e5584f78b7ac7102321019eb3f3979b51b85c38",
+  "measurements": {
+    "merge_intervals_decode_tps": {
+      "median": 32.830579617803416,
+      "min": 27.878939319939743,
+      "max": 34.550314855739636,
+      "samples": [
+        34.550314855739636,
+        32.830579617803416,
+        27.878939319939743
+      ],
+      "spread_percent": 21.01003729524557
+    },
+    "stable_unique_decode_tps": {
+      "median": 29.228389989860997,
+      "min": 25.622571549607578,
+      "max": 31.989490386091823,
+      "samples": [
+        31.989490386091823,
+        29.228389989860997,
+        25.622571549607578
+      ],
+      "spread_percent": 21.995229280734165
+    },
+    "chunked_decode_tps": {
+      "median": 33.66591371555799,
+      "min": 29.128388976025093,
+      "max": 36.862439301031436,
+      "samples": [
+        36.862439301031436,
+        33.66591371555799,
+        29.128388976025093
+      ],
+      "spread_percent": 23.282068539566065
+    },
+    "cold_request_seconds": {
+      "median": 30.451602459186688,
+      "min": 28.448706958908588,
+      "max": 34.35424325009808,
+      "samples": [
+        28.448706958908588,
+        30.451602459186688,
+        34.35424325009808
+      ],
+      "spread_percent": 18.998116838976742
+    },
+    "cold_decode_tps": {
+      "median": 35.40357277949723,
+      "min": 31.619711395244728,
+      "max": 38.03911943042225,
+      "samples": [
+        38.03911943042225,
+        35.40357277949723,
+        31.619711395244728
+      ],
+      "spread_percent": 18.330271766774942
+    },
+    "cold_prefill_tps": {
+      "median": 176.24290970847326,
+      "min": 156.08479603271502,
+      "max": 188.56367479611745,
+      "samples": [
+        188.56367479611745,
+        176.24290970847326,
+        156.08479603271502
+      ],
+      "spread_percent": 18.705749400134103
+    },
+    "cached_request_seconds": {
+      "median": 3.0252522078808397,
+      "min": 2.6927029159851372,
+      "max": 3.794877250213176,
+      "samples": [
+        2.6927029159851372,
+        3.0252522078808397,
+        3.794877250213176
+      ],
+      "spread_percent": 34.75855426291152
+    },
+    "cached_decode_tps": {
+      "median": 34.669837314525495,
+      "min": 27.4853401875021,
+      "max": 39.413886466433055,
+      "samples": [
+        39.413886466433055,
+        34.669837314525495,
+        27.4853401875021
+      ],
+      "spread_percent": 35.232813455783216
+    }
+  },
+  "health": [
+    {
+      "name": "round-1-candidate",
+      "startup_seconds": 17.0011332500726,
+      "swap_before": "vm.swapusage: total = 4096.00M  used = 3109.19M  free = 986.81M  (encrypted)",
+      "swap_after": "vm.swapusage: total = 4096.00M  used = 3139.00M  free = 957.00M  (encrypted)",
+      "thermal_before": "nominal",
+      "thermal_after": "nominal",
+      "memory_pressure": "warning",
+      "fixed_runtime_bytes": 8914087040,
+      "memory_actual": {
+        "allocated_bytes": 8737533056,
+        "current_bytes": 8743223296,
+        "peak_bytes": 8743223296
+      },
+      "requests": {
+        "submitted": 5,
+        "completed": 5,
+        "cancelled": 0,
+        "failed": 0
+      },
+      "metal": {
+        "healthy": true,
+        "failure_reason": ""
+      },
+      "build_identity": {
+        "cache": {
+          "loaded_model_layout_sha256": "cc5e5bf572c2465b6e3c390f0d1484c004968cfb91c2f0a8de47ee8a6bb645f4",
+          "build_id": "src-499917bbc0f2805645ecb9d032afe2c5dd8f1138064ae968bbc39c24a2b0d4af",
+          "dtype": "q8s8_f32_scale_per_token_head_k_token_major_v_dimension_major",
+          "block_tokens": 32
+        },
+        "kv": {
+          "target_model_sha256": "dddaa4efb4d86f4b796247364fa6eeeae3ea16e5ea9389a1626b29f45de77d81",
+          "format": "int8",
+          "quantization": "symmetric_int8",
+          "scale_type": "float32",
+          "key_layout": "token_major",
+          "value_layout": "dimension_major"
+        }
+      }
+    },
+    {
+      "name": "round-2-candidate",
+      "startup_seconds": 10.99168866709806,
+      "swap_before": "vm.swapusage: total = 4096.00M  used = 3139.00M  free = 957.00M  (encrypted)",
+      "swap_after": "vm.swapusage: total = 4096.00M  used = 3131.00M  free = 965.00M  (encrypted)",
+      "thermal_before": "fair",
+      "thermal_after": "fair",
+      "memory_pressure": "warning",
+      "fixed_runtime_bytes": 8914087040,
+      "memory_actual": {
+        "allocated_bytes": 8737533056,
+        "current_bytes": 8743485440,
+        "peak_bytes": 8763015168
+      },
+      "requests": {
+        "submitted": 5,
+        "completed": 5,
+        "cancelled": 0,
+        "failed": 0
+      },
+      "metal": {
+        "healthy": true,
+        "failure_reason": ""
+      },
+      "build_identity": {
+        "cache": {
+          "loaded_model_layout_sha256": "cc5e5bf572c2465b6e3c390f0d1484c004968cfb91c2f0a8de47ee8a6bb645f4",
+          "build_id": "src-499917bbc0f2805645ecb9d032afe2c5dd8f1138064ae968bbc39c24a2b0d4af",
+          "dtype": "q8s8_f32_scale_per_token_head_k_token_major_v_dimension_major",
+          "block_tokens": 32
+        },
+        "kv": {
+          "target_model_sha256": "dddaa4efb4d86f4b796247364fa6eeeae3ea16e5ea9389a1626b29f45de77d81",
+          "format": "int8",
+          "quantization": "symmetric_int8",
+          "scale_type": "float32",
+          "key_layout": "token_major",
+          "value_layout": "dimension_major"
+        }
+      }
+    },
+    {
+      "name": "round-3-candidate",
+      "startup_seconds": 13.039517999859527,
+      "swap_before": "vm.swapusage: total = 4096.00M  used = 3131.00M  free = 965.00M  (encrypted)",
+      "swap_after": "vm.swapusage: total = 4096.00M  used = 3123.00M  free = 973.00M  (encrypted)",
+      "thermal_before": "fair",
+      "thermal_after": "fair",
+      "memory_pressure": "warning",
+      "fixed_runtime_bytes": 8914087040,
+      "memory_actual": {
+        "allocated_bytes": 8601218176,
+        "current_bytes": 8607432704,
+        "peak_bytes": 8959098880
+      },
+      "requests": {
+        "submitted": 5,
+        "completed": 5,
+        "cancelled": 0,
+        "failed": 0
+      },
+      "metal": {
+        "healthy": true,
+        "failure_reason": ""
+      },
+      "build_identity": {
+        "cache": {
+          "loaded_model_layout_sha256": "cc5e5bf572c2465b6e3c390f0d1484c004968cfb91c2f0a8de47ee8a6bb645f4",
+          "build_id": "src-499917bbc0f2805645ecb9d032afe2c5dd8f1138064ae968bbc39c24a2b0d4af",
+          "dtype": "q8s8_f32_scale_per_token_head_k_token_major_v_dimension_major",
+          "block_tokens": 32
+        },
+        "kv": {
+          "target_model_sha256": "dddaa4efb4d86f4b796247364fa6eeeae3ea16e5ea9389a1626b29f45de77d81",
+          "format": "int8",
+          "quantization": "symmetric_int8",
+          "scale_type": "float32",
+          "key_layout": "token_major",
+          "value_layout": "dimension_major"
+        }
+      }
+    }
+  ],
+  "correctness": {
+    "merge_intervals": {
+      "passed": true,
+      "outputs_equal": true,
+      "draft_acceptance": [
+        0.7142857142857143,
+        0.7142857142857143,
+        0.7142857142857143
+      ],
+      "prompt_tokens": [
+        3662,
+        3662,
+        3662
+      ],
+      "cached_tokens": [
+        0,
+        0,
+        0
+      ]
+    },
+    "stable_unique": {
+      "passed": true,
+      "outputs_equal": true,
+      "draft_acceptance": [
+        0.6607142857142857,
+        0.6607142857142857,
+        0.6607142857142857
+      ],
+      "prompt_tokens": [
+        3663,
+        3663,
+        3663
+      ],
+      "cached_tokens": [
+        0,
+        0,
+        0
+      ]
+    },
+    "chunked": {
+      "passed": true,
+      "outputs_equal": true,
+      "draft_acceptance": [
+        0.7857142857142857,
+        0.7857142857142857,
+        0.7857142857142857
+      ],
+      "prompt_tokens": [
+        3667,
+        3667,
+        3667
+      ],
+      "cached_tokens": [
+        3584,
+        3584,
+        3584
+      ]
+    },
+    "cold": {
+      "recall_passed": true,
+      "outputs_equal": true,
+      "prompt_tokens": [
+        4892,
+        4892,
+        4892
+      ],
+      "cached_tokens": [
+        0,
+        0,
+        0
+      ]
+    },
+    "cached": {
+      "recall_passed": true,
+      "outputs_equal": true,
+      "prompt_tokens": [
+        4892,
+        4892,
+        4892
+      ],
+      "cached_tokens": [
+        4864,
+        4864,
+        4864
+      ]
+    }
+  },
+  "model_sources": {
+    "draft": {
+      "repo": "incoai/Qwen3.8-27B-DFlash2",
+      "revision": "015e795645c74b1a0eeef3b570031fb62e769bc5"
+    },
+    "target": {
+      "repo": "prism-ml/Ternary-Bonsai-2-27B-gguf",
+      "revision": "b072e1d3b35a0a630cece372c2127528e0994386"
+    }
+  }
+}
