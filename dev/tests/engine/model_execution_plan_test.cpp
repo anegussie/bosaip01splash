@@ -79,7 +79,7 @@ void checkGateUpLayers() {
     device.appleGpuFamily = family;
     device.gpuCoreCount = 16;
     ops::ExecutionPlans plans(device);
-    const auto geometry = model::RuntimeGeometry::from(dense, kv::Format::Int8);
+    const auto geometry = model::RuntimeGeometry::from(dense, kv::Format::Int8, ops::GdnStateFormat::Float32);
     const auto head = target.logitsProjection.shape();
     const auto containsHead = [&](const auto &shapes) {
       return std::find(shapes.begin(), shapes.end(), head) != shapes.end();
@@ -166,15 +166,16 @@ void checkPrefillSharing(const model::LoadedModel &package) {
 }
 
 void checkPrefillChunkSizing(const model::LoadedModel &package) {
-  for (uint32_t family : {9U, 10U, 11U}) for (auto format : {kv::Format::Int8, kv::Format::BFloat16}) {
+  for (uint32_t family : {9U, 10U, 11U}) for (auto format : {kv::Format::Int8, kv::Format::BFloat16})
+      for (auto stateFormat : {ops::GdnStateFormat::Float32, ops::GdnStateFormat::BFloat16}) {
     DeviceCapabilities device;
     device.appleGpuFamily = family;
     device.gpuCoreCount = 8;
     ops::ExecutionPlans plans(device);
-    const auto maximum = model::RuntimeGeometry::from(package, format);
+    const auto maximum = model::RuntimeGeometry::from(package, format, stateFormat);
     const uint64_t maximumBytes = model::plannedPrefillBytes(maximum, plans);
     for (uint32_t chunk : {128U, 512U, 1024U, 2048U}) {
-      const auto geometry = model::RuntimeGeometry::from(package, format, chunk);
+      const auto geometry = model::RuntimeGeometry::from(package, format, stateFormat, chunk);
       const auto layout = model::planPrefillArena(geometry, plans);
       require(geometry.prefillChunkTokens == chunk &&
                   layout.workspaceBytes >= model::sharedDecodeWorkspaceBytes(geometry, plans) &&
@@ -257,8 +258,9 @@ void checkLaneScratch(const model::LoadedModel &package) {
 void checkUnsizedProjection() {
   auto broken = loadedModel<model::Qwen3_8Weights>();
   std::get<model::Qwen3_8Weights>(broken.target).layers.back().downProjection = ops::Projection();
-  rejects([&] { static_cast<void>(model::RuntimeGeometry::from(broken, kv::Format::Int8)); },
-          "invalid model runtime geometry", "a target projection without sizes reached arena sizing");
+  rejects([&] {
+    static_cast<void>(model::RuntimeGeometry::from(broken, kv::Format::Int8, ops::GdnStateFormat::Float32));
+  }, "invalid model runtime geometry", "a target projection without sizes reached arena sizing");
 }
 
 // The GDN value rows are sized with attentionWidth, so a layout whose value
@@ -270,7 +272,7 @@ void checkGdnWidths() {
   const auto sizeArenas = [&](const model::Qwen3_6MoeLayout &layout) {
     auto candidate = sparse;
     std::get<model::Qwen3_6MoeWeights>(candidate.target).layout = layout;
-    static_cast<void>(model::RuntimeGeometry::from(candidate, kv::Format::Int8));
+    static_cast<void>(model::RuntimeGeometry::from(candidate, kv::Format::Int8, ops::GdnStateFormat::Float32));
   };
   // The shipped sparse layout passes both checks.
   const model::Qwen3_6MoeLayout shipped;

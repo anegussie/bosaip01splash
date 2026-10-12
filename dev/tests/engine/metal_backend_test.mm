@@ -106,8 +106,7 @@ void prefillScratchLifetimes(const std::string &metallibPath, uint32_t chunk) {
         for (uint32_t i = 0; i < decodeTensorCount; ++i) {
             const auto tensor = DecodeTensor(i);
             if (!isSharedDecodeTensor(tensor)) continue;
-            const auto buffer = isGdnLayerTensor(tensor) ? decode.gdnStorage(tensor) :
-                isAttentionLayerTensor(tensor) ? decode.attentionBatchSlice(tensor, 0, kLaneCount) :
+            const auto buffer = isLayerMajorTensor(tensor) ? decode.attentionBatchSlice(tensor, 0, kLaneCount) :
                 decode.batchSlice(tensor, kLaneCount);
             borrowed.push_back(buffer);
             writeBuffer(buffer, 5000 + round * 100 + i);

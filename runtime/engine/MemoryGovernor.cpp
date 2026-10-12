@@ -186,13 +186,13 @@ MemoryGovernor::tryReserve(uint64_t bytes, metal::AllocationFailure &failure) {
   const bool hostRoomFits =
       requested <= hostRoom && hostRoom - requested >= kHostWarningMarginBytes;
   // A request that only the host headroom refuses waits for host memory
-  // while the idle headroom may still clear the margin. Hold host pressure
-  // so the paced reclaim frees toward the recovery margin for it.
+  // while the idle headroom may still clear the margin. Once a request waits,
+  // paced reclaim frees toward the recovery margin for it.
   if (engineFits && !starting_ && !serving_ && !hostRoomFits)
     host_.constrained = true;
   const bool hostRefuses = pressure == MemoryPressure::Critical ||
                            (starting_ ? requested > hostRoom
-                                    : !serving_ && (!hostRoomFits || host_.held()));
+                                      : !serving_ && (!hostRoomFits || growthHeld(host_)));
   if (hostRefuses || !engineFits) {
     // The host's refusal lifts with its pressure, the limit's only once
     // memory is freed: a refusal they share is the host's.
@@ -226,6 +226,10 @@ metal::AllocationAdmission MemoryGovernor::allocationAdmission() noexcept {
 
 void MemoryGovernor::setServing(bool serving) noexcept {
   serving_ = serving;
+}
+
+void MemoryGovernor::setRequestWaiting(bool waiting) noexcept {
+  requestWaiting_ = waiting;
 }
 
 void MemoryGovernor::setPressure(MemoryPressure pressure) noexcept {
@@ -262,7 +266,7 @@ MemoryGovernor::snapshot(const std::optional<uint64_t> &hostAvailable,
   uint64_t hostHeadroom = hostHeadroomBytes(hostAvailable, reservedBytes_);
   const MemoryPressure pressure = effectivePressure(host);
   bool hostGrowthAllowed = pressure != MemoryPressure::Critical &&
-      !host.held() && hostHeadroom >= kHostWarningMarginBytes;
+      !growthHeld(host) && hostHeadroom >= kHostWarningMarginBytes;
   return {
       limitBytes_,
       observed,
@@ -320,9 +324,6 @@ std::optional<MemoryReclaimDirective> MemoryPressurePolicy::update(
     return MemoryReclaimDirective{.critical = true};
   if (nowMilliseconds < nextReclaimMilliseconds_)
     return continued_.value_or(MemoryReclaimDirective{});
-  // The host samples every 500 ms. Allow counters to settle between batches,
-  // but keep responding if another application continues consuming memory.
-  nextReclaimMilliseconds_ = nowMilliseconds + 1000.0;
   continued_.reset();
 
   // Missing telemetry pauses allocation, but is not evidence that live
@@ -331,12 +332,22 @@ std::optional<MemoryReclaimDirective> MemoryPressurePolicy::update(
       snapshot.systemPressure == MemoryPressure::Normal)
     return MemoryReclaimDirective{};
 
-  uint64_t desired = snapshot.hostHeadroomBytes < kHostRecoveryMarginBytes
-      ? kHostRecoveryMarginBytes - snapshot.hostHeadroomBytes
-      : 0;
-  // Recovering the last stretch to the watermark is worth far less than the
-  // resume point it would otherwise discard, so a pass with nothing waiting
-  // keeps that publication and takes the rest. A waiting request outranks it.
+  // A pass a request waits for frees toward the recovery margin, where growth
+  // reopens (hostState). One that nothing waits for only restores the warning
+  // margin that growth leaves free: freeing on to the recovery margin would
+  // discard cache nothing needs, on every pass while the host's idle headroom
+  // stays below it. Such a pass also keeps the resume point, whose loss costs
+  // the next request a replay of its whole prompt; a waiting request outranks
+  // it.
+  const uint64_t margin = requestWaiting ? kHostRecoveryMarginBytes : kHostWarningMarginBytes;
+  const uint64_t desired =
+      snapshot.hostHeadroomBytes < margin ? margin - snapshot.hostHeadroomBytes : 0;
+  // The host samples every 500 ms. Allow counters to settle after a pass
+  // with a target, but keep responding if another application continues
+  // consuming memory. A pass with none leaves nothing to settle: a request
+  // that starts waiting gets its pass at once.
+  if (desired)
+    nextReclaimMilliseconds_ = nowMilliseconds + 1000.0;
   return MemoryReclaimDirective{
       .targetBytes = std::min(desired, kHostWarningMarginBytes),
       .keepResumePoint = !requestWaiting};

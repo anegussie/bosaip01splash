@@ -38,7 +38,8 @@ struct RuntimeGeometry final {
   uint32_t prefillChunkTokens = ExecutionLimits::prefillTokenBudget;
 
   [[nodiscard]] static RuntimeGeometry from(const LoadedModel &model,
-                                            kv::Format format,
+                                            kv::Format kvFormat,
+                                            ops::GdnStateFormat stateFormat,
                                             uint32_t prefillChunkTokens = ExecutionLimits::prefillTokenBudget) {
     if (!validPrefillChunkTokens(prefillChunkTokens))
       throw std::invalid_argument("prefill chunk must be a multiple of 128 tokens in [128, 2048]");
@@ -47,7 +48,8 @@ struct RuntimeGeometry final {
     result.target = std::visit(
         [](const auto &weights) { return qwenTargetGeometry(weights); },
         model.target);
-    result.target.kvLayout = model.targetKvLayout(format);
+    result.target.kvLayout = model.targetKvLayout(kvFormat);
+    result.target.stateLayout = model.stateLayout(stateFormat).target;
     result.draft = model.draft.layout;
     if (!result.target.valid() || !result.draft.stateLayout().valid() ||
         result.target.hiddenSize != result.draft.hiddenSize ||
@@ -56,6 +58,11 @@ struct RuntimeGeometry final {
       throw std::invalid_argument("invalid model runtime geometry");
     }
     return result;
+  }
+
+  [[nodiscard]] static RuntimeGeometry from(const LoadedModel &model, kv::Format format,
+                                            uint32_t chunk = ExecutionLimits::prefillTokenBudget) {
+    return from(model, format, ops::GdnStateFormat::Float32, chunk);
   }
 
   [[nodiscard]] uint32_t draftRotaryPairs() const noexcept {

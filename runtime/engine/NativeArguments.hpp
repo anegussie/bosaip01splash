@@ -30,6 +30,7 @@ struct NativeArguments final {
   // empty for temporary ones.
   std::filesystem::path persistentCacheRoot;
   kv::Format kvFormat = kv::Format::Int8;
+  ops::GdnStateFormat stateFormat = ops::GdnStateFormat::Float32;
   double decodeShare = EngineConfig{}.decodeShare;
   uint32_t resourceWaitTimeoutSeconds = 30;
   uint32_t prefillChunkTokens = model::ExecutionLimits::defaultPrefillChunkTokens;

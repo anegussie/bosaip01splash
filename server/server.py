@@ -1650,6 +1650,8 @@ def _native_command(args):
         command.extend(("--kv-format", args.kv_format))
     if args.prefill_chunk_tokens != serve_options.DEFAULT_PREFILL_CHUNK_TOKENS:
         command.extend(("--prefill-chunk-tokens", str(args.prefill_chunk_tokens)))
+    if args.state_format != "fp32":
+        command.extend(("--state-format", args.state_format))
     if args.idle_release is not None:
         command.extend(
             ("--idle-release", serve_options.idle_release_text(args.idle_release))

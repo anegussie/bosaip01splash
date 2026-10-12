@@ -86,6 +86,7 @@ struct RuntimeResourcesConfig {
   // Zero retains the automatic context bound; explicit contexts reduce
   // attention scratch to the histories serving can actually reach.
   uint32_t maximumContextTokens = 0;
+  ops::GdnStateFormat stateFormat = ops::GdnStateFormat::Float32;
   std::filesystem::path metallibPath;
   std::filesystem::path modelRoot;
   model::ModelDescriptor model;

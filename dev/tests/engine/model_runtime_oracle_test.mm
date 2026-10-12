@@ -372,8 +372,8 @@ void provideMask(model::Runtime &executor, uint64_t requestId,
                          rejected.value_or(""));
 }
 
-// The convolution and recurrent halves of a GDN cell, which hold BF16 and
-// FP32 values.
+// The convolution and recurrent halves of a GDN cell, which hold BF16 values
+// and the recurrent state's format (FP32 or BF16).
 metal::MetalBuffer convolutionHalf(const metal::MetalBackend &backend,
                                    const model::GdnParityBuffers &gdn,
                                    const model::GdnStateLayout &layout) {
@@ -411,10 +411,11 @@ StateSamples sampleCommittedState(const metal::MetalBackend &backend,
   };
   const auto &gdn = states.current(lane);
   const auto &target = states.layout().target;
+  const bool bfloatState = target.format == ops::GdnStateFormat::BFloat16;
   add("convolution", convolutionHalf(backend, gdn, target), true);
-  add("recurrent", recurrentHalf(backend, gdn, target), false);
+  add("recurrent", recurrentHalf(backend, gdn, target), bfloatState);
   add("first_convolution", gdn.convolutionLayers.front(), true);
-  add("first_recurrent", gdn.recurrentLayers.front(), false);
+  add("first_recurrent", gdn.recurrentLayers.front(), bfloatState);
   const auto &lengths = states.metadata(lane).lengths;
   const auto layout = states.layout().draft;
   constexpr uint32_t window = model::ExecutionLimits::draftContextTokens;
@@ -501,6 +502,7 @@ struct AllocationFault final {
 
 void requireAtomicImageAdmission(model::Runtime &executor,
                                  metal::MetalBackend &backend,
+                                 const model::QwenStateStorage &states,
                                  const model::LoadedModel &model,
                                  AllocationFault &fault) {
   const uint64_t originalBytes = backend.memoryStats().allocatedBytes;
@@ -521,7 +523,7 @@ void requireAtomicImageAdmission(model::Runtime &executor,
         span.pixelBytes() +
         uint64_t{ops::Vision::embeddingRows({span.gridHeight, span.gridWidth})} *
             model.vision.tensors.layout.outputHiddenSize * sizeof(uint16_t) +
-        model.stateLayout().laneBytes();
+        states.layout().laneBytes();
     fault.remainingBytes = attemptBytes - 1;
     const StateAdmission denied = executor.begin(image.modelView());
     const uint64_t unspent = fault.remainingBytes;
@@ -685,7 +687,7 @@ void requireImageRowsAfterReclaim(model::Runtime &executor,
   // must fit a fresh lane's state without recreating the reclaimed encoder.
   while (states.releaseOneIdle(false)) {
   }
-  const uint64_t stateBytes = model.stateLayout().laneBytes();
+  const uint64_t stateBytes = states.layout().laneBytes();
   const uint64_t beforeReuse = backend.memoryStats().allocatedBytes;
   request.id = 96;
   fault.remainingBytes = stateBytes;
@@ -876,8 +878,8 @@ void requireFullWindowRestore(model::Runtime &executor,
   std::cout << "full_window_restore=PASS\n";
 }
 
-// Fills every byte of a lane's GDN recurrent state, the FP32 half of the cell
-// its next transition reads, with 0xFF: NaN, which the recurrence carries into
+// Fills every byte of a lane's GDN recurrent state, the half of the cell its
+// next transition reads, with 0xFF: NaN in either format, which the recurrence carries into
 // every row the lane computes. Non-finite KV would not do: the paged-attention
 // tile of some GPU families gives non-finite keys and values zero weight.
 void poisonRecurrentState(const metal::MetalBackend &backend,
@@ -887,23 +889,41 @@ void poisonRecurrentState(const metal::MetalBackend &backend,
   std::memset(recurrent.contents(), 0xFF, recurrent.sizeBytes());
 }
 
-// Zeroes the pages: a lane computing from a NaN state writes NaN keys and
-// values there, which the checks that follow must not find.
-void clearPages(const kv::PageStorage &pages, std::span<const uint32_t> ids) {
-  for (const uint32_t page : ids)
-    for (const std::span<std::byte> bytes : pages.spans(page))
-      std::ranges::fill(bytes, std::byte{0});
+
+// Whether a lane's draft rings hold a BF16 value that is not finite, or
+// hold nothing but zero bytes.
+bool ringsHoldNonFinite(const model::QwenStateStorage &states, uint32_t lane) {
+  for (const model::DFlashDraftRingLayer &layer : states.draft(lane))
+    for (const metal::MetalBuffer *tensor : {&layer.keys, &layer.values}) {
+      const auto *bits = static_cast<const uint16_t *>(tensor->contents());
+      for (uint64_t index = 0; index < tensor->sizeBytes() / sizeof(uint16_t); ++index)
+        if ((bits[index] & 0x7F80) == 0x7F80)
+          return true;
+    }
+  return false;
 }
 
-// A request whose own state is non-finite selects outside the vocabulary,
-// which the runtime reports as that lane's failure instead of throwing: in a
-// decode beside a healthy lane, which commits and keeps decoding, at the end
-// of a prefill, and in a constrained request's first selection from its final
-// hidden. The failed lanes emit nothing and the backend stays healthy. The
+bool ringsAreClear(const model::QwenStateStorage &states, uint32_t lane) {
+  for (const model::DFlashDraftRingLayer &layer : states.draft(lane))
+    for (const metal::MetalBuffer *tensor : {&layer.keys, &layer.values}) {
+      const auto *bytes = static_cast<const std::byte *>(tensor->contents());
+      if (std::any_of(bytes, bytes + tensor->sizeBytes(),
+                      [](std::byte value) { return value != std::byte{0}; }))
+        return false;
+    }
+  return true;
+}
+
+// A request whose own state is non-finite fails its lane instead of throwing:
+// in a decode beside a healthy lane, which commits and keeps decoding, it
+// selects outside the vocabulary; in a prefill chunk, the end of its prompt
+// or not, and a constrained prompt's last chunk among them, its last row is
+// not finite. The failed lanes emit nothing and the backend stays healthy. The
 // GDN cells they return to the pool are cleared or overwritten before a lane
-// reads them again.
+// reads them again, and their draft rings, where the failed cycle left rows
+// that are not finite, come back cleared.
 void requireNonFiniteRowFailsOnlyItsLane(model::Runtime &executor,
-                                         const kv::PageStorage &pages,
+                                         kv::PageStorage &pages,
                                          const model::QwenStateStorage &states,
                                          const metal::MetalBackend &backend,
                                          std::span<const uint32_t> chat,
@@ -941,14 +961,21 @@ void requireNonFiniteRowFailsOnlyItsLane(model::Runtime &executor,
   require(decoded[1].failure.empty() && !decoded[1].outputTokens.empty() &&
               !decoded[1].finished && inVocabulary(decoded[1]),
           "a non-finite lane disturbed its healthy neighbour");
+  require(ringsHoldNonFinite(states, 0),
+          "the failed decode left no row that is not finite in its draft rings");
   executor.end(201);
+  // The next start takes the rings the failed lane returned last.
+  beginCold(executor, makeRequest(210, prompt40, 16), 0);
+  require(ringsAreClear(states, 0),
+          "the failed lane's draft rings came back with what it left in them");
+  executor.end(210);
   const ModelStepResult continued =
       decodeOne(executor, 202, 40 + decoded[1].outputTokens.size(), pagesB);
   require(continued.failure.empty() && !continued.outputTokens.empty() &&
               inVocabulary(continued),
           "the healthy lane did not keep decoding after its neighbour failed");
   executor.end(202);
-  clearPages(pages, pagesA);
+  pages.clearPages(pagesA);
 
   beginCold(executor, makeRequest(203, prompt80, 16), 0);
   prefillChunk(executor, 203, 0, std::span(prompt80).first(64), pagesC);
@@ -958,25 +985,31 @@ void requireNonFiniteRowFailsOnlyItsLane(model::Runtime &executor,
   require(!prefilled.failure.empty() && prefilled.outputTokens.empty(),
           "a prefill from a non-finite state did not fail its lane");
   executor.end(203);
-  clearPages(pages, pagesC);
+  pages.clearPages(pagesC);
+
+  // A chunk inside the prompt computes no logits; its last row finds the
+  // state that is not finite all the same.
+  beginCold(executor, makeRequest(205, prompt80, 16), 0);
+  prefillChunk(executor, 205, 0, std::span(prompt80).first(32), pagesC);
+  poisonRecurrentState(backend, states, 0);
+  require(!prefillChunk(executor, 205, 32, std::span(prompt80).subspan(32, 32), pagesC)
+               .failure.empty(),
+          "a prefill chunk inside the prompt from a non-finite state did not fail its lane");
+  executor.end(205);
+  pages.clearPages(pagesC);
 
   EngineRequest constrained = makeRequest(204, prompt80, 16);
   constrained.constraint = ConstraintMode::TokenMask;
   beginCold(executor, constrained, 0);
   prefillChunk(executor, 204, 0, std::span(prompt80).first(64), pagesC);
   poisonRecurrentState(backend, states, 0);
-  require(prefillChunk(executor, 204, 64, std::span(prompt80).subspan(64),
-                       pagesC)
-                  .nextDecodeStage == DecodeStage::ApplyInitialMask,
-          "the non-finite constrained fixture did not ask for its first mask");
-  provideMask(executor, 204, std::vector<uint32_t>(kMaskWords, 0xFFFFFFFFU));
-  const ModelStepResult selected =
-      decodeOne(executor, 204, 80, pagesC, true,
-                DecodeStage::ApplyInitialMask);
-  require(!selected.failure.empty() && selected.outputTokens.empty(),
-          "a constrained selection from a non-finite hidden did not fail its lane");
+  const ModelStepResult constrainedEnd =
+      prefillChunk(executor, 204, 64, std::span(prompt80).subspan(64), pagesC);
+  require(!constrainedEnd.failure.empty() &&
+              constrainedEnd.nextDecodeStage != DecodeStage::ApplyInitialMask,
+          "a constrained prompt's last chunk from a non-finite state asked for its first mask");
   executor.end(204);
-  clearPages(pages, pagesC);
+  pages.clearPages(pagesC);
   require(backend.healthy(), "a non-finite lane made the backend unhealthy");
   std::cout << "non_finite_rows=PASS\n";
 }
@@ -1038,6 +1071,80 @@ void requireConcurrentRequestsShareOneEncode(model::Runtime &executor,
   require(backend.memoryStats().allocatedBytes == originalBytes,
           "shared image rows leaked resources");
   std::cout << "concurrent_image_requests_share_one_encode=PASS\n";
+}
+
+// A lane whose chunk is not finite commits nothing of the images its
+// command encoded for it: a request that shares the rows but was not in the
+// command encodes the image again. Rows a finite lane of the same command
+// injected stay encoded, and the next request with the image reuses them.
+void requireNonFiniteChunkLeavesItsImageToEncode(model::Runtime &executor,
+                                                 kv::PageStorage &pages,
+                                                 const model::QwenStateStorage &states,
+                                                 const metal::MetalBackend &backend) {
+  // Each part has an image of its own: the first leaves its image cached.
+  const ImageSpan span{16, 16, 8, 8, 167, 449};
+  const ImageSpan other{16, 16, 8, 8, 173, 457};
+  const std::vector<uint32_t> tableA = pageRange(116, 4);
+  const std::vector<uint32_t> tableB = pageRange(120, 4);
+  {
+    const EngineRequest failing = imageRequest(130, span);
+    EngineRequest sharing = failing;
+    sharing.id = 131;
+    const uint64_t encodes = executor.telemetry().imageEncodes;
+    beginCold(executor, failing, 0);
+    beginCold(executor, sharing, 1);
+    prefillChunk(executor, 130, 0, std::span(failing.prompt).first(16), tableA);
+    poisonRecurrentState(backend, states, 0);
+    require(!prefillChunk(executor, 130, 16, std::span(failing.prompt).subspan(16), tableA)
+                 .failure.empty() &&
+                executor.telemetry().imageEncodes == encodes + 1,
+            "the chunk that encoded the image did not fail its lane");
+    executor.end(130);
+    pages.clearPages(tableA);
+    require(prefillChunk(executor, 131, 0, sharing.prompt, tableB).failure.empty() &&
+                executor.telemetry().imageEncodes == encodes + 2,
+            "a request sharing the image a failed chunk encoded did not encode it again");
+    executor.end(131);
+    pages.clearPages(tableB);
+  }
+  {
+    const EngineRequest failing = imageRequest(132, other);
+    EngineRequest finite = failing;
+    finite.id = 133;
+    EngineRequest next = failing;
+    next.id = 134;
+    beginCold(executor, failing, 0);
+    beginCold(executor, finite, 1);
+    prefillChunk(executor, 132, 0, std::span(failing.prompt).first(16), tableA);
+    prefillChunk(executor, 133, 0, std::span(finite.prompt).first(16), tableB);
+    poisonRecurrentState(backend, states, 0);
+    BatchPlan plan{.kind = WorkKind::Prefill,
+                   .items = {{132, 48}, {133, 48}},
+                   .decodeStage = DecodeStage::Regular};
+    std::array items{
+        withRevision({.requestId = 132, .logicalPosition = 16, .tokenCount = 48,
+                      .pageTable = tableA}),
+        withRevision({.requestId = 133, .logicalPosition = 16, .tokenCount = 48,
+                      .pageTable = tableB})};
+    items[0].inputTokens = std::span(failing.prompt).subspan(16);
+    items[1].inputTokens = std::span(finite.prompt).subspan(16);
+    const uint64_t encodes = executor.telemetry().imageEncodes;
+    const std::vector<ModelStepResult> results = executor.prefill(plan, items);
+    require(results.size() == 2 && !results[0].failure.empty() && results[1].failure.empty() &&
+                executor.telemetry().imageEncodes == encodes + 1,
+            "one command did not encode the image once and fail the poisoned lane alone");
+    executor.end(132);
+    executor.end(133);
+    pages.clearPages(tableA);
+    pages.clearPages(tableB);
+    beginCold(executor, next, 0);
+    require(prefillChunk(executor, 134, 0, next.prompt, tableA).failure.empty() &&
+                executor.telemetry().imageEncodes == encodes + 1,
+            "the image a finite lane injected beside a failed one was encoded again");
+    executor.end(134);
+    pages.clearPages(tableA);
+  }
+  std::cout << "non_finite_chunk_leaves_its_image_to_encode=PASS\n";
 }
 
 // A lane suspended inside its image keeps the encoded rows for its resume:
@@ -1108,7 +1215,7 @@ void requireInjectedRowsBecomeReclaimable(model::Runtime &executor,
 // refused; one at it continues past the image without encoding it.
 void requireCoveredImagesAreNotStaged(model::Runtime &executor,
                                       metal::MetalBackend &backend,
-                                      const model::LoadedModel &model) {
+                                      const model::QwenStateStorage &states) {
   while (executor.reclaimIdleState(false, IdleMemory::BuffersThenCaches)) {
   }
   const uint64_t originalBytes = backend.memoryStats().allocatedBytes;
@@ -1148,7 +1255,7 @@ void requireCoveredImagesAreNotStaged(model::Runtime &executor,
     require(admission.granted() && !started.imageRowsBytes && !started.visionArenaBytes &&
                 started.imageEmbeddingReuses == reuses &&
                 backend.memoryStats().allocatedBytes ==
-                    before + model.stateLayout().laneBytes(),
+                    before + states.layout().laneBytes(),
             "a start staged an image its restored prefix covers");
     if (id == 115) {
       rejects([&] { static_cast<void>(executor.beginRestore(id, 32, beforeImage, true, {})); },
@@ -1180,12 +1287,13 @@ void requireCoveredImagesAreNotStaged(model::Runtime &executor,
 // the refused attempt did.
 void requireRefusedStartKeepsItsRows(model::Runtime &executor,
                                      metal::MetalBackend &backend,
+                                     const model::QwenStateStorage &states,
                                      const model::LoadedModel &model,
                                      AllocationFault &fault) {
   while (executor.reclaimIdleState(false, IdleMemory::BuffersThenCaches)) {
   }
   const uint64_t originalBytes = backend.memoryStats().allocatedBytes;
-  const uint64_t laneBytes = model.stateLayout().laneBytes();
+  const uint64_t laneBytes = states.layout().laneBytes();
   const auto imageBytes = [&](const ImageSpan &span) {
     return span.pixelBytes() +
            uint64_t{ops::Vision::embeddingRows({span.gridHeight, span.gridWidth})} *
@@ -1498,13 +1606,14 @@ int main(int argc, char **argv) {
     bool imagesOnly = false, warmupEosOnly = false, fullWindowRestoreOnly = false;
     uint32_t prefillChunkTokens = model::ExecutionLimits::prefillTokenBudget;
     kv::Format format = kv::Format::Int8;
+    ops::GdnStateFormat stateFormat = ops::GdnStateFormat::Float32;
     std::optional<double> givenAneFfnShare;
     // The evaluation of the split's program that fails, counted from 1 as
     // ane::ProgramInstrumentation counts them; 0 for none.
     uint64_t aneFfnFault = 0;
     if (argc < 3)
-      fail("usage: model-runtime-oracle METALLIB MODEL_ROOT [--kv-format int8|bf16] [--ane-ffn-share SHARE] "
-           "[--ane-ffn-fault EVALUATION] [--full-window-restore-only --prefill-chunk-tokens ROWS]");
+      fail("usage: model-runtime-oracle METALLIB MODEL_ROOT [--kv-format int8|bf16] [--state-format fp32|bf16] "
+           "[--ane-ffn-share SHARE] [--ane-ffn-fault EVALUATION] [--full-window-restore-only --prefill-chunk-tokens ROWS]");
     for (int i = 3; i < argc; ++i) {
       const std::string_view option(argv[i]);
       if (option == "--images-only") imagesOnly = true;
@@ -1523,6 +1632,10 @@ int main(int argc, char **argv) {
         const std::string_view value(argv[++i]);
         if (value != "int8" && value != "bf16") fail("invalid KV format");
         format = value == "int8" ? kv::Format::Int8 : kv::Format::BFloat16;
+      } else if (option == "--state-format" && i + 1 < argc) {
+        const std::string_view value(argv[++i]);
+        if (value != "fp32" && value != "bf16") fail("invalid state format");
+        stateFormat = value == "fp32" ? ops::GdnStateFormat::Float32 : ops::GdnStateFormat::BFloat16;
       } else if (option == "--ane-ffn-share" && i + 1 < argc) {
         const char *value = argv[++i];
         char *end = nullptr;
@@ -1566,7 +1679,7 @@ int main(int argc, char **argv) {
     ops::ExecutionPlans operators(backend.capabilities(), fullWindowRestoreOnly
         ? 2 * model::ExecutionLimits::draftContextTokens : kv::kMaximumLogicalTokens);
     model::ModelMemoryPlan executorPlan =
-        model::plannedRuntimeMemory(model, operators, format, prefillChunkTokens);
+        model::plannedRuntimeMemory(model, operators, format, stateFormat, prefillChunkTokens);
     // The memory plan with `aneFfnBytes` set aside for the prefill FFN's
     // Neural Engine split.
     const auto planMemory = [&](uint64_t aneFfnBytes) {
@@ -1577,7 +1690,7 @@ int main(int argc, char **argv) {
           executorPlan, 0, aneFfnBytes};
       ModelMemoryProfile profile{
           model.name(), model.maximumContextTokens(),
-          model.targetKvLayout(format), footprint};
+          model.targetKvLayout(format), footprint, stateFormat};
       return evaluateEngineMemoryPlan(backend.capabilities(), profile, 0);
     };
 
@@ -1683,7 +1796,7 @@ int main(int argc, char **argv) {
               "oracle KV extent is unavailable");
     model::QwenStateStorage states(backend,
                                     admission,
-                                    model.stateLayout(), nullptr);
+                                    model.stateLayout(stateFormat), nullptr);
     model::RuntimeContext context{backend, model, pages, states, operators,
                                   prefillChunkTokens, aneFfn.get()};
     require(executorPlan.sharedDecodePlannedAllocatedBytes <=
@@ -1734,14 +1847,15 @@ int main(int argc, char **argv) {
     // The engine refuses image requests to a model without vision before they
     // reach the runtime, which treats one as a broken invariant.
     if (model.descriptor.hasVision()) {
-      requireAtomicImageAdmission(executor, backend, model, allocationFault);
+      requireAtomicImageAdmission(executor, backend, states, model, allocationFault);
       requireImageRowsAfterReclaim(executor, backend, states, model, allocationFault);
       requireRepeatedImagePlacements(executor, backend, states, allocationFault);
       requireConcurrentRequestsShareOneEncode(executor, backend);
+      requireNonFiniteChunkLeavesItsImageToEncode(executor, pages, states, backend);
       requireSuspendedLaneKeepsItsRows(executor, backend);
       requireInjectedRowsBecomeReclaimable(executor, backend);
-      requireCoveredImagesAreNotStaged(executor, backend, model);
-      requireRefusedStartKeepsItsRows(executor, backend, model, allocationFault);
+      requireCoveredImagesAreNotStaged(executor, backend, states);
+      requireRefusedStartKeepsItsRows(executor, backend, states, model, allocationFault);
       requireReclaimTakesOneCacheUnit(executor, backend, model);
       requireEncoderFitsItsImages(executor, backend, model, allocationFault);
       requireReplayPointKeepsItsImageRows(executor, backend);
@@ -1752,7 +1866,8 @@ int main(int argc, char **argv) {
     if (imagesOnly) {
       std::cout << "PASS model-runtime-oracle scope=images-only model=" << model.name()
                 << " (admission rollback, chunk reclaim, cache-only budget, mixed/repeated images,"
-                   " shared, suspended and injected rows, covered images, refused starts,"
+                   " shared, suspended and injected rows, rows a failed chunk encoded,"
+                   " covered images, refused starts,"
                    " one cache unit per reclaim, replay point rows)\n";
       return 0;
     }
@@ -1781,7 +1896,7 @@ int main(int argc, char **argv) {
             "prefill state length mismatch");
 
     const uint64_t predictedPromptSnapshotBytes =
-        model.stateLayout().cachedBytes();
+        states.layout().cachedBytes();
     std::shared_ptr<const CompositeState> promptSnapshot =
         executor.snapshot(1);
     require(promptSnapshot != nullptr,
@@ -1872,7 +1987,11 @@ int main(int argc, char **argv) {
 
     // Compare the active GDN state from one 16-row chunk and two M8 commits
     // within the numerical tolerance below. Their next-token decisions are
-    // diagnostic because the command partitions round differently.
+    // diagnostic because the command partitions round differently. A BF16
+    // state is also rounded where the first commit stores it, which the rows
+    // after it carry through the model, and a mixture of experts amplifies
+    // (convolution cosine 0.998 on the 35B): its bound is looser, and the FP32
+    // run holds the partition itself to the tight one.
     const std::vector<uint32_t> prompt16{
         248045, 8678, 198,   24342, 286,  4879, 369,   716,
         310,    830,  11553, 13,    5044, 1683, 15060, 1472};
@@ -1898,12 +2017,14 @@ int main(int argc, char **argv) {
                 baselineMetadata.lengths.targetTokens == prompt16.size(),
             "partitioned prefill logical state diverged");
     const model::GdnStateLayout &gdnLayout = states.layout().target;
+    const bool bfloatState = gdnLayout.format == ops::GdnStateFormat::BFloat16;
     const Similarity convolution =
         compareBfloat(convolutionHalf(backend, states.current(2), gdnLayout),
                       convolutionHalf(backend, states.current(3), gdnLayout));
-    const Similarity recurrent =
-        compareFloat(recurrentHalf(backend, states.current(2), gdnLayout),
-                     recurrentHalf(backend, states.current(3), gdnLayout));
+    const metal::MetalBuffer baselineRecurrent = recurrentHalf(backend, states.current(2), gdnLayout),
+                             partitionedRecurrent = recurrentHalf(backend, states.current(3), gdnLayout);
+    const Similarity recurrent = bfloatState ? compareBfloat(baselineRecurrent, partitionedRecurrent)
+                                             : compareFloat(baselineRecurrent, partitionedRecurrent);
     std::cout
         << "partition_equivalence conv_cos=" << convolution.cosine
         << " parity=" << baselineMetadata.activeParity << '/'
@@ -1916,7 +2037,8 @@ int main(int argc, char **argv) {
         << " recurrent_cos=" << recurrent.cosine
         << " recurrent_norms=" << recurrent.leftNorm << '/'
         << recurrent.rightNorm << '\n';
-    require(convolution.cosine > 0.999 && recurrent.cosine > 0.999,
+    const double bound = bfloatState ? 0.99 : 0.999;
+    require(convolution.cosine > bound && recurrent.cosine > bound,
             "partitioned prefill numerical state diverged");
 
     ModelStepResult baselinePending =
@@ -1959,39 +2081,58 @@ int main(int argc, char **argv) {
     require(partitionedSamplingSnapshot != nullptr,
             "partitioned sampling snapshot allocation failed");
     executor.end(54);
+    // The restore copies the target state exactly, so after the replayed
+    // token the restored lane and a cold lane hold the same GDN cell and
+    // select the same anchor. Their draft rings differ: a cached state keeps
+    // the 4-bit context window, from which the restore computes them again,
+    // and a sampled cycle draws a rejected proposal's correction from the
+    // target's distribution less the draft's, so the cycle's later tokens
+    // may differ.
     EngineRequest restoredMicroSampling =
         makeRequest(55, policyReplayPrompt, 2);
     restoredMicroSampling.sampling = partitionedSampling.sampling;
     beginCold(executor, restoredMicroSampling, 0);
     restoreActivePrefix(executor, 55, policyReplayPrompt.size(),
                         promptAligned.size(), partitionedSamplingSnapshot);
-    ModelStepResult restoredMicroSample = firstStep(
-        executor,
-        prefillChunk(executor, 55, promptAligned.size(),
-                     std::span<const uint32_t>(policyReplayPrompt).subspan(128,
-                                                                          1),
-                     policyPages),
-        55, policyReplayPrompt.size(), policyPages);
-    executor.end(55);
+    ModelStepResult restoredReplay = prefillChunk(
+        executor, 55, promptAligned.size(),
+        std::span<const uint32_t>(policyReplayPrompt).subspan(128, 1),
+        policyPages);
     const std::vector<uint32_t> coldPolicyPages = pageRange(15, 5);
     EngineRequest coldMicroSampling = restoredMicroSampling;
     coldMicroSampling.id = 57;
-    beginCold(executor, coldMicroSampling, 0);
+    beginCold(executor, coldMicroSampling, 1);
     prefillChunk(executor, 57, 0,
                  std::span<const uint32_t>(policyReplayPrompt).first(120),
                  coldPolicyPages);
     prefillChunk(executor, 57, 120,
                  std::span<const uint32_t>(policyReplayPrompt).subspan(120, 8),
                  coldPolicyPages);
-    ModelStepResult coldMicroSample = firstStep(
-        executor,
-        prefillChunk(executor, 57, 128,
-                     std::span<const uint32_t>(policyReplayPrompt).subspan(128,
-                                                                          1),
-                     coldPolicyPages),
-        57, policyReplayPrompt.size(), coldPolicyPages);
-    require(restoredMicroSample.outputTokens == coldMicroSample.outputTokens,
-            "one-token recurrent restore replay diverged from cold prefill");
+    ModelStepResult coldReplay = prefillChunk(
+        executor, 57, 128,
+        std::span<const uint32_t>(policyReplayPrompt).subspan(128, 1),
+        coldPolicyPages);
+    const metal::MetalBuffer &restoredCell = states.current(0).stateBase;
+    const metal::MetalBuffer &coldCell = states.current(1).stateBase;
+    require(restoredCell.sizeBytes() == coldCell.sizeBytes() &&
+                restoredCell.contents() && coldCell.contents() &&
+                std::memcmp(restoredCell.contents(), coldCell.contents(),
+                            restoredCell.sizeBytes()) == 0,
+            "one-token recurrent restore replay left another GDN state than "
+            "cold prefill");
+    const ModelStepResult restoredMicroSample = firstStep(
+        executor, std::move(restoredReplay), 55, policyReplayPrompt.size(),
+        policyPages);
+    const ModelStepResult coldMicroSample = firstStep(
+        executor, std::move(coldReplay), 57, policyReplayPrompt.size(),
+        coldPolicyPages);
+    require(!restoredMicroSample.outputTokens.empty() &&
+                !coldMicroSample.outputTokens.empty() &&
+                restoredMicroSample.outputTokens.front() ==
+                    coldMicroSample.outputTokens.front(),
+            "one-token recurrent restore replay selected another anchor than "
+            "cold prefill");
+    executor.end(55);
     executor.end(57);
     partitionedSamplingSnapshot.reset();
 

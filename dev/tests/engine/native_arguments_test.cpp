@@ -122,6 +122,8 @@ void testServerCommandLines(const char *path) {
          read.maxCacheDiskBytes = 5 * kGiB;
          read.kvFormat = kv::Format::BFloat16;
        }},
+      {"state_bf16",
+       [](NativeArguments &read) { read.stateFormat = ops::GdnStateFormat::BFloat16; }},
       {"idle_release", [](NativeArguments &read) { read.idleReleaseSeconds = 1800.0; }},
       {"idle_release_off",
        [](NativeArguments &read) {
@@ -148,7 +150,8 @@ void testServerCommandLines(const char *path) {
            read.maxMemoryBytes == meant.maxMemoryBytes &&
            read.maxCacheDiskBytes == meant.maxCacheDiskBytes &&
            read.persistentCacheRoot == meant.persistentCacheRoot &&
-           read.kvFormat == meant.kvFormat && read.decodeShare == meant.decodeShare &&
+           read.kvFormat == meant.kvFormat && read.stateFormat == meant.stateFormat &&
+           read.decodeShare == meant.decodeShare &&
            read.prefillChunkTokens == meant.prefillChunkTokens &&
            read.resourceWaitTimeoutSeconds == meant.resourceWaitTimeoutSeconds &&
            read.maxImagePatches == meant.maxImagePatches &&
@@ -198,6 +201,9 @@ void testRefusals() {
             "--resource-wait-timeout requires a positive integer in seconds");
   // An option's missing value fails its check.
   refuses({"auto", "auto", "--kv-format"}, "--kv-format requires int8 or bf16");
+  refuses({"auto", "auto", "--state-format", "fp16"},
+          "--state-format requires fp32 or bf16");
+  refuses({"auto", "auto", "--state-format"}, "--state-format requires fp32 or bf16");
   for (const char *share : {"-1", "nan", "inf", "half"})
     refuses({"auto", "auto", "--decode-share", share},
             "--decode-share requires a nonnegative number");

@@ -342,6 +342,54 @@ void testGenerationPromptBoundsTheReplayState() {
           "the replay state did not end before the generation prompt");
 }
 
+// A request's cache salt reaches the engine: the same prompt under another
+// salt starts cold and under its own salt resumes. A Done event reports the
+// tokens a request read from blocks another request computed, and a salt no
+// other request uses reads none.
+void testCacheSaltAndDeduplicationCrossTheWire() {
+  engine::NativeLoopConfig config;
+  config.engine.maxContext = 1024;
+  LoopFixture fixture(config);
+  engine::NativeRuntime &loop = fixture.loop;
+  fixture.clockStep = 0.25;
+  loop.announceReady();
+  const auto send = [&](protocol::RequestFrame input) {
+    require(loop.receive(protocol::peer::serialize(input)), "salted request wire failed");
+    runUntilIdle(loop);
+  };
+  for (const auto &[id, salt] : {std::pair<uint64_t, uint64_t>{1, 7}, {2, 8}, {3, 7}}) {
+    auto input = request(id);
+    input.cacheSalt = {salt, 0};
+    send(input);
+  }
+  // An unsalted longer prompt, then two with its first three blocks' tokens
+  // and no state there: one unsalted, one under a salt no other request uses.
+  auto longer = request(4, 8);
+  longer.promptTokens.resize(129);
+  for (uint32_t i = 0; i < longer.promptTokens.size(); ++i)
+    longer.promptTokens[i] = 1000 + i;
+  send(longer);
+  for (const auto &[id, salt] : {std::pair<uint64_t, uint64_t>{5, 0}, {6, 99}}) {
+    auto branch = longer;
+    branch.requestId = id;
+    branch.cacheSalt = {salt, 0};
+    std::fill(branch.promptTokens.begin() + 100, branch.promptTokens.end(), 7);
+    send(branch);
+  }
+  std::unordered_map<uint64_t, uint32_t> matched, deduplicated;
+  for (const auto &message : fixture.events()) {
+    if (const auto *start = std::get_if<protocol::StartEvent>(&message))
+      matched[start->requestId] = start->matchedPromptTokens;
+    if (const auto *done = std::get_if<protocol::DoneEvent>(&message))
+      deduplicated[done->requestId] = done->deduplicatedTokens;
+  }
+  require(matched.at(1) == 0 && matched.at(2) == 0 && matched.at(3) > 0,
+          "a request's cache salt did not reach the engine");
+  require(matched.at(5) == 0 && deduplicated.at(5) > 0 && matched.at(6) == 0 &&
+              deduplicated.at(6) == 0,
+          "a Done event did not carry the tokens read from another request's blocks");
+}
+
 // A request's flags reach the model with the rest of its request.
 void testRequestFlagsReachTheModel() {
   engine::NativeLoopConfig config;
@@ -1273,9 +1321,10 @@ void testConstrainedMaskExchange() {
 }
 
 // Between commands the control pass runs what the host's pressure asks for:
-// a paced pass toward the recovery margin, which keeps the resume point and
-// the empty runway extent; nothing once the host recovers; and under critical
-// pressure every cache entry and extent. None waits for a transfer.
+// with nothing waiting, a paced pass toward the warning margin, which keeps
+// the resume point and the empty runway extent, and nothing past it; nothing
+// once the host recovers; and under critical pressure every cache entry and
+// extent. None waits for a transfer.
 void testControlPassReclaimsUnderHostPressure() {
   engine::NativeLoopConfig config;
   config.engine.maxContext = 1024;
@@ -1310,13 +1359,28 @@ void testControlPassReclaimsUnderHostPressure() {
           "host pressure did not evict toward its target, keeping the resume "
           "point and the runway extent");
 
+  // Past the warning margin the hysteresis still holds the pressure, but a
+  // pass that nothing waits for evicts nothing there: the state a third
+  // request caches stays beside the resume point.
+  auto third = request(3);
+  for (uint32_t &token : third.promptTokens)
+    token += 300;
+  require(loop.receive(protocol::peer::serialize(third)), "control pass request failed");
+  runUntilIdle(loop);
+  available = hostReserve + kHostWarningMarginBytes + kHostWarningMarginBytes / 2;
+  fixture.monotonic += 1000.0;
+  require(!control.run(MemoryPressure::Normal) &&
+              governor.snapshot().pressure == MemoryPressure::Warning &&
+              resources.snapshot().stateCache.entries == 2,
+          "a pass that nothing waited for evicted past the warning margin");
+
   available = hostReserve + kHostRecoveryMarginBytes + kHostWarningMarginBytes;
   const uint64_t releases = pool.snapshot().extentReleases;
   // The host's recovery lifts the pressure, so no pass runs: the untargeted
   // pass the settle window would otherwise run finds nothing to take either.
   require(!control.run(MemoryPressure::Normal) &&
               governor.snapshot().pressure == MemoryPressure::Normal &&
-              resources.snapshot().stateCache.entries == 1 &&
+              resources.snapshot().stateCache.entries == 2 &&
               pool.snapshot().extentReleases == releases,
           "a recovered host still reclaimed");
 
@@ -1325,6 +1389,51 @@ void testControlPassReclaimsUnderHostPressure() {
   require(critical.stateCache.entries == 0 && critical.pool.pagesPrefix == 0 &&
               critical.pool.pagesAllocated == 0,
           "critical pressure did not empty the cache and release every extent");
+}
+
+// The control pass tells the governor whether a request waits for memory:
+// only for one does growth wait for the recovery margin while the host's
+// headroom sits between the margins.
+void testControlPassHoldsGrowthForAWaitingRequest() {
+  LoopFixture fixture;
+  engine::NativeRuntime &loop = fixture.loop;
+  loop.announceReady();
+  // A finished request leaves cache a pass can free.
+  require(loop.receive(protocol::peer::serialize(request(1))), "the first request failed");
+  runUntilIdle(loop);
+  test::metalStatistics() = {};
+  metal::MetalBackend backend("unused");
+  constexpr uint64_t hostReserve = 2ULL << 30;
+  // A page short of the recovery margin, after growth the host refused.
+  std::optional<uint64_t> available = hostReserve + kHostRecoveryMarginBytes - 4096;
+  MemoryGovernor governor(backend, 40ULL << 30, hostReserve,
+                          [&available] { return available; }, 0);
+  require(!governor.allocationAdmission()(kHostWarningMarginBytes, [] {}),
+          "growth past the warning margin was admitted");
+  MemoryControl control(governor, backend, loop);
+  static_cast<void>(control.run(MemoryPressure::Normal));
+  require(governor.snapshot().pressure == MemoryPressure::Warning &&
+              governor.snapshot().hostGrowthAllowed,
+          "growth waited for the recovery margin with no request waiting");
+
+  // The host refuses the next request's lane, which then waits for memory.
+  fixture.executor.beginGrowthBlocked = [] { return true; };
+  fixture.executor.beginAllocationFailure = metal::AllocationFailure::HostPressure;
+  require(loop.receive(protocol::peer::serialize(request(2))) && !loop.tick() &&
+              loop.resourceWaitSnapshot().memory == 1,
+          "the request did not wait for memory");
+  // The next control pass finds it waiting.
+  static_cast<void>(control.run(MemoryPressure::Normal));
+  require(!governor.snapshot().hostGrowthAllowed,
+          "growth did not wait for the recovery margin while a request waited");
+
+  // Its retry, within its deadline, finds its lane.
+  fixture.executor.beginGrowthBlocked = {};
+  fixture.monotonic += 2 * engine::kResourceRetryBackoffMilliseconds;
+  runUntilIdle(loop);
+  static_cast<void>(control.run(MemoryPressure::Normal));
+  require(loop.snapshot().completed == 2 && governor.snapshot().hostGrowthAllowed,
+          "the hold outlived the waiting request");
 }
 
 bool answeredStatus(const LoopFixture &fixture, uint64_t correlationId) {
@@ -1803,6 +1912,7 @@ int main() {
     testWireLifecycleAndCacheHit();
     testSnapshotReportsLiveRequests();
     testGenerationPromptBoundsTheReplayState();
+    testCacheSaltAndDeduplicationCrossTheWire();
     testRequestFlagsReachTheModel();
     testSamplingReachesTheModel();
     testPromptProgress();
@@ -1828,6 +1938,7 @@ int main() {
     testInvalidScoreFailsOneRequestAndKeepsTheBatch();
     testConstrainedMaskExchange();
     testControlPassReclaimsUnderHostPressure();
+    testControlPassHoldsGrowthForAWaitingRequest();
     testIdleWeightsAreReleasedAndRestored(false);
     testIdleWeightsAreReleasedAndRestored(true);
     testIdleReleaseRestoresTheSplitLast();

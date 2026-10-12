@@ -97,7 +97,7 @@ std::string runtimeStatusJson(
   const uint64_t peakBytes = std::max(
       {currentBytes, metalMemory.peakAllocatedBytes,
        metalMemory.devicePeakAllocatedBytes});
-  // Warning pressure pauses growth but permits serving; only the governor's
+  // Warning pressure sheds cache but permits serving; only the governor's
   // critical verdict makes host pressure a readiness failure. A status exists
   // only after warmup and the memory audit passed. The thermal state slows
   // serving but never stops it, so it is reported and readiness ignores it.
@@ -233,6 +233,7 @@ std::string runtimeStatusJson(
       << ",\"kv_disk_hit_tokens\":" << resources.kvTier.restores * kv::kPageTokens
       << ",\"lost_state_misses\":" << lookup.lostStateMisses
       << ",\"reused_tokens\":" << core.reusedTokens
+      << ",\"deduplicated_kv_tokens\":" << core.deduplicatedKvTokens
       << ",\"replay_state_publications\":" << core.replayStatePublications
       << ",\"deduplicated_state_publications\":"
       << core.deduplicatedStatePublications

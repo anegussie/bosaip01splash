@@ -95,6 +95,7 @@ access.
 | `--resource-wait-timeout` | `30` | Seconds a suspended request may wait for engine resources; positive integer. |
 | `--max-active-requests` | `0` | Native generation concurrency; `1` queues other requests for the 16 GB option-14 profile. |
 | `--kv-format` | `int8` | Target KV storage: `int8` or `bf16`. See [KV cache precision](#kv-cache-precision). |
+| `--state-format` | `fp32` | Recurrent state storage: `fp32` or `bf16`. See [state precision](#state-precision). |
 | `--idle-release` | `10m` | Time without a request before the engine unwires its memory and frees the weights; the next request restores them. `off` keeps both. See [weight loading](#weight-loading). |
 | `--max-cache-disk` | `0` (off) | SSD quota for cached KV pages and states, e.g. `16G`; kept for the session, or across restarts with `--persistent-cache`. See [SSD cache](#ssd-cache). |
 | `--persistent-cache` | Off | Keep the SSD cache across restarts; needs `--max-cache-disk`. See [persistent cache](#persistent-cache). |
@@ -208,6 +209,26 @@ memory, and can be slower at long contexts. Model weights are unchanged. Restart
 to switch formats. Omit `--kv-format` or use `--kv-format int8` for the default.
 The [SSD cache](#ssd-cache) supports both formats, preserving their stored
 bytes without further quantization.
+
+### State precision
+
+The linear-attention (GDN) layers of the targets carry a recurrent state,
+which every lane holds and every cached state keeps, in memory and on the SSD.
+Select its storage when starting the server:
+
+```bash
+splash serve --model mlx-community/Qwen3.8-27B-4bit --state-format bf16
+```
+
+BF16 halves the recurrent state, most of a cached state's bytes, so memory and
+the [SSD cache](#ssd-cache) hold nearly twice as many cached states, and a
+decode step reads and writes half the state. The kernels compute in FP32
+either way and round the state to BF16 where they store it, at the end of each
+prefill chunk and each decode step, so where a prompt's chunks end also
+changes its state in the last bits ([sampling](#sampling)). Restart to switch
+formats; the SSD cache keeps each format's states apart. Omit `--state-format`
+or use `--state-format fp32` for the default, the precision the models'
+configurations ask for.
 
 ### SSD cache
 
@@ -407,7 +428,8 @@ checkout's `install/`, which `git status` lists as untracked.
 
 Splash 1.1 kept prepared copies of the weights in
 `~/Library/Caches/Splash/weights` (or the directory `SPLASH_WEIGHT_CACHE`
-named), which nothing reads now and which can be deleted.
+named), which nothing reads now and which can be deleted. While the default
+directory remains, the native runtime says so when it starts, with its size.
 
 ## API
 
@@ -461,6 +483,10 @@ Chat Completions, text completions, Responses and Messages share these fields:
   since it could cut either short.
 - `return_progress`, with `stream` true: prompt progress before the output
   ([output limits and streaming](#output-limits-and-streaming)).
+- `cache_salt`: a nonempty string. A request shares cached prompts, their KV and
+  states, only with requests of the same salt, and a request without one only
+  with others without one, as vLLM's field does. A salt no other request uses
+  makes it compute its whole prompt itself.
 
 Chat Completions also takes `messages`, `tools`, `tool_choice` and
 `parallel_tool_calls` ([tool calls](#tool-calls)), `response_format`
@@ -612,7 +638,17 @@ is chunked. Concurrent requests change both, and chunk boundaries also come from
 the cached boundary a request resumes from and from the junctions and
 checkpoints earlier requests left. So a greedy or seeded request repeats its
 output when it runs alone with the same cached prefixes; alongside other
-requests, or with other prefixes cached, it can differ.
+requests, or with other prefixes cached, it can differ. A request that restores
+nothing can still read cached KV: once a command completes, each block it
+filled whose prefix, tokens and identity (images and cache salt) match a
+cached block is swapped for that block's page, which another command
+computed, and its later commands read it. The Done line of the request log
+counts those tokens, as does
+`metrics.cache.deduplicated_tokens` in Chat Completions and text completions
+responses (in a stream, its usage chunk), and `/status` sums them in
+`cache.deduplicated_kv_tokens`. A request with a `cache_salt` no other
+request uses reads no cached KV: alone, it computes what it would on a server
+that served nothing before.
 
 ### Output limits and streaming
 
@@ -856,12 +892,15 @@ curl http://127.0.0.1:8000/v1/judgments \
 system prompt and A–P option order. It returns the exact rendered prompt's SHA-256,
 answer token IDs, raw option logits, normalized probabilities and zero completion
 tokens. Every answer label must round-trip as one token, including at the actual
-assistant prompt boundary. Unsupported generation controls return errors rather
-than silently changing the scoring protocol. SemIf-derived code retains its MIT
+assistant prompt boundary. Besides the row it takes `model`, `timeout`,
+`priority` and `cache_salt` as the generation APIs do ([request
+fields](#request-fields)); other generation controls return errors rather than
+silently changing the scoring protocol. SemIf-derived code retains its MIT
 notice in `server/judgments.py`.
 
 `POST /v1/systemone` requires the served `model`, a string/object/array `state`,
-and a nonempty `questions` map. Instructions may be omitted, null or structured;
+and a nonempty `questions` map, and takes `cache_salt` as the generation APIs
+do. Instructions may be omitted, null or structured;
 criteria descriptions may also be structured. Noul criteria may be omitted.
 Choice and score domains contain 1–255 entries. Singletons return their sole
 answer without inference. Other domains use deterministic, distinct single-token
@@ -1140,7 +1179,8 @@ and lists every unsupported tensor in one error:
   MXFP4, NVFP4 or PQ2_0;
 - token embeddings: Q2_K, Q3_K, Q4_K, Q5_K, Q6_K, Q8_0, Q4_0, Q4_1, IQ3_S,
   IQ4_NL or IQ4_XS, every type llama-quantize gives a token table by default
-  in a file whose linears load, MXFP4, NVFP4, and Prism's PQ2_0;
+  in a file whose linears load, IQ1_M (a published IQ2 mix's), MXFP4, NVFP4,
+  and Prism's PQ2_0;
 - norms, the MoE router and shared-expert scalar gate, and the GDN
   convolution, decay and time-step bias: F32;
 - GDN alpha and beta: both of one type, any of the linears' formats (one
@@ -1813,9 +1853,10 @@ client's failures, limits, unload and load, and cache files on a small program.
 `handoff` runs the event handoff against an agent the CPU plays in each way it
 can fail, and `ane-program-faults` checks that an Objective-C exception and a
 changed method signature fail as `std::runtime_error`. `make test-real` runs
-the model runtime oracle with the GPU alone and with the split as a start makes
-it, which must not be unavailable, and whose automatic context must be what the
-plan holds with the split it runs.
+the model runtime oracle with the GPU alone, with the GPU alone over a BF16
+state (`--state-format bf16`), and with the split as a start makes it, which
+must not be unavailable, and whose automatic context must be what the plan
+holds with the split it runs.
 
 ### Residency and KV extents
 
@@ -2095,13 +2136,26 @@ carry no logits.
 
 ### Failures and crash traces
 
-A non-finite logit row is a per-request failure, not an engine fault: a score
-logit, or a token the sampling kernels could only select outside the
-vocabulary. The engine reports `model_result_invalid` for that request alone,
-before it publishes the failing step's cache state or any output, and the rest
-of the batch finishes normally. Prompt chunks that already succeeded keep the
-blocks they committed, exactly as they do for a cancelled request. GPU faults
-and broken engine invariants stay fatal and still mark the runtime unhealthy.
+A row that is not finite is a per-request failure, not an engine fault. Every
+prefill chunk checks the last row of each lane's final hidden, which a value
+that is not finite anywhere in the chunk, or in the state it computed from,
+reaches through the recurrent state, and through attention on a GPU whose tile
+weighs non-finite keys and values (some families' tiles give them zero weight,
+for every reader); a decode finds one as
+a token the sampling kernels could only select outside the vocabulary, and a
+score request as a score logit. The engine reports `model_result_invalid` for
+that request alone, before it publishes the failing step's cache state or any
+output, and the rest of the batch finishes normally. Since every step that
+publishes was checked, what earlier steps published stays, as it does for a
+cancelled request. A damaged state is one way to such a result: a request
+whose first step from the state it restored is not finite takes that state out
+of the cache, and the next request with the prompt computes it again. Values
+that are not finite cannot reach the next holder of a request's memory either:
+a page a request takes comes with zeros in the rows its work does not write,
+and the lane of a request that found one returns its draft rings cleared, since
+attention weighs rows past a request's end by zero and a BF16 value is read as
+stored (0 × NaN is NaN). GPU faults and broken engine invariants stay fatal and
+still mark the runtime unhealthy.
 
 Request logs omit bodies; full crash traces require explicit
 `SPLASH_CRASH_TRACE=1` and can contain private conversation data. With it, a
