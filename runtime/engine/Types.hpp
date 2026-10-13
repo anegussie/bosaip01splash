@@ -3,6 +3,7 @@
 #include "model/Model.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -29,6 +30,16 @@ enum class EngineFinishReason : uint8_t {
   Stop = 0,
   Length = 1,
   Cancelled = 2,
+};
+
+// A request's speculative decoding: the tokens its draft proposed, those
+// verification accepted, and the decode steps that verified a draft.
+struct SpeculativeCounts final {
+  uint32_t draftedTokens = 0;
+  uint32_t acceptedDraftTokens = 0;
+  uint32_t cycles = 0;
+
+  bool operator==(const SpeculativeCounts &) const = default;
 };
 
 // A request's cache salt: its API's cache_salt, which the server hashes to
@@ -63,11 +74,13 @@ struct EngineRequest final {
   std::vector<uint32_t> scoreTokens{};
   // RequestFlag bits.
   uint32_t flags = 0;
+  // Set only for a request that generates inside a thinking block.
+  std::optional<ThinkingBudget> thinkingBudget;
   CacheSalt cacheSalt;
 
   [[nodiscard]] ModelRequest modelView() const noexcept {
     return {id,       prompt,     images,      imagePixels, maxNewTokens,
-            sampling, constraint, scoreTokens, flags};
+            sampling, constraint, scoreTokens, flags,       thinkingBudget};
   }
 };
 
@@ -135,7 +148,8 @@ public:
   virtual void completed(uint64_t requestId, EngineFinishReason reason,
                          uint32_t promptTokens, uint32_t completionTokens,
                          uint32_t deduplicatedTokens,
-                         std::span<const float> optionLogits) = 0;
+                         std::span<const float> optionLogits,
+                         const SpeculativeCounts &speculation) = 0;
   virtual void failed(uint64_t requestId, LaneOutcome outcome,
                       std::string message) = 0;
 };

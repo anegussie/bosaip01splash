@@ -86,6 +86,10 @@ void Engine::submit(EngineRequest value) {
                   outOfVocabulary)) {
     throw std::invalid_argument("score token is out of vocabulary");
   }
+  if (value.thinkingBudget && (outOfVocabulary(value.thinkingBudget->end) ||
+                               outOfVocabulary(value.thinkingBudget->alsoEnds))) {
+    throw std::invalid_argument("thinking end token is out of vocabulary");
+  }
   if (!value.images.empty() && !config_.maxImagePatches) {
     throw std::invalid_argument("this model is serving without vision");
   }
@@ -1618,10 +1622,13 @@ void Engine::apply(const BatchPlan &plan,
       throw std::logic_error("model result order changed");
     }
     Request &active = request(result.requestId);
-    // The model rejected this lane's own numerical result. A model that emits
-    // a token outside the vocabulary without reporting it fails the lane the
-    // same way (the Qwen runtime reports its non-finite rows itself).
+    // The model rejected this lane's own numerical result. A model that
+    // accepts more draft tokens than it drafted, or emits a token outside the
+    // vocabulary, without reporting it fails the lane the same way (the Qwen
+    // runtime reports its non-finite rows itself).
     std::string invalid = result.failure;
+    if (invalid.empty() && result.acceptedDraftTokens > result.draftedTokens)
+      invalid = "model accepted more tokens than it drafted";
     if (invalid.empty()) {
       const auto outOfVocabulary = std::find_if(
           result.outputTokens.begin(), result.outputTokens.end(),
@@ -1698,6 +1705,9 @@ void Engine::apply(const BatchPlan &plan,
     if (plan.kind == WorkKind::Decode) {
       draftedTokens += result.draftedTokens;
       acceptedDraftTokens += result.acceptedDraftTokens;
+      active.speculation.draftedTokens += result.draftedTokens;
+      active.speculation.acceptedDraftTokens += result.acceptedDraftTokens;
+      active.speculation.cycles += result.draftedTokens != 0;
       // A terminal anchor is emitted without a target KV row; it never enters
       // a cached block.
       const uint32_t storedTokens =
@@ -1806,7 +1816,8 @@ void Engine::finish(Request &active, EngineFinishReason reason,
   active.finalized = true;
   const uint32_t completionTokens = generatedTokens(active);
   events_.completed(active.request.id, reason, active.promptTokens,
-                    completionTokens, active.deduplicatedKvTokens, optionLogits);
+                    completionTokens, active.deduplicatedKvTokens, optionLogits,
+                    active.speculation);
   if (reason == EngineFinishReason::Cancelled) {
     ++counters_.cancelled;
   } else {

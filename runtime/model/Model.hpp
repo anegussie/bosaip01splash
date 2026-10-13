@@ -100,6 +100,18 @@ struct SamplingParameters final {
   }
 };
 
+// A request that generates inside a thinking block may select at most
+// `tokens` thinking tokens; the target then selects `end`, which closes the
+// block. Thinking also ends where the request selects `end` or `alsoEnds`
+// first, such as a tool call's opening that follows thinking directly.
+struct ThinkingBudget final {
+  uint32_t tokens = 0;
+  uint32_t end = 0;
+  uint32_t alsoEnds = 0;
+
+  bool operator==(const ThinkingBudget &) const = default;
+};
+
 // Immutable view of the fields a model needs to activate a sequence.  Engine
 // priority and deadline policy deliberately do not cross this boundary.
 struct ModelRequest final {
@@ -116,6 +128,8 @@ struct ModelRequest final {
   std::span<const uint32_t> scoreTokens{};
   // RequestFlag bits.
   uint32_t flags = 0;
+  // None for a request without a thinking budget.
+  std::optional<ThinkingBudget> thinkingBudget;
   // Prompt tokens the lane takes from a cached state. Images that end at or
   // before it are neither staged nor encoded; their spans still place
   // rotary positions.
@@ -323,11 +337,11 @@ struct ModelStepResult final {
   // Set when the model computed an unusable result for this lane alone: a
   // prefill chunk whose last row is not finite, a non-finite score logit or
   // a selection outside the vocabulary (the sampling kernels' sentinel for a
-  // non-finite logit row). Every step that publishes cache state is checked
-  // so, which lets the engine keep what earlier steps published. The engine
-  // fails that one request before it publishes cache state or emits output,
-  // and the rest of the batch stands. Broken invariants and GPU faults stay
-  // exceptions and remain engine-fatal.
+  // logit row with no selectable token). Every step that publishes cache
+  // state is checked so, which lets the engine keep what earlier steps
+  // published. The engine fails that one request before it publishes cache
+  // state or emits output, and the rest of the batch stands. Broken
+  // invariants and GPU faults stay exceptions and remain engine-fatal.
   std::string failure{};
   // The request's first output token, which the step that completes its
   // prompt selected and left pending: the first decode cycle writes its KV row

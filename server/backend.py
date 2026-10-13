@@ -57,6 +57,18 @@ class CacheInfo:
     deduplicated_tokens: int = 0
 
 
+@dataclass(frozen=True)
+class ReasoningRequest:
+    """How a chat request asked to reason: the reasoning effort it sent, None
+    when absent; the effort its template rendered with, the server's default
+    for an absent one and None for the template's own; and its
+    chat_template_kwargs enable_thinking, None when unset."""
+
+    sent: str | None
+    effort: str | None
+    enable_thinking: bool | None
+
+
 @dataclass
 class NativeResult:
     reason: str
@@ -71,6 +83,9 @@ class NativeResult:
     first_token_batch_tokens: int = 0
     # Raw option logits for score-only jobs, in requested token order.
     option_logits: tuple = ()
+    drafted_tokens: int = 0
+    accepted_draft_tokens: int = 0
+    draft_cycles: int = 0
 
     @functools.cached_property
     def metrics(self):
@@ -89,6 +104,12 @@ class Job:
     priority: wire.RequestPriority = wire.RequestPriority.NORMAL
     stop_sequences: tuple[str, ...] = ()
     thinking: bool = False
+    # A chat request's reasoning options, which its Started line shows; None
+    # for a request without a chat template.
+    reasoning: ReasoningRequest | None = None
+    # The thinking tokens the job may select before its thinking closes, set
+    # only where that comes before the output limit; None for no cap.
+    thinking_token_budget: int | None = None
     thinking_display: str = "summarized"
     reasoning_tokens: int = 0
     events: queue.Queue = field(default_factory=queue.Queue)
@@ -626,9 +647,23 @@ class NativeBackend:
             generation_prompt_tokens=job.generation_prompt_tokens,
             flags=job.flags,
             cache_salt=job.cache_salt,
+            thinking_budget=self._thinking_budget(job),
         )
         return engine_runtime.GenerationRequest(
             frame, job.deadline, self._mask_provider(job), job.image_owner
+        )
+
+    @staticmethod
+    def _thinking_budget(job):
+        """The engine's cutoff of the thinking a job generates in: thinking
+        ends where count_reasoning_tokens ends it, at its close or, where a
+        call may follow, at a call's opening token."""
+        if job.thinking_token_budget is None:
+            return None
+        return wire.ThinkingBudget(
+            job.thinking_token_budget,
+            THINK_END_TOKEN_ID,
+            TOOL_CALL_OPEN_TOKEN_ID if job.may_call_tools else THINK_END_TOKEN_ID,
         )
 
     def release_weights(self, timeout=5.0):
@@ -795,13 +830,19 @@ class NativeBackend:
             )
             with self.lock:
                 job.cache = cache
-            self._log(
-                {
-                    "outcome": "started",
-                    "prompt_tokens": len(job.prompt_tokens),
-                    "cached_tokens": cache.matched_tokens,
+            record = {
+                "outcome": "started",
+                "prompt_tokens": len(job.prompt_tokens),
+                "cached_tokens": cache.matched_tokens,
+            }
+            if job.reasoning is not None:
+                record["reasoning"] = {
+                    "sent_effort": job.reasoning.sent,
+                    "effort": job.reasoning.effort,
+                    "enable_thinking": job.reasoning.enable_thinking,
+                    "thinking": job.thinking,
                 }
-            )
+            self._log(record)
             job.events.put(("start", None))
         elif isinstance(event, wire.PromptProgressEvent):
             job.events.put(
@@ -888,6 +929,9 @@ class NativeBackend:
                 cache=replace(job.cache, deduplicated_tokens=done.deduplicated_tokens),
                 stop_sequence=stop_sequence,
                 first_token_batch_tokens=state.first_token_batch_tokens,
+                drafted_tokens=done.drafted_tokens,
+                accepted_draft_tokens=done.accepted_draft_tokens,
+                draft_cycles=done.draft_cycles,
             )
             if job.latency is not None:
                 latency = result.metrics["request_latency"]

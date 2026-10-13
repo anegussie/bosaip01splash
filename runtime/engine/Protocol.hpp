@@ -18,7 +18,7 @@
 // pins the bytes both sides agree on.
 namespace splash::protocol {
 
-inline constexpr uint16_t kProtocolVersion = 9;
+inline constexpr uint16_t kProtocolVersion = 10;
 // A frame is its header, the magic "SPLH", the u16 protocol version, the
 // u16 FrameType and the u64 payload length, then the payload.
 inline constexpr size_t kFrameHeaderBytes = 16;
@@ -132,9 +132,13 @@ validateLimits(const ProtocolLimits &limits);
 //   78 u32 generationPromptTokens
 //   82 u32 flags
 //   86 u64 cacheSalt.lo, u64 cacheSalt.hi
+//  102 u32 thinkingBudget.tokens, kNoThinkingBudget for none
+//  106 u32 thinkingBudget.end, u32 thinkingBudget.alsoEnds, zero without a
+//      budget
 // then the prompt tokens, the 32-byte image spans, the image pixels and the
 // score tokens.
-inline constexpr uint64_t kRequestFixedBytes = 102;
+inline constexpr uint64_t kRequestFixedBytes = 114;
+inline constexpr uint32_t kNoThinkingBudget = 0xFFFFFFFFU;
 
 // The request flags word holds the RequestFlag bits and this one, which asks
 // for PromptProgressEvents while the prompt prefills.
@@ -173,6 +177,9 @@ struct RequestFrame {
   uint32_t flags = 0;
   // The request's cache_salt as the server hashed it; zero without one.
   engine::CacheSalt cacheSalt;
+  // Only a request that generates inside a thinking block has one; a score
+  // request never does.
+  std::optional<ThinkingBudget> thinkingBudget;
 
   bool operator==(const RequestFrame &) const = default;
 };
@@ -191,7 +198,8 @@ struct RequestFrame {
 //                  u32 count, u32 simulation tokens
 //   Done           u64 requestId, u8 reason, u32 promptTokens,
 //                  u32 completionTokens, u64 prefillMicros, u64 decodeMicros,
-//                  u64 wallMicros, u32 deduplicatedTokens, u32 count,
+//                  u64 wallMicros, u32 deduplicatedTokens, u32 draftedTokens,
+//                  u32 acceptedDraftTokens, u32 speculative cycles, u32 count,
 //                  f32 option logits
 //   Error          u8 failureClass, u8 retryable, u64 requestId, u32 code
 //                  bytes, u32 message bytes, the code, the message
@@ -286,6 +294,8 @@ struct DoneEvent {
   // Of the tokens the request computed, those whose KV it then read from a
   // cached block's page (engine::Cache::publishCommittedBlocks).
   uint32_t deduplicatedTokens = 0;
+  // Its speculative decoding; zero without a draft and for scoring.
+  engine::SpeculativeCounts speculation{};
 
   bool operator==(const DoneEvent &) const = default;
 };

@@ -126,6 +126,27 @@ def stream_events(payload):
 
 
 class AnthropicAdapterTest(unittest.TestCase):
+    def test_billing_only_system_suffix_does_not_hide_an_assistant_prefill(self):
+        body = request_body(
+            messages=[
+                {"role": "user", "content": "hello"},
+                {"role": "assistant", "content": "unfinished answer"},
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "x-anthropic-billing-header: accounting",
+                        }
+                    ],
+                },
+            ]
+        )
+        counted = anthropic_to_chat_prompt(body, thinking_resolver=no_signed_thinking)
+        self.assertEqual(counted["messages"][-1]["role"], "assistant")
+        with self.assertRaisesRegex(APIError, "final assistant message"):
+            anthropic_to_chat_body(body, thinking_resolver=no_signed_thinking)
+
     def test_tool_references_preserve_text_order_and_error_status(self):
         for is_error in (False, True):
             with self.subTest(is_error=is_error):
@@ -190,15 +211,32 @@ class AnthropicAdapterTest(unittest.TestCase):
         chat = anthropic_to_chat_prompt(body, thinking_resolver=no_signed_thinking)
         self.assertEqual(chat["messages"][-1]["content"], f"\nAvailable tool: {name}\n")
 
-    def test_tool_references_require_valid_names(self):
-        for name in (None, "", 7, [], "bad name", "bad\nname", "x" * 129):
+    def test_tool_references_name_tools_by_the_tool_name_rule(self):
+        for name in ("mcp.search", "web search", "x" * 256):
+            with self.subTest(name=name):
+                chat = anthropic_to_chat_prompt(
+                    tool_search_body([{"type": "tool_reference", "tool_name": name}]),
+                    thinking_resolver=no_signed_thinking,
+                )
+                self.assertIn(f"Available tool: {name}", str(chat["messages"]))
+        for name in (
+            None,
+            "",
+            7,
+            [],
+            " lead",
+            "bad\nname",
+            "a>b",
+            "x" * 257,
+            "e\u0301",
+        ):
             with self.subTest(name=name), self.assertRaises(APIError) as caught:
                 anthropic_to_chat_prompt(
                     tool_search_body([{"type": "tool_reference", "tool_name": name}]),
                     thinking_resolver=no_signed_thinking,
                 )
             self.assertEqual(caught.exception.status, 400)
-            self.assertIn("tool_reference.tool_name", caught.exception.message)
+            self.assertIn("tool_reference.tool_name must be", caught.exception.message)
 
     def test_tool_references_are_only_supported_in_tool_results(self):
         for role in ("user", "assistant"):
@@ -345,13 +383,10 @@ class AnthropicAdapterTest(unittest.TestCase):
         self.assertIs(translated["tools"][0]["function"]["strict"], True)
 
     def test_format_shape_validation_is_independent_of_thinking(self):
-        invalid = [
-            {"output_config": value} for value in (None, [], "json_schema", False)
-        ]
+        invalid = [{"output_config": value} for value in ([], "json_schema", False)]
         invalid.extend(
             {"output_config": {"format": value}}
             for value in (
-                None,
                 [],
                 {},
                 {"type": "text"},
@@ -361,17 +396,39 @@ class AnthropicAdapterTest(unittest.TestCase):
         )
         invalid.extend(
             {"output_format": value}
-            for value in (None, [], {}, {"type": "json_schema", "schema": 1})
+            for value in ([], {}, {"type": "json_schema", "schema": 1})
         )
         invalid.append({"output_config": {"format": FORMAT}, "output_format": FORMAT})
         for fields in invalid:
-            for thinking in (None, {"type": "enabled"}, {"type": "adaptive"}):
+            for thinking in (
+                None,
+                {"type": "enabled", "budget_tokens": 1024},
+                {"type": "adaptive"},
+            ):
                 with self.subTest(fields=fields, thinking=thinking):
                     with self.assertRaises(APIError):
                         anthropic_to_chat_prompt(
                             request_body(thinking=thinking, **fields),
                             thinking_resolver=no_signed_thinking,
                         )
+        # A null format is one left out.
+        for fields in (
+            {"output_config": {"format": None}},
+            {"output_config": {"format": None}, "output_format": FORMAT},
+        ):
+            with self.subTest(fields=fields):
+                chat = anthropic_to_chat_prompt(
+                    request_body(**fields), thinking_resolver=no_signed_thinking
+                )
+                self.assertEqual(
+                    chat.get("response_format"),
+                    None
+                    if "output_format" not in fields
+                    else {
+                        "type": "json_schema",
+                        "json_schema": {"schema": FORMAT["schema"]},
+                    },
+                )
 
     def test_anthropic_tool_history_and_choice_use_one_chat_pipeline(self):
         translated, _ = anthropic_to_chat_body(
@@ -739,10 +796,10 @@ class AnthropicAdapterTest(unittest.TestCase):
         for thinking in (
             None,
             {"type": "disabled"},
-            {"type": "enabled"},
+            {"type": "enabled", "budget_tokens": 1024},
             {"type": "adaptive"},
         ):
-            for effort in ("invalid", "none", "ultra", {}, None):
+            for effort in ("invalid", "none", "ultra", {}):
                 body = anthropic_body(output_config={"effort": effort})
                 if thinking is not None:
                     body["thinking"] = thinking
@@ -754,6 +811,40 @@ class AnthropicAdapterTest(unittest.TestCase):
 
 
 class AnthropicHTTPContractTest(HarnessTestCase):
+    def test_a_tool_announced_mid_session_takes_any_name_its_calls_carry(self):
+        # A tool_addition announcing mcp.search, then a user turn (#392).
+        harness = self.harness(FakeRuntime())
+        announced = {"name": "mcp.search", "input_schema": {"type": "object"}}
+        body = request_body(
+            messages=[
+                {"role": "user", "content": "hi"},
+                {"role": "system", "content": [tool_addition(announced)]},
+                {"role": "user", "content": "say ok"},
+            ]
+        )
+        for path in ("/v1/messages/count_tokens", "/v1/messages"):
+            with self.subTest(path=path):
+                first = len(harness.tokenizer.templates)
+                status, _, payload = harness.request("POST", path, body)
+                self.assertEqual(status, 200, payload)
+                _, kwargs = harness.tokenizer.templates[first]
+                self.assertEqual(
+                    [tool["function"]["name"] for tool in kwargs["tools"]],
+                    ["mcp.search"],
+                )
+
+    def test_chat_template_kwargs_reach_the_template(self):
+        runtime = FakeRuntime()
+        harness = self.harness(runtime)
+        for path in ("/v1/messages", "/v1/messages/count_tokens"):
+            with self.subTest(path=path):
+                status, _, payload = harness.request(
+                    "POST", path, request_body(chat_template_kwargs={"custom": 1})
+                )
+                self.assertEqual(status, 200, payload)
+                _, kwargs = harness.tokenizer.templates[-1]
+                self.assertEqual(kwargs["custom"], 1)
+
     def test_tool_search_count_and_generation_allow_discovered_tool_calls(self):
         runtime = FakeRuntime(Plan([[5]]), Plan([[5]]))
         tokenizer = FakeTokenizer()
@@ -997,10 +1088,12 @@ class AnthropicHTTPContractTest(HarnessTestCase):
         self.assertEqual(tokenizer.templates[-1], counted_template)
         self.assertEqual(body, before)
 
-    def test_unsupported_context_edits_reject_before_counting_or_generation(self):
+    def test_context_edits_splash_does_not_make_are_ignored(self):
+        # Splash clears neither thinking nor tool results, so the model reads
+        # the conversation as sent; only an edit keeping all thinking counts.
         runtime = FakeRuntime()
         harness = self.harness(runtime)
-        invalid = [
+        ignored = [
             [],
             False,
             "all",
@@ -1019,18 +1112,18 @@ class AnthropicHTTPContractTest(HarnessTestCase):
             {"edits": [{"type": "clear_tool_uses_20250919"}]},
             {"edits": [{"type": "compact_20260112"}]},
         ]
-        for context in invalid:
+        for context in ignored:
             for path in ("/v1/messages", "/v1/messages/count_tokens?beta=true"):
                 with self.subTest(context=context, path=path):
                     status, _, payload = harness.request(
                         "POST", path, request_body(context_management=context)
                     )
-                    self.assertEqual(status, 400, payload)
-                    self.assertIn(b"context_management", payload)
-        self.assertEqual(runtime.requests, [])
-        self.assertEqual(harness.tokenizer.templates, [])
+                    self.assertEqual(status, 200, payload)
+                    _, kwargs = harness.tokenizer.templates[-1]
+                    self.assertNotIn("preserve_thinking", kwargs)
+        self.assertEqual(len(runtime.requests), len(ignored))
 
-    def test_responses_rejects_unimplemented_context_management_and_truncation(self):
+    def test_responses_refuses_truncation_and_ignores_context_management(self):
         runtime = FakeRuntime()
         harness = self.harness(runtime)
         body = {
@@ -1039,16 +1132,7 @@ class AnthropicHTTPContractTest(HarnessTestCase):
             "reasoning": {"effort": "none"},
         }
         for fields in (
-            *({"truncation": value} for value in ("auto", "unknown", True, [], {})),
-            *(
-                {"context_management": value}
-                for value in (
-                    [{"type": "compaction", "compact_threshold": 1024}],
-                    {},
-                    True,
-                    "auto",
-                )
-            ),
+            {"truncation": value} for value in ("auto", "unknown", True, [], {})
         ):
             with self.subTest(fields=fields):
                 status, _, payload = harness.request(
@@ -1056,16 +1140,20 @@ class AnthropicHTTPContractTest(HarnessTestCase):
                 )
                 self.assertEqual(status, 400, payload)
         self.assertEqual(runtime.requests, [])
-        for fields in (
+        # Splash compacts nothing: the model reads the input as sent.
+        accepted = (
             {},
             {"truncation": None, "context_management": None},
             {"truncation": "disabled", "context_management": []},
-        ):
+            {"context_management": [{"type": "compaction", "compact_threshold": 1}]},
+            {"context_management": "auto"},
+        )
+        for fields in accepted:
             status, _, payload = harness.request(
                 "POST", "/v1/responses", {**body, **fields}
             )
             self.assertEqual(status, 200, payload)
-        self.assertEqual(len(runtime.requests), 3)
+        self.assertEqual(len(runtime.requests), len(accepted))
 
     def test_pdf_user_and_tool_result_count_the_prepared_image(self):
         runtime = FakeRuntime()
@@ -1155,8 +1243,12 @@ class AnthropicHTTPContractTest(HarnessTestCase):
     def test_invalid_efforts_reject_without_native_admission(self):
         runtime = FakeRuntime()
         harness = self.harness(runtime)
-        for effort in (None, True, 3, [], "invalid"):
-            for thinking in (None, {"type": "adaptive"}, {"type": "enabled"}):
+        for effort in (True, 3, [], "invalid"):
+            for thinking in (
+                None,
+                {"type": "adaptive"},
+                {"type": "enabled", "budget_tokens": 1024},
+            ):
                 for path in ("/v1/messages", "/v1/messages/count_tokens"):
                     with self.subTest(effort=effort, thinking=thinking, path=path):
                         status, _, payload = harness.request(
@@ -1281,7 +1373,6 @@ class AnthropicHTTPContractTest(HarnessTestCase):
             "code_execution_20250825",
             "computer_20250124",
             "future_tool",
-            None,
             [],
         ):
             for path in ("/v1/messages", "/v1/messages/count_tokens"):
@@ -1294,7 +1385,7 @@ class AnthropicHTTPContractTest(HarnessTestCase):
                     self.assertEqual(status, 400, payload)
                     self.assertIn(b"only custom function tools", payload)
         self.assertEqual(runtime.requests, [])
-        for extra in ({}, {"type": "custom"}):
+        for extra in ({}, {"type": "custom"}, {"type": None}):
             status, _, payload = harness.request(
                 "POST",
                 "/v1/messages",
@@ -1309,16 +1400,16 @@ class AnthropicHTTPContractTest(HarnessTestCase):
                 ),
             )
             self.assertEqual(status, 200, payload)
-        self.assertEqual(len(runtime.requests), 2)
+        self.assertEqual(len(runtime.requests), 3)
 
     def test_unsupported_thinking_display_rejects_without_reasoning_leak(self):
         runtime = FakeRuntime()
         harness = self.harness(runtime)
         for thinking_type in ("enabled", "adaptive", "disabled"):
             for display in ("omitted", "updates", "unknown", None, 0, []):
-                if (
-                    display in ("omitted", "updates", None)
-                    and thinking_type != "disabled"
+                # A null display is one left out, which any thinking takes.
+                if display is None or (
+                    display in ("omitted", "updates") and thinking_type != "disabled"
                 ):
                     continue
                 for stream in (False, True):
@@ -1337,14 +1428,17 @@ class AnthropicHTTPContractTest(HarnessTestCase):
                         self.assertNotIn(b"because ", payload)
         self.assertEqual(runtime.requests, [])
         for thinking in (
-            {"type": "enabled"},
+            {"type": "enabled", "budget_tokens": 1024},
             {"type": "adaptive"},
             {"type": "disabled"},
-            {"type": "enabled", "display": None},
+            {"type": "enabled", "budget_tokens": 1024, "display": None},
             {"type": "adaptive", "display": None},
+            {"type": "disabled", "display": None},
         ):
             status, _, payload = harness.request(
-                "POST", "/v1/messages", request_body(thinking=thinking)
+                "POST",
+                "/v1/messages",
+                request_body(thinking=thinking, max_tokens=2048),
             )
             self.assertEqual(status, 200, payload)
 
@@ -1504,7 +1598,7 @@ class AnthropicHTTPContractTest(HarnessTestCase):
                         counted = json.loads(payload)
                         self.assertEqual(set(counted), {"input_tokens"})
                 chat, _ = anthropic_to_chat_body(
-                    {**body, "max_tokens": 8}, thinking_resolver=no_signed_thinking
+                    {**body, "max_tokens": 2048}, thinking_resolver=no_signed_thinking
                 )
                 job = harness.app.prepare(chat, deadline=FOREVER)
                 self.assertEqual(counted["input_tokens"], len(job.prompt_tokens))
@@ -1619,7 +1713,7 @@ class AnthropicHTTPContractTest(HarnessTestCase):
     def test_anthropic_adaptive_effort_rejects_non_strings_before_admission(self):
         runtime = FakeRuntime(Plan(batches=[(3,)]))
         harness = self.harness(runtime)
-        for effort in ([], {}, None, True, 1):
+        for effort in ([], {}, True, 1):
             with self.subTest(effort=effort):
                 status, _, raw = harness.request(
                     "POST",
@@ -1634,15 +1728,17 @@ class AnthropicHTTPContractTest(HarnessTestCase):
                     json.loads(raw)["error"]["type"], "invalid_request_error"
                 )
         self.assertEqual(runtime.requests, [])
-        status, _, _ = harness.request(
-            "POST",
-            "/v1/messages",
-            anthropic_body(
-                thinking={"type": "adaptive"}, output_config={"effort": "low"}
-            ),
-        )
-        self.assertEqual(status, 200)
-        self.assertEqual(len(runtime.requests), 1)
+        # A null effort is the default one.
+        for effort in ("low", None):
+            status, _, _ = harness.request(
+                "POST",
+                "/v1/messages",
+                anthropic_body(
+                    thinking={"type": "adaptive"}, output_config={"effort": effort}
+                ),
+            )
+            self.assertEqual(status, 200)
+        self.assertEqual(len(runtime.requests), 2)
 
     def test_anthropic_cache_usage_and_matched_stop_sequence(self):
         for stream in (False, True):

@@ -251,6 +251,10 @@ struct Runtime::Impl {
     // RequestFlag bits.
     uint32_t flags = 0;
     std::optional<uint32_t> pendingToken;
+    // While the request thinks under a budget (ModelRequest::thinkingBudget),
+    // that budget with the thinking tokens it may still select; none once
+    // thinking ended.
+    std::optional<ThinkingBudget> thinking;
     // A constrained request's final prompt row, held from its prompt's end
     // until its first token is selected under its first mask, suspensions
     // included. Composite cache state never stores it; every cache hit
@@ -381,15 +385,16 @@ struct Runtime::Impl {
   // Warmup selects greedily, so the first sampled, penalized or constrained
   // request would compile the policy's kernels inside its TTFT and stall the
   // engine meanwhile; compile them now. A sampled, penalized and constrained
-  // lane and a greedy one reach every kernel the first-token and verify
-  // selections dispatch.
+  // lane at its thinking cutoff and a greedy one reach every kernel the
+  // first-token and verify selections dispatch.
   void preparePolicyPipelines() const {
     const ops::SamplingPolicy sampled{.topK = 0,
                                       .temperature = 1.0F,
                                       .topP = 0.95F,
                                       .constrained = true,
                                       .penalties = {1.1F, 0.5F, 0.5F},
-                                      .minP = 0.05F};
+                                      .minP = 0.05F,
+                                      .thinkingCutoff = ops::ThinkingCutoff{}};
     const std::array<ops::SamplingPolicy, 2> policies{sampled, {}};
     const std::array<uint32_t, 2> stateLanes{0, 1};
     const ops::PenaltyTable penalties{penaltyTable, stateLanes};
@@ -878,11 +883,17 @@ struct Runtime::Impl {
             entry.sampling.frequencyPenalty};
   }
 
+  // A selection's rows select the request's next tokens in order, so with n
+  // thinking tokens left, its row n closes thinking.
   static ops::SamplingPolicy samplingPolicy(const Request &entry) noexcept {
     return {entry.sampling.topK, entry.sampling.temperature,
             entry.sampling.topP, entry.constraint == ConstraintMode::TokenMask,
             (entry.flags & RequestIgnoreEndOfSequence) != 0,
-            samplingPenalties(entry), entry.sampling.minP};
+            samplingPenalties(entry), entry.sampling.minP,
+            entry.thinking ? std::optional<ops::ThinkingCutoff>(
+                                 {entry.thinking->tokens, entry.thinking->end,
+                                  entry.thinking->alsoEnds})
+                           : std::nullopt};
   }
 
   ops::SamplingBuffers samplingBuffers(uint32_t lanes) const {
@@ -928,26 +939,53 @@ struct Runtime::Impl {
   // The one place a token the target selected becomes the pending anchor:
   // tokens are one step's selections in order, the new anchor last. The
   // command that selected them has completed, and the next one that reads
-  // the lane's words is encoded after this.
+  // the lane's words is encoded after this. Each token counts against the
+  // thinking budget until one ends thinking; the cutoff (samplingPolicy)
+  // never lets thinking run past it.
   void commitSelected(Request &entry, std::span<const uint32_t> tokens) {
     if (tokens.empty())
       throw std::logic_error("no selected token to commit");
     if (samplingPenalties(entry).active())
       ops::Sampling::countPenaltyTokens(penaltyWords(entry.stateLane), tokens);
+    for (const uint32_t token : tokens) {
+      if (!entry.thinking)
+        break;
+      if (token == entry.thinking->end || token == entry.thinking->alsoEnds)
+        entry.thinking.reset();
+      else if (!entry.thinking->tokens--)
+        throw std::logic_error("thinking went past its budget");
+    }
     entry.pendingToken = tokens.back();
   }
 
   // A selection outside the vocabulary is the sampling kernels' sentinel for a
-  // non-finite logit row: a numerical outcome of this request, which it reports
-  // as its lane failure (ModelStepResult::failure) so the batch survives.
-  [[nodiscard]] std::string invalidSelection(std::span<const uint32_t> tokens) const {
-    const auto found = std::find_if(tokens.begin(), tokens.end(), [&](uint32_t token) {
+  // logit row with no selectable token, its admitted logits all NaN or -inf: a
+  // numerical outcome of this request, which it reports as its lane failure
+  // (ModelStepResult::failure) so the batch survives. The message counts the
+  // row's non-finite logits, which the lane's completed command left in its
+  // logits rows (row k selected token k).
+  [[nodiscard]] std::string invalidSelection(std::span<const uint32_t> tokens,
+                                             uint32_t lane) const {
+    const auto found = std::ranges::find_if(tokens, [&](uint32_t token) {
       return token >= geometry.target.vocabularySize;
     });
     if (found == tokens.end())
       return {};
-    return "target selected out-of-vocabulary token " + std::to_string(*found) +
-           " from a non-finite logit row";
+    const uint32_t vocabulary = geometry.target.vocabularySize;
+    const std::span<const float> row(
+        contents<float>(decodeArena->get(lane, DecodeTensor::Logits),
+                        "unselectable logits") +
+            uint64_t(found - tokens.begin()) * vocabulary,
+        vocabulary);
+    uint32_t nan = 0, positive = 0, negative = 0;
+    for (const float logit : row) {
+      nan += std::isnan(logit);
+      positive += logit == std::numeric_limits<float>::infinity();
+      negative += logit == -std::numeric_limits<float>::infinity();
+    }
+    return "target logits had no selectable token: " + std::to_string(nan) +
+           " NaN, " + std::to_string(positive) + " +inf and " +
+           std::to_string(negative) + " -inf of " + std::to_string(vocabulary);
   }
 
   // A lane of an initial selection, whose final prompt row is at row 0 of
@@ -1049,7 +1087,7 @@ struct Runtime::Impl {
         const uint32_t token = initialToken(selection.lane);
         // A failed selection leaves no anchor: the engine ends the request
         // before any output, and the other lanes go on.
-        result.failure = invalidSelection({&token, 1});
+        result.failure = invalidSelection({&token, 1}, selection.lane);
         if (!result.failure.empty()) {
           entry.resultInvalid = true;
           continue;
@@ -1698,7 +1736,8 @@ struct Runtime::Impl {
       // token, so every retained token is checked.
       const uint32_t *targetTokens = contents<uint32_t>(
           d(DecodeTensor::OutputTokens), "target output tokens");
-      laneResult.failure = invalidSelection({targetTokens, laneResult.retained});
+      laneResult.failure =
+          invalidSelection({targetTokens, laneResult.retained}, lane);
     }
 
     std::vector<ModelStepResult> results;
@@ -2022,6 +2061,7 @@ StateAdmission Runtime::beginAt(const ModelRequest &request, uint32_t stateLane)
   entry.sampling = request.sampling;
   entry.constraint = request.constraint;
   entry.flags = request.flags;
+  entry.thinking = request.thinkingBudget;
   entry.scoreTokens.assign(request.scoreTokens.begin(),
                            request.scoreTokens.end());
   std::vector<Impl::ImageState> images;
@@ -2237,7 +2277,7 @@ Runtime::prefillAsync(const BatchPlan &plan,
       if (nextLength == entry.promptTokens && !entry.replayingGeneration &&
           entry.scoreTokens.empty() && entry.constraint == ConstraintMode::None) {
         selected = impl->initialToken(lane);
-        if (std::string failure = impl->invalidSelection({&*selected, 1});
+        if (std::string failure = impl->invalidSelection({&*selected, 1}, lane);
             !failure.empty()) {
           // The chunk's state is not committed; the engine ends the
           // request.
