@@ -104,6 +104,7 @@ access.
 | `--announce-served-name` | Off | Report the first `--served-model-name` in responses; needs `--served-model-name`. |
 | `--default-reasoning-effort` | `SPLASH_DEFAULT_REASONING_EFFORT` or the template's | Effort of Chat and Responses requests that set none. See [default reasoning effort](#default-reasoning-effort). |
 | `--thinking-token-budget` | `SPLASH_THINKING_TOKEN_BUDGET` or none | Thinking tokens of a request that sets no budget. See [thinking token budget](#thinking-token-budget). |
+| `--thinking-end-text` | `SPLASH_THINKING_END_TEXT` or `</think>` | Text that ends thinking where a budget runs out, `</think>` its last token. See [thinking token budget](#thinking-token-budget). |
 | `--max-request-size` | `128M` | Largest HTTP request body. See [request limits](#request-limits-and-timeouts). |
 | `--max-image-pixels` | `4194304` | Maximum resized pixels per image. An image's vision scratch grows with its patches (pixels / 256), to about 600 MiB at the default. |
 | `--request-timeout` | None | Time a request may take from its arrival; a request's own `timeout` can only shorten it. |
@@ -224,9 +225,11 @@ splash serve --model mlx-community/Qwen3.8-27B-4bit --state-format bf16
 BF16 halves the recurrent state, most of a cached state's bytes, so memory and
 the [SSD cache](#ssd-cache) hold nearly twice as many cached states, and a
 decode step reads and writes half the state. The kernels compute in FP32
-either way and round the state to BF16 where they store it, at the end of each
-prefill chunk and each decode step, so where a prompt's chunks end also
-changes its state in the last bits ([sampling](#sampling)). Restart to switch
+either way and round the state to BF16 where they store it: at the end of each
+prefill chunk, at each state a chunk captures inside it (a replay point,
+junction or checkpoint), and at the end of each decode step. So where a
+prompt's chunks end and its states are captured also changes its state in the
+last bits ([sampling](#sampling)). Restart to switch
 formats; the SSD cache keeps each format's states apart. Omit `--state-format`
 or use `--state-format fp32` for the default, the precision the models'
 configurations ask for.
@@ -394,9 +397,10 @@ passes itself, such as `tools` or `add_generation_prompt`.
 
 A reasoning model can spend its whole output limit thinking and return no
 answer. A thinking token budget caps the thinking: once a request has selected
-that many tokens in its thinking block, the engine selects the block's close,
-`</think>`, and the model answers within the output limit that remains. Its `reasoning_tokens` then
-equal the budget.
+that many tokens in its thinking block, the engine selects the thinking end,
+which closes the block with `</think>`, and the model answers within the output
+limit that remains. Its `reasoning_tokens` then equal the budget plus the end's
+tokens before `</think>`.
 
 - Chat Completions and Responses take `thinking_token_budget`, a non-negative
   integer; `-1` sets no cap, and an absent or null value takes the server's.
@@ -405,17 +409,29 @@ equal the budget.
   adaptive thinking takes the server's budget.
 - `--thinking-token-budget N` (or `SPLASH_THINKING_TOKEN_BUDGET`) is the
   server's budget; unset, thinking has no cap.
+- `--thinking-end-text TEXT` (or `SPLASH_THINKING_END_TEXT`) is the server's
+  thinking end: text without the template's special tokens, then `</think>` as
+  its own token, at most 64 tokens in all. Unset, the end is `</think>` alone.
+  The server checks the text with the model's tokenizer when it starts, and
+  stops with an error on one that breaks these rules.
 
-A budget applies only where generation starts in a thinking block, and one the
-output limit reaches first changes nothing. Where the output may call a tool, a
-call's opening ends thinking too, so the close never lands inside a call. Only
-the close is forced, with no transition text, and a close the model selects
-itself before the budget ends the count. Text completions have no reasoning
-split and refuse a budget with 400.
+A model whose thinking is cut mid-thought may go on planning in its answer. An
+end text that turns to the answer first helps it answer at once, such as this
+one adapted from the sentence Qwen suggests for its models: a blank line sets
+it apart from the cut thought, and the model writes the one after `</think>`
+itself.
 
 ```sh
-splash serve --model mlx-community/Qwen3.8-27B-4bit --thinking-token-budget 12000
+splash serve --model mlx-community/Qwen3.8-27B-4bit --thinking-token-budget 12000 \
+  --thinking-end-text $'\n\nConsidering the limited time, I have to give the solution based on the thinking directly now.\n</think>'
 ```
+
+A budget applies only where generation starts in a thinking block, and one the
+output limit reaches first changes nothing; the output limit can also cut the
+end short. Where the output may call a tool, a call's opening ends thinking
+too, so the end never lands inside a call. Only the end is forced, and a close
+the model selects itself before the budget ends the count. Text completions
+have no reasoning split and refuse a budget with 400.
 
 ## Agent launchers
 
@@ -693,8 +709,11 @@ correction read as they read the others, so sampling stays exact.
 
 A lane's arithmetic can depend on the batch it decodes in and on how its prompt
 is chunked. Concurrent requests change both, and chunk boundaries also come from
-the cached boundary a request resumes from and from the junctions and
-checkpoints earlier requests left. So a greedy or seeded request repeats its
+the cached boundary a request resumes from, from a boundary another request
+waits to resume from, and from one whose state, or the KV past it, memory could
+not hold. With `--state-format bf16` the state is also rounded at each state a
+chunk captures (a replay point, junction or checkpoint). So a greedy or seeded
+request repeats its
 output when it runs alone with the same cached prefixes; alongside other
 requests, or with other prefixes cached, it can differ. A request that restores
 nothing can still read cached KV: once a command completes, each block it
@@ -752,9 +771,13 @@ measured interval, not the full counts. An unavailable rate is zero, including
 responses completed in one emission. A request that drafted adds
 llama-server's `draft_n` and `draft_n_accepted`: the tokens its draft proposed
 and those verification accepted, including any a stop or the output limit then
-cut. They count that request alone, so they hold under concurrency.
-`metrics.speculation` carries them with the request's speculative `cycles`, and
-the Done line shows the tokens each cycle yielded, `1 + accepted / cycles`.
+cut; the end tokens a [thinking token budget](#thinking-token-budget) puts in
+place of the draft's proposals are neither. They count that request alone, so
+they hold under concurrency. `metrics.speculation` carries them with the
+request's speculative `cycles`, the decode cycles in which its draft proposed
+tokens, and the Done line shows what the draft yields per cycle,
+`1 + accepted / cycles`; a request whose thinking budget ran out also took the
+end's tokens in its cycles.
 
 ### Tool calls
 
@@ -2021,25 +2044,35 @@ requests takes what is in use after everything else. Two kinds of work take
 nothing in use. A start that a resident lane holds back waits for that lane. And
 when no lane's growth fits, the lane that yields first, such as one just started
 beside a decoding lane, pays for the memory with its own suspension; while other
-lanes fit, it waits for them, resident. A publication in use takes cached KV and
-states in the same order, then the oldest state in use; of the KV it takes only
-leaves whose page frees at once, and only while an extent can be emptied; the
-extent is released at once, and the snapshot follows. An ordinary publication (a
-junction) makes room the same way short of what is in use, and an optional
-checkpoint takes only checkpoints; neither drops a state whose write must wait
-for the write in flight. A disk copy in use may displace the oldest copy in use,
-and ordinary or optional work never displaces anything in use. Nothing in use is
-pinned, so running work that needs the memory still takes it once nothing else
-is left. A resumed lane that lost its prompt's replay point rebuilds it on the
-way; the point its generated history reaches is a disposable checkpoint.
+lanes fit, it waits for them, resident. A prefill command captures the state of
+each boundary it reaches, in buffers reserved before it runs. A junction or a
+checkpoint retires its lane's checkpoint once published and takes that
+checkpoint's buffers first; a checkpoint the same command would capture before
+it is not captured at all. The prompt's replay point keeps the lane's
+checkpoint cached and takes its buffers only when refused memory. Refused, the
+replay point, which is in use, takes cached KV and states in the same order,
+then the oldest state in use; of the KV it takes only leaves whose page frees
+at once, and only while an extent can be emptied, which is released at once;
+it drops a state whose write must wait for the write in flight. A junction
+makes room the same way short of what is in use, and an optional checkpoint
+takes only checkpoints; neither drops a state whose write must wait. A state
+still refused ends its command at its boundary; with the SSD cache it is then
+written from the lane unless another write is in flight. A disk copy in use may
+displace the oldest copy in use, and ordinary or optional work never displaces anything in use. Nothing
+in use is pinned, so running work that needs the memory still takes it once
+nothing else is left. A resumed lane that lost its prompt's replay point
+rebuilds it on the way; the point its generated history reaches is a disposable
+checkpoint.
 `/status` reports under `state` the replay points unfinished requests hold
 (`in_use`, zero when idle) and those evicted all the same (`in_use_evictions`).
 
 Requests sharing a cold prefix can wait for a resident request's planned recovery
 point, including one whose prefix is still being restored from disk, then enter
 through the ordinary cache restore path. Waiting requests hold no lane or KV
-pages and return to ordinary admission when no useful producer remains. Late
-arrivals can extend the plan at complete state boundaries.
+pages and return to ordinary admission when no useful producer remains. A
+producer's command ends at the boundary a waiting request resumes from. Late
+arrivals can extend the plan where a whole draft window can still be captured
+for the new boundary.
 Higher-priority work does not wait for a lower-priority producer. `/status` exposes
 `scheduler.waiting_prefix` separately from resource waits.
 
@@ -2052,8 +2085,10 @@ batch's command.
 
 Long prefill uses disposable rolling checkpoints every 4096 tokens; none is
 planned within one prefill chunk (2048 tokens) of where the request resumes or
-of its replay boundary. Each retires when the next one or a junction lands, but
-the last stays cached once the replay point is published: a later request that
+of its replay boundary. Each retires when the next one or a junction takes its
+buffers, before the command that captures that state runs, so a command that is
+cancelled or fails loses it; one only on the SSD retires when that state lands.
+The last stays cached once the replay point is published: a later request that
 shares the prompt up to it, such as another conversation with the same long
 system prompt, resumes there instead of from the start. It stays only if the
 replay state fits beside it; refused memory, the replay state takes its buffers
@@ -2090,7 +2125,14 @@ codes over groups of 64 values with each group's fp16 scale and minimum
 the rings take 40 and 48 MiB). Prefill keeps a lane's window beside its rings;
 a restore that continues the rings computes them from the window again at the
 start of the request's first prefill chunk (`DFlashDraft::addContextRebuild`).
-Decode writes the rings alone, so states are published only in prefill.
+Decode writes the rings alone, so states are published only in prefill. A
+prefill chunk writes each state it captures inside its rows
+(`ModelBatchItem::stateCaptures`) into buffers reserved before it runs: every
+GDN layer's dispatches stop there to store the state and go on from it, and
+the state's window is a copy of the lane's as the chunk finds it plus the
+chunk's rows before the boundary, since the chunk's later rows take the slots
+of the state's oldest rows in the lane's window. A state at the chunk's end is
+copied from the lane after it.
 
 ### Disk tier
 
@@ -2194,14 +2236,19 @@ The engine receives `ignore_eos` as bit 0 of the request frame's flags word and
 `return_progress` as bit 1; the word rejects undefined bits.
 
 A request that generates in a thinking block may carry a thinking budget: its
-tokens, the token that closes thinking, and a second token that also ends it,
-a call's opening where the output may call a tool. The engine counts the
-thinking tokens it selects. In the selection where the budget runs out, one
-small dispatch gives that row the close, unless a draft token before the row
-ended thinking, and gives a sampled lane's drafted row the target probability 1
-for a drafted close and 0 otherwise, so acceptance keeps the draft only where
-it drafted the close. A selection where no budget runs out dispatches nothing
-more.
+tokens, the end tokens the engine selects where it runs out, the last of which
+closes thinking, and a second token that also ends it, a call's opening where
+the output may call a tool. The engine counts the thinking tokens it selects,
+and then the end tokens. In the selection where the budget runs out, one small
+dispatch gives that row and those after it the end's tokens, unless a draft
+token before the row ended thinking, and gives a sampled lane's drafted row the
+target probability 1 for a drafted end token and 0 otherwise, so acceptance
+keeps the draft only where it drafted the end. Once no thinking token is left,
+the end starts at a selection's row 0, before which no draft token can end
+thinking, and a second small dispatch replaces the lane's draft proposals with
+the end tokens left before the verify, so a decode cycle accepts as many of
+them as it verifies; the request's speculation counts leave those proposals
+out. A selection where no budget runs out dispatches nothing more.
 
 Requests carry the score-token IDs and Done events the selected f32 logits; the
 server and the engine must speak the same native wire version. Scoring requires
@@ -2386,10 +2433,10 @@ the other. Per model, `release-check`:
   identical (`EXPECT_OUTPUT_CHANGE=1` allows changed outputs with acceptance
   within 0.02), and so must the bytes of the weight images both load
   (`dev/benchmarks/weights.py`); decode and prefill GPU time, with the cold
-  prefills of short prompts (481 to 2017 tokens, a first chunk of 480 to 2016
-  rows) when both builds' benchmarks
-  run them, may regress by at most the larger of 2% and twice the run's own
-  ABBA spread, a spread above 5% fails as inconclusive, and this build's
+  prefills of short prompts (480 to 2016 tokens, one chunk each) when both
+  builds' benchmarks run them, may regress by at most the larger of 2% and
+  twice the run's own ABBA spread, a spread above 5% fails as inconclusive,
+  and this build's
   memory plan must hold, without the Neural Engine split, at least the
   context the baseline's holds without it. `ANE_FFN_SHARE=SHARE` runs
   every round at that share instead, in each build whose benchmark takes one

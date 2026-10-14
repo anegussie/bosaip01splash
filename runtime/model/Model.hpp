@@ -4,6 +4,7 @@
 #include "ops/Vision.hpp"
 #include "model/StateTransfer.hpp"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -101,13 +102,25 @@ struct SamplingParameters final {
 };
 
 // A request that generates inside a thinking block may select at most
-// `tokens` thinking tokens; the target then selects `end`, which closes the
-// block. Thinking also ends where the request selects `end` or `alsoEnds`
-// first, such as a tool call's opening that follows thinking directly.
+// `tokens` thinking tokens; the target then selects the `end` tokens in
+// order, the last of which closes the block. Thinking also ends where the
+// request selects that close or `alsoEnds` first, such as a tool call's
+// opening that follows thinking directly; no other end token is either.
 struct ThinkingBudget final {
   uint32_t tokens = 0;
-  uint32_t end = 0;
+  std::vector<uint32_t> end;
   uint32_t alsoEnds = 0;
+
+  // Why the target cannot end thinking with this budget: no end tokens, or
+  // one before the last that would end thinking itself. Null when it can.
+  [[nodiscard]] const char *unusable() const noexcept {
+    if (end.empty())
+      return "a thinking budget needs end tokens";
+    if (std::any_of(end.begin(), end.end() - 1,
+                    [&](uint32_t token) { return token == end.back() || token == alsoEnds; }))
+      return "only the last thinking end token may end thinking";
+    return nullptr;
+  }
 
   bool operator==(const ThinkingBudget &) const = default;
 };
@@ -128,8 +141,8 @@ struct ModelRequest final {
   std::span<const uint32_t> scoreTokens{};
   // RequestFlag bits.
   uint32_t flags = 0;
-  // None for a request without a thinking budget.
-  std::optional<ThinkingBudget> thinkingBudget;
+  // The engine request's thinking budget; null for a request without one.
+  const ThinkingBudget *thinkingBudget = nullptr;
   // Prompt tokens the lane takes from a cached state. Images that end at or
   // before it are neither staged nor encoded; their spans still place
   // rotary positions.
@@ -305,6 +318,25 @@ struct StateAdmission final {
   [[nodiscard]] bool granted() const noexcept { return lane.has_value(); }
 };
 
+// The buffers of one cached state, taken for a state boundary that a prefill
+// command reaches (Model::reserveState). The command's completion seals them
+// into the state of that boundary; whatever it still holds goes back to the
+// model's pool when the last handle goes, which the command's ticket keeps
+// until the GPU is done with them.
+class StateReservation {
+public:
+  virtual ~StateReservation() = default;
+};
+
+// A state a prefill command captures: the request's composite state after
+// `tokens` prompt tokens, in `reservation`'s buffers. The command writes the
+// state of a boundary inside it as a command ending there would store it, and
+// its completion copies the state of a boundary at its end.
+struct StateCapture final {
+  uint32_t tokens = 0;
+  std::shared_ptr<StateReservation> reservation;
+};
+
 struct ModelBatchItem final {
   uint64_t requestId = 0;
   uint64_t logicalPosition = 0;
@@ -315,6 +347,10 @@ struct ModelBatchItem final {
   uint64_t pageTableRevision = 0;
   uint32_t pageTableFirstChanged = 0;
   std::span<const uint32_t> inputTokens{};
+  // A prefill chunk's states to capture, ascending: page-aligned boundaries in
+  // (logicalPosition, logicalPosition + tokenCount], each one where the
+  // request's draft context plan leaves a whole draft window.
+  std::vector<StateCapture> stateCaptures{};
 };
 
 struct ModelStepResult final {
@@ -334,6 +370,9 @@ struct ModelStepResult final {
   // Raw final-prompt-position logits at the request's scoreTokens, in
   // requested order. Empty for generation and for cancelled/failed scoring.
   std::vector<float> scoreLogits{};
+  // The states of the chunk's stateCaptures, in order, when the chunk
+  // commits; empty when it does not.
+  std::vector<std::shared_ptr<const CompositeState>> capturedStates{};
   // Set when the model computed an unusable result for this lane alone: a
   // prefill chunk whose last row is not finite, a non-finite score logit or
   // a selection outside the vocabulary (the sampling kernels' sentinel for a
@@ -559,20 +598,22 @@ public:
   [[nodiscard]] virtual std::unique_ptr<ModelBatchTicket>
   submit(const BatchPlan &plan, std::span<const ModelBatchItem> items,
          std::function<void()> completion) = 0;
-  // Copies the request's committed state at its current page-aligned
-  // boundary into the cached state's buffers. Returns nullptr when the pool
-  // has none free and the governor denies new ones; the caller may release a
-  // cached state and retry.
-  [[nodiscard]] virtual std::shared_ptr<const CompositeState>
-  snapshot(uint64_t requestId) = 0;
-  // The bytes one lane's state snapshot allocates.
+  // Takes the buffers of one cached state for the request's state boundary
+  // at `tokens`, which the prefill command reaching it fills
+  // (ModelBatchItem::stateCaptures): from the pool, or one admission for
+  // what the pool lacks. Null when the governor refuses; the caller may
+  // release a cached state and retry.
+  [[nodiscard]] virtual std::shared_ptr<StateReservation>
+  reserveState(uint64_t requestId, uint32_t tokens) = 0;
+  // The bytes one cached state's buffers take.
   [[nodiscard]] virtual uint64_t snapshotBytes() const noexcept = 0;
   // Whether the disk tier takes a state written from a lane: a tier exists
   // and its state file accepts writes. The quota is the write's own concern.
   [[nodiscard]] virtual bool canSnapshotToDisk() const noexcept { return false; }
   // Writes the request's committed state at its current page-aligned
-  // boundary to the disk tier from the lane's own buffers, for a state the
-  // pool has no cached state's buffers for; the ticket carries its disk copy.
+  // boundary to the disk tier from the lane's own buffers, for a state no
+  // cached state's buffers could be reserved for; the ticket carries its disk
+  // copy.
   // Null when the quota cannot admit another state: the caller may free quota
   // and retry.
   [[nodiscard]] virtual std::unique_ptr<StateOffload>

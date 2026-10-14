@@ -777,6 +777,7 @@ def main_args(**overrides):
             "announce_served_name": False,
             "default_reasoning_effort": None,
             "thinking_token_budget": None,
+            "thinking_end_text": None,
             "max_context": None,
             "max_memory": None,
             "idle_release": None,
@@ -874,6 +875,7 @@ class Harness:
         allowed_hosts=(),
         allowed_origins=(),
         vision=True,
+        thinking_end=backend_api.DEFAULT_THINKING_END,
         **frontend_options,
     ):
         self.tokenizer = tokenizer or FakeTokenizer()
@@ -883,6 +885,7 @@ class Harness:
             self.tokenizer,
             request_logger=request_logger,
             max_active_requests=max_active_requests,
+            thinking_end=thinking_end,
         )
         self.app = make_frontend(
             self.tokenizer,
