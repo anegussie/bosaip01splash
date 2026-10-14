@@ -57,4 +57,4 @@ Reproduction: three fresh `/Users/mymac/startllamacpp.sh --direct 14` sessions o
 
 Model revisions: target `b072e1d3b35a0a630cece372c2127528e0994386`; DFlash2 draft `015e795645c74b1a0eeef3b570031fb62e769bc5`. Build identity: `src-72b36c8b19251b1d90f22e4355358e3885c5241cb5201728bbcafd120b94dc32`.
 
-Machine-readable results: [summary](bonsai-performance-60939903.json). Raw replies, status snapshots, launcher logs, and benchmark caches remain in `build/validation/performance-60939903/`.
+Machine-readable results: [summary](bonsai-performance-60939903.json). Raw replies, status snapshots and launcher logs remain in `build/validation/performance-60939903/`. Disposable benchmark cache files were pruned on 2026-10-14 to recover disk headroom.

@@ -146,6 +146,15 @@ int main(int argc, char **argv) {
             cases.push_back({"L" + std::to_string(lanes),
                              std::string(registerTile ? "register" : "staged") + " S" + std::to_string(splits),
                              Linear::plan(w, config, FloatOutput::BFloat16), config == policy, {}});
+            // Compare the existing single-pass gate/up kernel on smaller
+            // Apple10 GPUs too, without changing the production policy.
+            if (!registerTile && gpuFamilyClass(backend.capabilities().appleGpuFamily) == GpuFamilyClass::Apple10 &&
+                epilogue == LinearEpilogue::GateUp && images.size() == 1) {
+              const LinearConfig onePass{.tile = tile, .splits = splits, .spread = true,
+                                         .oneGateUpPass = true};
+              cases.push_back({"L" + std::to_string(lanes), "one-pass S" + std::to_string(splits),
+                               Linear::plan(w, onePass, FloatOutput::BFloat16), onePass == policy, {}});
+            }
           }
       }
       // Buffers of the widest plan; the scratch of the plan that needs the most.

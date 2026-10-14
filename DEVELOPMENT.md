@@ -2631,7 +2631,56 @@ share only the system prompt and tools. Replay points of unfinished requests
 evicted during a phase only print a warning.
 
 `benchmark-backend` and `benchmark-decode-profile` take `MODEL` the same way.
-The models they are run with, one per family and source format:
+For a single-client workload on a smaller Mac, restrict the profiler to one
+lane and match the server's recurrent-state precision and prefill chunk size:
+
+```sh
+make benchmark-decode-profile MODEL=OWNER/REPO:VARIANT LANGUAGE_ONLY=1 \
+  DECODE_PROFILE_ARGS='--prompt-tokens 512 --cycles 4 --max-lanes 1 --state-format bf16 --prefill-chunk-tokens 512'
+```
+
+`--max-lanes` accepts 1 through 4 (default 4), allocating KV pages only for
+the selected widths. `--prefill-chunk-tokens` accepts multiples of 128 from
+128 through 2048, and defaults to the runtime's prefill budget. These options
+change the profiling fixture, not the production dispatch policy. The GGUF
+projection benchmark also compares the existing single-pass gate/up kernel
+against separate projections on Apple10 GPUs, including eight-core devices.
+
+For the local Bonsai option-14 launcher, the context comparison uses fresh
+servers in 24K/16K/8K/8K/16K/24K order, three executable coding checks, cold and
+cached recall requests, and a clean-restart cache check in every phase:
+
+```sh
+.venv/bin/python dev/benchmarks/bonsai_tuning.py \
+  --results build/validation/performance-local-tuning --filled-check
+```
+
+It uses `~/startllamacpp.sh --direct 14` by default (`--launcher` selects
+another path), an isolated OpenCode configuration and port 1236. The optional
+filled checks exercise approximately 7K, 15K and 23K prompt tokens after the
+matched phases. Scratch caches are removed after each phase's servers stop;
+replies, timings, acceptance, thermal state, swap and memory/cache snapshots
+remain in the results directory. A speed claim needs repeated samples, matching
+outputs and acceptance, nominal thermal state and a gain beyond the existing
+ABBA noise bound. A smaller declared context alone does not establish a memory
+or speed saving.
+
+For prefix reuse in a coding client, keep the system message and tool
+definitions stable and append conversation turns. Put changing timestamps or
+request identifiers after the reusable prefix. Check the actual request's
+`timings.cache_n` or cached-token usage; a configured disk quota is not evidence
+of a hit. Prefix reuse saves prefill work rather than accelerating decode.
+
+Earlier local benchmark runs may have left large scratch caches behind. Preview
+them with `.venv/bin/python dev/benchmarks/benchmark_cache.py`; add `--prune`
+to remove them. This operates only on recognized cache directories under
+`build/validation/performance-*`, takes each namespace's exclusive lock, and
+skips active caches, symlinks and unexpected files. Reports, production prefix
+caches and installed model files are preserved. Freeing scratch disk space can
+raise the effective SSD-cache limit, which remains bounded by the volume's
+available space rather than solely by `--max-cache-disk`.
+
+Native model benchmarks use these models, one per family and source format:
 
 | Family | MLX | GGUF |
 | --- | --- | --- |

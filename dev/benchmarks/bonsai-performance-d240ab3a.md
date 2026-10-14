@@ -49,7 +49,7 @@ System swap snapshots (not attributed solely to Splash):
 
 Startup times: 59.13 s, 39.63 s, 24.98 s.
 
-Machine-readable results: [summary](bonsai-performance-d240ab3a.json). Raw replies, status snapshots, launcher logs and fresh-cache directories remain locally in `build/validation/performance-d240ab3a`.
+Machine-readable results: [summary](bonsai-performance-d240ab3a.json). Raw replies, status snapshots and launcher logs remain locally in `build/validation/performance-d240ab3a`. Disposable benchmark cache files were pruned on 2026-10-14 to recover disk headroom.
 
 Reproduction: three fresh sessions of `/Users/mymac/startllamacpp.sh --direct 14`, using port 1236, a temporary OpenCode configuration, and a separate empty cache directory per session. Each session runs `dev/benchmarks/bonsai_coding.py --order 0` followed by `dev/benchmarks/bonsai_context.py --records 220`, with `--url http://127.0.0.1:1236` and separate `--results` files. Before each session’s coding workload, wait up to 120 seconds for nominal thermal state.
 

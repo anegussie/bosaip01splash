@@ -2,6 +2,7 @@
 //
 //   decode-profile METALLIB MODEL_ROOT [--prompt-tokens N] [--cycles K] [--kv-format int8|bf16]
 //                  [--state-format fp32|bf16]
+//                  [--max-lanes 1..4] [--prefill-chunk-tokens 128..2048]
 //   decode-profile METALLIB MODEL_ROOT --images HxW[,HxW...] [--cycles K]
 //
 // Drives the real model runtime with Metal dispatch profiling enabled, so
@@ -222,7 +223,7 @@ struct Lane final {
 };
 
 void prefill(model::Runtime &executor, Lane &lane,
-             std::span<const uint32_t> prompt) {
+             std::span<const uint32_t> prompt, uint32_t chunkTokens) {
   EngineRequest request;
   request.id = lane.id;
   request.prompt.assign(prompt.begin(), prompt.end());
@@ -231,7 +232,7 @@ void prefill(model::Runtime &executor, Lane &lane,
   uint32_t offset = 0;
   while (offset < prompt.size()) {
     const uint32_t count = std::min<uint32_t>(
-        model::ExecutionLimits::prefillTokenBudget,
+        chunkTokens,
         static_cast<uint32_t>(prompt.size()) - offset);
     BatchPlan plan{.kind = WorkKind::Prefill,
                    .items = {{lane.id, count, offset}},
@@ -296,12 +297,15 @@ int main(int argc, char **argv) {
         std::cerr << "usage: decode-profile METALLIB MODEL_ROOT "
                      "[--prompt-tokens N] [--cycles K] [--kv-format int8|bf16] "
                      "[--state-format fp32|bf16]\n"
+                     "                     [--max-lanes 1..4] [--prefill-chunk-tokens 128..2048]\n"
                      "       decode-profile METALLIB MODEL_ROOT "
                      "--images HxW[,HxW...] [--cycles K]\n";
         return 2;
       }
       uint32_t promptTokens = 512;
       uint32_t cycles = 4;
+      uint32_t maximumLanes = 4;
+      uint32_t chunkTokens = model::ExecutionLimits::prefillTokenBudget;
       kv::Format format = kv::Format::Int8;
       ops::GdnStateFormat stateFormat = ops::GdnStateFormat::Float32;
       std::vector<ops::ImageGrid> grids;
@@ -315,7 +319,17 @@ int main(int argc, char **argv) {
           textOptions = true;
         } else if (option == "--cycles")
           cycles = parseCount(argv[index + 1], "--cycles");
-        else if (option == "--kv-format") {
+        else if (option == "--max-lanes") {
+          maximumLanes = parseCount(argv[index + 1], "--max-lanes");
+          if (maximumLanes > model::ExecutionLimits::maximumBatchWidth)
+            throw std::invalid_argument("--max-lanes takes 1 through 4");
+          textOptions = true;
+        } else if (option == "--prefill-chunk-tokens") {
+          chunkTokens = parseCount(argv[index + 1], "--prefill-chunk-tokens");
+          if (!model::validPrefillChunkTokens(chunkTokens))
+            throw std::invalid_argument("prefill chunk must be a multiple of 128 tokens in [128, 2048]");
+          textOptions = true;
+        } else if (option == "--kv-format") {
           const std::string_view value(argv[index + 1]);
           if (value != "int8" && value != "bf16")
             throw std::invalid_argument("--kv-format takes int8 or bf16");
@@ -347,7 +361,7 @@ int main(int argc, char **argv) {
           model::loadModel(backend, root, model::inspectModelRoot(root));
       ops::ExecutionPlans operators(backend.capabilities());
 
-      // Enough Page32 pages for four lanes of prompt plus generated rows.
+      // Only reserve KV pages for the lane widths being measured.
       const uint32_t pagesPerLane =
           (promptTokens + 256 + model::ExecutionLimits::targetVerifyRows) /
               kv::kPageTokens +
@@ -357,7 +371,7 @@ int main(int argc, char **argv) {
       const kv::Layout kvLayout = model.targetKvLayout(format);
       const uint32_t extentPages = kvLayout.maximumExtentPages();
       const uint32_t pageCount =
-          (pagesPerLane * 4 + extentPages - 1) / extentPages * extentPages;
+          (pagesPerLane * maximumLanes + extentPages - 1) / extentPages * extentPages;
       MemoryGovernor governor(
           backend, backend.capabilities().recommendedMaxWorkingSetBytes, 1, 1,
           queryHostMemory, 0);
@@ -370,34 +384,35 @@ int main(int argc, char **argv) {
       model::QwenStateStorage states(backend,
                                       governor.allocationAdmission(),
                                       model.stateLayout(stateFormat), nullptr);
-      model::RuntimeContext context{backend, model, pages, states, operators};
+      model::RuntimeContext context{backend, model, pages, states, operators, chunkTokens};
       model::Runtime executor(context);
 
-      std::printf("device %s, %u prompt tokens, %u cycles per width, %s state\n",
+      std::printf("device %s, %u prompt tokens, %u cycles per width, %s state, "
+                  "%u-token chunks, up to %u lane(s)\n",
                   backend.capabilities().deviceName.c_str(), promptTokens,
-                  cycles, std::string(ops::formatName(stateFormat)).c_str());
+                  cycles, std::string(ops::formatName(stateFormat)).c_str(), chunkTokens, maximumLanes);
 
       std::array<Lane, 4> lanes;
-      for (uint32_t index = 0; index < lanes.size(); ++index) {
+      for (uint32_t index = 0; index < maximumLanes; ++index) {
         lanes[index] = {index + 1, index, 0,
                         pageRange(index * pagesPerLane, pagesPerLane)};
       }
       const std::vector<uint32_t> prompt = chatPrompt(promptTokens);
 
       // Warm prefill and B1 decode with real work before measuring.
-      prefill(executor, lanes[0], prompt);
+      prefill(executor, lanes[0], prompt, chunkTokens);
       static_cast<void>(decodeCycle(backend, executor, std::span<Lane>(&lanes[0], 1)));
       executor.end(lanes[0].id);
 
       // Prefill: fused timing first, then the attributed replay. Both cover
       // every chunk of the prompt.
       const double prefillBefore = executor.telemetry().totalPrefillGpuSeconds;
-      prefill(executor, lanes[0], prompt);
+      prefill(executor, lanes[0], prompt, chunkTokens);
       const double prefillFused =
           executor.telemetry().totalPrefillGpuSeconds - prefillBefore;
       executor.end(lanes[0].id);
       BackendInstrumentation::setDispatchProfiling(backend, true);
-      prefill(executor, lanes[0], prompt);
+      prefill(executor, lanes[0], prompt, chunkTokens);
       BackendInstrumentation::setDispatchProfiling(backend, false);
       Table prefillTable;
       accumulate(prefillTable,
@@ -429,14 +444,14 @@ int main(int argc, char **argv) {
       };
       profileWidth("B1 decode cycle", std::span<Lane>(&lanes[0], 1));
       // Add one lane at a time so M16 and M24 paths are measured too.
-      for (uint32_t index = 1; index < lanes.size(); ++index) {
-        prefill(executor, lanes[index], prompt);
+      for (uint32_t index = 1; index < maximumLanes; ++index) {
+        prefill(executor, lanes[index], prompt, chunkTokens);
         const std::string title = "B" + std::to_string(index + 1) + " decode cycle";
         profileWidth(title.c_str(), std::span<Lane>(lanes.data(), index + 1));
       }
 
-      for (Lane &lane : lanes)
-        executor.end(lane.id);
+      for (uint32_t index = 0; index < maximumLanes; ++index)
+        executor.end(lanes[index].id);
       return 0;
     } catch (const std::exception &error) {
       std::cerr << "decode-profile: " << error.what() << '\n';

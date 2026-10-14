@@ -229,6 +229,7 @@ def main():
                         "accepted_draft_tokens",
                         "decode_output_tokens",
                         "decode_wall_ms",
+                        "decode_cycle_ms",
                     ]
                 }
                 submitted = (
