@@ -13,6 +13,7 @@ namespace splash::metal {
 struct DispatchTiming {
   std::string pipelineName;
   double gpuSeconds = 0.0;
+  ProfileScope scope = ProfileScope::None;
 };
 
 // What tests and benchmarks observe of a MetalBackend beyond its serving

@@ -30,6 +30,9 @@ public:
   CommandGraph(CommandGraph &&) noexcept = default;
   CommandGraph &operator=(CommandGraph &&) noexcept = default;
 
+  // Labels subsequent dispatches for the instrumented backend's profiler.
+  void setProfileScope(ProfileScope scope) noexcept { profileScope_ = scope; }
+
   void add(std::string pipeline, std::vector<MetalBuffer> buffers,
            DispatchSize groups, DispatchSize threads = {kDefaultThreads, 1, 1}) {
     push(std::move(pipeline), std::move(buffers), groups, threads);
@@ -83,6 +86,7 @@ private:
                         DispatchSize groups, DispatchSize threads) {
     ComputeDispatch dispatch;
     dispatch.pipelineName = std::move(pipeline);
+    dispatch.profileScope = profileScope_;
     dispatch.threadgroups = groups;
     dispatch.threadsPerThreadgroup = threads;
     dispatch.buffers.reserve(buffers.size());
@@ -100,6 +104,7 @@ private:
   std::deque<std::vector<std::byte>> payloads_;
   std::vector<ComputeDispatch> dispatches_;
   std::vector<EventStep> events_;
+  ProfileScope profileScope_ = ProfileScope::None;
 };
 
 } // namespace splash::metal

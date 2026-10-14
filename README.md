@@ -74,6 +74,13 @@ automatically:
 | Qwen3.8-27B | `unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_M` | `mlx-community/Qwen3.8-27B-4bit` |
 | Qwen3.6-35B-A3B | `unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_M` | `mlx-community/Qwen3.6-35B-A3B-4bit` |
 
+Override the draft with `--draft-model OWNER/REPO` or a local BF16 DFlash2
+checkpoint directory. `SPLASH_DRAFT_MODEL` supplies the same default when a
+wrapper launches Splash; an explicit `--draft-model` takes precedence. The
+loader validates the architecture and accepts selector codebooks with or
+without the `.weight` suffix. A compatible checkpoint still needs a matched
+benchmark against the automatically selected draft before deployment.
+
 Unsloth GGUF variants span **1–8 bits**, including mixed-precision UD formats
 up to `UD-Q8_K_XL`, whose BF16 tensors load too. Whole-BF16 and F16 models are
 not supported: the installer refuses a GGUF whose projections and experts are

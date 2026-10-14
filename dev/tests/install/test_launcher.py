@@ -60,6 +60,7 @@ class LauncherTests(unittest.TestCase):
             "SPLASH_PORT",
             "SPLASH_API_KEY",
             "SPLASH_DEFAULT_REASONING_EFFORT",
+            "SPLASH_DRAFT_MODEL",
         ):
             os.environ.pop(name, None)
         keep_stop_signals(self)
@@ -1276,6 +1277,34 @@ class LauncherTests(unittest.TestCase):
                     error.getvalue(),
                 )
                 install.assert_not_called()
+
+    def test_draft_environment_override_is_validated_and_cli_takes_precedence(self):
+        command = ["serve", "--model", MODEL_ID]
+        repository = "incoai/Qwen3.8-27B-DFlash2"
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = str(Path(temporary).resolve())
+            for value in (repository, directory):
+                with (
+                    self.subTest(value=value),
+                    mock.patch.dict(os.environ, {"SPLASH_DRAFT_MODEL": value}),
+                ):
+                    self.assertEqual(launcher.parse_args(command).draft_model, value)
+                    self.assertEqual(
+                        launcher.parse_args(
+                            command + ["--draft-model", repository]
+                        ).draft_model,
+                        repository,
+                    )
+        with mock.patch.dict(os.environ, {"SPLASH_DRAFT_MODEL": ""}):
+            self.assertIsNone(launcher.parse_args(command).draft_model)
+        with (
+            mock.patch.dict(os.environ, {"SPLASH_DRAFT_MODEL": "./missing-draft"}),
+            mock.patch("sys.stderr", io.StringIO()) as error,
+            self.assertRaises(SystemExit) as failed,
+        ):
+            launcher.parse_args(command)
+        self.assertEqual(failed.exception.code, 2)
+        self.assertIn("argument --draft-model", error.getvalue())
 
     def test_packaged_serve_never_invokes_make_or_system_python(self):
         with (

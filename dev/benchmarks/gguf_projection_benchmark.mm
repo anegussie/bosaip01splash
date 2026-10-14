@@ -150,10 +150,13 @@ int main(int argc, char **argv) {
             // Apple10 GPUs too, without changing the production policy.
             if (!registerTile && gpuFamilyClass(backend.capabilities().appleGpuFamily) == GpuFamilyClass::Apple10 &&
                 epilogue == LinearEpilogue::GateUp && images.size() == 1) {
-              const LinearConfig onePass{.tile = tile, .splits = splits, .spread = true,
-                                         .oneGateUpPass = true};
-              cases.push_back({"L" + std::to_string(lanes), "one-pass S" + std::to_string(splits),
-                               Linear::plan(w, onePass, FloatOutput::BFloat16), onePass == policy, {}});
+              for (const bool spread : {false, true}) {
+                const LinearConfig onePass{.tile = tile, .splits = splits, .spread = spread,
+                                           .oneGateUpPass = true};
+                cases.push_back({"L" + std::to_string(lanes),
+                                 std::string(spread ? "one-pass S" : "one-pass plain S") + std::to_string(splits),
+                                 Linear::plan(w, onePass, FloatOutput::BFloat16), onePass == policy, {}});
+              }
             }
           }
       }

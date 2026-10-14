@@ -211,6 +211,7 @@ void DFlashDraft::addDecode(
   const ops::Linear &linear = operators_.linear();
   const ops::LinearScratch &scratch = buffers.linearScratch;
 
+  graph.setProfileScope(metal::ProfileScope::DraftForward);
   for (uint32_t layer = 0; layer < layout.layers; ++layer) {
     const uint32_t current = layer & 1;
     const uint32_t next = current ^ 1;
@@ -281,6 +282,7 @@ void DFlashDraft::addDecode(
 
   // The final norm feeds the shared vocabulary head and then the selector;
   // the selector reuses whatever table the head leaves when the layouts match.
+  graph.setProfileScope(metal::ProfileScope::DraftVocabulary);
   const ops::LinearPlan headPlan = linear.decodePlan(vocabularyProjection, lanes);
   const ops::PreparedInput finalHidden = ops::Normalization::addRms(
       graph, buffers.hidden[weights_.layout.layers & 1], weights_.finalNorm,
@@ -288,6 +290,7 @@ void DFlashDraft::addDecode(
   const ops::PreparedInput afterHead = linear.add(
       graph, {.input = buffers.finalHidden, .output = buffers.logits, .scratch = scratch, .prepared = finalHidden},
       vocabularyProjection, headPlan);
+  graph.setProfileScope(metal::ProfileScope::DraftSelector);
   linear.add(graph,
              {.input = buffers.finalHidden, .output = buffers.selectorHidden, .scratch = scratch,
               .prepared = afterHead},

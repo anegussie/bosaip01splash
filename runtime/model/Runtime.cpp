@@ -1984,6 +1984,7 @@ struct Runtime::Impl {
         }
 
         CommandGraph target;
+        target.setProfileScope(metal::ProfileScope::TargetVerify);
         const uint32_t width = static_cast<uint32_t>(lanes_.size());
         impl_.encodeBatchVerifyInput(target, width);
         impl_.encodeBatchEmbedding(target, DecodeTensor::InputTokens,
@@ -2027,10 +2028,12 @@ struct Runtime::Impl {
           }
 
           CommandGraph commit;
+          commit.setProfileScope(metal::ProfileScope::Acceptance);
           impl_.encodeTargetVerifyBatchPolicy(commit,
                                               {entries.data(), lanes_.size()});
           impl_.encodeBatchAcceptance(commit, {entries.data(), lanes_.size()},
                                       {maximumRetained.data(), lanes_.size()});
+          commit.setProfileScope(metal::ProfileScope::DraftContextCommit);
           impl_.encodeDraftStateCommitBatch(
               commit, {entries.data(), lanes_.size()}, items_);
           submit(commit);
@@ -2624,6 +2627,7 @@ Runtime::decodeAsync(const BatchPlan &plan,
   const std::span<Impl::Request *const> entries(requests.data(), width);
   const uint32_t ropeRows = width * kDecodeRows;
   CommandGraph commandGraph;
+  commandGraph.setProfileScope(metal::ProfileScope::Draft);
   impl_->addRopeTables(
       commandGraph,
       impl_->decodeArena->batchSlice(DecodeTensor::Positions, width), ropeRows,
@@ -2640,13 +2644,16 @@ Runtime::decodeAsync(const BatchPlan &plan,
     return std::make_unique<Impl::ConstrainedDecodeTicket>(
         *impl_, std::move(lanes), items, commandGraph, std::move(completion));
   }
+  commandGraph.setProfileScope(metal::ProfileScope::TargetVerify);
   impl_->encodeBatchVerifyInput(commandGraph, width);
   impl_->encodeBatchEmbedding(commandGraph, DecodeTensor::InputTokens,
                               DecodeTensor::Hidden0, width);
   impl_->encodeTargetVerifyBatchForward(commandGraph, entries, items);
+  commandGraph.setProfileScope(metal::ProfileScope::Acceptance);
   impl_->encodeTargetVerifyBatchPolicy(commandGraph, entries);
   impl_->encodeBatchAcceptance(commandGraph, entries,
                                {maximumRetained.data(), width});
+  commandGraph.setProfileScope(metal::ProfileScope::DraftContextCommit);
   impl_->encodeDraftStateCommitBatch(commandGraph, entries, items);
 
   std::vector<ModelBatchItem> copiedItems(items.begin(), items.end());

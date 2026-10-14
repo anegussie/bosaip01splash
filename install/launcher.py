@@ -416,9 +416,10 @@ def parse_args(argv=None):
     model.add_argument(
         "--draft-model",
         type=model_artifacts.parse_draft_model,
+        default=os.environ.get("SPLASH_DRAFT_MODEL") or None,
         metavar="DRAFT",
         help="DFlash2 draft repository or local directory to use instead of the "
-        "automatically selected one",
+        "automatically selected one (default: SPLASH_DRAFT_MODEL, if set)",
     )
     model.add_argument(
         "--language-only",

@@ -977,7 +977,7 @@ struct MetalBackend::Impl {
             const CommandTiming timing =
                 commit({&item, 1}, {}, command.retainedAllocations, {}).wait();
             dispatchProfile.push_back(
-                {item.source->pipelineName, timing.gpuSeconds});
+                {item.source->pipelineName, timing.gpuSeconds, item.source->profileScope});
             total.gpuSeconds += timing.gpuSeconds;
             total.wallSeconds += timing.wallSeconds;
         }

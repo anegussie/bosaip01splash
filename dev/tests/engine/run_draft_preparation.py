@@ -56,7 +56,7 @@ def quantized_group(weights):
     return struct.pack("<HH", bf16(scale), bf16(bias)) + packed
 
 
-def draft_fixture(root):
+def draft_fixture(root, *, codebook_weight_suffix=False, duplicate_codebooks=False):
     """A two-layer DFlash2 checkpoint of width 256, its BF16 safetensors as
     its repository releases them, and expected/native.safetensors: each
     projection's native af4g64 rows, as MLX's affine quantization rounds
@@ -118,8 +118,13 @@ def draft_fixture(root):
     add("hidden_norm.weight", [256])
     add("norm.weight", [256])
     projection("candidate_selector.hidden_projection", 256, 256)
-    add("candidate_selector.predecessor_codebook", [256, 256])
-    add("candidate_selector.successor_codebook", [256, 256])
+    suffix = ".weight" if codebook_weight_suffix else ""
+    add("candidate_selector.predecessor_codebook" + suffix, [256, 256])
+    add("candidate_selector.successor_codebook" + suffix, [256, 256])
+    if duplicate_codebooks:
+        for name in ("predecessor_codebook", "successor_codebook"):
+            canonical = "candidate_selector." + name
+            tensors[canonical + ".weight"] = tensors[canonical]
     write_safetensors(root / "model.safetensors", tensors)
     (root / "expected").mkdir()
     write_safetensors(root / "expected" / "native.safetensors", expected)
@@ -130,19 +135,42 @@ def main():
     parser.add_argument("binary", type=Path)
     parser.add_argument("metallib", type=Path)
     parser.add_argument("goldens", type=Path)
+    parser.add_argument("--codebook-weight-suffix", action="store_true")
     args = parser.parse_args()
-    with tempfile.TemporaryDirectory(prefix="splash-draft-preparation-") as directory:
-        root = Path(directory)
-        draft_fixture(root)
-        command = [
-            str(args.binary.resolve()),
-            str(args.metallib.resolve()),
-            str(root),
-            str(args.goldens.resolve()),
-        ]
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
-        assert result.returncode == 0, result.stdout + result.stderr
-        print(result.stdout.splitlines()[-1])
+    cases = (
+        [(True, False)]
+        if args.codebook_weight_suffix
+        else [(False, False), (True, False), (False, True)]
+    )
+    for suffix, duplicate in cases:
+        with tempfile.TemporaryDirectory(
+            prefix="splash-draft-preparation-"
+        ) as directory:
+            root = Path(directory)
+            draft_fixture(
+                root, codebook_weight_suffix=suffix, duplicate_codebooks=duplicate
+            )
+            command = [
+                str(args.binary.resolve()),
+                str(args.metallib.resolve()),
+                str(root),
+                str(args.goldens.resolve()),
+            ]
+            result = subprocess.run(
+                command, capture_output=True, text=True, check=False
+            )
+            if duplicate:
+                assert (
+                    result.returncode != 0
+                    and "ambiguous draft codebook" in result.stdout
+                ), result.stdout + result.stderr
+                print("ambiguous draft codebooks rejected")
+            else:
+                assert result.returncode == 0, result.stdout + result.stderr
+                print(
+                    result.stdout.splitlines()[-1],
+                    "(.weight codebooks)" if suffix else "",
+                )
 
 
 if __name__ == "__main__":

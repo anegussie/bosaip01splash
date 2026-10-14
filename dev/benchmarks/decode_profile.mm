@@ -8,9 +8,9 @@
 // Drives the real model runtime with Metal dispatch profiling enabled, so
 // every dispatch of a prefill command and B1 through B4 DFlash cycles
 // is replayed as its own command and attributed to its pipeline.
-// The fused (unprofiled) GPU time of the same work is reported alongside, so
-// the gap between the sum of parts and the fused command shows how much a
-// cycle pays in dispatch boundaries rather than kernel work.
+// Fused (unprofiled) cycle timing is reported alongside. Attribution uses
+// separate decode cycles and dispatch submissions; different inputs and GPU
+// clock/thermal conditions mean their gap is not a dispatch-overhead estimate.
 // With --images it profiles the vision encoder instead, loading only the
 // model's vision role: K encodes of a synthetic image per patch grid (height
 // x width in patches), fused and then attributed.
@@ -57,9 +57,27 @@ struct Attribution final {
 
 using Table = std::map<std::string, Attribution>;
 
+std::string_view scopeName(metal::ProfileScope scope) {
+  using metal::ProfileScope;
+  switch (scope) {
+  case ProfileScope::None: return "";
+  case ProfileScope::Draft: return "draft";
+  case ProfileScope::DraftForward: return "draft_forward";
+  case ProfileScope::DraftVocabulary: return "draft_vocabulary";
+  case ProfileScope::DraftSelector: return "draft_selector";
+  case ProfileScope::TargetVerify: return "target_verify";
+  case ProfileScope::Acceptance: return "acceptance";
+  case ProfileScope::DraftContextCommit: return "draft_context_commit";
+  }
+  throw std::logic_error("unknown profile scope");
+}
+
 void accumulate(Table &table, std::span<const metal::DispatchTiming> timings) {
   for (const metal::DispatchTiming &timing : timings) {
-    Attribution &entry = table[timing.pipelineName];
+    const std::string_view scope = scopeName(timing.scope);
+    const std::string name = scope.empty() ? timing.pipelineName
+                                          : std::string(scope) + "/" + timing.pipelineName;
+    Attribution &entry = table[name];
     ++entry.dispatches;
     entry.gpuSeconds += timing.gpuSeconds;
   }
@@ -83,9 +101,20 @@ void print(const std::string &title, const Table &table, double divisor,
   std::printf("\n== %s: %.2f ms fused, %.2f ms as %llu separate dispatches ==\n",
               title.c_str(), fusedGpuSeconds * 1e3, total * 1e3 / divisor,
               static_cast<unsigned long long>(dispatches / divisor));
-  std::printf("%-44s %9s %10s %6s\n", "pipeline", "count", "gpu_ms", "share");
+  Table stages;
   for (const auto &[name, entry] : rows) {
-    std::printf("%-44s %9.1f %10.3f %5.1f%%\n", name.c_str(),
+    const size_t slash = name.find('/');
+    const std::string stage = slash == std::string::npos ? "unscoped" : name.substr(0, slash);
+    stages[stage].dispatches += entry.dispatches;
+    stages[stage].gpuSeconds += entry.gpuSeconds;
+  }
+  std::printf("Separate-dispatch stage attribution (not fused stage latency):\n");
+  for (const auto &[name, entry] : stages)
+    std::printf("  %-24s %9.3f ms %5.1f%%\n", name.c_str(),
+                entry.gpuSeconds * 1e3 / divisor, entry.gpuSeconds / total * 100.0);
+  std::printf("%-68s %9s %10s %6s\n", "pipeline", "count", "gpu_ms", "share");
+  for (const auto &[name, entry] : rows) {
+    std::printf("%-68s %9.1f %10.3f %5.1f%%\n", name.c_str(),
                 entry.dispatches / divisor, entry.gpuSeconds * 1e3 / divisor,
                 entry.gpuSeconds / total * 100.0);
   }

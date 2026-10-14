@@ -154,6 +154,11 @@ struct IndirectGrid {
   uint64_t offsetBytes = 0;
 };
 
+enum class ProfileScope : uint8_t {
+  None, Draft, DraftForward, DraftVocabulary, DraftSelector,
+  TargetVerify, Acceptance, DraftContextCommit
+};
+
 struct ComputeDispatch {
   std::string pipelineName;
   std::vector<BufferBinding> buffers;
@@ -163,6 +168,8 @@ struct ComputeDispatch {
   DispatchSize threadgroups;
   DispatchSize threadsPerThreadgroup;
   IndirectGrid indirectThreadgroups = {};
+  // Host-only attribution label; it does not change dispatch or shader ABI.
+  ProfileScope profileScope = ProfileScope::None;
 };
 
 // Orders a command against another agent, such as the Neural Engine, after

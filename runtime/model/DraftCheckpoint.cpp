@@ -25,6 +25,16 @@ public:
     image_.copy({name, ggml::kBF16, tensor.offset, 1, tensor.bytes, {}, tensor.file});
   }
 
+  // Released DFlash2 checkpoints store the selector's tables either as
+  // parameters or as embedding weights. Accept both exact spellings, but
+  // refuse two definitions rather than silently choosing different weights.
+  void codebook(const std::string &name, const std::vector<uint64_t> &shape) {
+    const std::string weight = name + ".weight";
+    if (checkpoint_.find(name) && checkpoint_.find(weight))
+      throw WeightStoreError("ambiguous draft codebook: " + name);
+    stored(checkpoint_.find(name) ? name : weight, shape);
+  }
+
   // A projection of `columns` inputs: its parts' rows in order, af4g64 planes.
   void projection(std::initializer_list<std::pair<std::string, uint64_t>> parts, uint64_t columns) {
     const QuantFormat &format = kQuantFormats[GGUF_FMT_AF4G64];
@@ -87,8 +97,8 @@ gguf::Image modelImage(const SafetensorsCheckpoint &checkpoint, const DFlashDraf
   b.stored("hidden_norm.weight", {hidden});
   b.stored("norm.weight", {hidden});
   b.projection({{selector + "hidden_projection", layout.selectorRank}}, hidden);
-  b.stored(selector + "predecessor_codebook", {layout.vocabularySize, layout.selectorRank});
-  b.stored(selector + "successor_codebook", {layout.vocabularySize, layout.selectorRank});
+  b.codebook(selector + "predecessor_codebook", {layout.vocabularySize, layout.selectorRank});
+  b.codebook(selector + "successor_codebook", {layout.vocabularySize, layout.selectorRank});
   return b.finish();
 }
 

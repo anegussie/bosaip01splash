@@ -794,7 +794,7 @@ void dispatchProfilingCoversEveryCommand(const std::string &metallibPath) {
     const uint32_t count = 1, increment = 1;
     const ComputeDispatch dispatch{"test_add_u32", {{0, buffer}},
         {{1, &count, sizeof(count)}, {2, &increment, sizeof(increment)}},
-        {1, 1, 1}, {1, 1, 1}};
+        {1, 1, 1}, {1, 1, 1}, {}, splash::metal::ProfileScope::DraftSelector};
     BackendInstrumentation::setDispatchProfiling(backend, true);
     for (const size_t dispatches : {1, 2}) {
         const std::vector<ComputeDispatch> command(dispatches, dispatch);
@@ -809,6 +809,8 @@ void dispatchProfilingCoversEveryCommand(const std::string &metallibPath) {
         for (const auto &entry : profile) {
             require(entry.pipelineName == dispatch.pipelineName,
                     "a profiled dispatch lost its pipeline name");
+            require(entry.scope == dispatch.profileScope,
+                    "a profiled dispatch lost its stage attribution");
             total += entry.gpuSeconds;
         }
         require(profile.size() == dispatches && timing.gpuSeconds == total,
