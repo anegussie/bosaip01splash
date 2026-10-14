@@ -1671,12 +1671,14 @@ def _native_command(args):
         "auto" if args.max_context is None else str(args.max_context),
         "auto" if args.max_memory is None else str(args.max_memory),
     ]
-    if args.max_cache_disk:
+    if args.max_cache_disk is not None:
         command.append(str(args.max_cache_disk))
+    if args.max_cache_disk_writes:
+        command.extend(("--max-cache-disk-writes", str(args.max_cache_disk_writes)))
     if args.persistent_cache:
-        command.extend(
-            ("--cache-dir", str(args.cache_dir or serve_options.DEFAULT_CACHE_DIR))
-        )
+        command.extend(("--persistent-cache", "on"))
+    if args.cache_dir is not None:
+        command.extend(("--cache-dir", str(args.cache_dir)))
     if args.kv_format != "int8":
         command.extend(("--kv-format", args.kv_format))
     if args.prefill_chunk_tokens != serve_options.DEFAULT_PREFILL_CHUNK_TOKENS:
