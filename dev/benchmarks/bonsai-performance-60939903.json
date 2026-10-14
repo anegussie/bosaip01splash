@@ -1,0 +1,492 @@
+{
+  "commit": "60939903a7ef98aa8eb29032731dd527338b393e",
+  "build_id": "src-72b36c8b19251b1d90f22e4355358e3885c5241cb5201728bbcafd120b94dc32",
+  "settings": {
+    "model": "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+    "backend": "Splash Metal",
+    "speculation": "DFlash2",
+    "kv": "int8",
+    "state": "bf16",
+    "context_limit": 24576,
+    "prefill_chunk_tokens": 512,
+    "max_active_requests": 1,
+    "cache_disk_bytes": 8589934592,
+    "cache": "fresh persistent directory per round",
+    "temperature": 0,
+    "reasoning": "none"
+  },
+  "context_runs": [
+    {
+      "round": 1,
+      "workload": "cold",
+      "prompt_tokens": 4892,
+      "output_tokens": 96,
+      "cached_tokens": 0,
+      "pp": 185.0686100636164,
+      "tg": 38.08328051783641,
+      "seconds": 28.934304042020813,
+      "thermal": "fair"
+    },
+    {
+      "round": 1,
+      "workload": "cached",
+      "prompt_tokens": 4892,
+      "output_tokens": 96,
+      "cached_tokens": 4864,
+      "pp": 114.54285129883412,
+      "tg": 38.6810652521069,
+      "seconds": 2.72735175001435,
+      "thermal": "fair"
+    },
+    {
+      "round": 2,
+      "workload": "cold",
+      "prompt_tokens": 4892,
+      "output_tokens": 96,
+      "cached_tokens": 0,
+      "pp": 177.5963510121449,
+      "tg": 36.650626552105805,
+      "seconds": 30.149431416066363,
+      "thermal": "fair"
+    },
+    {
+      "round": 2,
+      "workload": "cached",
+      "prompt_tokens": 4892,
+      "output_tokens": 96,
+      "cached_tokens": 4864,
+      "pp": 101.86263096623982,
+      "tg": 37.11642132061008,
+      "seconds": 2.8595725840423256,
+      "thermal": "fair"
+    },
+    {
+      "round": 3,
+      "workload": "cold",
+      "prompt_tokens": 4892,
+      "output_tokens": 96,
+      "cached_tokens": 0,
+      "pp": 177.9343444819821,
+      "tg": 35.62613112966337,
+      "seconds": 30.169344667112455,
+      "thermal": "fair"
+    },
+    {
+      "round": 3,
+      "workload": "cached",
+      "prompt_tokens": 4892,
+      "output_tokens": 96,
+      "cached_tokens": 4864,
+      "pp": 105.43121366388529,
+      "tg": 34.672557838388656,
+      "seconds": 3.0319950829725713,
+      "thermal": "fair"
+    }
+  ],
+  "coding_correct": 9,
+  "coding_total": 9,
+  "coding_isolated": true,
+  "coding": {
+    "chunked": {
+      "tg": {
+        "median": 36.51561145735872,
+        "min": 36.456911026564704,
+        "max": 37.6165314009319,
+        "spread_percent": 3.1457553897908834
+      },
+      "seconds": {
+        "median": 2.131284541916102,
+        "min": 2.071580749936402,
+        "max": 2.133953707991168,
+        "spread_percent": 2.9528833657536118
+      },
+      "draft_acceptance": {
+        "median": 0.8035714285714286,
+        "min": 0.8035714285714286,
+        "max": 0.8035714285714286,
+        "spread_percent": 0.0
+      },
+      "prompt_tokens": [
+        3667
+      ]
+    },
+    "merge_intervals": {
+      "tg": {
+        "median": 33.7811736893452,
+        "min": 33.646306289803114,
+        "max": 34.25137592217072,
+        "spread_percent": 1.7852373347557302
+      },
+      "seconds": {
+        "median": 21.621181624941528,
+        "min": 21.57164925010875,
+        "max": 22.04601874994114,
+        "spread_percent": 2.181381964393218
+      },
+      "draft_acceptance": {
+        "median": 0.7142857142857143,
+        "min": 0.7142857142857143,
+        "max": 0.7142857142857143,
+        "spread_percent": 0.0
+      },
+      "prompt_tokens": [
+        3662
+      ]
+    },
+    "stable_unique": {
+      "tg": {
+        "median": 31.35117284737622,
+        "min": 31.227230144686168,
+        "max": 31.9220477780836,
+        "spread_percent": 2.2057597431596596
+      },
+      "seconds": {
+        "median": 21.142304958077148,
+        "min": 20.521628957940266,
+        "max": 21.223563957959414,
+        "spread_percent": 3.348527245077176
+      },
+      "draft_acceptance": {
+        "median": 0.6607142857142857,
+        "min": 0.6607142857142857,
+        "max": 0.6607142857142857,
+        "spread_percent": 0.0
+      },
+      "prompt_tokens": [
+        3663
+      ]
+    }
+  },
+  "context": {
+    "cold": {
+      "pp": {
+        "median": 177.9343444819821,
+        "min": 177.5963510121449,
+        "max": 185.0686100636164,
+        "spread_percent": 4.146652969020522
+      },
+      "tg": {
+        "median": 36.650626552105805,
+        "min": 35.62613112966337,
+        "max": 38.08328051783641,
+        "spread_percent": 6.679454161828528
+      },
+      "seconds": {
+        "median": 30.149431416066363,
+        "min": 28.934304042020813,
+        "max": 30.169344667112455,
+        "spread_percent": 4.151253794353732
+      }
+    },
+    "cached": {
+      "pp": {
+        "median": 105.43121366388529,
+        "min": 101.86263096623982,
+        "max": 114.54285129883412,
+        "spread_percent": 11.81986438432112
+      },
+      "tg": {
+        "median": 37.11642132061008,
+        "min": 34.672557838388656,
+        "max": 38.6810652521069,
+        "spread_percent": 10.885776596959339
+      },
+      "seconds": {
+        "median": 2.8595725840423256,
+        "min": 2.72735175001435,
+        "max": 3.0319950829725713,
+        "spread_percent": 10.603765444992128
+      }
+    }
+  },
+  "thermal_states": [
+    "fair",
+    "nominal"
+  ],
+  "memory_pressure": [
+    "warning"
+  ],
+  "metal_healthy": true,
+  "failed_requests": 0,
+  "swap": [
+    {
+      "round": 1,
+      "before": "vm.swapusage: total = 4096.00M  used = 3449.19M  free = 646.81M  (encrypted)",
+      "after": "vm.swapusage: total = 4096.00M  used = 3425.19M  free = 670.81M  (encrypted)"
+    },
+    {
+      "round": 2,
+      "before": "vm.swapusage: total = 4096.00M  used = 3415.81M  free = 680.19M  (encrypted)",
+      "after": "vm.swapusage: total = 4096.00M  used = 3371.44M  free = 724.56M  (encrypted)"
+    },
+    {
+      "round": 3,
+      "before": "vm.swapusage: total = 4096.00M  used = 3363.44M  free = 732.56M  (encrypted)",
+      "after": "vm.swapusage: total = 4096.00M  used = 3363.44M  free = 732.56M  (encrypted)"
+    }
+  ],
+  "startup_seconds": [
+    23.077439540997148,
+    21.045534334145486,
+    23.066375999944285
+  ],
+  "servers_stopped": true,
+  "stable": false,
+  "disk_cache": [
+    {
+      "round": 1,
+      "capacity_bytes": 8589934592,
+      "limit_bytes": 810146816,
+      "volume_available_bytes": 13977997312
+    },
+    {
+      "round": 2,
+      "capacity_bytes": 8589934592,
+      "limit_bytes": 624423936,
+      "volume_available_bytes": 13235105792
+    },
+    {
+      "round": 3,
+      "capacity_bytes": 8589934592,
+      "limit_bytes": 462388224,
+      "volume_available_bytes": 12586962944
+    }
+  ],
+  "runtime_memory": [
+    {
+      "round": 1,
+      "fixed_runtime_bytes": 8838589568,
+      "before_actual": {
+        "allocated_bytes": 8374725760,
+        "current_bytes": 8379367424,
+        "peak_bytes": 8584495104
+      },
+      "after_actual": {
+        "allocated_bytes": 8511040640,
+        "current_bytes": 8515944448,
+        "peak_bytes": 8584495104
+      },
+      "before_governor": {
+        "limit_bytes": 11639373824,
+        "charged_bytes": 9180032128,
+        "headroom_bytes": 2459341696,
+        "growth_allowed": false,
+        "denied_reservations": 1,
+        "system_pressure": "warning",
+        "host_measurement_valid": true,
+        "host_available_bytes": 1737785344,
+        "host_reserve_bytes": 1717986918,
+        "host_spare_bytes": 1357168640,
+        "host_spare_reserve_bytes": 2147483648,
+        "host_headroom_bytes": 0
+      },
+      "after_governor": {
+        "limit_bytes": 11639373824,
+        "charged_bytes": 9316347008,
+        "headroom_bytes": 2323026816,
+        "growth_allowed": false,
+        "denied_reservations": 17,
+        "system_pressure": "warning",
+        "host_measurement_valid": true,
+        "host_available_bytes": 1580105728,
+        "host_reserve_bytes": 1717986918,
+        "host_spare_bytes": 1227227136,
+        "host_spare_reserve_bytes": 2147483648,
+        "host_headroom_bytes": 0
+      }
+    },
+    {
+      "round": 2,
+      "fixed_runtime_bytes": 8838589568,
+      "before_actual": {
+        "allocated_bytes": 8374725760,
+        "current_bytes": 8376221696,
+        "peak_bytes": 8460763136
+      },
+      "after_actual": {
+        "allocated_bytes": 8511040640,
+        "current_bytes": 8516730880,
+        "peak_bytes": 8516730880
+      },
+      "before_governor": {
+        "limit_bytes": 11639373824,
+        "charged_bytes": 9180032128,
+        "headroom_bytes": 2459341696,
+        "growth_allowed": false,
+        "denied_reservations": 1,
+        "system_pressure": "warning",
+        "host_measurement_valid": true,
+        "host_available_bytes": 1696743424,
+        "host_reserve_bytes": 1717986918,
+        "host_spare_bytes": 1347371008,
+        "host_spare_reserve_bytes": 2147483648,
+        "host_headroom_bytes": 0
+      },
+      "after_governor": {
+        "limit_bytes": 11639373824,
+        "charged_bytes": 9316347008,
+        "headroom_bytes": 2323026816,
+        "growth_allowed": false,
+        "denied_reservations": 17,
+        "system_pressure": "warning",
+        "host_measurement_valid": true,
+        "host_available_bytes": 1571782656,
+        "host_reserve_bytes": 1717986918,
+        "host_spare_bytes": 1211695104,
+        "host_spare_reserve_bytes": 2147483648,
+        "host_headroom_bytes": 0
+      }
+    },
+    {
+      "round": 3,
+      "fixed_runtime_bytes": 8838589568,
+      "before_actual": {
+        "allocated_bytes": 8374725760,
+        "current_bytes": 8379367424,
+        "peak_bytes": 8463908864
+      },
+      "after_actual": {
+        "allocated_bytes": 8511040640,
+        "current_bytes": 8515682304,
+        "peak_bytes": 8515682304
+      },
+      "before_governor": {
+        "limit_bytes": 11639373824,
+        "charged_bytes": 9180032128,
+        "headroom_bytes": 2459341696,
+        "growth_allowed": false,
+        "denied_reservations": 1,
+        "system_pressure": "warning",
+        "host_measurement_valid": true,
+        "host_available_bytes": 1866956800,
+        "host_reserve_bytes": 1717986918,
+        "host_spare_bytes": 1429995520,
+        "host_spare_reserve_bytes": 2147483648,
+        "host_headroom_bytes": 0
+      },
+      "after_governor": {
+        "limit_bytes": 11639373824,
+        "charged_bytes": 9316347008,
+        "headroom_bytes": 2323026816,
+        "growth_allowed": false,
+        "denied_reservations": 9,
+        "system_pressure": "warning",
+        "host_measurement_valid": true,
+        "host_available_bytes": 1522483200,
+        "host_reserve_bytes": 1717986918,
+        "host_spare_bytes": 1186938880,
+        "host_spare_reserve_bytes": 2147483648,
+        "host_headroom_bytes": 0
+      }
+    }
+  ],
+  "startup_memory_waits": [
+    {
+      "round": 1,
+      "waits": 1
+    },
+    {
+      "round": 2,
+      "waits": 1
+    },
+    {
+      "round": 3,
+      "waits": 1
+    }
+  ],
+  "hardware": {
+    "device_name": "Apple M5",
+    "macos_version": "26.5.2",
+    "apple_gpu_family": 10,
+    "gpu_core_count": 8,
+    "physical_memory_bytes": 17179869184,
+    "recommended_max_working_set_bytes": 12713115648,
+    "max_buffer_length_bytes": 9534832640,
+    "max_threadgroup_memory_bytes": 32768,
+    "max_threadgroup_width": 1024,
+    "has_unified_memory": true
+  },
+  "model_selection": "/Users/mymac/splash/splash/install/models/.resolved/c809e894ea38f11cfe5b8b784c5dcc8a052ba098827a1a79f972a6c24b6d49d7",
+  "model_manifest": {
+    "family": "Qwen3.8-27B",
+    "files": {
+      "config.json": {
+        "bytes": 288,
+        "ctime_ns": 1791942742675007658,
+        "digest": "db7d36a53e2797e27fd4e3614b9a234c7f3a10f0859e1b855c5f031e7cf3712c",
+        "mtime_ns": 1791942742675007658,
+        "path": "/Users/mymac/splash/splash/install/models/.metadata/f7090b53a4bb9a24d3c844f29d27b657a599894d200fef2b4833716754b40c08/config.json"
+      },
+      "draft/config.json": {
+        "bytes": 1239,
+        "ctime_ns": 1790648545326755380,
+        "digest": "79279cc5665bced6f3cdaa2095a2ffe819497b2e",
+        "mtime_ns": 1790648545326497925,
+        "path": "/Users/mymac/.cache/huggingface/hub/models--incoai--Qwen3.8-27B-DFlash2/snapshots/015e795645c74b1a0eeef3b570031fb62e769bc5/config.json"
+      },
+      "draft/model.safetensors": {
+        "bytes": 3848817896,
+        "ctime_ns": 1790649102398765154,
+        "digest": "67fc76d68dc5a9415511a4f394ef744d67510cd20e93b37cc2cc7d28e4bab65c",
+        "mtime_ns": 1790649102397454296,
+        "path": "/Users/mymac/.cache/huggingface/hub/models--incoai--Qwen3.8-27B-DFlash2/snapshots/015e795645c74b1a0eeef3b570031fb62e769bc5/model.safetensors"
+      },
+      "target/Ternary-Bonsai-2-27B-PTQ1_0.gguf": {
+        "bytes": 5946648928,
+        "ctime_ns": 1790654647178617938,
+        "digest": "53107f530aa52eb00912263ab1ee29bd199261c87cd7b4ad4ca1318c1fe33ee3",
+        "mtime_ns": 1790654647174760943,
+        "path": "/Users/mymac/.cache/huggingface/hub/models--prism-ml--Ternary-Bonsai-2-27B-gguf/snapshots/b072e1d3b35a0a630cece372c2127528e0994386/Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+      },
+      "tokenizer/chat_template.jinja": {
+        "bytes": 8952,
+        "ctime_ns": 1791942742677116079,
+        "digest": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+        "mtime_ns": 1791942742677116079,
+        "path": "/Users/mymac/splash/splash/install/models/.metadata/f7090b53a4bb9a24d3c844f29d27b657a599894d200fef2b4833716754b40c08/tokenizer/chat_template.jinja"
+      },
+      "tokenizer/config.json": {
+        "bytes": 288,
+        "ctime_ns": 1791942742675007658,
+        "digest": "db7d36a53e2797e27fd4e3614b9a234c7f3a10f0859e1b855c5f031e7cf3712c",
+        "mtime_ns": 1791942742675007658,
+        "path": "/Users/mymac/splash/splash/install/models/.metadata/f7090b53a4bb9a24d3c844f29d27b657a599894d200fef2b4833716754b40c08/config.json"
+      },
+      "tokenizer/tokenizer.json": {
+        "bytes": 10085571,
+        "ctime_ns": 1791942742676361994,
+        "digest": "8e852142d8ab38bb7678f650bd504ba28c29d9c6357e6ed762bebdbd474689eb",
+        "mtime_ns": 1791942742676361994,
+        "path": "/Users/mymac/splash/splash/install/models/.metadata/f7090b53a4bb9a24d3c844f29d27b657a599894d200fef2b4833716754b40c08/tokenizer/tokenizer.json"
+      },
+      "tokenizer/tokenizer_config.json": {
+        "bytes": 6197,
+        "ctime_ns": 1791942742677029704,
+        "digest": "c0398d4e3a44b70c94a4f14c7b5a8d2fa653c6e6d2ed327a0138ba0ef59cd400",
+        "mtime_ns": 1791942742677029704,
+        "path": "/Users/mymac/splash/splash/install/models/.metadata/f7090b53a4bb9a24d3c844f29d27b657a599894d200fef2b4833716754b40c08/tokenizer/tokenizer_config.json"
+      }
+    },
+    "metadata": "f7090b53a4bb9a24d3c844f29d27b657a599894d200fef2b4833716754b40c08",
+    "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+    "sources": {
+      "draft": {
+        "repo": "incoai/Qwen3.8-27B-DFlash2",
+        "revision": "015e795645c74b1a0eeef3b570031fb62e769bc5"
+      },
+      "target": {
+        "repo": "prism-ml/Ternary-Bonsai-2-27B-gguf",
+        "revision": "b072e1d3b35a0a630cece372c2127528e0994386"
+      }
+    },
+    "target_format": "gguf",
+    "version": 1,
+    "vision_format": "none"
+  },
+  "reply_variants": {
+    "merge_intervals": 1,
+    "stable_unique": 1,
+    "chunked": 1,
+    "context": 1
+  }
+}
