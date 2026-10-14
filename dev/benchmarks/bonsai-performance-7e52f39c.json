@@ -1,0 +1,272 @@
+{
+  "commit": "7e52f39c8fc9529cca15faa94298f50cefb7a22d",
+  "build_id": "src-2038304325010bc486149a59040b956e6058d4203647796333cdaf5b83dea621",
+  "settings": {
+    "model": "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+    "backend": "Splash Metal",
+    "speculation": "DFlash2",
+    "kv": "int8",
+    "state": "bf16",
+    "context_limit": 24576,
+    "prefill_chunk_tokens": 512,
+    "max_active_requests": 1,
+    "cache_disk_bytes": 8589934592,
+    "cache": "fresh persistent directory per round",
+    "temperature": 0,
+    "reasoning": "none"
+  },
+  "context_runs": [
+    {
+      "round": 1,
+      "workload": "cold",
+      "prompt_tokens": 4892,
+      "output_tokens": 96,
+      "cached_tokens": 0,
+      "pp": 184.97708526403795,
+      "tg": 38.16048774726992,
+      "seconds": 28.94258899986744,
+      "thermal": "fair"
+    },
+    {
+      "round": 1,
+      "workload": "cached",
+      "prompt_tokens": 4892,
+      "output_tokens": 96,
+      "cached_tokens": 4864,
+      "pp": 114.88687745673279,
+      "tg": 38.30929391535501,
+      "seconds": 2.749985125148669,
+      "thermal": "fair"
+    },
+    {
+      "round": 2,
+      "workload": "cold",
+      "prompt_tokens": 4892,
+      "output_tokens": 96,
+      "cached_tokens": 0,
+      "pp": 181.79134485907306,
+      "tg": 37.14024783100953,
+      "seconds": 29.47608358389698,
+      "thermal": "fair"
+    },
+    {
+      "round": 2,
+      "workload": "cached",
+      "prompt_tokens": 4892,
+      "output_tokens": 96,
+      "cached_tokens": 4864,
+      "pp": 115.1012891344383,
+      "tg": 37.608540226490504,
+      "seconds": 2.795319707831368,
+      "thermal": "fair"
+    },
+    {
+      "round": 3,
+      "workload": "cold",
+      "prompt_tokens": 4892,
+      "output_tokens": 96,
+      "cached_tokens": 0,
+      "pp": 181.98429846020156,
+      "tg": 36.963743625699685,
+      "seconds": 29.45795112499036,
+      "thermal": "fair"
+    },
+    {
+      "round": 3,
+      "workload": "cached",
+      "prompt_tokens": 4892,
+      "output_tokens": 96,
+      "cached_tokens": 4864,
+      "pp": 111.33997661860491,
+      "tg": 36.271060122909255,
+      "seconds": 2.8965691251214594,
+      "thermal": "fair"
+    }
+  ],
+  "coding_correct": 9,
+  "coding_total": 9,
+  "coding_isolated": true,
+  "coding": {
+    "chunked": {
+      "tg": {
+        "median": 36.99926210905567,
+        "min": 36.83359001017441,
+        "max": 37.277425635052595,
+        "spread_percent": 1.198365175163309
+      },
+      "seconds": {
+        "median": 2.1111737079918385,
+        "min": 2.0918572500813752,
+        "max": 2.115081542171538,
+        "spread_percent": 1.1027482696420634
+      },
+      "draft_acceptance": {
+        "median": 0.8035714285714286,
+        "min": 0.8035714285714286,
+        "max": 0.8035714285714286,
+        "spread_percent": 0.0
+      },
+      "prompt_tokens": [
+        3667
+      ]
+    },
+    "merge_intervals": {
+      "tg": {
+        "median": 34.175798408357124,
+        "min": 34.17391675803443,
+        "max": 34.230445699419924,
+        "spread_percent": 0.16532126945903758
+      },
+      "seconds": {
+        "median": 21.54556183400564,
+        "min": 21.510020582936704,
+        "max": 21.59890979109332,
+        "spread_percent": 0.4124502650361909
+      },
+      "draft_acceptance": {
+        "median": 0.7142857142857143,
+        "min": 0.7142857142857143,
+        "max": 0.7142857142857143,
+        "spread_percent": 0.0
+      },
+      "prompt_tokens": [
+        3662
+      ]
+    },
+    "stable_unique": {
+      "tg": {
+        "median": 31.649353298214276,
+        "min": 31.567693762504312,
+        "max": 31.800614387869974,
+        "spread_percent": 0.7354020983510158
+      },
+      "seconds": {
+        "median": 20.82696587499231,
+        "min": 20.58768445905298,
+        "max": 20.839514625025913,
+        "spread_percent": 1.2135581585834365
+      },
+      "draft_acceptance": {
+        "median": 0.6607142857142857,
+        "min": 0.6607142857142857,
+        "max": 0.6607142857142857,
+        "spread_percent": 0.0
+      },
+      "prompt_tokens": [
+        3663
+      ]
+    }
+  },
+  "context": {
+    "cold": {
+      "pp": {
+        "median": 181.98429846020156,
+        "min": 181.79134485907306,
+        "max": 184.97708526403795,
+        "spread_percent": 1.7416261855440915
+      },
+      "tg": {
+        "median": 37.14024783100953,
+        "min": 36.963743625699685,
+        "max": 38.16048774726992,
+        "spread_percent": 3.1980127553858084
+      },
+      "seconds": {
+        "median": 29.45795112499036,
+        "min": 28.94258899986744,
+        "max": 29.47608358389698,
+        "spread_percent": 1.8212849840396994
+      }
+    },
+    "cached": {
+      "pp": {
+        "median": 114.88687745673279,
+        "min": 111.33997661860491,
+        "max": 115.1012891344383,
+        "spread_percent": 3.3058913459020633
+      },
+      "tg": {
+        "median": 37.608540226490504,
+        "min": 36.271060122909255,
+        "max": 38.30929391535501,
+        "spread_percent": 5.450362460037427
+      },
+      "seconds": {
+        "median": 2.795319707831368,
+        "min": 2.749985125148669,
+        "max": 2.8965691251214594,
+        "spread_percent": 5.209175144060879
+      }
+    }
+  },
+  "thermal_states": [
+    "fair",
+    "nominal"
+  ],
+  "memory_pressure": [
+    "warning"
+  ],
+  "metal_healthy": true,
+  "failed_requests": 0,
+  "swap": [
+    {
+      "round": 1,
+      "before": "vm.swapusage: total = 4096.00M  used = 3379.06M  free = 716.94M  (encrypted)",
+      "after": "vm.swapusage: total = 4096.00M  used = 3323.00M  free = 773.00M  (encrypted)"
+    },
+    {
+      "round": 2,
+      "before": "vm.swapusage: total = 4096.00M  used = 3251.00M  free = 845.00M  (encrypted)",
+      "after": "vm.swapusage: total = 4096.00M  used = 3112.94M  free = 983.06M  (encrypted)"
+    },
+    {
+      "round": 3,
+      "before": "vm.swapusage: total = 4096.00M  used = 3190.88M  free = 905.12M  (encrypted)",
+      "after": "vm.swapusage: total = 4096.00M  used = 3174.88M  free = 921.12M  (encrypted)"
+    }
+  ],
+  "startup_seconds": [
+    22.095840916968882,
+    13.051164458040148,
+    12.974756249925122
+  ],
+  "servers_stopped": true,
+  "stable": false,
+  "hardware": {
+    "device_name": "Apple M5",
+    "macos_version": "26.5.2",
+    "apple_gpu_family": 10,
+    "gpu_core_count": 8,
+    "physical_memory_bytes": 17179869184,
+    "recommended_max_working_set_bytes": 12713115648,
+    "max_buffer_length_bytes": 9534832640,
+    "max_threadgroup_memory_bytes": 32768,
+    "max_threadgroup_width": 1024,
+    "has_unified_memory": true
+  },
+  "sources": {
+    "draft": {
+      "repo": "incoai/Qwen3.8-27B-DFlash2",
+      "revision": "015e795645c74b1a0eeef3b570031fb62e769bc5"
+    },
+    "target": {
+      "repo": "prism-ml/Ternary-Bonsai-2-27B-gguf",
+      "revision": "b072e1d3b35a0a630cece372c2127528e0994386"
+    }
+  },
+  "model_artifacts": {
+    "draft/config.json": {
+      "bytes": 1239,
+      "digest": "79279cc5665bced6f3cdaa2095a2ffe819497b2e"
+    },
+    "draft/model.safetensors": {
+      "bytes": 3848817896,
+      "digest": "67fc76d68dc5a9415511a4f394ef744d67510cd20e93b37cc2cc7d28e4bab65c"
+    },
+    "target/Ternary-Bonsai-2-27B-PTQ1_0.gguf": {
+      "bytes": 5946648928,
+      "digest": "53107f530aa52eb00912263ab1ee29bd199261c87cd7b4ad4ca1318c1fe33ee3"
+    }
+  },
+  "raw_results_directory": "build/validation/performance-7e52f39c"
+}
