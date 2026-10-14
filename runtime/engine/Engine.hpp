@@ -59,29 +59,29 @@ struct EngineConfig final {
   // cannot hold them. Allocation reads the cause of a refusal instead.
   std::function<bool()> growthPaused;
   // Marks the allocations that follow as memory a request in service needs,
-  // which the pause does not hold back, and clears the mark
-  // (MemoryGovernor::setServing).
-  std::function<void(bool)> serving;
+  // which the pause does not hold back, or clears the mark, and returns the
+  // mark it replaced (MemoryGovernor::setServing).
+  std::function<bool(bool)> serving;
 };
 
 // While an active one lives, allocations are memory a request in service
-// needs (EngineConfig::serving).
+// needs (EngineConfig::serving). It restores the mark it found, so that a
+// start's mark (RuntimeResources::beginServing) outlives an allocation the
+// engine marks before serving begins.
 class Serving final {
 public:
-  Serving(const std::function<void(bool)> &mark, bool active)
-      : mark_(active ? &mark : nullptr) {
-    if (mark_)
-      (*mark_)(true);
-  }
+  Serving(const std::function<bool(bool)> &mark, bool active)
+      : mark_(active ? &mark : nullptr), previous_(mark_ && (*mark_)(true)) {}
   ~Serving() {
     if (mark_)
-      (*mark_)(false);
+      (*mark_)(previous_);
   }
   Serving(const Serving &) = delete;
   Serving &operator=(const Serving &) = delete;
 
 private:
-  const std::function<void(bool)> *mark_;
+  const std::function<bool(bool)> *mark_;
+  bool previous_;
 };
 
 // What a request fails with once it has waited the resource wait limit for
@@ -153,7 +153,8 @@ struct EngineSnapshot final {
   uint64_t cacheHits = 0;
   uint64_t coldMisses = 0;
   uint64_t reusedTokens = 0;
-  // Tokens requests computed and then read from cached blocks' pages.
+  // Tokens whose KV requests read from cached blocks other requests
+  // computed, past the cached prefixes they started from.
   uint64_t deduplicatedKvTokens = 0;
   uint64_t replayStatePublications = 0;
   uint64_t deduplicatedStatePublications = 0;
@@ -280,12 +281,11 @@ private:
   struct Request final {
     struct StateBoundary final {
       uint32_t tokens = 0;
-      // A rolling checkpoint, the lane's own progress, retired when the next
-      // one or a junction takes its buffers, before the command that
-      // captures that state runs, or, only on disk, when that state lands;
-      // the prompt's replay point leaves the last one cached when its own
-      // state fits beside it. Otherwise a state a later request resumes
-      // from.
+      // A rolling checkpoint, the lane's own progress, retired once the next
+      // one or a junction is published, which takes its buffers, if it needs
+      // them, only after its command has completed; the prompt's replay point
+      // leaves the last one cached when its own state fits beside it.
+      // Otherwise a state a later request resumes from.
       bool disposable = false;
     };
 
@@ -299,14 +299,17 @@ private:
     uint32_t reportedPromptTokens = 0;
     uint32_t replayTokens = 0;
     // The blocks it restored or published in any residency end at this
-    // token. A replay after a suspension finds them cached as its own, so
-    // it counts none of them, though one evicted meanwhile may hold KV
-    // another request computed again; nor does it count blocks past them
-    // that a state another request published there lets it restore.
+    // token. A resume after a suspension counts the blocks it restores past
+    // them as KV another request computed (completeAdmission). The blocks
+    // below, which it restores or its replay finds cached, count as its own,
+    // though one evicted while it was suspended may hold KV another request
+    // computed again.
     uint32_t publishedTokens = 0;
-    // Tokens of blocks it computed and then found cached
-    // (Cache::publishCommittedBlocks), whose pages its next command reads,
-    // and of those its commands read, which it reports when it completes.
+    // Tokens of blocks another request computed whose pages its next command
+    // reads: blocks it computed and then found cached
+    // (Cache::publishCommittedBlocks), and those a resume restored past
+    // publishedTokens. Then those its commands read, which it reports when
+    // it completes.
     uint32_t unreadDeduplicatedKvTokens = 0;
     uint32_t deduplicatedKvTokens = 0;
     // Its speculative decoding so far, which it reports when it completes.
@@ -372,22 +375,30 @@ private:
   };
 
   // A state boundary a prefill command captures
-  // (ModelBatchItem::stateCaptures).
+  // (ModelBatchItem::stateCaptures), or the one it ends at whose state apply
+  // takes from the lane after it (fromLane).
   struct Capture final {
     uint32_t tokens = 0;
     // Room for the state's buffers came from reclaiming cached memory; its
     // publication counts as recycled (recycledStatePublications).
     bool recycled = false;
+    // Its buffers were refused before the command while the lane held a
+    // checkpoint (reserveCapture): the command ends at it without capturing
+    // it.
+    bool fromLane = false;
   };
   // The buffers reserveCapture() took for a boundary's capture, null when
-  // refused, and whether reclaiming cached memory made room for them.
+  // refused, whether reclaiming cached memory made room for them, and
+  // whether a refused state is taken from the lane after the command.
   struct Reservation final {
     std::shared_ptr<StateReservation> buffers;
     bool recycled = false;
+    bool fromLane = false;
   };
   struct Pending final {
     BatchPlan plan;
-    // Each plan item's captures, in the order of its stateCaptures.
+    // Each plan item's captures, in the order of its stateCaptures, then the
+    // one taken from the lane, if any.
     std::vector<std::vector<Capture>> captures;
     std::unique_ptr<ModelBatchTicket> ticket;
     // Where the engine's time for this command starts: the previous
@@ -458,13 +469,21 @@ private:
   void discardPendingStateBoundaries(Request &request) noexcept;
   // Another unfinished lane holds this lane's recovery point as its own.
   [[nodiscard]] bool checkpointShared(const Request &request) const;
+  // The lane's recovery point is still cached, in either tier, and no reader
+  // pins it: a reclaim could take it.
+  [[nodiscard]] bool checkpointReclaimable(const Request &request) const;
+  // A reader pins the lane's recovery point, which no other lane holds: it
+  // cannot retire (retireCheckpoint), so no checkpoint after it is published
+  // meanwhile.
+  [[nodiscard]] bool checkpointPinned(const Request &request) const;
   [[nodiscard]] bool retireCheckpoint(Request &request);
   // Publishes the request's complete blocks up to committedTokens and keeps
   // the tokens of those found cached for its next command to read.
   void publishCommittedBlocks(Request &request, uint32_t committedTokens);
   // Publishes the states of the boundaries the lane's command reached: the
   // states it captured (`captures`, `states`), and at its end one without
-  // buffers through the disk tier.
+  // buffers, taken from the lane now that the command has completed or
+  // through the disk tier.
   void publishReachedStateBoundaries(
       Request &request, uint32_t promptProcessed, std::span<const Capture> captures,
       std::span<const std::shared_ptr<const CompositeState>> states, double nowMilliseconds);
@@ -486,19 +505,26 @@ private:
                                          std::vector<StateCapture> &states,
                                          std::vector<Capture> &captures);
   // Takes the buffers of the state of class `kind` the lane's command
-  // captures at `tokens`: those of the lane's resident checkpoint, which
-  // the state would retire once published, then from the model's pool or
-  // one admission, then from cache its class may take. Only the first state
-  // the command captures follows that checkpoint (followsCheckpoint): a
-  // later one follows the state before it in the command, and past the
-  // prompt's replay point, which leaves the checkpoint cached and the lane
-  // without one, it retires none. The replay point, which keeps the
-  // checkpoint, takes its buffers only when refused the pool and the
-  // admission. A checkpoint whose predecessor cannot retire takes only the
-  // pool or the admission, since it is not published unless the
-  // predecessor's pin goes in the meantime. Null buffers when refused.
+  // captures at `tokens`: from the model's pool or one admission, then from
+  // cache its class may take, but only while the lane holds no checkpoint a
+  // reclaim could take. The lane's checkpoint stays its recovery point until
+  // a state that retires it is published, so no state takes its buffers, or
+  // room a reclaim could make of it, before the command: refused the pool
+  // and the admission while the lane holds one, a state ends its command at
+  // its boundary, and apply takes it from the lane after the command
+  // (publishReachedStateBoundaries). Only the first state the command
+  // captures follows that checkpoint (followsCheckpoint): a later one
+  // follows the state before it in the command. A checkpoint whose
+  // predecessor a reader pins takes only the pool or the admission too:
+  // refused, its command ends at it, and apply publishes it from the lane
+  // only if the pin has gone by then. Null buffers when refused.
   [[nodiscard]] Reservation reserveCapture(Request &request, StateClass kind, uint32_t tokens,
                                            bool followsCheckpoint);
+  // Makes room for one state's buffers, a step of what its class may take
+  // (Cache::reclaimOneState) at a time, until `take` gets them, nothing more
+  // of the class goes, or the extents given cover one state; true once
+  // `take` got them. Between commands only.
+  template <class Take> [[nodiscard]] bool makeStateRoom(StateClass kind, Take &&take);
   // The reclaim steps for a lane's state and for KV pages the engine's limit
   // refused. Idle memory of the kind refused stays for it to reuse; idle
   // memory of the other kind is released first. Each takes cache up to the

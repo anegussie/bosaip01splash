@@ -102,10 +102,11 @@ struct SamplingParameters final {
 };
 
 // A request that generates inside a thinking block may select at most
-// `tokens` thinking tokens; the target then selects the `end` tokens in
-// order, the last of which closes the block. Thinking also ends where the
-// request selects that close or `alsoEnds` first, such as a tool call's
-// opening that follows thinking directly; no other end token is either.
+// `tokens` thinking tokens, and a constrained one more until its grammar
+// admits the end; the target then selects the `end` tokens in order, the
+// last of which closes the block. Thinking also ends where the request
+// selects that close or `alsoEnds` first, such as a tool call's opening that
+// follows thinking directly; no other end token is either.
 struct ThinkingBudget final {
   uint32_t tokens = 0;
   std::vector<uint32_t> end;
@@ -609,6 +610,12 @@ public:
   // release a cached state and retry.
   [[nodiscard]] virtual std::shared_ptr<StateReservation>
   reserveState(uint64_t requestId, uint32_t tokens) = 0;
+  // Copies the request's committed state at its current page-aligned
+  // boundary into the buffers of a cached state, taken as reserveState()
+  // takes them: the state of a boundary its prefill command ended at without
+  // buffers. Null when the governor refuses; the caller may release a cached
+  // state and retry.
+  [[nodiscard]] virtual std::shared_ptr<const CompositeState> snapshot(uint64_t requestId) = 0;
   // The bytes one cached state's buffers take.
   [[nodiscard]] virtual uint64_t snapshotBytes() const noexcept = 0;
   // Whether the disk tier takes a state written from a lane now, for a

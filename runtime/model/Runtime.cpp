@@ -5,6 +5,7 @@
 #include "model/RuntimeArenas.hpp"
 
 #include "metal/CommandGraph.hpp"
+#include "metal/abi/GDN.h"
 #include "ops/AneFfn.hpp"
 #include "ops/Linear.hpp"
 #include "ops/PagedAttention.hpp"
@@ -902,9 +903,22 @@ struct Runtime::Impl {
             entry.sampling.frequencyPenalty};
   }
 
+  // A constrained request's grammar admits the end of its thinking only where
+  // the thinking text may end, such as between whole characters. Until the
+  // end starts, it waits for a row whose mask admits its first token, and
+  // the request thinks past its budget meanwhile: a few tokens, such as the
+  // rest of a character the budget's last token began. The end's other
+  // tokens are text, which the grammar admits after its first.
+  static bool thinkingEndWaits(const Request &entry) noexcept {
+    return entry.constraint == ConstraintMode::TokenMask &&
+           !entry.thinking->endSelected;
+  }
+
   // A selection's rows select the request's next tokens in order, so with n
   // thinking tokens left, its row n starts the budget's end, and once none
-  // are left, its row 0 goes on with the end's tokens not yet selected.
+  // are left, its row 0 goes on with the end's tokens not yet selected; an
+  // end that waits (thinkingEndWaits) starts at the first of those rows
+  // whose mask admits it.
   static ops::SamplingPolicy samplingPolicy(const Request &entry) noexcept {
     std::optional<ops::ThinkingCutoff> cutoff;
     if (entry.thinking) {
@@ -912,7 +926,7 @@ struct Runtime::Impl {
       cutoff = ops::ThinkingCutoff{
           budget.tokens,
           std::span(budget.end).subspan(entry.thinking->endSelected),
-          budget.alsoEnds};
+          budget.alsoEnds, thinkingEndWaits(entry)};
     }
     return {entry.sampling.topK, entry.sampling.temperature,
             entry.sampling.topP, entry.constraint == ConstraintMode::TokenMask,
@@ -965,8 +979,9 @@ struct Runtime::Impl {
   // command that selected them has completed, and the next one that reads
   // the lane's words is encoded after this. Each token counts against the
   // thinking budget until one ends thinking, and once the budget ran out,
-  // it is the end's next token; the cutoff (samplingPolicy) never lets
-  // thinking run past it.
+  // it is the end's next token, or while the end waits (thinkingEndWaits),
+  // a thinking token past the budget; the cutoff (samplingPolicy) never lets
+  // thinking run past it otherwise.
   void commitSelected(Request &entry, std::span<const uint32_t> tokens) {
     if (tokens.empty())
       throw std::logic_error("no selected token to commit");
@@ -980,7 +995,9 @@ struct Runtime::Impl {
         entry.thinking.reset();
       else if (budget.tokens)
         --budget.tokens;
-      else if (token != budget.end[entry.thinking->endSelected++])
+      else if (token == budget.end[entry.thinking->endSelected])
+        ++entry.thinking->endSelected;
+      else if (!thinkingEndWaits(entry))
         throw std::logic_error("thinking went past its budget");
     }
     entry.pendingToken = tokens.back();
@@ -2124,6 +2141,35 @@ void Runtime::beginColdRequest(const ModelRequest &request,
     end(request.id);
     throw;
   }
+}
+
+std::vector<uint8_t> Runtime::pendingGdnRows(uint64_t requestId) const {
+  const Impl::Request &entry = impl_->request(requestId);
+  if (!entry.resident)
+    throw std::logic_error("request is not resident");
+  const QwenLaneMetadata &metadata = impl_->states.metadata(entry.stateLane);
+  const ops::GdnShape shape = impl_->geometry.target.gdnShape();
+  const uint32_t kvWidth = (shape.keyHeads + shape.valueHeads) * shape.headDimension;
+  // Each field holds one row after another; the offset and row bytes of each.
+  const std::array<std::pair<uint64_t, uint64_t>, 4> fields{{
+      {0, uint64_t{shape.convolutionDimension} * 2},
+      {gdn_tape_kv_offset(shape.convolutionDimension), uint64_t{kvWidth} * 2},
+      {gdn_tape_decay_offset(shape.convolutionDimension, kvWidth), uint64_t{shape.valueHeads} * 4},
+      {gdn_tape_beta_offset(shape.convolutionDimension, kvWidth, shape.valueHeads),
+       uint64_t{shape.valueHeads} * 2},
+  }};
+  // The latest step's slot is the one the lane's next step folds from.
+  const uint8_t *slot =
+      contents<const uint8_t>(impl_->decodeArena->batchSlice(DecodeTensor::GdnTape, kLaneCount),
+                              "GDN tape") +
+      impl_->decodeArena->gdnTapeSlot(entry.stateLane, metadata.activeParity);
+  std::vector<uint8_t> rows;
+  for (uint32_t layer = 0; layer < impl_->geometry.target.stateLayout.layers; ++layer) {
+    const uint8_t *tape = slot + layer * ops::gdnTapeLayerBytes(shape);
+    for (const auto &[offset, rowBytes] : fields)
+      rows.insert(rows.end(), tape + offset, tape + offset + metadata.pendingRows * rowBytes);
+  }
+  return rows;
 }
 
 StateAdmission Runtime::begin(const ModelRequest &request) {

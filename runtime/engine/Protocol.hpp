@@ -227,8 +227,9 @@ struct StatusRequestFrame {
 };
 
 // Asks the engine to give its weights back now, as the idle release does, when
-// it holds no request. The answer is a StatusJson with the same correlationId,
-// whose `weights.released` says whether the weights are released.
+// it holds no request and restores none, with the idle release on or off. The
+// answer is a StatusJson with the same correlationId, whose `weights` section
+// says whether the weights are released: `released` and not `restoring`.
 struct ReleaseRequestFrame {
   uint64_t correlationId = 0;
 
@@ -293,8 +294,9 @@ struct DoneEvent {
   // Raw final-prompt-position logits at the request's scoreTokens, in
   // requested order. Empty for generation and for cancelled/failed scoring.
   std::vector<float> optionLogits{};
-  // Of the tokens the request computed, those whose KV it then read from a
-  // cached block's page (engine::Cache::publishCommittedBlocks).
+  // Tokens whose KV the request read from cached blocks another request
+  // computed, past the cached prefix it started from
+  // (engine::EngineEventSink::completed).
   uint32_t deduplicatedTokens = 0;
   // Its speculative decoding; zero without a draft and for scoring.
   engine::SpeculativeCounts speculation{};

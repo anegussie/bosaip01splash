@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace splash::model {
 
@@ -20,6 +21,11 @@ public:
   // Direct native-oracle entry point. Production admission uses
   // begin() and installs its cache-aware plan explicitly.
   void beginColdRequest(const ModelRequest &request, uint32_t stateLane);
+  // For the native oracle: the rows a resident request's latest decode step
+  // retained, which its GDN cell holds only once its next step folds them in
+  // (QwenLaneMetadata::pendingRows). They are every GDN layer's tape rows
+  // (metal/abi/GDN.h) up to that count, field by field, layer by layer.
+  [[nodiscard]] std::vector<uint8_t> pendingGdnRows(uint64_t requestId) const;
   [[nodiscard]] StateAdmission
   begin(const ModelRequest &request) override;
   void suspend(uint64_t requestId) override;
@@ -39,12 +45,8 @@ public:
   decode(const BatchPlan &plan, std::span<const ModelBatchItem> items);
   [[nodiscard]] std::shared_ptr<StateReservation>
   reserveState(uint64_t requestId, uint32_t tokens) override;
-  // Copies the request's committed state at its current page-aligned
-  // boundary into a cached state, as a prefill command captures the state at
-  // its end: warmup's and the native oracle's states. Null when the pool has
-  // no free buffers and the governor denies new ones.
   [[nodiscard]] std::shared_ptr<const CompositeState>
-  snapshot(uint64_t requestId);
+  snapshot(uint64_t requestId) override;
   [[nodiscard]] uint64_t snapshotBytes() const noexcept override;
   [[nodiscard]] bool canSnapshotToDisk(bool inUse) const noexcept override;
   [[nodiscard]] std::unique_ptr<StateOffload>

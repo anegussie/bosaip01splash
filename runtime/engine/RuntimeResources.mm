@@ -56,9 +56,11 @@ uint64_t mebibytes(uint64_t bytes) noexcept { return bytes / kMiB; }
 // it is checked here again at every Metal operation, each image's
 // allocation included, as loading and warmup build the residency up.
 void requireStartupHeadroom(
-    const MemoryGovernor::HostAvailableMemoryProvider &hostAvailableMemory,
-    uint64_t reserveBytes, MemoryPressure pressure) {
-  const std::optional<uint64_t> available = hostAvailableMemory();
+    const MemoryGovernor::HostMemoryProvider &hostMemory, uint64_t reserveBytes,
+    MemoryPressure pressure) {
+  const std::optional<HostMemory> host = hostMemory();
+  const std::optional<uint64_t> available =
+      host ? std::optional<uint64_t>(host->available) : std::nullopt;
   if (!available || *available <= reserveBytes ||
       pressure == MemoryPressure::Critical) {
     std::ostringstream message;
@@ -76,7 +78,8 @@ void requireStartupHeadroom(
 }
 
 // The format of a persistent cache's files and of what its copies hold. A
-// change to either, such as a fix to a kernel that writes KV or state, bumps
+// change to either, such as a fix to a kernel that writes KV or state or a
+// change to the block identities its labels record (blockIdentity), bumps
 // it, so that no start takes back copies of the old one.
 constexpr uint32_t kPersistentCacheFormat = 2;
 // How long a start waits for the cache directory another process holds: one
@@ -328,7 +331,7 @@ RuntimeResources::create(const RuntimeResourcesConfig &config,
     throw RuntimeResourcesError(RuntimeResourceStage::Configuration, "execution context exceeds the model limit");
   if (config.metallibPath.empty() || config.modelRoot.empty() ||
       !kv::validFormat(config.kvFormat) || !ops::validFormat(config.stateFormat) ||
-      !config.model.valid() || !config.hostAvailableMemory || !config.diskVolume ||
+      !config.model.valid() || !config.hostMemory || !config.diskVolume ||
       config.buildId.empty() || !config.maximumImagePatches ||
       config.maximumImagePatches % 4 ||
       config.maximumImagePatches > ops::kMaximumImagePatches) {
@@ -369,11 +372,9 @@ RuntimeResources::create(const RuntimeResourcesConfig &config,
     return pressure ? pressure() : MemoryPressure::Normal;
   };
   const auto admitMetalOperation = [throwIfCancelled, currentPressure,
-                                    hostAvailableMemory = config.hostAvailableMemory,
-                                    hostReserveBytes] {
+                                    hostMemory = config.hostMemory, hostReserveBytes] {
     throwIfCancelled();
-    requireStartupHeadroom(hostAvailableMemory, hostReserveBytes,
-                           currentPressure());
+    requireStartupHeadroom(hostMemory, hostReserveBytes, currentPressure());
   };
   backend->setOperationGuard(admitMetalOperation);
   // A synchronous command wait gives up when the process shuts down, also
@@ -512,7 +513,9 @@ RuntimeResources::create(const RuntimeResourcesConfig &config,
   // The automatic tier keeps its staging only where the plan holds the model
   // and the requested context beside it. The split wins over it: where the
   // plan refuses the split beside the staging but not without it, the tier
-  // turns off before the split is decided.
+  // turns off before the split is decided. A relaunch decides it as its first
+  // engine, an automatic start, did, so that it keeps the staging that engine
+  // kept; only its split leaves that engine's context (below).
   if (stateStagingBytes && automaticDisk) {
     const auto withoutStaging = [&](uint64_t aneFfnBytes) { return planWith(0, aneFfnBytes); };
     if (!planResult.plan ||
@@ -559,15 +562,27 @@ RuntimeResources::create(const RuntimeResourcesConfig &config,
     // split only moves bytes from KV to fixed runtime memory, so the governor
     // is the same with it or without.
     auto memoryGovernor = std::make_unique<MemoryGovernor>(
-        *backend, memoryPlan.breakdown().hardBudgetBytes, hostReserveBytes, config.hostAvailableMemory,
+        *backend, memoryPlan.breakdown().hardBudgetBytes, hostReserveBytes,
+        EngineMemoryPolicy::hostSpareReserveBytes(device.physicalMemoryBytes), config.hostMemory,
         memoryPlan.breakdown().pipelineReserveBytes + memoryPlan.breakdown().runtimeOverheadReserveBytes);
     memoryGovernor->setStarting(true);
     if (config.memoryPressure)
       memoryGovernor->setPressure(config.memoryPressure());
+    // What the start allocates, the KV runway, the arenas and the warmup, is
+    // memory a request in service needs: like loading, it needs only the
+    // reserve macOS keeps short of critical pressure, which every Metal
+    // operation checks. The host's margins and macOS's warning hold back
+    // only what serving adds (beginServing).
+    memoryGovernor->setServing(true);
     logLine("Kernel policy for GPU family ", device.appleGpuFamily,
             " with ", device.gpuCoreCount, " cores.");
+    // The split leaves the context asked for, else a relaunch's.
+    const RequestedContext splitContext =
+        requestedContextTokens ? RequestedContext{.tokens = requestedContextTokens}
+                               : RequestedContext{.tokens = config.relaunchContext,
+                                                  .relaunch = config.relaunchContext != 0};
     AneFfnStart aneFfn =
-        startAneFfn(splitModel, config.aneFfn, requestedContextTokens, planMemory, config.cancelled);
+        startAneFfn(splitModel, config.aneFfn, splitContext, planMemory, config.cancelled);
     if (aneFfn.plan)
       memoryPlan = std::move(*aneFfn.plan);
     const EngineMemoryBreakdown &budget = memoryPlan.breakdown();
@@ -768,6 +783,8 @@ void RuntimeResources::adoptPersistentCache() {
 }
 
 void RuntimeResources::beginServing() {
+  memoryGovernor_->setStarting(false);
+  memoryGovernor_->setServing(false);
   CacheDirectory *directory = persistentCache_.directory.get();
   if (!directory)
     return;
@@ -931,7 +948,7 @@ void connectToGovernor(EngineConfig &config, MemoryGovernor &governor) {
   config.growthPaused = [&governor] {
     return !governor.snapshot().hostGrowthAllowed;
   };
-  config.serving = [&governor](bool serving) { governor.setServing(serving); };
+  config.serving = [&governor](bool serving) { return governor.setServing(serving); };
 }
 
 } // namespace splash::engine

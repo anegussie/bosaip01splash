@@ -250,8 +250,9 @@ class Collected:
     def cut(self):
         """Whether the output's end cut its last block short: the token limit
         cuts any block, a stop sequence only a call, as text may end where
-        the client asks."""
-        return self.result.reason == "length" or self.cut_in_call
+        the client asks. A call cut at its name has no block, and a stop
+        sequence there leaves the block before it whole."""
+        return self.result.reason == "length" or self.cut_call is not None
 
     @property
     def called(self):
@@ -826,14 +827,21 @@ class FrontendHandler(BaseHTTPRequestHandler):
 
     def _post_memory_release(self, body, deadline):
         weights = self.app.backend.release_weights().get("weights") or {}
-        if weights.get("released") is not True:
-            raise APIError(
+        # A restore leaves the weights released until its last image is back.
+        if weights.get("released") is True and weights.get("restoring") is False:
+            self._json(200, {"released": True, "weights": weights})
+            return
+        # An answer about the engine's state, not a failure: the console does
+        # not log it.
+        self._safe_error(
+            APIError(
                 409,
-                "the engine is serving requests or restoring its weights; "
-                "the weights stay loaded",
+                "the engine is serving requests or restoring its weights; it "
+                "releases them only while idle",
                 "engine_busy",
-            )
-        self._json(200, {"released": True, "weights": weights})
+            ),
+            log=False,
+        )
 
     def _post_systemone(self, body, deadline):
         answers = {}
@@ -1663,7 +1671,10 @@ def parse_args(argv=None):
     return args
 
 
-def _native_command(args):
+def _native_command(args, relaunch_context=None):
+    """The engine's command line, a relaunch's with `relaunch_context`, the
+    context the first engine served: without --max-context the relaunch keeps
+    it, where its own would follow a Neural Engine split calibrated anew."""
     command = [
         args.binary,
         "serve-native",
@@ -1701,6 +1712,8 @@ def _native_command(args):
         )
     if args.allow_idle_sleep:
         command.extend(("--idle-sleep", "allow"))
+    if relaunch_context is not None and args.max_context is None:
+        command.extend(("--relaunch-context", str(relaunch_context)))
     return command
 
 
@@ -1766,6 +1779,9 @@ def main():
         print_status(f"Chat template · {chat_templates.describe()}")
         runtime = engine_runtime.MultiplexedRuntime(
             _native_command(args),
+            relaunch_command=lambda first: _native_command(
+                args, first.max_context_tokens
+            ),
             startup_timeout=NATIVE_START_TIMEOUT,
             pending_limit=args.queue_size,
         )

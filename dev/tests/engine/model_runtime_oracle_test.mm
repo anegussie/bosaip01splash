@@ -19,6 +19,7 @@
 #include <cstring>
 #include <filesystem>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -65,10 +66,11 @@ std::string mebibytes(uint64_t bytes) {
 // A refusal of the memory governor for host memory, with what it measured.
 [[noreturn]] void stopForHostMemory(const MemoryGovernor &governor,
                                     const std::string &need, uint64_t bytes) {
+  // Its allocations are no request's in service: they keep the spare reserve.
   const MemoryGovernorSnapshot host = governor.snapshot();
   stopForHostMemory("the memory governor refused " + mebibytes(bytes) +
                         " for " + need,
-                    host.hostAvailableBytes, host.hostReserveBytes);
+                    host.hostSpareBytes, host.hostSpareReserveBytes);
 }
 
 constexpr uint32_t kVocabulary = 248320;
@@ -155,10 +157,12 @@ Similarity compareFloat(const metal::MetalBuffer &left,
 // commit identical state. Both use the same target arithmetic; compare bytes.
 // The GDN state a decode step leaves is its lane's cell, which holds the state
 // before the step's rows, and the rows it retained, which wait on its tape for
-// the next step to fold in: the retained counts must match, and lanes that go
-// on for another step must then hold the same cell. The GDN kernel tests
-// independently check the fold of each retained count against FP64.
-void requireCommittedStateIdentical(const model::QwenStateStorage &states,
+// the next step to fold in: the cells, the retained counts and the retained
+// rows must match, so that the next step of either lane folds the same state.
+// The GDN kernel tests independently check the fold of each retained count
+// against FP64.
+void requireCommittedStateIdentical(const model::Runtime &executor,
+                                    const model::QwenStateStorage &states,
                                     uint32_t budgetLane, uint32_t maskedLane,
                                     const std::string &label) {
   const auto &budget = states.metadata(budgetLane);
@@ -172,6 +176,11 @@ void requireCommittedStateIdentical(const model::QwenStateStorage &states,
                 std::memcmp(a.contents(), b.contents(), a.sizeBytes()) == 0,
             label + " " + part + " differs between budget and mask commits");
   };
+  identical(states.current(budgetLane).stateBase, states.current(maskedLane).stateBase,
+            "GDN cell");
+  const std::vector<uint8_t> retained = executor.pendingGdnRows(budget.requestId);
+  require(!retained.empty() && retained == executor.pendingGdnRows(masked.requestId),
+          label + " retained GDN rows differ between budget and mask commits");
   const auto &left = states.draft(budgetLane);
   const auto &right = states.draft(maskedLane);
   for (uint32_t layer = 0; layer < states.layout().draft.layers; ++layer) {
@@ -963,9 +972,13 @@ uint64_t requireCapturedWindow(const std::vector<uint8_t> &captured, const std::
 // the lane's. A restore from a captured state, whose first command computes the
 // rings again from the window and captures a state of its own, continues within
 // the partition tolerance of a restore from commands that ended where the
-// states were captured. Commands compare only where their FFNs ran alike: on
-// the GPU alone, or each split with the Neural Engine, which an armed fault
-// (--ane-ffn-fault) can stop inside the command that captures the states.
+// states were captured. Commands compare only where the partition left their
+// arithmetic alike, the ended commands' KV of the rows both computed equal to
+// the capturing command's bit for bit: a Neural Engine split that ran in one
+// and not the other (an armed fault, --ane-ffn-fault, can stop it inside the
+// command that captures the states), or a kernel a command's row count picks,
+// such as a GGUF float projection's tile, leaves them only as close as any
+// two partitions.
 void requireStatesCapturedInsideCommands(model::Runtime &executor, const metal::MetalBackend &backend,
                                      const kv::PageStorage &pages, const model::QwenStateStorage &states,
                                      const ops::AneFfn *aneFfn, std::span<const uint32_t> chat) {
@@ -1077,7 +1090,13 @@ void requireStatesCapturedInsideCommands(model::Runtime &executor, const metal::
   const bool teacherSplit = prefill(404, split, tokens.subspan(split, firstCaptured - split), teacherPages).second;
   const bool laterSplit =
       prefill(404, firstCaptured, tokens.subspan(firstCaptured, secondCaptured - firstCaptured), teacherPages).second;
-  const bool alike = teacherSplit == capturingSplit && laterSplit == capturingSplit;
+  bool alike = true;
+  for (uint32_t page = 0; page < 50 && alike; ++page) {
+    const auto left = pages.spans(15 + page), right = pages.spans(66 + page);
+    for (size_t tensor = 0; tensor < left.size() && alike; ++tensor)
+      alike = left[tensor].size() == right[tensor].size() &&
+              std::memcmp(left[tensor].data(), right[tensor].data(), left[tensor].size()) == 0;
+  }
   std::shared_ptr<const CompositeState> ended = executor.snapshot(404);
   require(ended != nullptr, "the snapshot of commands that ended at the captured boundaries failed");
   executor.end(404);
@@ -1107,7 +1126,7 @@ void requireStatesCapturedInsideCommands(model::Runtime &executor, const metal::
   std::cout << "captured_state_partition captured_conv_cos=" << capturedConvolution << " captured_recurrent_cos=" << capturedRecurrent
             << " continued_conv_cos=" << convolution << " continued_recurrent_cos=" << recurrent
             << " logits_cos=" << logits.result().cosine << " split=" << capturingSplit << '/' << plainSplit << '/'
-            << teacherSplit << '/' << laterSplit << " ffns_alike=" << alike << '\n';
+            << teacherSplit << '/' << laterSplit << " kv_alike=" << alike << '\n';
   const double bound = bfloatState ? 0.99 : 0.999;
   require(!alike || (capturedConvolution > bound && capturedRecurrent > bound && convolution > bound &&
                      recurrent > bound && logits.result().cosine > bound),
@@ -1457,6 +1476,158 @@ void requireThinkingBudgetClosesThinking(model::Runtime &executor) {
     }
   }
   std::cout << "thinking_budget=PASS most_end_cycles=" << mostEndCycles << "\n";
+}
+
+// Decodes constrained requests together as decodeTogether does, from the
+// selection of their first tokens on: lane l's mask at output position p,
+// whose first token is position 0, is maskAt(l, p).
+std::vector<JointDecode>
+decodeConstrainedTogether(model::Runtime &executor, std::span<const uint64_t> ids, uint32_t promptTokens,
+                          std::span<const std::vector<uint32_t>> pageTables, uint32_t count, const auto &maskAt) {
+  BatchPlan first{.kind = WorkKind::Decode, .constrained = true, .decodeStage = DecodeStage::ApplyInitialMask};
+  std::vector<ModelBatchItem> firstItems;
+  for (size_t index = 0; index < ids.size(); ++index) {
+    provideMask(executor, ids[index], maskAt(index, 0));
+    first.items.push_back({ids[index], 0});
+    firstItems.push_back(
+        withRevision({.requestId = ids[index], .logicalPosition = promptTokens, .pageTable = pageTables[index]}));
+  }
+  for (const ModelStepResult &result : executor.decode(first, firstItems))
+    require(result.failure.empty() && result.outputTokens.empty() && result.nextDecodeStage == DecodeStage::Regular,
+            "a constrained joint decode failed or emitted a first token");
+  std::vector<JointDecode> generated(ids.size());
+  std::vector<bool> finished(ids.size(), false);
+  for (uint32_t cycle = 0;; ++cycle) {
+    BatchPlan plan{.kind = WorkKind::Decode, .constrained = true, .decodeStage = DecodeStage::Regular};
+    std::vector<ModelBatchItem> items;
+    std::vector<size_t> lanes;
+    for (size_t index = 0; index < ids.size(); ++index) {
+      if (finished[index] || generated[index].tokens.size() >= count)
+        continue;
+      plan.items.push_back({ids[index], 0});
+      items.push_back(withRevision({.requestId = ids[index],
+                                    .logicalPosition = promptTokens + generated[index].tokens.size(),
+                                    .pageTable = pageTables[index]}));
+      lanes.push_back(index);
+    }
+    if (items.empty())
+      return generated;
+    PendingMaskedDecode pending = beginMaskedDecode(executor, plan, items);
+    require(pending.maskRequests.size() == lanes.size(), "a constrained joint decode lost a mask request");
+    // The rows of a lane's mask: at its anchor's position, then after each
+    // simulated token.
+    for (const ModelMaskRequest &request : pending.maskRequests) {
+      const size_t index = std::ranges::find(ids, request.requestId) - ids.begin();
+      const uint32_t anchor = static_cast<uint32_t>(generated[index].tokens.size());
+      std::vector<uint32_t> words;
+      for (uint32_t row = 0; row <= request.simulationTokens.size(); ++row)
+        std::ranges::copy(maskAt(index, anchor + row), std::back_inserter(words));
+      provideMask(executor, request.requestId, words);
+    }
+    const std::vector<ModelStepResult> results = finishMaskedDecode(std::move(pending));
+    require(results.size() == items.size(), "a constrained joint decode lost a lane");
+    for (size_t index = 0; index < results.size(); ++index) {
+      require(results[index].failure.empty(), "a constrained joint decode failed a lane");
+      require(results[index].acceptedDraftTokens <= results[index].draftedTokens,
+              "a constrained joint decode accepted more draft tokens than it drafted");
+      JointDecode &decoded = generated[lanes[index]];
+      decoded.drafts.emplace_back(decoded.tokens.size(), results[index].draftedTokens);
+      decoded.tokens.insert(decoded.tokens.end(), results[index].outputTokens.begin(),
+                            results[index].outputTokens.end());
+      decoded.cycles.resize(decoded.tokens.size(), cycle);
+      finished[lanes[index]] = results[index].finished;
+    }
+  }
+}
+
+// A constrained request's grammar admits the end of thinking only where the
+// thinking text may end, between whole characters, so the end waits for a
+// mask that admits it. Here the masks give the bytes of U+20000 as the Qwen
+// tokenizer splits them, F0, A0 80 and 80, from the budget's last thinking
+// token on (from the first token for a budget of 0) and admit every token
+// elsewhere: each budgeted lane thinks past its budget until the character
+// is complete and then ends thinking with its end tokens, greedy and sampled,
+// lanes decoded together ending at their own budgets. Until its first token
+// is selected, the end replaces no draft proposals, as only the verify reads
+// the masks; its other tokens replace them as for any request.
+void requireConstrainedThinkingEndWaitsForItsMask(model::Runtime &executor) {
+  // The prompt of requireThinkingBudgetClosesThinking.
+  const std::vector<uint32_t> prompt{
+      248045, 846,  198,  826,   1396, 9944,  1324, 1881,   220,   16,   321,
+      220,    21,   15,   11,    1179, 1716,  1754, 799,    539,   8818, 12436,
+      1518,   488,  4087, 13,    248046, 198, 248045, 74455, 198,   248068, 198};
+  constexpr uint32_t kThinkEnd = 248069;
+  constexpr std::array<uint32_t, 3> kCharacter{172, 61084, 222};
+  const std::array<std::vector<uint32_t>, 2> ends{
+      std::vector<uint32_t>{kThinkEnd},
+      std::vector<uint32_t>{79939, 279, 6973, 854, 11, 353, 599, 310, 2873, 279, 6093, 3018, 383, 279,
+                            7047, 5774, 1381, 13, 198, kThinkEnd}};
+  const std::array<std::vector<uint32_t>, 3> pageTables{
+      pageRange(108, 4), pageRange(116, 4), pageRange(120, 4)};
+  const std::array<uint64_t, 3> ids{311, 312, 313};
+  constexpr uint32_t rows = model::ExecutionLimits::targetVerifyRows;
+  constexpr uint32_t proposals = model::ExecutionLimits::draftProposalTokens;
+  for (const std::vector<uint32_t> &end : ends) {
+    const uint32_t length = static_cast<uint32_t>(end.size());
+    for (const float temperature : {0.0F, 0.7F}) {
+      for (const uint32_t budget : {0U, 1U, 5U, 12U}) {
+        const std::array<std::optional<uint32_t>, 3> budgets{budget, budget + 7, std::nullopt};
+        // Where a lane's character begins.
+        const auto character = [&](size_t lane) { return *budgets[lane] ? *budgets[lane] - 1 : 0; };
+        for (size_t lane = 0; lane < ids.size(); ++lane) {
+          EngineRequest request = makeRequest(ids[lane], prompt, 64);
+          request.constraint = ConstraintMode::TokenMask;
+          request.sampling.temperature = temperature;
+          request.sampling.seed = 0x5eed + budget;
+          if (budgets[lane])
+            request.thinkingBudget = ThinkingBudget{*budgets[lane], end, kThinkEnd};
+          beginCold(executor, request, static_cast<uint32_t>(lane));
+          require(prefillChunk(executor, ids[lane], 0, prompt, pageTables[lane]).nextDecodeStage ==
+                      DecodeStage::ApplyInitialMask,
+                  "a constrained thinking budget fixture skipped its first mask");
+        }
+        const auto maskAt = [&](size_t lane, uint32_t position) {
+          std::vector<uint32_t> words(kMaskWords, ~0U);
+          if (budgets[lane] && position >= character(lane) && position < character(lane) + kCharacter.size())
+            words = singletonMasks(std::span(kCharacter).subspan(position - character(lane), 1));
+          return words;
+        };
+        const auto generated = decodeConstrainedTogether(
+            executor, ids, static_cast<uint32_t>(prompt.size()), pageTables, budget + 7 + length + 6, maskAt);
+        for (size_t lane = 0; lane < ids.size(); ++lane) {
+          const std::vector<uint32_t> &tokens = generated[lane].tokens;
+          const auto close = std::find(tokens.begin(), tokens.end(), kThinkEnd);
+          if (!budgets[lane]) {
+            require(close == tokens.end(), "a constrained lane without a thinking budget closed its thinking");
+            continue;
+          }
+          // The end starts once the character is complete.
+          const uint32_t start = character(lane) + static_cast<uint32_t>(kCharacter.size());
+          require(tokens.size() > start + length &&
+                      std::ranges::equal(kCharacter, std::span(tokens).subspan(character(lane), kCharacter.size())) &&
+                      std::ranges::equal(end, std::span(tokens).subspan(start, length)) &&
+                      close - tokens.begin() == start + length - 1,
+                  "a constrained thinking budget of " + std::to_string(*budgets[lane]) +
+                      " did not wait for its mask to end thinking, then go on");
+          const std::vector<uint32_t> &cycles = generated[lane].cycles;
+          require(cycles[start + length - 1] - cycles[start] + 1 <= 1 + (length - 1 + rows - 1) / rows,
+                  "a constrained thinking budget's end took a decode cycle per token");
+          // Only a cycle whose anchor is the end's first token or one after
+          // it, before the close, drafted the end tokens left.
+          for (const auto &[anchor, drafted] : generated[lane].drafts) {
+            const uint32_t committed = static_cast<uint32_t>(anchor) + 1;
+            const uint32_t replaced =
+                committed > start && committed < start + length ? std::min(start + length - committed, proposals) : 0;
+            require(drafted == proposals - replaced,
+                    "a constrained cycle counted the end tokens it drafted as the draft's");
+          }
+        }
+        for (const uint64_t id : ids)
+          executor.end(id);
+      }
+    }
+  }
+  std::cout << "constrained_thinking_budget=PASS\n";
 }
 
 // A 64-token request with one image of the given span, its pixels a pattern.
@@ -2154,7 +2325,9 @@ int main(int argc, char **argv) {
       fail(*error);
     const uint64_t hostReserveBytes =
         EngineMemoryPolicy::hostAvailableReserveBytes(device.physicalMemoryBytes);
-    const auto hostAvailableBytes = queryHostAvailableMemory();
+    const std::optional<HostMemory> host = queryHostMemory();
+    const std::optional<uint64_t> hostAvailableBytes =
+        host ? std::optional<uint64_t>(host->available) : std::nullopt;
     require(hostAvailableBytes.has_value(),
             "cannot measure available host memory before loading the oracle model");
     const std::filesystem::path modelRoot(argv[2]);
@@ -2213,8 +2386,8 @@ int main(int argc, char **argv) {
     }
     const engine::AneFfnModel aneFfnModel =
         engine::aneFfnModel(backend, model, operators, format, "model-runtime-oracle " SPLASH_BUILD_ID, {});
-    engine::AneFfnStart aneFfnStart =
-        engine::startAneFfn(aneFfnModel, aneFfnSetting, pageCount * kv::kPageTokens, planMemory, {});
+    engine::AneFfnStart aneFfnStart = engine::startAneFfn(
+        aneFfnModel, aneFfnSetting, {.tokens = pageCount * kv::kPageTokens}, planMemory, {});
     std::cout << "ane_ffn_outcome=" << engine::aneFfnOutcomeName(aneFfnStart.outcome.kind) << ' '
               << aneFfnStart.outcome.reason << '\n';
     require(aneFfnStart.outcome.kind != engine::AneFfnOutcome::Kind::Unavailable,
@@ -2249,7 +2422,8 @@ int main(int argc, char **argv) {
     const uint64_t elasticGrowthCeiling = budget.hardBudgetBytes -
         budget.pipelineReserveBytes - budget.runtimeOverheadReserveBytes;
     MemoryGovernor governor(backend, elasticGrowthCeiling, hostReserveBytes,
-                            queryHostAvailableMemory, 0);
+                            EngineMemoryPolicy::hostSpareReserveBytes(device.physicalMemoryBytes),
+                            queryHostMemory, 0);
     std::cout << "ane_ffn_share=" << (aneFfn ? aneFfn->share() : 0.0)
               << " ane_ffn_minimum_rows=" << (aneFfn ? aneFfn->minimumRows() : 0) << '\n';
     const metal::AllocationAdmission governed =
@@ -2482,6 +2656,7 @@ int main(int argc, char **argv) {
     requireNonFiniteRowFailsOnlyItsLane(executor, pages, states, backend,
                                         samplingSeedTokens, prompt128);
     requireThinkingBudgetClosesThinking(executor);
+    requireConstrainedThinkingEndWaitsForItsMask(executor);
     requireStatesCapturedInsideCommands(executor, backend, pages, states, aneFfn.get(), samplingSeedTokens);
     requireCapturesOutliveTheirItems(executor, states, samplingSeedTokens);
 
@@ -2659,10 +2834,11 @@ int main(int argc, char **argv) {
     // budgeted commit with a constrained cycle that retains the same prefix,
     // rejecting the next proposal unless all eight rows are retained. The
     // constrained request has a larger budget, so both acceptance paths agree on
-    // the retained rows and the exact draft ring. Kernel tests cover the
-    // recurrence's FP64 accuracy; this check does not mix prefill and decode
-    // summation orders, whose tiny differences can amplify through the full
-    // model.
+    // the GDN cell, the retained rows and the exact draft ring. Kernel tests
+    // cover the recurrence's FP64 accuracy; this check does not mix prefill and
+    // decode summation orders, whose tiny differences can amplify through the
+    // full model.
+    std::string comparedCounts;
     for (uint32_t outputLimit = 2; outputLimit <= 8; ++outputLimit) {
       uint64_t id = 10 + outputLimit;
       EngineRequest variant = makeRequest(id, prompt129, outputLimit);
@@ -2731,10 +2907,12 @@ int main(int argc, char **argv) {
                   states.metadata(1).lengths.targetTokens == 129 + stored,
               "replay did not commit exactly the supplied prefix");
       requireCommittedStateIdentical(
-          states, 0, 1, "fixed DFlash-8 retained=" + std::to_string(stored));
+          executor, states, 0, 1, "fixed DFlash-8 retained=" + std::to_string(stored));
+      comparedCounts += (comparedCounts.empty() ? "" : ",") + std::to_string(stored);
       executor.end(replayId);
       executor.end(id);
     }
+    std::cout << "budget_mask_commits=PASS retained=" << comparedCounts << '\n';
 
     // The next cycle folds the rows a cycle retained into the cell it writes:
     // a budgeted lane and a masked lane that retain the same rows in two
@@ -2816,18 +2994,12 @@ int main(int argc, char **argv) {
       };
       replayCycle(129, first, second.outputTokens.front());
       replayCycle(firstEnd, second, std::nullopt);
-      requireCommittedStateIdentical(states, 0, 1, "continued second cycle");
+      requireCommittedStateIdentical(executor, states, 0, 1, "continued second cycle");
       const metal::MetalBuffer &foldedCell = states.current(0).stateBase;
-      const metal::MetalBuffer &maskedCell = states.current(1).stateBase;
       require(foldedCell.sizeBytes() == beforeFold.size() &&
                   std::memcmp(foldedCell.contents(), beforeFold.data(),
                               beforeFold.size()) != 0,
               "the second cycle did not fold the first one's rows in");
-      require(maskedCell.sizeBytes() == foldedCell.sizeBytes() &&
-                  maskedCell.contents() &&
-                  std::memcmp(foldedCell.contents(), maskedCell.contents(),
-                              foldedCell.sizeBytes()) == 0,
-              "a folded GDN cell differs between budget and mask commits");
       executor.end(replayId);
       executor.end(id);
     }

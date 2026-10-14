@@ -15,7 +15,7 @@ namespace {
 
 const char *boolean(bool value) noexcept { return value ? "true" : "false"; }
 
-// idle_release_seconds is null while the engine keeps them (--idle-release off).
+// idle_release_seconds is null with --idle-release off.
 void appendWeights(std::ostringstream &out, const WeightsSnapshot &weights) {
   out << "{\"idle_release_seconds\":";
   if (std::isinf(weights.idleReleaseSeconds))
@@ -23,6 +23,7 @@ void appendWeights(std::ostringstream &out, const WeightsSnapshot &weights) {
   else
     out << weights.idleReleaseSeconds;
   out << ",\"released\":" << boolean(weights.released)
+      << ",\"restoring\":" << boolean(weights.restoring)
       << ",\"restores\":" << weights.restores
       << ",\"restore_failures\":" << weights.restoreFailures << '}';
 }
@@ -167,6 +168,8 @@ std::string runtimeStatusJson(
       << boolean(memoryGovernor.hostMeasurementValid)
       << ",\"host_available_bytes\":" << memoryGovernor.hostAvailableBytes
       << ",\"host_reserve_bytes\":" << memoryGovernor.hostReserveBytes
+      << ",\"host_spare_bytes\":" << memoryGovernor.hostSpareBytes
+      << ",\"host_spare_reserve_bytes\":" << memoryGovernor.hostSpareReserveBytes
       << ",\"host_headroom_bytes\":" << memoryGovernor.hostHeadroomBytes << "}"
       << ",\"memory_audit\":" << memoryAudit.toStatusJson()
       << ",\"weights\":";

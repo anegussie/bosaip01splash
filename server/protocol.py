@@ -308,8 +308,9 @@ class StatusRequestFrame:
 
 @dataclass(slots=True, frozen=True)
 class ReleaseRequestFrame:
-    """Give the weights back now when the engine holds no request; answered
-    by a status JSON with the same correlation id."""
+    """Give the weights back now, as the idle release does, when the engine
+    holds no request and restores none, with the idle release on or off;
+    answered by a status JSON with the same correlation id."""
 
     correlation_id: int
 
@@ -380,8 +381,8 @@ class DoneEvent:
     # Raw final-position logits for a score-only request, in requested token
     # order; empty for generation and for cancelled or failed scoring.
     option_logits: tuple[float, ...]
-    # Of the tokens the request computed, those whose KV it then read from a
-    # cached block's page.
+    # Tokens whose KV the request read from cached blocks another request
+    # computed, past its cached prefix.
     deduplicated_tokens: int = 0
     drafted_tokens: int = 0
     accepted_draft_tokens: int = 0
