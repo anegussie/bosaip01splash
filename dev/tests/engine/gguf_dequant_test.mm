@@ -7,6 +7,7 @@
 #include "metal/MetalBackend.hpp"
 #include "metal/abi/Gguf.h"
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -44,24 +45,34 @@ int main(int argc, char **argv) {
       MetalBackend backend(argv[1]);
       for (int fi = 0; fi < FMT_COUNT; ++fi) {
         const Fmt f = Fmt(fi);
-        std::vector<float> values;
-        const Packed planes = repack(f, makeNative(f, N, K, rng), N, K, &values);
-        const MetalBuffer w0 = upload(backend, planes.w0), meta = upload(backend, planes.meta);
-        const MetalBuffer w1 = kQuantFormats[f].plane1_bytes ? upload(backend, planes.w1) : meta;
-        const MetalBuffer output = sharedBuffer(backend, uint64_t{N} * K * 2);
-        std::vector<std::string> kernels{fmtName(f)};
-        if (f == PTQ10) kernels.push_back("ptq10_lookup");
-        for (const std::string &kernel : kernels) {
-          CommandGraph graph;
-          graph.add(std::string("gguf_test_dequant_") + kernel, {w0, w1, meta, output}, GgufDecodeParams{K, 1, N, 0, 0},
-                    {N * (K / kGroup) / kThreads, 1, 1}, {kThreads, 1, 1});
-          static_cast<void>(backend.submitCommandAsync(graph.dispatches()).wait());
-          const auto *got = static_cast<const uint16_t *>(output.contents());
-          size_t differ = 0;
-          for (size_t i = 0; i < values.size(); ++i) differ += got[i] != f2h(values[i]);
-          std::cout << kernel << ": " << differ << " of " << values.size()
-                    << " weights differ from FP16(GGML fp32 dequantization) " << (differ ? "FAIL" : "ok") << '\n';
-          failures += differ != 0;
+        // Ternary decode may select among scaled values. Exercise signed
+        // zero, subnormal and extreme finite scales as well as model-like ones.
+        for (int trial = 0; trial < (f == PTQ10 ? 2 : 1); ++trial) {
+          constexpr std::array<uint16_t, 12> scales = {
+              0x0000, 0x8000, 0x0001, 0x8001, 0x03FF, 0x83FF,
+              0x0400, 0x8400, 0x3C00, 0xBC00, 0x7BFF, 0xFBFF};
+          size_t nextScale = 0;
+          const auto native = trial == 0 ? makeNative(f, N, K, rng)
+                                        : makeNative(f, N, K, rng, [&] { return scales[nextScale++ % scales.size()]; });
+          std::vector<float> values;
+          const Packed planes = repack(f, native, N, K, &values);
+          const MetalBuffer w0 = upload(backend, planes.w0), meta = upload(backend, planes.meta);
+          const MetalBuffer w1 = kQuantFormats[f].plane1_bytes ? upload(backend, planes.w1) : meta;
+          const MetalBuffer output = sharedBuffer(backend, uint64_t{N} * K * 2);
+          std::vector<std::string> kernels{fmtName(f)};
+          if (f == PTQ10) kernels.push_back("ptq10_lookup");
+          for (const std::string &kernel : kernels) {
+            CommandGraph graph;
+            graph.add(std::string("gguf_test_dequant_") + kernel, {w0, w1, meta, output}, GgufDecodeParams{K, 1, N, 0, 0},
+                      {N * (K / kGroup) / kThreads, 1, 1}, {kThreads, 1, 1});
+            static_cast<void>(backend.submitCommandAsync(graph.dispatches()).wait());
+            const auto *got = static_cast<const uint16_t *>(output.contents());
+            size_t differ = 0;
+            for (size_t i = 0; i < values.size(); ++i) differ += got[i] != f2h(values[i]);
+            std::cout << kernel << (trial ? " boundary scales" : "") << ": " << differ << " of " << values.size()
+                      << " weights differ from FP16(GGML fp32 dequantization) " << (differ ? "FAIL" : "ok") << '\n';
+            failures += differ != 0;
+          }
         }
       }
     } catch (const std::exception &e) {

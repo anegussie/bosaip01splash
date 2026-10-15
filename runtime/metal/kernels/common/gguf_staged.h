@@ -55,3 +55,31 @@ inline void dequant32(typename F::Payload w, typename F::Meta meta, ushort j, th
     *((threadgroup half4 *)(dst + 4 * c)) = lo; *((threadgroup half4 *)(dst + 16 + 4 * c)) = hi;
   }
 }
+
+// Each packed byte supplies five consecutive trits. Decode it once before
+// forming the output vectors, rather than looking it up for every trit.
+// This specialization is used only by the decode stage; prefill retains its
+// integer decoder. Scale the three possible values once, with the same float
+// multiplication and half rounding as staged_linear, then select per trit.
+template <>
+inline void dequant32<FmtPTQ10Lookup>(FmtPTQ10::Payload w, FmtPTQ10::Meta meta, ushort,
+                                     threadgroup half2 *, threadgroup half *dst) {
+  const ushort digits[6] = {
+      quant_ptq10_digits[w.a & 255u], quant_ptq10_digits[(w.a >> 8) & 255u],
+      quant_ptq10_digits[(w.a >> 16) & 255u], quant_ptq10_digits[w.a >> 24],
+      quant_ptq10_digits[w.b & 255u], quant_ptq10_digits[w.b >> 8]};
+  const float scale = float(as_type<half>(meta));
+  // Preserve signed zero explicitly: fast math may fold 0 * scale to +0.
+  // A non-finite scale times zero is NaN.
+  const ushort zeroBits = (meta & 0x7C00u) == 0x7C00u ? 0x7E00u : meta & 0x8000u;
+  const half negative = half(-1.0f * scale), zero = as_type<half>(zeroBits), positive = half(scale);
+#pragma unroll
+  for (ushort pair = 0; pair < 16; ++pair) {
+    const ushort e = 2 * pair;
+    const uint lo = e < 30 ? (digits[e / 5] >> (2 * (e % 5))) & 3u : uint(w.tail) / 3;
+    const uint hi = e < 30 ? (digits[(e + 1) / 5] >> (2 * ((e + 1) % 5))) & 3u : uint(w.tail) % 3;
+    const uint2 codes(lo, hi);
+    const half2 nonzero = select(half2(negative), half2(positive), codes == 2u);
+    *((threadgroup half2 *)(dst + e)) = select(nonzero, half2(zero), codes == 1u);
+  }
+}
