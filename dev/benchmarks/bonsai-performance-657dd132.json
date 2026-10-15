@@ -1,0 +1,285 @@
+{
+  "commit": "657dd13202d6eb1ae28378d9d3886c7af60f3000",
+  "measurement": "three fresh actual option-14 sessions, current-build characterization",
+  "build_id": "src-b8e108596c65114fc2adc3b8f48a52d36f7269d32bd701a095f0bdeacb55afee",
+  "target_artifact_digest": "53107f530aa52eb00912263ab1ee29bd199261c87cd7b4ad4ca1318c1fe33ee3",
+  "settings": {
+    "model": "Ternary-Bonsai-2-27B PTQ1_0",
+    "backend": "Splash Metal",
+    "speculation": "DFlash2",
+    "kv": "int8",
+    "state": "bf16",
+    "prefill_chunk_tokens": 512,
+    "context_limit": 24576,
+    "max_active_requests": 1,
+    "temperature": 0,
+    "reasoning": "none",
+    "draft_revision": "015e795645c74b1a0eeef3b570031fb62e769bc5"
+  },
+  "coding_correct": 9,
+  "coding_total": 9,
+  "coding_isolated": true,
+  "coding": {
+    "chunked": {
+      "tg": {
+        "median": 35.22367030644593,
+        "min": 34.82598833526519,
+        "max": 38.39528013341273,
+        "spread_percent": 9.874020415694048
+      },
+      "draft_acceptance": {
+        "median": 0.8035714285714286,
+        "min": 0.8035714285714286,
+        "max": 0.8035714285714286,
+        "spread_percent": 0.0
+      },
+      "prompt_tokens": [
+        3667
+      ]
+    },
+    "merge_intervals": {
+      "tg": {
+        "median": 34.18144460279737,
+        "min": 33.738297028218334,
+        "max": 35.02890533373465,
+        "spread_percent": 3.7609284149937974
+      },
+      "draft_acceptance": {
+        "median": 0.7142857142857143,
+        "min": 0.7142857142857143,
+        "max": 0.7142857142857143,
+        "spread_percent": 0.0
+      },
+      "prompt_tokens": [
+        3662
+      ]
+    },
+    "stable_unique": {
+      "tg": {
+        "median": 31.179910160285523,
+        "min": 29.22205056973258,
+        "max": 32.592611906732984,
+        "spread_percent": 10.873413065189045
+      },
+      "draft_acceptance": {
+        "median": 0.6607142857142857,
+        "min": 0.6607142857142857,
+        "max": 0.6607142857142857,
+        "spread_percent": 0.0
+      },
+      "prompt_tokens": [
+        3663
+      ]
+    }
+  },
+  "context_runs": [
+    {
+      "round": 1,
+      "workload": "cold",
+      "prompt_tokens": 4892,
+      "output_tokens": 96,
+      "cached_tokens": 0,
+      "pp": 196.26471970352955,
+      "tg": 41.7284723909053,
+      "seconds": 27.206878958037123,
+      "thermal": "nominal"
+    },
+    {
+      "round": 1,
+      "workload": "cached",
+      "prompt_tokens": 4892,
+      "output_tokens": 96,
+      "cached_tokens": 4864,
+      "pp": 121.78519700930352,
+      "tg": 41.56328710474955,
+      "seconds": 2.539874874986708,
+      "thermal": "nominal"
+    },
+    {
+      "round": 2,
+      "workload": "cold",
+      "prompt_tokens": 4892,
+      "output_tokens": 96,
+      "cached_tokens": 0,
+      "pp": 186.04487720372572,
+      "tg": 39.52011761187001,
+      "seconds": 28.703670249786228,
+      "thermal": "nominal"
+    },
+    {
+      "round": 2,
+      "workload": "cached",
+      "prompt_tokens": 4892,
+      "output_tokens": 96,
+      "cached_tokens": 4864,
+      "pp": 117.81834094944752,
+      "tg": 38.51880204092886,
+      "seconds": 2.7297782078385353,
+      "thermal": "nominal"
+    },
+    {
+      "round": 3,
+      "workload": "cold",
+      "prompt_tokens": 4892,
+      "output_tokens": 96,
+      "cached_tokens": 0,
+      "pp": 181.50162991580208,
+      "tg": 37.800654468594416,
+      "seconds": 29.471098375041038,
+      "thermal": "fair"
+    },
+    {
+      "round": 3,
+      "workload": "cached",
+      "prompt_tokens": 4892,
+      "output_tokens": 96,
+      "cached_tokens": 4864,
+      "pp": 111.49026650155488,
+      "tg": 38.44908531649668,
+      "seconds": 2.750645959051326,
+      "thermal": "fair"
+    }
+  ],
+  "context": {
+    "cold": {
+      "pp": {
+        "median": 186.04487720372572,
+        "min": 181.50162991580208,
+        "max": 196.26471970352955,
+        "spread_percent": 7.855336548146076
+      },
+      "tg": {
+        "median": 39.52011761187001,
+        "min": 37.800654468594416,
+        "max": 41.7284723909053,
+        "spread_percent": 9.89796602175537
+      },
+      "seconds": {
+        "median": 28.703670249786228,
+        "min": 27.206878958037123,
+        "max": 29.471098375041038,
+        "spread_percent": 7.955642041715522
+      }
+    },
+    "cached": {
+      "pp": {
+        "median": 117.81834094944752,
+        "min": 111.49026650155488,
+        "max": 121.78519700930352,
+        "spread_percent": 8.796734983894504
+      },
+      "tg": {
+        "median": 38.51880204092886,
+        "min": 38.44908531649668,
+        "max": 41.56328710474955,
+        "spread_percent": 7.881981602856694
+      },
+      "seconds": {
+        "median": 2.7297782078385353,
+        "min": 2.539874874986708,
+        "max": 2.750645959051326,
+        "spread_percent": 7.8839111720441055
+      }
+    }
+  },
+  "thermal_states": [
+    "fair",
+    "nominal"
+  ],
+  "memory_pressure": [
+    "warning"
+  ],
+  "metal_healthy": true,
+  "failed_requests": 0,
+  "swap": [
+    {
+      "round": "round-1",
+      "before": "vm.swapusage: total = 5120.00M  used = 3594.06M  free = 1525.94M  (encrypted)",
+      "after": "vm.swapusage: total = 5120.00M  used = 3594.06M  free = 1525.94M  (encrypted)"
+    },
+    {
+      "round": "round-2",
+      "before": "vm.swapusage: total = 5120.00M  used = 3594.06M  free = 1525.94M  (encrypted)",
+      "after": "vm.swapusage: total = 5120.00M  used = 3594.06M  free = 1525.94M  (encrypted)"
+    },
+    {
+      "round": "round-3",
+      "before": "vm.swapusage: total = 5120.00M  used = 3594.06M  free = 1525.94M  (encrypted)",
+      "after": "vm.swapusage: total = 5120.00M  used = 3594.06M  free = 1525.94M  (encrypted)"
+    }
+  ],
+  "startup_seconds": [
+    15.032598207937554,
+    15.032653874950483,
+    15.035710250027478
+  ],
+  "disk_cache": [
+    {
+      "round": "round-1",
+      "capacity_bytes": 8589934592,
+      "limit_bytes": 7188365312
+    },
+    {
+      "round": "round-2",
+      "capacity_bytes": 8589934592,
+      "limit_bytes": 6996525056
+    },
+    {
+      "round": "round-3",
+      "capacity_bytes": 8589934592,
+      "limit_bytes": 6810607616
+    }
+  ],
+  "memory_actual": [
+    {
+      "round": "round-1",
+      "before": {
+        "allocated_bytes": 8374725760,
+        "current_bytes": 8380940288,
+        "peak_bytes": 8996323328
+      },
+      "after": {
+        "allocated_bytes": 8511040640,
+        "current_bytes": 8517255168,
+        "peak_bytes": 8996323328
+      }
+    },
+    {
+      "round": "round-2",
+      "before": {
+        "allocated_bytes": 8374725760,
+        "current_bytes": 8380940288,
+        "peak_bytes": 8996323328
+      },
+      "after": {
+        "allocated_bytes": 8511040640,
+        "current_bytes": 8517255168,
+        "peak_bytes": 8996323328
+      }
+    },
+    {
+      "round": "round-3",
+      "before": {
+        "allocated_bytes": 8374725760,
+        "current_bytes": 8380940288,
+        "peak_bytes": 8996323328
+      },
+      "after": {
+        "allocated_bytes": 8511040640,
+        "current_bytes": 8517255168,
+        "peak_bytes": 8996323328
+      }
+    }
+  ],
+  "servers_stopped": true,
+  "restart_cached_tokens": 4864,
+  "restart_cache_persistent": true,
+  "excluded_setup_requests": 2,
+  "tool_roundtrip_passed": true,
+  "sse_passed": true,
+  "peak_frontend_waiting": 1,
+  "primary_requests_unchanged": true,
+  "context_correct": 8,
+  "observed_frontend_queue_seconds": 4.054,
+  "timing_spread_over_5_percent": true
+}
