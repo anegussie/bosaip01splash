@@ -3,6 +3,7 @@ import math
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -202,6 +203,20 @@ def native_command_lines():
 
 
 class ServeOptionsTests(unittest.TestCase):
+    def test_local_gguf_is_accepted_by_launcher_and_server(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "Heretic model.gguf"
+            path.write_bytes(b"GGUF")
+            for parse, base in PARSERS:
+                with self.subTest(parser=parse.__module__):
+                    arguments = [*base]
+                    arguments[arguments.index("--model") + 1] = str(path)
+                    self.assertEqual(parse(arguments).model, str(path.absolute()))
+            with self.assertRaises(SystemExit), mock.patch("sys.stderr", io.StringIO()):
+                launcher.parse_args(
+                    ["serve", "--model", str(path), "--revision", "main"]
+                )
+
     def setUp(self):
         # The parsers' defaults ignore the caller's Splash settings.
         self.enterContext(mock.patch.dict(os.environ))

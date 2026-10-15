@@ -81,6 +81,15 @@ def parse_model_id(value):
     return value
 
 
+def parse_model_source(value):
+    """A Hub model ID or an existing local GGUF, kept absolute for serving."""
+    if value:
+        path = Path(value).expanduser()
+        if path.suffix.lower() == ".gguf" and path.is_file():
+            return str(path.absolute())
+    return parse_model_id(value)
+
+
 def parse_max_context(value):
     """'auto' (None), or a token count; K is 1024 tokens."""
     normalized = value.strip().upper()

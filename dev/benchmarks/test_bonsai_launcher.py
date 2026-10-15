@@ -79,9 +79,9 @@ print('Ready test server',flush=True)
             ):
                 del self.env[name]
 
-    def run_launcher(self, **overrides):
+    def run_launcher(self, choice="14", **overrides):
         return subprocess.run(
-            ["bash", LAUNCHER, "--direct", "14"],
+            ["bash", LAUNCHER, "--direct", choice],
             env={**self.env, **overrides},
             capture_output=True,
             text=True,
@@ -103,6 +103,41 @@ print('Ready test server',flush=True)
             {"context": 22528, "output": 1024},
         )
         self.assertEqual(config["compaction"]["keep"]["tokens"], 1536)
+
+    def test_option16_uses_local_weights_and_separate_alias_cache_and_log(self):
+        model = self.root / "Heretic model.gguf"
+        model.write_bytes(b"GGUF")
+        cache = self.root / "heretic-cache"
+        r = self.run_launcher(
+            "16", SPLASH_HERETIC_MODEL=str(model), SPLASH_HERETIC_CACHE_DIR=str(cache)
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--model") + 1], str(model))
+        self.assertEqual(args[args.index("--cache-dir") + 1], str(cache))
+        self.assertEqual(
+            args[args.index("--served-model-name") + 1], "bonsai-heretic-27b-splash"
+        )
+        config = json.loads(self.config.read_text())
+        self.assertEqual(config["model"], "local-llama/bonsai-heretic-27b-splash")
+        self.assertIn(
+            "Uncensored Heretic",
+            config["provider"]["local-llama"]["models"]["bonsai-heretic-27b-splash"][
+                "name"
+            ],
+        )
+        self.assertTrue(
+            (self.root / "logs/bonsai-heretic-27b-splash-latest.log").is_symlink()
+        )
+
+    def test_option16_missing_model_fails_before_config_mutation(self):
+        before = self.config.read_bytes()
+        r = self.run_launcher(
+            "16", SPLASH_HERETIC_MODEL=str(self.root / "missing.gguf")
+        )
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.config.read_bytes(), before)
+        self.assertFalse((self.root / "attempts").exists())
 
     def test_state_and_chunk_overrides(self):
         r = self.run_launcher(

@@ -1657,9 +1657,9 @@ def parse_args(argv=None):
     parser.add_argument("--tokenizer", required=True)
     parser.add_argument(
         "--model",
-        type=serve_options.parse_model_id,
+        type=serve_options.parse_model_source,
         required=True,
-        metavar="OWNER/REPO",
+        metavar="MODEL",
     )
     parser.add_argument("--port", type=int, default=serve_options.DEFAULT_PORT)
     parser.add_argument("--binary", default=str(ROOT / "build" / "splash"))

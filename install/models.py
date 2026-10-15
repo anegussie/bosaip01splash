@@ -3,7 +3,7 @@
 """Install and verify the model a Splash selection names.
 
 Terms the installer modules share:
-- selection: what `--model OWNER/REPO[:VARIANT]` and its source options name
+- selection: what `--model OWNER/REPO[:VARIANT]` or a local GGUF and its options name
   (Selection); its selection link, under the models root, points to what
   serves it.
 - assembly: the directory an upstream model is served from, of links to
@@ -147,6 +147,14 @@ def split_model_id(value: str) -> tuple[str, str | None]:
         raise ModelError(str(error)) from None
 
 
+def split_model_source(value: str) -> tuple[str, str | None]:
+    try:
+        value = serve_options.parse_model_source(value)
+    except argparse.ArgumentTypeError as error:
+        raise ModelError(str(error)) from None
+    return (value, None) if Path(value).is_absolute() else split_model_id(value)
+
+
 def parse_draft_model(value: str) -> str:
     # A local draft directory is recorded as an absolute path, so the
     # installation it selects does not depend on the working directory.
@@ -198,8 +206,8 @@ def selection_link(
     """The selection link of model_id with these source options:
     OWNER/REPO[:VARIANT] under models for the model alone, else
     .selections/<hash of the selection>."""
-    repo_id, variant = split_model_id(model_id)
-    if revision or language_only or draft_model:
+    repo_id, variant = split_model_source(model_id)
+    if Path(repo_id).is_absolute() or revision or language_only or draft_model:
         selection = json.dumps(
             [model_id, revision, language_only, draft_model], separators=(",", ":")
         )
@@ -231,7 +239,11 @@ class Selection:
     def of(
         cls, models_root, model, *, revision=None, language_only=False, draft_model=None
     ):
-        repo_id, variant = split_model_id(model)
+        repo_id, variant = split_model_source(model)
+        if Path(repo_id).is_absolute():
+            if revision:
+                raise ModelError("--revision cannot be used with a local GGUF")
+            model = repo_id
         models_root = Path(models_root).resolve()
         link = selection_link(
             models_root,
@@ -328,8 +340,8 @@ def parse_args(argv=None):
     parser.add_argument(
         "--model",
         required=True,
-        type=serve_options.parse_model_id,
-        help="Hugging Face repository ID (owner/repo[:variant])",
+        type=serve_options.parse_model_source,
+        help="Hugging Face repository ID (owner/repo[:variant]) or local GGUF file",
     )
     parser.add_argument("--revision", help="optional upstream branch, tag or commit")
     parser.add_argument(
@@ -346,7 +358,10 @@ def parse_args(argv=None):
     commands.add_parser("prepare")
     commands.add_parser("verify").add_argument("--full", action="store_true")
     commands.add_parser("link", help="print the selection link")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if Path(args.model).is_absolute() and args.revision:
+        parser.error("--revision cannot be used with a local GGUF")
+    return args
 
 
 def main(argv=None):

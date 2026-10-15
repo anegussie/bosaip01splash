@@ -358,6 +358,12 @@ def prepare(selection):
         except (models.ModelError, OSError) as error:
             print(f"Reinstalling {selection.model}: {error}", flush=True)
     installed_commit = installed and installed["sources"]["target"]["revision"]
+    if Path(selection.repo_id).is_absolute():
+        # Local files can change without a Hub commit. Reinspect and assemble
+        # them on every start, with content identities and cached metadata.
+        # Never fall back to different weights when the selected file fails.
+        _install(selection, hub.Repository.local_gguf(selection.repo_id), installed)
+        return
     target = hub.Repository.resolve(
         selection.repo_id,
         selection.revision,

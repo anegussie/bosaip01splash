@@ -1,0 +1,142 @@
+--- a/startllamacpp.sh
++++ b/startllamacpp.sh
+@@ -20,6 +20,9 @@
+ BONSAI_27B_MODEL="/Users/mymac/.lmstudio/models/prism-ml/Ternary-Bonsai-2-27B-gguf/Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+ SPLASH_BONSAI_MODEL_ID="prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0"
+ SPLASH_BONSAI_ALIAS="bonsai-27b-splash"
++SPLASH_BONSAI_DISPLAY_NAME="Ternary Bonsai 2 27B PTQ1_0 via Splash (non-thinking, int8 KV)"
++SPLASH_HERETIC_MODEL="${SPLASH_HERETIC_MODEL:-$HOME/.cache/huggingface/hub/models--prism-ml--Ternary-Bonsai-2-27B-gguf/snapshots/b072e1d3b35a0a630cece372c2127528e0994386/Ternary-Bonsai-2-27B-Uncensored-Heretic-PTQ1_0.gguf}"
++SPLASH_HERETIC_CACHE_DIR="${SPLASH_HERETIC_CACHE_DIR:-$HOME/Library/Caches/Splash/bonsai-option16}"
+ SPLASH_BONSAI_MAX_CONTEXT="${SPLASH_BONSAI_MAX_CONTEXT:-24K}"
+ SPLASH_BONSAI_OPENCODE_CONTEXT="${SPLASH_BONSAI_OPENCODE_CONTEXT:-auto}"
+ SPLASH_BONSAI_MAX_TOKENS="${SPLASH_BONSAI_MAX_TOKENS:-1024}"
+@@ -170,6 +173,10 @@
+   echo "15) Ternary Bonsai 2 27B PTQ1_0 GGUF — Lithos Metal (experimental BF16 execution)"
+   echo "   ${LITHOS_BONSAI_CONTEXT}-token context | ${LITHOS_BONSAI_OUTPUT}-token OpenCode output reserve | BF16 KV | ${LITHOS_BONSAI_PREFILL}-token prefill | warmup ${LITHOS_BONSAI_WARMUP_PREFILL} tokens | target-only"
+   echo "   Source: ${LITHOS_BONSAI_MODEL:-same local GGUF as option 14} | local weight pack prepared on first run"
++  echo "16) Ternary Bonsai 2 27B Uncensored Heretic PTQ1_0 - Splash (local GGUF)"
++  echo "   ${SPLASH_BONSAI_MAX_CONTEXT} server / ${splash_client_context} OpenCode context | INT8 KV | ${SPLASH_BONSAI_STATE_FORMAT} state | ${SPLASH_BONSAI_PREFILL_CHUNK_TOKENS}-token chunks"
++  echo "   Source: ${SPLASH_HERETIC_MODEL}"
++  echo "   Separate option-16 prefix cache | DFlash2 draft; acceptance depends on these weights"
+ 
+ }
+ 
+@@ -326,10 +333,10 @@
+ 
+   mkdir -p "$log_dir"
+   run_id="$(date '+%Y%m%d-%H%M%S')"
+-  SPLASH_RUN_LOG="$log_dir/bonsai-27b-splash-$run_id.log"
++  SPLASH_RUN_LOG="$log_dir/${SPLASH_BONSAI_ALIAS}-$run_id.log"
+   : > "$SPLASH_RUN_LOG"
+   ln -sfn "$SPLASH_RUN_LOG" "$log_dir/splash-latest.log"
+-  ln -sfn "$SPLASH_RUN_LOG" "$log_dir/bonsai-27b-splash-latest.log"
++  ln -sfn "$SPLASH_RUN_LOG" "$log_dir/${SPLASH_BONSAI_ALIAS}-latest.log"
+   echo "Run log: $SPLASH_RUN_LOG"
+   echo "Status: http://${HOST}:${PORT}/status"
+   echo "Press Ctrl-C in this Terminal to stop it."
+@@ -591,6 +598,8 @@
+ 
+   temp_path="$(mktemp "${config_path}.tmp.XXXXXX")"
+   if ! jq --arg model "$model_id" \
++    --arg alias "$SPLASH_BONSAI_ALIAS" \
++    --arg display_name "$SPLASH_BONSAI_DISPLAY_NAME" \
+     --arg base_url "http://${HOST}:${PORT}/v1" \
+     --argjson context "$SPLASH_BONSAI_OPENCODE_CONTEXT" \
+     --argjson output "$SPLASH_BONSAI_MAX_TOKENS" \
+@@ -626,8 +635,8 @@
+      .experimental = ((.experimental // {}) + {subagent_depth: 1}) |
+      del(.subagent_depth) |
+      .tool_output = ((.tool_output // {}) + {max_lines: 100, max_bytes: 8192}) |
+-     .provider["local-llama"].models["bonsai-27b-splash"] = {
+-       name: "Ternary Bonsai 2 27B PTQ1_0 via Splash (non-thinking, int8 KV)",
++     .provider["local-llama"].models[$alias] = {
++       name: $display_name,
+        limit: {context: $context, output: $output}
+      }' "$config_path" >"$temp_path"; then
+     rm -f "$temp_path"
+@@ -748,7 +757,7 @@
+ Usage:
+   startllamacpp.sh                  Select a model, or choose 9 to stop serving
+   startllamacpp.sh --watch [1-7|10] Start a watchdog-managed server
+-  startllamacpp.sh --direct [1-8|10|14|15] Start the selected server without the watchdog
++  startllamacpp.sh --direct [1-8|10|14|15|16] Start the selected server without the watchdog
+   startllamacpp.sh --hermes [1-7]  Start a model and its matching Hermes profile
+   startllamacpp.sh --list           List model choices
+ 
+@@ -807,32 +816,32 @@
+   choice="$DIRECT_CHOICE"
+ else
+   print_models
+-  if ! read -r -p "Enter choice (1-10, 14 or 15; 9 stops): " choice; then
++  if ! read -r -p "Enter choice (1-10, 14, 15 or 16; 9 stops): " choice; then
+     echo "No model choice received." >&2
+     exit 2
+   fi
+ fi
+ 
+ case "$choice" in
+-  1|2|3|4|5|6|7|8|10|14|15) ;;
++  1|2|3|4|5|6|7|8|10|14|15|16) ;;
+   9)
+     stop_llamacpp
+     exit $?
+     ;;
+   *)
+-    echo "Invalid choice: $choice (expected 1-10, 14 or 15; 9 stops)." >&2
++    echo "Invalid choice: $choice (expected 1-10, 14, 15 or 16; 9 stops)." >&2
+     exit 2
+     ;;
+ esac
+ 
+-if [[ "$choice" == "8" || "$choice" == "10" || "$choice" == "14" || "$choice" == "15" ]]; then
++if [[ "$choice" == "8" || "$choice" == "10" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" ]]; then
+   if (( HERMES_LAUNCH == 1 )); then
+-    echo "Options 8, 10, 14, and 15 do not use hermeslocal profiles; run them from the interactive menu or with --direct." >&2
++    echo "Options 8, 10, 14, 15, and 16 do not use hermeslocal profiles; run them from the interactive menu or with --direct." >&2
+     exit 2
+   fi
+   # Keep the reasoning-only profile direct; MTP option 10 is supervised by the
+   # watchdog unless the caller explicitly requests --direct.
+-  if [[ "$choice" == "8" || "$choice" == "14" || "$choice" == "15" ]]; then
++  if [[ "$choice" == "8" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" ]]; then
+     DIRECT_LAUNCH=1
+   fi
+ fi
+@@ -1397,7 +1406,18 @@
+       --host "$HOST" --port "$PORT"
+     ;;
+ 
+-  14)
++  14|16)
++    if [[ "$choice" == "16" ]]; then
++      require_model "$SPLASH_HERETIC_MODEL" "Bonsai 2 Uncensored Heretic GGUF"
++      if [[ "$SPLASH_HERETIC_MODEL" != *.gguf ]]; then
++        echo "SPLASH_HERETIC_MODEL must name a local .gguf file." >&2
++        exit 1
++      fi
++      SPLASH_BONSAI_MODEL_ID="$SPLASH_HERETIC_MODEL"
++      SPLASH_BONSAI_ALIAS="bonsai-heretic-27b-splash"
++      SPLASH_BONSAI_DISPLAY_NAME="Ternary Bonsai 2 27B Uncensored Heretic PTQ1_0 via Splash"
++      SPLASH_BONSAI_CACHE_DIR="$SPLASH_HERETIC_CACHE_DIR"
++    fi
+     if ! splash_context_limit="$(splash_context_tokens "$SPLASH_BONSAI_MAX_CONTEXT")" ||
+        (( splash_context_limit < 4096 || splash_context_limit > 24576 )); then
+       echo "SPLASH_BONSAI_MAX_CONTEXT must be 4096-24576 tokens (e.g. 16K or 24K)." >&2
+@@ -1459,7 +1479,7 @@
+     fi
+     for splash_dependency in jq curl lsof pkill; do
+       command -v "$splash_dependency" >/dev/null 2>&1 || {
+-        echo "Option 14 requires $splash_dependency." >&2
++        echo "Option $choice requires $splash_dependency." >&2
+         exit 1
+       }
+     done
+@@ -1527,7 +1547,7 @@
+         exit "$splash_status"
+       fi
+       if (( splash_startup_retries >= SPLASH_BONSAI_STARTUP_MAX_RETRIES )); then
+-        echo "Splash startup stopped after ${splash_startup_retries} retries. Close memory-heavy apps or lower SPLASH_BONSAI_MAX_CONTEXT (e.g. 16K), then launch option 14 again." |
++        echo "Splash startup stopped after ${splash_startup_retries} retries. Close memory-heavy apps or lower SPLASH_BONSAI_MAX_CONTEXT (e.g. 16K), then launch option $choice again." |
+           timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+         exit "$splash_status"
+       fi

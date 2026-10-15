@@ -403,10 +403,10 @@ def parse_args(argv=None):
     model = groups["model"]
     model.add_argument(
         "--model",
-        type=serve_options.parse_model_id,
+        type=serve_options.parse_model_source,
         required=True,
-        metavar="OWNER/REPO[:VARIANT]",
-        help="upstream Hugging Face model, with a GGUF variant after ':' (e.g. :UD-Q4_K_M)",
+        metavar="MODEL",
+        help="Hugging Face model with an optional ':VARIANT', or a local GGUF file",
     )
     model.add_argument(
         "--revision",
@@ -467,6 +467,8 @@ def parse_args(argv=None):
         except argparse.ArgumentTypeError as error:
             parser.error(f"SPLASH_PORT: {error}")
     if args.command == "serve":
+        if Path(args.model).is_absolute() and args.revision:
+            parser.error("--revision cannot be used with a local GGUF")
         serve_options.check_serve_arguments(parser, args)
     if client_args and args.command == "serve":
         parser.error("arguments after -- are only supported for coding clients")

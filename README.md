@@ -98,6 +98,17 @@ Vision and the tokenizer come from the target model's source.
 [Model loading and compatibility](DEVELOPMENT.md#upstream-model-loading) ·
 [Supported formats](DEVELOPMENT.md#gguf-targets)
 
+A local GGUF from a supported family can also be selected directly:
+
+```bash
+./splash serve --model /path/to/model.gguf --language-only
+```
+
+Its configuration, tokenizer and chat template come from that file. Local
+targets are checked on each start and use a separate assembly from Hub models.
+The family's DFlash2 draft is selected automatically; acceptance with altered
+weights needs measurement. `--revision` applies only to Hub targets.
+
 ## Settings
 
 Memory and context are sized automatically, up to the model's native context

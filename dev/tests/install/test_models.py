@@ -133,6 +133,29 @@ class InstallerTest(unittest.TestCase):
         args = installer.parse_args(["--model", self.MODEL_ID, "prepare"])
         self.assertEqual((args.command, args.model), ("prepare", self.MODEL_ID))
 
+    def test_local_gguf_selection_is_absolute_and_stays_under_models(self):
+        path = self.root / "Heretic model.gguf"
+        path.write_bytes(b"GGUF")
+        parsed = installer.parse_args(["--model", str(path), "prepare"])
+        chosen = installer.Selection.of(self.root / "models", parsed.model)
+        self.assertEqual(chosen.repo_id, str(path))
+        self.assertIsNone(chosen.variant)
+        self.assertEqual(chosen.link.parent, self.root.resolve() / "models/.selections")
+        with self.assertRaisesRegex(installer.ModelError, "--revision"):
+            installer.Selection.of(self.root / "models", str(path), revision="main")
+        self.api.assert_not_called()
+
+    def test_local_repository_exposes_only_selected_gguf(self):
+        path = self.root / "Heretic.gguf"
+        path.write_bytes(b"heretic")
+        (self.root / "Original.gguf").write_bytes(b"original")
+        repo = hub.Repository.local_gguf(path)
+        self.assertEqual(repo.files, {path.name})
+        self.assertEqual(repo.download(repo.files), {path.name: path})
+        self.assertEqual(repo.identity(), {"repo": str(path), "revision": None})
+        with self.assertRaises(installer.ModelError):
+            hub.Repository.local_gguf(self.root / "missing.gguf")
+
     def test_variant_model_ids_parse_and_name_selection_links(self):
         self.assertEqual(
             installer.split_model_id("owner/repo:UD-Q4_K_M"),

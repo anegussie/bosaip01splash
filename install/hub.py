@@ -211,6 +211,14 @@ class Repository:
         return cls(str(path), None, _listing(path), path)
 
     @classmethod
+    def local_gguf(cls, path):
+        """Expose exactly the selected file, including beside other GGUFs."""
+        path = Path(path)
+        if not path.is_file() or path.suffix.lower() != ".gguf":
+            raise models.ModelError(f"local GGUF file not found: {path}")
+        return cls(str(path), None, {path.name}, path.parent)
+
+    @classmethod
     def cached(cls, name, commit, *, unreachable_reason=None):
         """name at commit from its snapshot in the Hub cache, without the Hub;
         only the files downloaded before are available."""

@@ -901,6 +901,42 @@ class GgufMetadataTests(unittest.TestCase):
             ),
         )
 
+    def test_local_gguf_assembles_selected_weights_and_refreshes_changed_content(self):
+        # The actual preparation/verification path, with two adjacent targets
+        # and a local draft, must never contact the Hub or reuse stale content.
+        values = fixture(native=True)
+        path = self.root / "Heretic model.gguf"
+        tensors = loadable_tensors(values, self.root).items()
+        write_gguf(path, values, tensors)
+        (self.root / "Original.gguf").write_bytes(b"unselected")
+        draft = draft_dir(self.root / "local-draft", MOE)
+        chosen = selection(self.root, str(path), draft_model=str(draft))
+        with mock.patch("huggingface_hub.HfApi") as api:
+            self.prepare(chosen)
+            first = chosen.link.resolve()
+            record = assembly.verify(chosen.link, full=True)
+            self.assertEqual(
+                record["sources"]["target"], {"repo": str(path), "revision": None}
+            )
+            self.assertEqual(
+                list((chosen.link / "target").iterdir()),
+                [chosen.link / "target" / path.name],
+            )
+            self.prepare(chosen)
+            self.assertEqual(chosen.link.resolve(), first)
+            values["tokenizer.chat_template"] = "{{ messages[0].content }} changed"
+            write_gguf(path, values, tensors)
+            self.prepare(chosen)
+            self.assertNotEqual(chosen.link.resolve(), first)
+            assembly.verify(chosen.link, full=True)
+            self.assertIn(
+                "changed", (chosen.link / "tokenizer/chat_template.jinja").read_text()
+            )
+            path.unlink()
+            with self.assertRaisesRegex(models.ModelError, "local GGUF file not found"):
+                self.prepare(chosen)
+            api.assert_not_called()
+
     def test_a_layer_count_no_family_has_is_rejected_before_screening(self):
         # Screening lists every tensor of every layer a header claims; only
         # the family bounds the count.
