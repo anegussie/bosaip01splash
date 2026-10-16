@@ -1,0 +1,719 @@
+{
+  "measurement": "actual option-16 current-build characterization; no matched baseline",
+  "commit": "2753e6afbb86f72bb0927726ca64ad216c750900",
+  "build": {
+    "build_id": "src-c988c87eac16f999a9e5b5df5f0823c8671a3ce7eb6bc32f79090735cd6a8737",
+    "schema_version": 1,
+    "source_sha256": "c988c87eac16f999a9e5b5df5f0823c8671a3ce7eb6bc32f79090735cd6a8737"
+  },
+  "target_path": "/Users/mymac/.cache/huggingface/hub/models--prism-ml--Ternary-Bonsai-2-27B-gguf/snapshots/b072e1d3b35a0a630cece372c2127528e0994386/Ternary-Bonsai-2-27B-Uncensored-Heretic-PTQ1_0.gguf",
+  "target_sha256": "a18c3e17da397838305522b3ee877f9d2cbf4facd04ba01a394b22f3f3a477be",
+  "target_bytes": 5946648928,
+  "selection_root": "/Users/mymac/splash/splash/install/models/.selections/95c14e2a5970ea9fe1423a3943ddb179ec3e1112c079e6d79c8ee4d952335e99",
+  "model_assembly": {
+    "family": "Qwen3.8-27B",
+    "files": {
+      "config.json": {
+        "bytes": 288,
+        "ctime_ns": 1792094184523066800,
+        "digest": "db7d36a53e2797e27fd4e3614b9a234c7f3a10f0859e1b855c5f031e7cf3712c",
+        "mtime_ns": 1792094184523066800,
+        "path": "/Users/mymac/splash/splash/install/models/.metadata/e5bb2420508f604cb35c88345e2a6f21073a9e82d2ccc94b2845176cc1b5e18a/config.json"
+      },
+      "draft/config.json": {
+        "bytes": 1239,
+        "ctime_ns": 1790648545326755380,
+        "digest": "79279cc5665bced6f3cdaa2095a2ffe819497b2e",
+        "mtime_ns": 1790648545326497925,
+        "path": "/Users/mymac/.cache/huggingface/hub/models--incoai--Qwen3.8-27B-DFlash2/snapshots/015e795645c74b1a0eeef3b570031fb62e769bc5/config.json"
+      },
+      "draft/model.safetensors": {
+        "bytes": 3848817896,
+        "ctime_ns": 1790649102398765154,
+        "digest": "67fc76d68dc5a9415511a4f394ef744d67510cd20e93b37cc2cc7d28e4bab65c",
+        "mtime_ns": 1790649102397454296,
+        "path": "/Users/mymac/.cache/huggingface/hub/models--incoai--Qwen3.8-27B-DFlash2/snapshots/015e795645c74b1a0eeef3b570031fb62e769bc5/model.safetensors"
+      },
+      "target/Ternary-Bonsai-2-27B-Uncensored-Heretic-PTQ1_0.gguf": {
+        "bytes": 5946648928,
+        "ctime_ns": 1792092913563174208,
+        "digest": "a18c3e17da397838305522b3ee877f9d2cbf4facd04ba01a394b22f3f3a477be",
+        "mtime_ns": 1792092913562969167,
+        "path": "/Users/mymac/.cache/huggingface/hub/models--prism-ml--Ternary-Bonsai-2-27B-gguf/snapshots/b072e1d3b35a0a630cece372c2127528e0994386/Ternary-Bonsai-2-27B-Uncensored-Heretic-PTQ1_0.gguf"
+      },
+      "tokenizer/chat_template.jinja": {
+        "bytes": 8952,
+        "ctime_ns": 1792094184526838388,
+        "digest": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+        "mtime_ns": 1792094184526838388,
+        "path": "/Users/mymac/splash/splash/install/models/.metadata/e5bb2420508f604cb35c88345e2a6f21073a9e82d2ccc94b2845176cc1b5e18a/tokenizer/chat_template.jinja"
+      },
+      "tokenizer/config.json": {
+        "bytes": 288,
+        "ctime_ns": 1792094184523066800,
+        "digest": "db7d36a53e2797e27fd4e3614b9a234c7f3a10f0859e1b855c5f031e7cf3712c",
+        "mtime_ns": 1792094184523066800,
+        "path": "/Users/mymac/splash/splash/install/models/.metadata/e5bb2420508f604cb35c88345e2a6f21073a9e82d2ccc94b2845176cc1b5e18a/config.json"
+      },
+      "tokenizer/tokenizer.json": {
+        "bytes": 10085571,
+        "ctime_ns": 1792094184525515970,
+        "digest": "8e852142d8ab38bb7678f650bd504ba28c29d9c6357e6ed762bebdbd474689eb",
+        "mtime_ns": 1792094184525515970,
+        "path": "/Users/mymac/splash/splash/install/models/.metadata/e5bb2420508f604cb35c88345e2a6f21073a9e82d2ccc94b2845176cc1b5e18a/tokenizer/tokenizer.json"
+      },
+      "tokenizer/tokenizer_config.json": {
+        "bytes": 6197,
+        "ctime_ns": 1792094184526763555,
+        "digest": "c0398d4e3a44b70c94a4f14c7b5a8d2fa653c6e6d2ed327a0138ba0ef59cd400",
+        "mtime_ns": 1792094184526763555,
+        "path": "/Users/mymac/splash/splash/install/models/.metadata/e5bb2420508f604cb35c88345e2a6f21073a9e82d2ccc94b2845176cc1b5e18a/tokenizer/tokenizer_config.json"
+      }
+    },
+    "metadata": "e5bb2420508f604cb35c88345e2a6f21073a9e82d2ccc94b2845176cc1b5e18a",
+    "model": "/Users/mymac/.cache/huggingface/hub/models--prism-ml--Ternary-Bonsai-2-27B-gguf/snapshots/b072e1d3b35a0a630cece372c2127528e0994386/Ternary-Bonsai-2-27B-Uncensored-Heretic-PTQ1_0.gguf",
+    "sources": {
+      "draft": {
+        "repo": "incoai/Qwen3.8-27B-DFlash2",
+        "revision": "015e795645c74b1a0eeef3b570031fb62e769bc5"
+      },
+      "target": {
+        "repo": "/Users/mymac/.cache/huggingface/hub/models--prism-ml--Ternary-Bonsai-2-27B-gguf/snapshots/b072e1d3b35a0a630cece372c2127528e0994386/Ternary-Bonsai-2-27B-Uncensored-Heretic-PTQ1_0.gguf",
+        "revision": null
+      }
+    },
+    "target_format": "gguf",
+    "version": 1,
+    "vision_format": "none"
+  },
+  "device": {
+    "device_name": "Apple M5",
+    "macos_version": "26.5.2",
+    "apple_gpu_family": 10,
+    "gpu_core_count": 8,
+    "physical_memory_bytes": 17179869184,
+    "recommended_max_working_set_bytes": 12713115648,
+    "max_buffer_length_bytes": 9534832640,
+    "max_threadgroup_memory_bytes": 32768,
+    "max_threadgroup_width": 1024,
+    "has_unified_memory": true
+  },
+  "profile": {
+    "kv": "int8",
+    "state": "bf16",
+    "max_context": 24576,
+    "prefill_chunk": 512,
+    "concurrency": 1,
+    "reasoning": "none",
+    "temperature": 0,
+    "seed": 42,
+    "draft": "incoai/Qwen3.8-27B-DFlash2",
+    "requested_cache_bytes": 8589934592
+  },
+  "three_round_summary": {
+    "coding-merge_intervals": {
+      "samples": 3,
+      "prompt_tokens": [
+        3662,
+        3662,
+        3662
+      ],
+      "output_tokens": [
+        130,
+        130,
+        130
+      ],
+      "cached_tokens": [
+        0,
+        0,
+        0
+      ],
+      "median_seconds": 22.155567666050047,
+      "median_prefill_tok_s": 192.66218044028517,
+      "median_decode_tok_s": 41.17346284142855,
+      "decode_spread_percent": 4.909044235437084,
+      "median_draft_acceptance": 0.8809523809523809,
+      "median_cycle_ms_per_token": 24.100844876923077,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "nominal",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "outputs_identical": true
+    },
+    "coding-stable_unique": {
+      "samples": 3,
+      "prompt_tokens": [
+        3663,
+        3663,
+        3663
+      ],
+      "output_tokens": [
+        41,
+        41,
+        41
+      ],
+      "cached_tokens": [
+        0,
+        0,
+        0
+      ],
+      "median_seconds": 20.759008541936055,
+      "median_prefill_tok_s": 188.42755431219777,
+      "median_decode_tok_s": 30.497056271643377,
+      "decode_spread_percent": 10.634180276508738,
+      "median_draft_acceptance": 0.673469387755102,
+      "median_cycle_ms_per_token": 31.990800804878056,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "fair",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "outputs_identical": true
+    },
+    "coding-chunked": {
+      "samples": 3,
+      "prompt_tokens": [
+        3667,
+        3667,
+        3667
+      ],
+      "output_tokens": [
+        48,
+        48,
+        48
+      ],
+      "cached_tokens": [
+        3584,
+        3584,
+        3584
+      ],
+      "median_seconds": 2.2167782918550074,
+      "median_prefill_tok_s": 126.38759878789723,
+      "median_decode_tok_s": 30.705066727989692,
+      "decode_spread_percent": 12.666805183182154,
+      "median_draft_acceptance": 0.6964285714285714,
+      "median_cycle_ms_per_token": 31.889599833333325,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "fair",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "outputs_identical": true
+    },
+    "context-220-cold": {
+      "samples": 3,
+      "prompt_tokens": [
+        4892,
+        4892,
+        4892
+      ],
+      "output_tokens": [
+        96,
+        96,
+        96
+      ],
+      "cached_tokens": [
+        0,
+        0,
+        0
+      ],
+      "median_seconds": 29.12045154091902,
+      "median_prefill_tok_s": 182.13310027841942,
+      "median_decode_tok_s": 42.12576358489361,
+      "decode_spread_percent": 11.479631171198418,
+      "median_draft_acceptance": 1.0,
+      "median_cycle_ms_per_token": 23.491266062500006,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "fair",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "outputs_identical": true
+    },
+    "context-220-cached": {
+      "samples": 3,
+      "prompt_tokens": [
+        4892,
+        4892,
+        4892
+      ],
+      "output_tokens": [
+        96,
+        96,
+        96
+      ],
+      "cached_tokens": [
+        4864,
+        4864,
+        4864
+      ],
+      "median_seconds": 2.5949454170186073,
+      "median_prefill_tok_s": 118.73966328824054,
+      "median_decode_tok_s": 40.737162540849724,
+      "decode_spread_percent": 14.050537235997155,
+      "median_draft_acceptance": 1.0,
+      "median_cycle_ms_per_token": 24.291952666666663,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "fair",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "outputs_identical": true
+    }
+  },
+  "restart_and_long_context": {
+    "restart-context-220-first": {
+      "samples": 1,
+      "prompt_tokens": [
+        4892
+      ],
+      "output_tokens": [
+        96
+      ],
+      "cached_tokens": [
+        4864
+      ],
+      "median_seconds": 2.4008729171473533,
+      "median_prefill_tok_s": 112.4859392575928,
+      "median_decode_tok_s": 47.211138648181105,
+      "decode_spread_percent": 0.0,
+      "median_draft_acceptance": 1.0,
+      "median_cycle_ms_per_token": 21.000916229166666,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "outputs_identical": true
+    },
+    "restart-context-220-cached": {
+      "samples": 1,
+      "prompt_tokens": [
+        4892
+      ],
+      "output_tokens": [
+        96
+      ],
+      "cached_tokens": [
+        4864
+      ],
+      "median_seconds": 2.3294844580814242,
+      "median_prefill_tok_s": 126.61662295378494,
+      "median_decode_tok_s": 47.05131862558641,
+      "decode_spread_percent": 0.0,
+      "median_draft_acceptance": 1.0,
+      "median_cycle_ms_per_token": 21.032053822916666,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "outputs_identical": true
+    },
+    "tool-call": {
+      "samples": 1,
+      "prompt_tokens": [
+        295
+      ],
+      "output_tokens": [
+        37
+      ],
+      "cached_tokens": [
+        0
+      ],
+      "median_seconds": 2.6755972078535706,
+      "median_prefill_tok_s": 161.24439129149104,
+      "median_decode_tok_s": 35.02512750958058,
+      "decode_spread_percent": 0.0,
+      "median_draft_acceptance": 0.7142857142857143,
+      "median_cycle_ms_per_token": 27.012538297297287,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "outputs_identical": true
+    },
+    "tool-result": {
+      "samples": 1,
+      "prompt_tokens": [
+        351
+      ],
+      "output_tokens": [
+        11
+      ],
+      "cached_tokens": [
+        288
+      ],
+      "median_seconds": 0.7493862088304013,
+      "median_prefill_tok_s": 113.15935531498715,
+      "median_decode_tok_s": 24.02994130686836,
+      "decode_spread_percent": 0.0,
+      "median_draft_acceptance": 0.5714285714285714,
+      "median_cycle_ms_per_token": 30.762386363636406,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "outputs_identical": true
+    },
+    "context-560-cold": {
+      "samples": 1,
+      "prompt_tokens": [
+        12712
+      ],
+      "output_tokens": [
+        96
+      ],
+      "cached_tokens": [
+        0
+      ],
+      "median_seconds": 74.53794237505645,
+      "median_prefill_tok_s": 176.74720598775932,
+      "median_decode_tok_s": 36.55969428398801,
+      "decode_spread_percent": 0.0,
+      "median_draft_acceptance": 0.9120879120879121,
+      "median_cycle_ms_per_token": 27.06768364583333,
+      "thermal": [
+        [
+          "nominal",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "outputs_identical": true
+    },
+    "context-560-cached": {
+      "samples": 1,
+      "prompt_tokens": [
+        12712
+      ],
+      "output_tokens": [
+        96
+      ],
+      "cached_tokens": [
+        12704
+      ],
+      "median_seconds": 2.738929791841656,
+      "median_prefill_tok_s": 41.28520854190965,
+      "median_decode_tok_s": 37.99580526309896,
+      "decode_spread_percent": 0.0,
+      "median_draft_acceptance": 0.9120879120879121,
+      "median_cycle_ms_per_token": 26.04448260416666,
+      "thermal": [
+        [
+          "fair",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "outputs_identical": true
+    },
+    "context-920-first": {
+      "samples": 1,
+      "prompt_tokens": [
+        20992
+      ],
+      "output_tokens": [
+        96
+      ],
+      "cached_tokens": [
+        8192
+      ],
+      "median_seconds": 88.42480520810932,
+      "median_prefill_tok_s": 149.90831818068642,
+      "median_decode_tok_s": 31.75631474318668,
+      "decode_spread_percent": 0.0,
+      "median_draft_acceptance": 0.9120879120879121,
+      "median_cycle_ms_per_token": 31.161736041666682,
+      "thermal": [
+        [
+          "fair",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "outputs_identical": true
+    },
+    "context-920-cached": {
+      "samples": 1,
+      "prompt_tokens": [
+        20992
+      ],
+      "output_tokens": [
+        96
+      ],
+      "cached_tokens": [
+        20960
+      ],
+      "median_seconds": 3.358742875047028,
+      "median_prefill_tok_s": 105.04822370019237,
+      "median_decode_tok_s": 31.421256182132154,
+      "decode_spread_percent": 0.0,
+      "median_draft_acceptance": 0.9120879120879121,
+      "median_cycle_ms_per_token": 31.493983125,
+      "thermal": [
+        [
+          "fair",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "outputs_identical": true
+    }
+  },
+  "coding_checks_passed": 9,
+  "recall_checks_passed": 12,
+  "requests_completed": 25,
+  "requests_failed": 0,
+  "requests_cancelled": 0,
+  "all_metal_healthy": true,
+  "restart_cache_verified": true,
+  "sse_ttft_seconds": 0.1961133328732103,
+  "queue_peak_waiting": 1,
+  "system_swap_mb": {
+    "before": 5630.5,
+    "after": 5710.0,
+    "maximum_phase_boundary_sample": 5710.0
+  },
+  "thermal_states_at_phase_boundaries": [
+    "nominal",
+    "nominal",
+    "nominal",
+    "nominal",
+    "nominal",
+    "fair",
+    "nominal",
+    "fair"
+  ],
+  "effective_disk_cache_gib_at_phase_starts": [
+    3.4313735961914062,
+    3.2586498260498047,
+    3.085918426513672,
+    3.088756561279297
+  ],
+  "memory_actual_at_phase_boundaries": [
+    {
+      "allocated_bytes": 8374725760,
+      "current_bytes": 8376221696,
+      "peak_bytes": 8460763136
+    },
+    {
+      "allocated_bytes": 8511040640,
+      "current_bytes": 8516730880,
+      "peak_bytes": 8516730880
+    },
+    {
+      "allocated_bytes": 8374725760,
+      "current_bytes": 8376483840,
+      "peak_bytes": 8461025280
+    },
+    {
+      "allocated_bytes": 8511040640,
+      "current_bytes": 8516993024,
+      "peak_bytes": 8516993024
+    },
+    {
+      "allocated_bytes": 8374725760,
+      "current_bytes": 8376483840,
+      "peak_bytes": 8461025280
+    },
+    {
+      "allocated_bytes": 8511040640,
+      "current_bytes": 8516993024,
+      "peak_bytes": 8516993024
+    },
+    {
+      "allocated_bytes": 8374725760,
+      "current_bytes": 8383561728,
+      "peak_bytes": 8383561728
+    },
+    {
+      "allocated_bytes": 9056300160,
+      "current_bytes": 9065136128,
+      "peak_bytes": 9065136128
+    }
+  ],
+  "maximum_reported_metal_peak_bytes": 9065136128,
+  "servers_stopped": true,
+  "scratch_cache_bytes_removed": 3342344192,
+  "raw_results": "/Users/mymac/splash/splash/build/validation/performance-option16-20261015/run.json",
+  "verified_results": "/Users/mymac/splash/splash/build/validation/performance-option16-20261015/verified-run.json",
+  "harness_note": {
+    "raw_error": "AssertionError()",
+    "reason": "The 20,992-token first request reused 8,192 earlier tokens. Its output, repeated output, request isolation, and Metal-health assertions passed. Only the harness assumption that this first request must have zero cache reuse failed.",
+    "interpretation": "context-920-cold is a partially cached first request, not a cold full-prompt measurement.",
+    "last_completed_request_confirmed_in_launcher_log": 10,
+    "last_status_sample_request_counters": {
+      "submitted": 10,
+      "completed": 9,
+      "cancelled": 0,
+      "failed": 0
+    }
+  }
+}
