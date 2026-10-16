@@ -1,0 +1,3685 @@
+{
+  "measurement": "experimental single-token target decode versus DFlash2 through real option 14",
+  "limitations": [
+    "Target-only is an isolated experimental path, not an existing supported production switch.",
+    "Both modes retain the same draft weights and arenas and the same target+draft prefill; only decode computation changes.",
+    "Target-only reuses existing one-row target operators, including small-row staged projections; it is not a newly tuned target-only engine.",
+    "Greedy unconstrained code tasks with tool schemas; no claim about sampled or grammar-constrained decoding.",
+    "Target-only forwards use existing one-row prefill/GDN/attention operators; quantized projections retain the existing eight-row padded staged tiles. These rates do not predict a dedicated optimized single-token decode implementation."
+  ],
+  "cases": {
+    "4096-merge_intervals": {
+      "rounds": [
+        25.085317326923075,
+        175.6175195769231,
+        163.57586169230768,
+        28.292309438461537
+      ],
+      "baseline": 26.688813382692306,
+      "candidate": 169.59669063461538,
+      "noise": 0.12016240907953576,
+      "regression": 5.354598393070515,
+      "bound": 0.24032481815907153,
+      "verdict": "inconclusive",
+      "pass": false,
+      "latency": {
+        "rounds": [
+          3.5159666249528527,
+          23.19692522950936,
+          21.58383518748451,
+          3.983957333024591
+        ],
+        "baseline": 3.749961978988722,
+        "candidate": 22.390380208496936,
+        "noise": 0.12479878747942526,
+        "regression": 4.970828593450194,
+        "bound": 0.24959757495885052,
+        "verdict": "inconclusive",
+        "pass": false
+      },
+      "on_native_tps": 37.468882024125506,
+      "off_native_tps": 5.896341469035103,
+      "on_speed_factor": 6.354598393070515,
+      "on_stream_tps": 37.771246632983484,
+      "off_stream_tps": 5.844511252087209,
+      "output_tokens": [
+        130,
+        130,
+        130,
+        130,
+        130,
+        130,
+        130,
+        130
+      ],
+      "prompt_tokens": [
+        4026,
+        4026,
+        4026,
+        4026,
+        4026,
+        4026,
+        4026,
+        4026
+      ],
+      "cached_tokens": [
+        4000,
+        4000,
+        4000,
+        4000,
+        4000,
+        4000,
+        4000,
+        4000
+      ],
+      "outputs_identical": true,
+      "correctness_passed": true,
+      "on_acceptance": [
+        0.8270676691729323,
+        0.8270676691729323,
+        0.8270676691729323,
+        0.8270676691729323
+      ],
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "fair",
+          "fair"
+        ],
+        [
+          "fair",
+          "fair"
+        ],
+        [
+          "nominal",
+          "fair"
+        ],
+        [
+          "fair",
+          "fair"
+        ],
+        [
+          "fair",
+          "fair"
+        ],
+        [
+          "fair",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "thermal_matched": false,
+      "within_phase_native_spread": [
+        0.009569573061188039,
+        0.007574046774471898,
+        0.006345818744231018,
+        0.07006399023803
+      ],
+      "controlled_speed_claim": false
+    },
+    "12288-review_intervals": {
+      "rounds": [
+        39.37812913967612,
+        209.0353208531746,
+        212.85613285714285,
+        51.98577049797571
+      ],
+      "baseline": 45.68194981882591,
+      "candidate": 210.94572685515874,
+      "noise": 0.2759873737504933,
+      "regression": 3.6177040973900425,
+      "bound": 0.5519747475009866,
+      "verdict": "inconclusive",
+      "pass": false,
+      "latency": {
+        "rounds": [
+          10.359991229022853,
+          53.369763646041974,
+          54.33295956242364,
+          13.458699374925345
+        ],
+        "baseline": 11.9093453019741,
+        "candidate": 53.85136160423281,
+        "noise": 0.26019130920562433,
+        "regression": 3.5217734677074466,
+        "bound": 0.5203826184112487,
+        "verdict": "inconclusive",
+        "pass": false
+      },
+      "on_native_tps": 21.890484183927974,
+      "off_native_tps": 4.740555852485356,
+      "on_speed_factor": 4.6177040973900425,
+      "on_stream_tps": 22.44121639804345,
+      "off_stream_tps": 4.702941390717235,
+      "output_tokens": [
+        247,
+        247,
+        252,
+        252,
+        252,
+        252,
+        247,
+        247
+      ],
+      "prompt_tokens": [
+        12258,
+        12258,
+        12258,
+        12258,
+        12258,
+        12258,
+        12258,
+        12258
+      ],
+      "cached_tokens": [
+        12224,
+        12224,
+        12224,
+        12224,
+        12224,
+        12224,
+        12224,
+        12224
+      ],
+      "outputs_identical": false,
+      "correctness_passed": true,
+      "on_acceptance": [
+        0.4846938775510204,
+        0.4846938775510204,
+        0.4846938775510204,
+        0.4846938775510204
+      ],
+      "thermal": [
+        [
+          "fair",
+          "fair"
+        ],
+        [
+          "fair",
+          "fair"
+        ],
+        [
+          "fair",
+          "fair"
+        ],
+        [
+          "fair",
+          "fair"
+        ],
+        [
+          "fair",
+          "fair"
+        ],
+        [
+          "fair",
+          "fair"
+        ],
+        [
+          "fair",
+          "fair"
+        ],
+        [
+          "fair",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "thermal_matched": true,
+      "within_phase_native_spread": [
+        0.004059839564054163,
+        0.0221238358955083,
+        0.013307850617340472,
+        0.058560452169102106
+      ],
+      "controlled_speed_claim": false
+    }
+  },
+  "phases": [
+    {
+      "name": "round-1-on",
+      "mode": "on",
+      "aggregate_native_tps": 29.027935703799994,
+      "swap_before": "vm.swapusage: total = 4096.00M  used = 2868.00M  free = 1228.00M  (encrypted)",
+      "swap_after": "vm.swapusage: total = 4096.00M  used = 2860.00M  free = 1236.00M  (encrypted)",
+      "drafted_tokens": 1162,
+      "accepted_draft_tokens": 674,
+      "failed_requests": 0,
+      "metal_healthy": true,
+      "capacity_failures": 0,
+      "stopped": true,
+      "excluded_transport_failure": false
+    },
+    {
+      "name": "round-2-off",
+      "mode": "off",
+      "aggregate_native_tps": 5.059121637102519,
+      "swap_before": "vm.swapusage: total = 4096.00M  used = 2860.00M  free = 1236.00M  (encrypted)",
+      "swap_after": "unrecorded after excluded grammar-constraint failure",
+      "drafted_tokens": 0,
+      "accepted_draft_tokens": 0,
+      "failed_requests": 0,
+      "metal_healthy": true,
+      "capacity_failures": 0,
+      "stopped": true,
+      "excluded_transport_failure": true
+    },
+    {
+      "name": "round-3-off",
+      "mode": "off",
+      "aggregate_native_tps": 5.099819794129487,
+      "swap_before": "vm.swapusage: total = 4096.00M  used = 2590.81M  free = 1505.19M  (encrypted)",
+      "swap_after": "vm.swapusage: total = 4096.00M  used = 2574.81M  free = 1521.19M  (encrypted)",
+      "drafted_tokens": 0,
+      "accepted_draft_tokens": 0,
+      "failed_requests": 0,
+      "metal_healthy": true,
+      "capacity_failures": 0,
+      "stopped": true,
+      "excluded_transport_failure": false
+    },
+    {
+      "name": "round-4-on",
+      "mode": "on",
+      "aggregate_native_tps": 22.822915520135506,
+      "swap_before": "vm.swapusage: total = 4096.00M  used = 2574.81M  free = 1521.19M  (encrypted)",
+      "swap_after": "vm.swapusage: total = 4096.00M  used = 2558.81M  free = 1537.19M  (encrypted)",
+      "drafted_tokens": 1050,
+      "accepted_draft_tokens": 600,
+      "failed_requests": 0,
+      "metal_healthy": true,
+      "capacity_failures": 0,
+      "stopped": true,
+      "excluded_transport_failure": false
+    }
+  ],
+  "all_same_test_build": true,
+  "production_binary_unchanged": true,
+  "excluded_workload_failure": {
+    "key": "20480-stable_unique",
+    "phase": "round-2-off",
+    "reason": "experimental target-only path rejects grammar-constrained requests, including this tool_choice=none case",
+    "status": {
+      "schema_version": 6,
+      "ready": false,
+      "maximum_context_tokens": 24576,
+      "prefill_chunk_tokens": 512,
+      "memory_pressure": "warning",
+      "thermal_state": "fair",
+      "admission": {
+        "waiting": 0,
+        "waiting_memory": 0,
+        "waiting_concurrency": 0,
+        "held_behind_refusal": 0,
+        "restoring": 0,
+        "suspended": 0,
+        "draining": false,
+        "oldest_wait_ms": 0
+      },
+      "loop": {
+        "max_tick_ms": 24.9575
+      },
+      "identity": {
+        "cache": {
+          "loaded_model_layout_sha256": "521b8c66265342c7be0447453e5462a5fb8da28a1347dd350de634ab01671e1d",
+          "build_id": "src-3c2034df7761e960e384e73ce31902b6fa3f498327c026eff8c7a3a834988bdb",
+          "dtype": "q8s8_f32_scale_per_token_head_k_token_major_v_dimension_major",
+          "block_tokens": 32
+        },
+        "kv": {
+          "target_model_sha256": "84b517ae601a5c0b95023e48cce931d1c3dc3385a419e3645d4209ff7f8def21",
+          "format": "int8",
+          "quantization": "symmetric_int8",
+          "scale_type": "float32",
+          "key_layout": "token_major",
+          "value_layout": "dimension_major"
+        }
+      },
+      "memory_plan": {
+        "valid": true,
+        "maximum_context_tokens": 24576,
+        "device": {
+          "device_name": "Apple M5",
+          "macos_version": "26.5.2",
+          "apple_gpu_family": 10,
+          "gpu_core_count": 8,
+          "physical_memory_bytes": 17179869184,
+          "recommended_max_working_set_bytes": 12713115648,
+          "max_buffer_length_bytes": 9534832640,
+          "max_threadgroup_memory_bytes": 32768,
+          "max_threadgroup_width": 1024,
+          "has_unified_memory": true
+        },
+        "model": {
+          "model_name": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+          "maximum_context_tokens": 24576,
+          "attention_layers": 16,
+          "kv_heads": 4,
+          "head_dimension": 256,
+          "kv_page_tokens": 32,
+          "kv_format": "int8",
+          "kv_elements_per_scale": 256,
+          "kv_page_bytes": 1064960,
+          "state_format": "bf16",
+          "memory": {
+            "target_weights_bytes": 6391655424,
+            "draft_weights_bytes": 1266647040,
+            "vision_weights_bytes": 0,
+            "lane_state_bytes": 205127680,
+            "shared_prefill_bytes": 117932032,
+            "shared_decode_bytes": 172507264,
+            "pipeline_reserve_bytes": 268435456,
+            "runtime_overhead_reserve_bytes": 536870912,
+            "ane_ffn_bytes": 0,
+            "state_staging_bytes": 84541440
+          }
+        },
+        "budget": {
+          "physical_memory_bytes": 17179869184,
+          "recommended_working_set_bytes": 12713115648,
+          "configured_memory_limit_bytes": 0,
+          "working_set_margin_bytes": 1073741824,
+          "hard_budget_bytes": 11639373824,
+          "target_weights_bytes": 6391655424,
+          "draft_weights_bytes": 1266647040,
+          "vision_weights_bytes": 0,
+          "maximum_batch_width": 4,
+          "lane_state_bytes": 205127680,
+          "shared_prefill_bytes": 117932032,
+          "shared_decode_bytes": 172507264,
+          "pipeline_reserve_bytes": 268435456,
+          "runtime_overhead_reserve_bytes": 536870912,
+          "ane_ffn_bytes": 0,
+          "state_staging_bytes": 84541440,
+          "fixed_runtime_bytes": 8838589568,
+          "dynamic_budget_bytes": 2800784256,
+          "kv_page_tokens": 32,
+          "kv_page_bytes": 1064960,
+          "kv_extent_pages": 128,
+          "kv_extent_bytes": 136314880,
+          "kv_capacity_pages": 2432,
+          "kv_capacity_bytes": 2589982720,
+          "kv_capacity_tokens": 77824,
+          "minimum_dynamic_bytes": 341442560,
+          "minimum_required_bytes": 9180032128,
+          "deficit_bytes": 0
+        }
+      },
+      "memory_actual": {
+        "allocated_bytes": 8374725760,
+        "current_bytes": 8380940288,
+        "peak_bytes": 9062514688
+      },
+      "memory_governor": {
+        "limit_bytes": 11639373824,
+        "charged_bytes": 9180032128,
+        "headroom_bytes": 2459341696,
+        "growth_allowed": false,
+        "denied_reservations": 32,
+        "system_pressure": "normal",
+        "host_measurement_valid": true,
+        "host_available_bytes": 3286122496,
+        "host_reserve_bytes": 1717986918,
+        "host_spare_bytes": 2804613120,
+        "host_spare_reserve_bytes": 2147483648,
+        "host_headroom_bytes": 657129472
+      },
+      "memory_audit": {
+        "scope": "startup_warmup",
+        "valid": true,
+        "error": "none",
+        "categorized_bytes": 8990108800,
+        "backend_unclassified_bytes": 0,
+        "device_untracked_bytes": 6214528,
+        "device_peak_deviation_basis_points": 0,
+        "actual_headroom_bytes": 2643050496,
+        "backend_allocated_bytes": 8990108800,
+        "device_current_allocated_bytes": 8996323328,
+        "device_peak_allocated_bytes": 8996323328,
+        "backend_peak_allocated_bytes": 8990108800
+      },
+      "weights": {
+        "idle_release_seconds": 600,
+        "released": false,
+        "restoring": false,
+        "restores": 0,
+        "restore_failures": 0
+      },
+      "ane_ffn": {
+        "state": "off",
+        "share": 0,
+        "minimum_rows": 0,
+        "reason": "ANE FFN split needs unrotated quantized projections",
+        "split_commands": 0,
+        "reruns": 0,
+        "ane_ms": 0,
+        "evaluations": 0
+      },
+      "kv": {
+        "block_tokens": 32,
+        "pages_allocated": 128,
+        "pages_active": 0,
+        "pages_cache": 0,
+        "pages_free": 128,
+        "allocated_bytes": 136314880,
+        "reclaimable_bytes": 136314880,
+        "extent_allocations": 16,
+        "extent_releases": 15,
+        "extent_allocate_max_ms": 24.293833,
+        "extent_release_max_ms": 0.124959,
+        "extent_compactions": 0,
+        "pages_moved": 0,
+        "extent_compact_max_ms": 0
+      },
+      "state": {
+        "entries": 5,
+        "pinned": 0,
+        "in_use": 0,
+        "in_use_evictions": 0,
+        "bytes": 0,
+        "allocated_bytes": 205127680,
+        "active_lanes": 0,
+        "idle_gdn_cells": 2,
+        "idle_draft_rings": 1,
+        "idle_context_windows": 1,
+        "publications": 9,
+        "evictions": 0,
+        "checkpoint_entries": 2,
+        "checkpoint_bytes": 0,
+        "checkpoint_evictions": 0,
+        "checkpoint_retirements": 4,
+        "disk_hits": 4,
+        "disk_promotions": 0,
+        "disk_promotions_skipped": 4,
+        "disk_bytes": 422707200,
+        "offloads": 9,
+        "offload_failures": 0,
+        "invalidations": 0
+      },
+      "disk": {
+        "capacity_bytes": 2147483648,
+        "limit_bytes": 2147483648,
+        "used_bytes": 1649541120,
+        "file_bytes": 1649541120,
+        "volume_available_bytes": 25255661568,
+        "writes_gated": "no",
+        "write_budget_bytes": 0,
+        "read_bytes": 1418035200,
+        "written_bytes": 1987706880,
+        "kv_blocks": 1152,
+        "kv_bytes": 1226833920,
+        "kv_demotions": 1152,
+        "kv_demotion_failures": 0,
+        "kv_demotions_refused": 0,
+        "kv_restores": 1014,
+        "kv_restore_failures": 0,
+        "kv_pending_pages": 0,
+        "persistent": true,
+        "kv_copies": 0,
+        "kv_copy_failures": 0,
+        "taken_back": {
+          "states": 0,
+          "kv_blocks": 0,
+          "bytes": 0,
+          "left_behind": 0
+        },
+        "write_behind": {
+          "waiting": 0,
+          "durable": 3,
+          "unneeded": 0,
+          "refused": 0
+        }
+      },
+      "cache": {
+        "probe_hashed_blocks": 1019,
+        "hits": 4,
+        "cold_misses": 3,
+        "hit_rate": 0.5714285714,
+        "kv_hit_tokens": 32448,
+        "kv_disk_hit_tokens": 32448,
+        "lost_state_misses": 0,
+        "reused_tokens": 32448,
+        "deduplicated_kv_tokens": 0,
+        "replay_state_publications": 3,
+        "deduplicated_state_publications": 0,
+        "recycled_state_publications": 0,
+        "disk_state_publications": 9,
+        "state_captures": 0,
+        "capture_cuts": 3,
+        "replay_state_publication_failures": 0,
+        "lazy_junctions": 0,
+        "junction_materializations": 0,
+        "junction_materialization_failures": 0,
+        "checkpoint_publications": 6,
+        "checkpoint_publication_failures": 0,
+        "resource_suspensions": 0,
+        "priority_suspensions": 0,
+        "resource_resumptions": 0,
+        "resource_replay_tokens": 0
+      },
+      "draft_context": {
+        "target_prefill_rows": 37657,
+        "prompt_end_rows": 793,
+        "materialization_rows": 18432,
+        "avoided_rows": 18432,
+        "restore_skipped": 0,
+        "resets": 21
+      },
+      "model_timing": {
+        "scope": "model_lifetime",
+        "prefill": {
+          "last_gpu_ms": 282.3774584,
+          "last_wall_ms": 283.524167,
+          "total_gpu_ms": 255426.21,
+          "total_wall_ms": 255526.5285
+        },
+        "decode": {
+          "last_gpu_ms": 218.4646248,
+          "last_wall_ms": 218.982958,
+          "total_gpu_ms": 151615.9292,
+          "total_wall_ms": 151968.6375
+        }
+      },
+      "constraint_masks": {
+        "overlap_batches": 0,
+        "overlap_requests": 0,
+        "last_target_forward_gpu_ms": 0,
+        "total_target_forward_gpu_ms": 0,
+        "last_residual_wait_ms": 0,
+        "total_residual_wait_ms": 0
+      },
+      "images": {
+        "encodes": 0,
+        "embedding_reuses": 0,
+        "arena_bytes": 0,
+        "cached_bytes": 0,
+        "state_held_bytes": 0,
+        "rows_bytes": 0
+      },
+      "scheduler": {
+        "queued": 0,
+        "waiting_resources": 0,
+        "waiting_prefix": 0,
+        "prefilling": 0,
+        "decoding": 0,
+        "waiting_mask": 0,
+        "terminal": 0,
+        "prefill_batches": 80,
+        "prefill_rows": 37063,
+        "decode_batches": 761,
+        "decode_batches_by_width": {
+          "b1": 761,
+          "b2": 0,
+          "b3": 0,
+          "b4": 0
+        }
+      },
+      "active_requests": [],
+      "requests": {
+        "submitted": 7,
+        "completed": 7,
+        "cancelled": 0,
+        "failed": 0
+      },
+      "metrics": {
+        "ttft_ms": {
+          "p50": 603.264375,
+          "p95": 151358.6058,
+          "samples": 7
+        },
+        "itl_ms": {
+          "p50": 205.0309579,
+          "p95": 225.6700418,
+          "samples": 756
+        },
+        "prefill_input_tokens": 37063,
+        "prefill_wall_ms": 250582.4162,
+        "prefill_tokens_per_second": 147.9074252,
+        "decode_output_tokens": 765,
+        "decode_wall_ms": 151023.79,
+        "decode_cycle_ms": 151319.5967,
+        "decode_tokens_per_second": 5.06542711,
+        "drafted_tokens": 0,
+        "accepted_draft_tokens": 0,
+        "draft_acceptance_rate": 0,
+        "capacity_failures": 0,
+        "metal_failures": 0,
+        "current_prefill_batch": {
+          "valid": true,
+          "width": 1,
+          "input_tokens": 19,
+          "output_tokens": 0,
+          "drafted_tokens": 0,
+          "accepted_draft_tokens": 0,
+          "wall_ms": 283.524167,
+          "tokens_per_second": 67.01368776
+        },
+        "current_decode_batch": {
+          "valid": true,
+          "width": 1,
+          "input_tokens": 0,
+          "output_tokens": 1,
+          "drafted_tokens": 0,
+          "accepted_draft_tokens": 0,
+          "wall_ms": 9.433208,
+          "tokens_per_second": 106.0084756
+        }
+      },
+      "warmup": {
+        "prefill_512": true,
+        "decode_b1": true,
+        "decode_b2": true,
+        "decode_b3": true,
+        "decode_b4": true,
+        "composite_state_restore": true,
+        "memory_limited_steps": [],
+        "detail": "real 512-row KV target+draft prefill [M32]"
+      },
+      "metal": {
+        "healthy": true,
+        "failure_reason": ""
+      },
+      "transport": {
+        "ready": false,
+        "recovering": true,
+        "stopped": false,
+        "pending": 0,
+        "pending_limit": 32,
+        "restarts": 0,
+        "last_crash_trace": null,
+        "status_stale": true,
+        "status_age_ms": 593.3887499850243,
+        "error": "target-only benchmark supports unconstrained greedy requests only",
+        "max_active_requests": 1,
+        "frontend_waiting": 0
+      },
+      "vision": false,
+      "input_modalities": [
+        "text"
+      ],
+      "chat_template": {
+        "later_system": "patched"
+      },
+      "frontend": {
+        "preparation_capacity": 4,
+        "active": 0,
+        "waiting": 0
+      },
+      "grammar_cache": {
+        "entries": 1,
+        "capacity": 32,
+        "source_bytes": 171,
+        "source_budget_bytes": 8388608,
+        "hits": 1,
+        "misses": 1
+      },
+      "response_store": {
+        "entries": 0,
+        "bytes": 0,
+        "budget_bytes": 67108864,
+        "evictions": 0,
+        "hits": 0,
+        "misses": 0
+      },
+      "image_cache": {
+        "entries": 0,
+        "bytes": 0,
+        "budget_bytes": 268435456,
+        "request_bytes": 0,
+        "request_budget_bytes": 268435456
+      },
+      "tokenizer_cache": {
+        "enabled": true,
+        "entries": 3,
+        "bytes": 360950,
+        "budget_bytes": 8388608,
+        "capacity": 4,
+        "hits": 5,
+        "reused_tokens": 53187
+      },
+      "latency": {
+        "http_request": {
+          "buckets": {
+            "0.001": 0,
+            "0.005": 0,
+            "0.01": 0,
+            "0.025": 0,
+            "0.05": 0,
+            "0.1": 0,
+            "0.25": 0,
+            "0.5": 0,
+            "1": 1,
+            "2.5": 1,
+            "5": 1,
+            "10": 1,
+            "30": 4,
+            "60": 6,
+            "120": 7,
+            "300": 8,
+            "900": 8,
+            "1800": 8,
+            "+Inf": 8
+          },
+          "count": 8,
+          "sum": 403.245087584015
+        },
+        "upload": {
+          "buckets": {
+            "0.001": 7,
+            "0.005": 8,
+            "0.01": 8,
+            "0.025": 8,
+            "0.05": 8,
+            "0.1": 8,
+            "0.25": 8,
+            "0.5": 8,
+            "1": 8,
+            "2.5": 8,
+            "5": 8,
+            "10": 8,
+            "30": 8,
+            "60": 8,
+            "120": 8,
+            "300": 8,
+            "900": 8,
+            "1800": 8,
+            "+Inf": 8
+          },
+          "count": 8,
+          "sum": 0.003984873881563544
+        },
+        "preparation_queue": {
+          "buckets": {
+            "0.001": 8,
+            "0.005": 8,
+            "0.01": 8,
+            "0.025": 8,
+            "0.05": 8,
+            "0.1": 8,
+            "0.25": 8,
+            "0.5": 8,
+            "1": 8,
+            "2.5": 8,
+            "5": 8,
+            "10": 8,
+            "30": 8,
+            "60": 8,
+            "120": 8,
+            "300": 8,
+            "900": 8,
+            "1800": 8,
+            "+Inf": 8
+          },
+          "count": 8,
+          "sum": 0.00010316679254174232
+        },
+        "preparation": {
+          "buckets": {
+            "0.001": 0,
+            "0.005": 5,
+            "0.01": 5,
+            "0.025": 6,
+            "0.05": 7,
+            "0.1": 8,
+            "0.25": 8,
+            "0.5": 8,
+            "1": 8,
+            "2.5": 8,
+            "5": 8,
+            "10": 8,
+            "30": 8,
+            "60": 8,
+            "120": 8,
+            "300": 8,
+            "900": 8,
+            "1800": 8,
+            "+Inf": 8
+          },
+          "count": 8,
+          "sum": 0.1137115431483835
+        },
+        "template": {
+          "buckets": {
+            "0.001": 3,
+            "0.005": 8,
+            "0.01": 8,
+            "0.025": 8,
+            "0.05": 8,
+            "0.1": 8,
+            "0.25": 8,
+            "0.5": 8,
+            "1": 8,
+            "2.5": 8,
+            "5": 8,
+            "10": 8,
+            "30": 8,
+            "60": 8,
+            "120": 8,
+            "300": 8,
+            "900": 8,
+            "1800": 8,
+            "+Inf": 8
+          },
+          "count": 8,
+          "sum": 0.007104873191565275
+        },
+        "tokenization": {
+          "buckets": {
+            "0.001": 2,
+            "0.005": 5,
+            "0.01": 5,
+            "0.025": 6,
+            "0.05": 8,
+            "0.1": 8,
+            "0.25": 8,
+            "0.5": 8,
+            "1": 8,
+            "2.5": 8,
+            "5": 8,
+            "10": 8,
+            "30": 8,
+            "60": 8,
+            "120": 8,
+            "300": 8,
+            "900": 8,
+            "1800": 8,
+            "+Inf": 8
+          },
+          "count": 8,
+          "sum": 0.0857992919627577
+        },
+        "grammar": {
+          "buckets": {
+            "0.001": 1,
+            "0.005": 1,
+            "0.01": 1,
+            "0.025": 2,
+            "0.05": 2,
+            "0.1": 2,
+            "0.25": 2,
+            "0.5": 2,
+            "1": 2,
+            "2.5": 2,
+            "5": 2,
+            "10": 2,
+            "30": 2,
+            "60": 2,
+            "120": 2,
+            "300": 2,
+            "900": 2,
+            "1800": 2,
+            "+Inf": 2
+          },
+          "count": 2,
+          "sum": 0.011842832900583744
+        },
+        "images": {
+          "buckets": {
+            "0.001": 8,
+            "0.005": 8,
+            "0.01": 8,
+            "0.025": 8,
+            "0.05": 8,
+            "0.1": 8,
+            "0.25": 8,
+            "0.5": 8,
+            "1": 8,
+            "2.5": 8,
+            "5": 8,
+            "10": 8,
+            "30": 8,
+            "60": 8,
+            "120": 8,
+            "300": 8,
+            "900": 8,
+            "1800": 8,
+            "+Inf": 8
+          },
+          "count": 8,
+          "sum": 0.0001610838808119297
+        },
+        "native_queue": {
+          "buckets": {
+            "0.001": 3,
+            "0.005": 3,
+            "0.01": 3,
+            "0.025": 3,
+            "0.05": 3,
+            "0.1": 5,
+            "0.25": 7,
+            "0.5": 7,
+            "1": 7,
+            "2.5": 7,
+            "5": 7,
+            "10": 7,
+            "30": 7,
+            "60": 7,
+            "120": 7,
+            "300": 7,
+            "900": 7,
+            "1800": 7,
+            "+Inf": 7
+          },
+          "count": 7,
+          "sum": 0.4879119999999955
+        },
+        "http_ttft": {
+          "buckets": {
+            "0.001": 0,
+            "0.005": 0,
+            "0.01": 0,
+            "0.025": 0,
+            "0.05": 0,
+            "0.1": 0,
+            "0.25": 0,
+            "0.5": 2,
+            "1": 4,
+            "2.5": 4,
+            "5": 4,
+            "10": 4,
+            "30": 5,
+            "60": 5,
+            "120": 6,
+            "300": 7,
+            "900": 7,
+            "1800": 7,
+            "+Inf": 7
+          },
+          "count": 7,
+          "sum": 251.34004333266057
+        },
+        "output_interval": {
+          "buckets": {
+            "0.001": 0,
+            "0.005": 0,
+            "0.01": 0,
+            "0.025": 0,
+            "0.05": 0,
+            "0.1": 0,
+            "0.25": 751,
+            "0.5": 756,
+            "1": 756,
+            "2.5": 756,
+            "5": 756,
+            "10": 756,
+            "30": 756,
+            "60": 756,
+            "120": 756,
+            "300": 756,
+            "900": 756,
+            "1800": 756,
+            "+Inf": 756
+          },
+          "count": 756,
+          "sum": 151.31003166595474
+        }
+      },
+      "instance": {
+        "id": "18e770b817702bdd9b97c5fa",
+        "pid": 25739,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "host": "127.0.0.1",
+        "port": 1236,
+        "started_at": 1792171692.618249
+      },
+      "http": {
+        "requests": {
+          "active": 0,
+          "capacity": 32
+        },
+        "request_body_bytes": {
+          "active": 0,
+          "capacity": 536870912
+        },
+        "max_request_bytes": 134217728,
+        "token_counts": {
+          "active": 0,
+          "capacity": 32
+        },
+        "connections": {
+          "active": 1,
+          "capacity": 96
+        }
+      }
+    }
+  },
+  "launcher_unchanged": true,
+  "production_commit": "c431edc320de59e45ea03ea0615e3809dbb2287b",
+  "test_build": "src-3c2034df7761e960e384e73ce31902b6fa3f498327c026eff8c7a3a834988bdb",
+  "artifact_sha256": {
+    "/Users/mymac/splash/splash/build/splash": "7c068f9abfa7baa1e7848f5dc9a557ff04ba56478fca53e365aeb4dcea5acad6",
+    "/Users/mymac/splash/splash/build/validation/speculation-abba-20261016/checkout/build/splash": "1ac06fea78ff37e0aaa80960d3a6a956eefde16608c59804b09614b31343d479",
+    "/Users/mymac/splash/splash/build/validation/speculation-abba-20261016/target-only-experiment.patch": "bd955f3c5904f79d15d939ac8b27162ed1a014c21a66dbf7b19e5bab3bf62971",
+    "/Users/mymac/startllamacpp.sh": "6ce309e8b24240840118c758d73e2286651441b6591c5fb2f28135ce703bca00"
+  },
+  "started_utc": "2026-10-16T17:22:17Z",
+  "finished_utc": "2026-10-16T17:48:34Z",
+  "requests": [
+    {
+      "phase": "round-1-on",
+      "mode": "on",
+      "key": "4096-merge_intervals-prime",
+      "temperature": 0,
+      "seconds": 20.190377542050555,
+      "response": {
+        "id": "chatcmpl-468d1fa89ac6cfdc1f41fcc0ab7223ed",
+        "object": "chat.completion",
+        "created": 1792171352,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "def"
+            },
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4026,
+          "completion_tokens": 1,
+          "total_tokens": 4027,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 4026
+          },
+          "decode": {
+            "tokens": 0
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 20182.579,
+            "first_token_to_done_ms": 0.005,
+            "wall_ms": 20182.712,
+            "ttft_ms": 20182.707,
+            "queue_to_start_ms": 0.1279999999969732
+          },
+          "cache": {
+            "status": "miss",
+            "matched_tokens": 0,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          }
+        },
+        "timings": {
+          "prompt_n": 4026,
+          "prompt_ms": 20182.579,
+          "prompt_per_second": 199.4789664888714,
+          "predicted_n": 1,
+          "predicted_ms": 0.005,
+          "predicted_per_second": 0.0,
+          "cache_n": 0
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 4026,
+        "prefill_wall_ms": 20173.19962,
+        "decode_output_tokens": 0,
+        "decode_wall_ms": 0,
+        "decode_cycle_ms": 0,
+        "drafted_tokens": 0,
+        "accepted_draft_tokens": 0
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 0.0,
+      "draft_acceptance": 0.0,
+      "state_disk_reads": 0,
+      "cooldown_seconds": 0.004017040831968188,
+      "native_decode_tps": null
+    },
+    {
+      "phase": "round-1-on",
+      "mode": "on",
+      "key": "4096-merge_intervals-cached-1",
+      "temperature": 0,
+      "seconds": 3.5028478750027716,
+      "response": {
+        "id": "chatcmpl-c78d4a7acb112f1a69858849a931e8a5",
+        "object": "chat.completion",
+        "created": 1792171372,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "def merge_intervals(intervals):\n    if not intervals:\n        return []\n    sorted_intervals = sorted(intervals, key=lambda x: (x[0], x[1]))\n    merged = []\n    current_start, current_end = sorted_intervals[0]\n    for start, end in sorted_intervals[1:]:\n        if start <= current_end:\n            current_end = max(current_end, end)\n        else:\n            merged.append([current_start, current_end])\n            current_start, current_end = start, end\n    merged.append([current_start, current_end])\n    return merged"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4026,
+          "completion_tokens": 130,
+          "total_tokens": 4156,
+          "prompt_tokens_details": {
+            "cached_tokens": 4000
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 26
+          },
+          "decode": {
+            "tokens": 129
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 221.699,
+            "first_token_to_done_ms": 3254.549,
+            "wall_ms": 3501.397,
+            "ttft_ms": 246.84799999999996,
+            "queue_to_start_ms": 25.148999999999944,
+            "stream_tokens_per_second": 39.63682832859484
+          },
+          "cache": {
+            "status": "hit",
+            "matched_tokens": 4000,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          },
+          "speculation": {
+            "drafted_tokens": 133,
+            "accepted_draft_tokens": 110,
+            "cycles": 19
+          }
+        },
+        "timings": {
+          "prompt_n": 4026,
+          "prompt_ms": 221.699,
+          "prompt_per_second": 117.27612664017428,
+          "predicted_n": 130,
+          "predicted_ms": 3254.549,
+          "predicted_per_second": 39.63682832859484,
+          "cache_n": 4000,
+          "draft_n": 133,
+          "draft_n_accepted": 110
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 26,
+        "prefill_wall_ms": 221.31153999999879,
+        "decode_output_tokens": 130,
+        "decode_wall_ms": 3245.487627,
+        "decode_cycle_ms": 3254.554625,
+        "drafted_tokens": 133,
+        "accepted_draft_tokens": 110
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 25.03503557692308,
+      "draft_acceptance": 0.8270676691729323,
+      "state_disk_reads": 87736320,
+      "cooldown_seconds": 0.06642033299431205,
+      "native_decode_tps": 40.05561411434708
+    },
+    {
+      "phase": "round-1-on",
+      "mode": "on",
+      "key": "4096-merge_intervals-cached-2",
+      "temperature": 0,
+      "seconds": 3.529085374902934,
+      "response": {
+        "id": "chatcmpl-8f0c7bf9d8ff77eefe5fec790350a1cb",
+        "object": "chat.completion",
+        "created": 1792171375,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "def merge_intervals(intervals):\n    if not intervals:\n        return []\n    sorted_intervals = sorted(intervals, key=lambda x: (x[0], x[1]))\n    merged = []\n    current_start, current_end = sorted_intervals[0]\n    for start, end in sorted_intervals[1:]:\n        if start <= current_end:\n            current_end = max(current_end, end)\n        else:\n            merged.append([current_start, current_end])\n            current_start, current_end = start, end\n    merged.append([current_start, current_end])\n    return merged"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4026,
+          "completion_tokens": 130,
+          "total_tokens": 4156,
+          "prompt_tokens_details": {
+            "cached_tokens": 4000
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 26
+          },
+          "decode": {
+            "tokens": 129
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 222.215,
+            "first_token_to_done_ms": 3282.662,
+            "wall_ms": 3527.935,
+            "ttft_ms": 245.27300000000014,
+            "queue_to_start_ms": 23.058000000000135,
+            "stream_tokens_per_second": 39.2973751181206
+          },
+          "cache": {
+            "status": "hit",
+            "matched_tokens": 4000,
+            "deduplicated_tokens": 32,
+            "lane": 0
+          },
+          "speculation": {
+            "drafted_tokens": 133,
+            "accepted_draft_tokens": 110,
+            "cycles": 19
+          }
+        },
+        "timings": {
+          "prompt_n": 4026,
+          "prompt_ms": 222.215,
+          "prompt_per_second": 117.00380262358526,
+          "predicted_n": 130,
+          "predicted_ms": 3282.662,
+          "predicted_per_second": 39.2973751181206,
+          "cache_n": 4000,
+          "draft_n": 133,
+          "draft_n_accepted": 110
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 26,
+        "prefill_wall_ms": 221.8222100000021,
+        "decode_output_tokens": 130,
+        "decode_wall_ms": 3276.694878,
+        "decode_cycle_ms": 3282.674875,
+        "drafted_tokens": 133,
+        "accepted_draft_tokens": 110
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 25.251345192307692,
+      "draft_acceptance": 0.8270676691729323,
+      "state_disk_reads": 84541440,
+      "cooldown_seconds": 0.04516312503255904,
+      "native_decode_tps": 39.6741243357234
+    },
+    {
+      "phase": "round-1-on",
+      "mode": "on",
+      "key": "12288-review_intervals-prime",
+      "temperature": 0,
+      "seconds": 67.99926529219374,
+      "response": {
+        "id": "chatcmpl-fecda3f90bdc7ef0f641da5ab35fcf77",
+        "object": "chat.completion",
+        "created": 1792171379,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "-"
+            },
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12258,
+          "completion_tokens": 1,
+          "total_tokens": 12259,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 12258
+          },
+          "decode": {
+            "tokens": 0
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 67985.845,
+            "first_token_to_done_ms": 0.004,
+            "wall_ms": 67985.949,
+            "ttft_ms": 67985.94499999999,
+            "queue_to_start_ms": 0.09999999999126885
+          },
+          "cache": {
+            "status": "miss",
+            "matched_tokens": 0,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          }
+        },
+        "timings": {
+          "prompt_n": 12258,
+          "prompt_ms": 67985.845,
+          "prompt_per_second": 180.30223791437763,
+          "predicted_n": 1,
+          "predicted_ms": 0.004,
+          "predicted_per_second": 0.0,
+          "cache_n": 0
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 12258,
+        "prefill_wall_ms": 67963.42874999999,
+        "decode_output_tokens": 0,
+        "decode_wall_ms": 0.0,
+        "decode_cycle_ms": 0.0,
+        "drafted_tokens": 0,
+        "accepted_draft_tokens": 0
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 0.0,
+      "draft_acceptance": 0.0,
+      "state_disk_reads": 0,
+      "cooldown_seconds": 0.003918790724128485,
+      "native_decode_tps": null
+    },
+    {
+      "phase": "round-1-on",
+      "mode": "on",
+      "key": "12288-review_intervals-cached-1",
+      "temperature": 0,
+      "seconds": 10.380680833011866,
+      "response": {
+        "id": "chatcmpl-de8656a0d5859d8fcba46108d781428a",
+        "object": "chat.completion",
+        "created": 1792171462,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "- Input mutation: the original `intervals` list is mutated by `intervals.sort()`, so the caller\u2019s list is reordered in place.\n- Nested intervals: the current logic only extends the last merged interval when `start < merged[-1][1]`; it does not correctly handle a fully nested interval whose `end` is smaller than the current merged end.\n- Touching endpoints: intervals that touch at endpoints, e.g. `[1, 2]` and `[2, 3]`, are not merged because the condition uses strict `<` instead of `<=`.\n\n```python\ndef merge_intervals(intervals):\n    if not intervals:\n        return []\n\n    sorted_intervals = sorted(intervals, key=lambda x: (x[0], x[1]))\n    merged = [[sorted_intervals[0][0], sorted_intervals[0][1]]]\n\n    for start, end in sorted_intervals[1:]:\n        last = merged[-1]\n        if start <= last[1]:\n            last[1] = max(last[1], end)\n        else:\n            merged.append([start, end])\n\n    return merged\n```"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12258,
+          "completion_tokens": 247,
+          "total_tokens": 12505,
+          "prompt_tokens_details": {
+            "cached_tokens": 12224
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 34
+          },
+          "decode": {
+            "tokens": 246
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 419.987,
+            "first_token_to_done_ms": 9769.13,
+            "wall_ms": 10377.464,
+            "ttft_ms": 608.3340000000007,
+            "queue_to_start_ms": 188.34700000000072,
+            "stream_tokens_per_second": 25.18136210696347
+          },
+          "cache": {
+            "status": "hit",
+            "matched_tokens": 12224,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          },
+          "speculation": {
+            "drafted_tokens": 392,
+            "accepted_draft_tokens": 190,
+            "cycles": 56
+          }
+        },
+        "timings": {
+          "prompt_n": 12258,
+          "prompt_ms": 419.987,
+          "prompt_per_second": 80.954886698874,
+          "predicted_n": 247,
+          "predicted_ms": 9769.13,
+          "predicted_per_second": 25.18136210696347,
+          "cache_n": 12224,
+          "draft_n": 392,
+          "draft_n_accepted": 190
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 34,
+        "prefill_wall_ms": 419.5188000000053,
+        "decode_output_tokens": 247,
+        "decode_wall_ms": 9746.141705000002,
+        "decode_cycle_ms": 9769.16346,
+        "drafted_tokens": 392,
+        "accepted_draft_tokens": 190
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 39.55126906882591,
+      "draft_acceptance": 0.4846938775510204,
+      "state_disk_reads": 491356160,
+      "cooldown_seconds": 15.139999416889623,
+      "native_decode_tps": 25.343362273635233
+    },
+    {
+      "phase": "round-1-on",
+      "mode": "on",
+      "key": "12288-review_intervals-cached-2",
+      "temperature": 0,
+      "seconds": 10.33930162503384,
+      "response": {
+        "id": "chatcmpl-0374d20e6d9bae95f607327cf7d8659d",
+        "object": "chat.completion",
+        "created": 1792171488,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "- Input mutation: the original `intervals` list is mutated by `intervals.sort()`, so the caller\u2019s list is reordered in place.\n- Nested intervals: the current logic only extends the last merged interval when `start < merged[-1][1]`; it does not correctly handle a fully nested interval whose `end` is smaller than the current merged end.\n- Touching endpoints: intervals that touch at endpoints, e.g. `[1, 2]` and `[2, 3]`, are not merged because the condition uses strict `<` instead of `<=`.\n\n```python\ndef merge_intervals(intervals):\n    if not intervals:\n        return []\n\n    sorted_intervals = sorted(intervals, key=lambda x: (x[0], x[1]))\n    merged = [[sorted_intervals[0][0], sorted_intervals[0][1]]]\n\n    for start, end in sorted_intervals[1:]:\n        last = merged[-1]\n        if start <= last[1]:\n            last[1] = max(last[1], end)\n        else:\n            merged.append([start, end])\n\n    return merged\n```"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12258,
+          "completion_tokens": 247,
+          "total_tokens": 12505,
+          "prompt_tokens_details": {
+            "cached_tokens": 12224
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 34
+          },
+          "decode": {
+            "tokens": 246
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 420.422,
+            "first_token_to_done_ms": 9726.815,
+            "wall_ms": 10335.89,
+            "ttft_ms": 609.0749999999989,
+            "queue_to_start_ms": 188.65299999999888,
+            "stream_tokens_per_second": 25.290909717106782
+          },
+          "cache": {
+            "status": "hit",
+            "matched_tokens": 12224,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          },
+          "speculation": {
+            "drafted_tokens": 392,
+            "accepted_draft_tokens": 190,
+            "cycles": 56
+          }
+        },
+        "timings": {
+          "prompt_n": 12258,
+          "prompt_ms": 420.422,
+          "prompt_per_second": 80.87112472705995,
+          "predicted_n": 247,
+          "predicted_ms": 9726.815,
+          "predicted_per_second": 25.290909717106782,
+          "cache_n": 12224,
+          "draft_n": 392,
+          "draft_n_accepted": 190
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 34,
+        "prefill_wall_ms": 419.989579999994,
+        "decode_output_tokens": 247,
+        "decode_wall_ms": 9706.654089999998,
+        "decode_cycle_ms": 9726.81891,
+        "drafted_tokens": 392,
+        "accepted_draft_tokens": 190
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 39.379833643724695,
+      "draft_acceptance": 0.4846938775510204,
+      "state_disk_reads": 491356160,
+      "cooldown_seconds": 15.126301415963098,
+      "native_decode_tps": 25.4464615417237
+    },
+    {
+      "phase": "round-1-on",
+      "mode": "on",
+      "key": "20480-stable_unique-prime",
+      "temperature": 0,
+      "seconds": 131.7057538330555,
+      "response": {
+        "id": "chatcmpl-d3e611aa685cd4f21de5640502dc5ca4",
+        "object": "chat.completion",
+        "created": 1792171513,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "```"
+            },
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 20659,
+          "completion_tokens": 1,
+          "total_tokens": 20660,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 20659
+          },
+          "decode": {
+            "tokens": 0
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 131654.142,
+            "first_token_to_done_ms": 0.007,
+            "wall_ms": 131654.377,
+            "ttft_ms": 131654.37,
+            "queue_to_start_ms": 0.22800000000279397
+          },
+          "cache": {
+            "status": "miss",
+            "matched_tokens": 0,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          }
+        },
+        "timings": {
+          "prompt_n": 20659,
+          "prompt_ms": 131654.142,
+          "prompt_per_second": 156.91872421302173,
+          "predicted_n": 1,
+          "predicted_ms": 0.007,
+          "predicted_per_second": 0.0,
+          "cache_n": 0
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 20659,
+        "prefill_wall_ms": 131574.59230000002,
+        "decode_output_tokens": 1,
+        "decode_wall_ms": 8.342500000002474,
+        "decode_cycle_ms": 8.384170000001177,
+        "drafted_tokens": 0,
+        "accepted_draft_tokens": 0
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 8.384170000001177,
+      "draft_acceptance": 0.0,
+      "state_disk_reads": 0,
+      "cooldown_seconds": 15.044243291951716,
+      "native_decode_tps": 119.86814504041996
+    },
+    {
+      "phase": "round-1-on",
+      "mode": "on",
+      "key": "20480-stable_unique-cached-1",
+      "temperature": 0,
+      "seconds": 2.3976397500373423,
+      "response": {
+        "id": "chatcmpl-cf80051868c2639f33b67abcd9729a08",
+        "object": "chat.completion",
+        "created": 1792171660,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "```python\ndef stable_unique(items):\n    result = []\n    for item in items:\n        if not any(item == existing for existing in result):\n            result.append(item)\n    return result\n```"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 20659,
+          "completion_tokens": 46,
+          "total_tokens": 20705,
+          "prompt_tokens_details": {
+            "cached_tokens": 20640
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 19
+          },
+          "decode": {
+            "tokens": 38
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 423.177,
+            "first_token_to_done_ms": 1682.614,
+            "wall_ms": 2392.388,
+            "ttft_ms": 709.7739999999999,
+            "queue_to_start_ms": 286.59699999999987,
+            "stream_tokens_per_second": 22.58390813341622
+          },
+          "cache": {
+            "status": "hit",
+            "matched_tokens": 20640,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          },
+          "speculation": {
+            "drafted_tokens": 56,
+            "accepted_draft_tokens": 37,
+            "cycles": 8
+          }
+        },
+        "timings": {
+          "prompt_n": 20659,
+          "prompt_ms": 423.177,
+          "prompt_per_second": 44.89847038000647,
+          "predicted_n": 46,
+          "predicted_ms": 1682.614,
+          "predicted_per_second": 22.58390813341622,
+          "cache_n": 20640,
+          "draft_n": 56,
+          "draft_n_accepted": 37
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 19,
+        "prefill_wall_ms": 238.95180000000983,
+        "decode_output_tokens": 46,
+        "decode_wall_ms": 1860.9017499999973,
+        "decode_cycle_ms": 1864.4897500000006,
+        "drafted_tokens": 56,
+        "accepted_draft_tokens": 37
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 40.53238586956523,
+      "draft_acceptance": 0.6607142857142857,
+      "state_disk_reads": 771440640,
+      "cooldown_seconds": 15.129871250130236,
+      "native_decode_tps": 24.719198635822696
+    },
+    {
+      "phase": "round-1-on",
+      "mode": "on",
+      "key": "20480-stable_unique-cached-2",
+      "temperature": 0,
+      "seconds": 2.1618678749073297,
+      "response": {
+        "id": "chatcmpl-f60001d364d0ab5bcca75c9ead987c7a",
+        "object": "chat.completion",
+        "created": 1792171677,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "```python\ndef stable_unique(items):\n    result = []\n    for item in items:\n        if not any(item == existing for existing in result):\n            result.append(item)\n    return result\n```"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 20659,
+          "completion_tokens": 46,
+          "total_tokens": 20705,
+          "prompt_tokens_details": {
+            "cached_tokens": 20640
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 19
+          },
+          "decode": {
+            "tokens": 38
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 420.775,
+            "first_token_to_done_ms": 1455.566,
+            "wall_ms": 2157.466,
+            "ttft_ms": 701.8999999999999,
+            "queue_to_start_ms": 281.1249999999999,
+            "stream_tokens_per_second": 26.10668289861126
+          },
+          "cache": {
+            "status": "hit",
+            "matched_tokens": 20640,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          },
+          "speculation": {
+            "drafted_tokens": 56,
+            "accepted_draft_tokens": 37,
+            "cycles": 8
+          }
+        },
+        "timings": {
+          "prompt_n": 20659,
+          "prompt_ms": 420.775,
+          "prompt_per_second": 45.15477392905947,
+          "predicted_n": 46,
+          "predicted_ms": 1455.566,
+          "predicted_per_second": 26.10668289861126,
+          "cache_n": 20640,
+          "draft_n": 56,
+          "draft_n_accepted": 37
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 19,
+        "prefill_wall_ms": 237.38239999997313,
+        "decode_output_tokens": 46,
+        "decode_wall_ms": 1633.4025000000001,
+        "decode_cycle_ms": 1636.6643299999996,
+        "drafted_tokens": 56,
+        "accepted_draft_tokens": 37
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 35.57965934782608,
+      "draft_acceptance": 0.6607142857142857,
+      "state_disk_reads": 771440640,
+      "cooldown_seconds": 15.114472249988467,
+      "native_decode_tps": 28.16207272855282
+    },
+    {
+      "phase": "round-2-off",
+      "mode": "off",
+      "key": "4096-merge_intervals-prime",
+      "temperature": 0,
+      "seconds": 20.649983040988445,
+      "response": {
+        "id": "chatcmpl-c0a35936bf410b70f7897b83ab233580",
+        "object": "chat.completion",
+        "created": 1792171720,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "def"
+            },
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4026,
+          "completion_tokens": 1,
+          "total_tokens": 4027,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 4026
+          },
+          "decode": {
+            "tokens": 0
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 20634.914,
+            "first_token_to_done_ms": 0.003,
+            "wall_ms": 20635.213,
+            "ttft_ms": 20635.21,
+            "queue_to_start_ms": 0.2959999999984575
+          },
+          "cache": {
+            "status": "miss",
+            "matched_tokens": 0,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          }
+        },
+        "timings": {
+          "prompt_n": 4026,
+          "prompt_ms": 20634.914,
+          "prompt_per_second": 195.10621658030655,
+          "predicted_n": 1,
+          "predicted_ms": 0.003,
+          "predicted_per_second": 0.0,
+          "cache_n": 0
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 4026,
+        "prefill_wall_ms": 20622.90871,
+        "decode_output_tokens": 0,
+        "decode_wall_ms": 0,
+        "decode_cycle_ms": 0,
+        "drafted_tokens": 0,
+        "accepted_draft_tokens": 0
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 0.0,
+      "draft_acceptance": 0.0,
+      "state_disk_reads": 0,
+      "cooldown_seconds": 15.059161917073652,
+      "native_decode_tps": null
+    },
+    {
+      "phase": "round-2-off",
+      "mode": "off",
+      "key": "4096-merge_intervals-cached-1",
+      "temperature": 0,
+      "seconds": 23.125311834039167,
+      "response": {
+        "id": "chatcmpl-08021635d3860e80ac5ba94884caa5ee",
+        "object": "chat.completion",
+        "created": 1792171756,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "def merge_intervals(intervals):\n    if not intervals:\n        return []\n    sorted_intervals = sorted(intervals, key=lambda x: (x[0], x[1]))\n    merged = []\n    current_start, current_end = sorted_intervals[0]\n    for start, end in sorted_intervals[1:]:\n        if start <= current_end:\n            current_end = max(current_end, end)\n        else:\n            merged.append([current_start, current_end])\n            current_start, current_end = start, end\n    merged.append([current_start, current_end])\n    return merged"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4026,
+          "completion_tokens": 130,
+          "total_tokens": 4156,
+          "prompt_tokens_details": {
+            "cached_tokens": 4000
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 26
+          },
+          "decode": {
+            "tokens": 129
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 233.602,
+            "first_token_to_done_ms": 22813.358,
+            "wall_ms": 23111.958,
+            "ttft_ms": 298.59999999999854,
+            "queue_to_start_ms": 64.99799999999854,
+            "stream_tokens_per_second": 5.654581846302504
+          },
+          "cache": {
+            "status": "hit",
+            "matched_tokens": 4000,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          }
+        },
+        "timings": {
+          "prompt_n": 4026,
+          "prompt_ms": 233.602,
+          "prompt_per_second": 111.30041694848502,
+          "predicted_n": 130,
+          "predicted_ms": 22813.358,
+          "predicted_per_second": 5.654581846302504,
+          "cache_n": 4000
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 26,
+        "prefill_wall_ms": 231.70582999999897,
+        "decode_output_tokens": 130,
+        "decode_wall_ms": 22743.81875,
+        "decode_cycle_ms": 22813.35783,
+        "drafted_tokens": 0,
+        "accepted_draft_tokens": 0
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 175.48736792307693,
+      "draft_acceptance": 0.0,
+      "state_disk_reads": 217661440,
+      "cooldown_seconds": 15.145226124906912,
+      "native_decode_tps": 5.715838726511132
+    },
+    {
+      "phase": "round-2-off",
+      "mode": "off",
+      "key": "4096-merge_intervals-cached-2",
+      "temperature": 0,
+      "seconds": 23.268538624979556,
+      "response": {
+        "id": "chatcmpl-7c155b0b2e4e1fd7358650791ba7be24",
+        "object": "chat.completion",
+        "created": 1792171794,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "def merge_intervals(intervals):\n    if not intervals:\n        return []\n    sorted_intervals = sorted(intervals, key=lambda x: (x[0], x[1]))\n    merged = []\n    current_start, current_end = sorted_intervals[0]\n    for start, end in sorted_intervals[1:]:\n        if start <= current_end:\n            current_end = max(current_end, end)\n        else:\n            merged.append([current_start, current_end])\n            current_start, current_end = start, end\n    merged.append([current_start, current_end])\n    return merged"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4026,
+          "completion_tokens": 130,
+          "total_tokens": 4156,
+          "prompt_tokens_details": {
+            "cached_tokens": 4000
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 26
+          },
+          "decode": {
+            "tokens": 129
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 233.22,
+            "first_token_to_done_ms": 22964.82,
+            "wall_ms": 23262.312,
+            "ttft_ms": 297.492000000002,
+            "queue_to_start_ms": 64.27200000000201,
+            "stream_tokens_per_second": 5.617287659994722
+          },
+          "cache": {
+            "status": "hit",
+            "matched_tokens": 4000,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          }
+        },
+        "timings": {
+          "prompt_n": 4026,
+          "prompt_ms": 233.22,
+          "prompt_per_second": 111.48272017837235,
+          "predicted_n": 130,
+          "predicted_ms": 22964.82,
+          "predicted_per_second": 5.617287659994722,
+          "cache_n": 4000
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 26,
+        "prefill_wall_ms": 232.362000000001,
+        "decode_output_tokens": 130,
+        "decode_wall_ms": 22916.736340000003,
+        "decode_cycle_ms": 22964.823169999996,
+        "drafted_tokens": 0,
+        "accepted_draft_tokens": 0
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 176.65248592307688,
+      "draft_acceptance": 0.0,
+      "state_disk_reads": 217661440,
+      "cooldown_seconds": 15.107083749957383,
+      "native_decode_tps": 5.6727100260385495
+    },
+    {
+      "phase": "round-2-off",
+      "mode": "off",
+      "key": "12288-review_intervals-prime",
+      "temperature": 0,
+      "seconds": 77.46073504188098,
+      "response": {
+        "id": "chatcmpl-7a0a31a755aa4eab6d1563bfe558852f",
+        "object": "chat.completion",
+        "created": 1792171832,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "-"
+            },
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12258,
+          "completion_tokens": 1,
+          "total_tokens": 12259,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 12258
+          },
+          "decode": {
+            "tokens": 0
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 77425.892,
+            "first_token_to_done_ms": 0.004,
+            "wall_ms": 77426.24,
+            "ttft_ms": 77426.236,
+            "queue_to_start_ms": 0.34399999999732245
+          },
+          "cache": {
+            "status": "miss",
+            "matched_tokens": 0,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          }
+        },
+        "timings": {
+          "prompt_n": 12258,
+          "prompt_ms": 77425.892,
+          "prompt_per_second": 158.31913179637633,
+          "predicted_n": 1,
+          "predicted_ms": 0.004,
+          "predicted_per_second": 0.0,
+          "cache_n": 0
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 12258,
+        "prefill_wall_ms": 77398.85138,
+        "decode_output_tokens": 0,
+        "decode_wall_ms": 0.0,
+        "decode_cycle_ms": 0.0,
+        "drafted_tokens": 0,
+        "accepted_draft_tokens": 0
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 0.0,
+      "draft_acceptance": 0.0,
+      "state_disk_reads": 0,
+      "cooldown_seconds": 15.039421833120286,
+      "native_decode_tps": null
+    },
+    {
+      "phase": "round-2-off",
+      "mode": "off",
+      "key": "12288-review_intervals-cached-1",
+      "temperature": 0,
+      "seconds": 53.949354792013764,
+      "response": {
+        "id": "chatcmpl-98a9a2ff8fc0eaca22664c2ebc1b8187",
+        "object": "chat.completion",
+        "created": 1792171925,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "- Input mutation: the original code sorts the caller\u2019s list in place, changing the caller\u2019s data; a corrected utility should copy the input before sorting.\n- Nested intervals: the original code only extends the last merged interval when `start < merged[-1][1]`, but it does not handle cases where a later interval is fully contained in an earlier one without updating the end correctly.\n- Touching endpoints: the original code treats `start == merged[-1][1]` as non-overlapping, so touching intervals are not merged; the corrected version should merge when `start <= merged[-1][1]`.\n\n```python\ndef merge_intervals(intervals):\n    if not intervals:\n        return []\n    sorted_intervals = sorted(intervals, key=lambda x: (x[0], x[1]))\n    merged = [[sorted_intervals[0][0], sorted_intervals[0][1]]]\n    for start, end in sorted_intervals[1:]:\n        if start <= merged[-1][1]:\n            merged[-1][1] = max(merged[-1][1], end)\n        else:\n            merged.append([start, end])\n    return merged\n```"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12258,
+          "completion_tokens": 252,
+          "total_tokens": 12510,
+          "prompt_tokens_details": {
+            "cached_tokens": 12224
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 34
+          },
+          "decode": {
+            "tokens": 251
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 422.759,
+            "first_token_to_done_ms": 53348.77,
+            "wall_ms": 53946.163,
+            "ttft_ms": 597.3930000000037,
+            "queue_to_start_ms": 174.63400000000365,
+            "stream_tokens_per_second": 4.704888228913244
+          },
+          "cache": {
+            "status": "hit",
+            "matched_tokens": 12224,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          }
+        },
+        "timings": {
+          "prompt_n": 12258,
+          "prompt_ms": 422.759,
+          "prompt_per_second": 80.42407139765209,
+          "predicted_n": 252,
+          "predicted_ms": 53348.77,
+          "predicted_per_second": 4.704888228913244,
+          "cache_n": 12224
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 34,
+        "prefill_wall_ms": 422.29404000000795,
+        "decode_output_tokens": 252,
+        "decode_wall_ms": 53259.60840999999,
+        "decode_cycle_ms": 53348.793000000005,
+        "drafted_tokens": 0,
+        "accepted_draft_tokens": 0
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 211.70155952380955,
+      "draft_acceptance": 0.0,
+      "state_disk_reads": 491356160,
+      "cooldown_seconds": 15.148284875089303,
+      "native_decode_tps": 4.731540608786839
+    },
+    {
+      "phase": "round-2-off",
+      "mode": "off",
+      "key": "12288-review_intervals-cached-2",
+      "temperature": 0,
+      "seconds": 52.790172500070184,
+      "response": {
+        "id": "chatcmpl-1f4240187eaef6a58dcb35c398da2178",
+        "object": "chat.completion",
+        "created": 1792171994,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "- Input mutation: the original code sorts the caller\u2019s list in place, changing the caller\u2019s data; a corrected utility should copy the input before sorting.\n- Nested intervals: the original code only extends the last merged interval when `start < merged[-1][1]`, but it does not handle cases where a later interval is fully contained in an earlier one without updating the end correctly.\n- Touching endpoints: the original code treats `start == merged[-1][1]` as non-overlapping, so touching intervals are not merged; the corrected version should merge when `start <= merged[-1][1]`.\n\n```python\ndef merge_intervals(intervals):\n    if not intervals:\n        return []\n    sorted_intervals = sorted(intervals, key=lambda x: (x[0], x[1]))\n    merged = [[sorted_intervals[0][0], sorted_intervals[0][1]]]\n    for start, end in sorted_intervals[1:]:\n        if start <= merged[-1][1]:\n            merged[-1][1] = max(merged[-1][1], end)\n        else:\n            merged.append([start, end])\n    return merged\n```"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12258,
+          "completion_tokens": 252,
+          "total_tokens": 12510,
+          "prompt_tokens_details": {
+            "cached_tokens": 12224
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 34
+          },
+          "decode": {
+            "tokens": 251
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 420.021,
+            "first_token_to_done_ms": 52183.116,
+            "wall_ms": 52786.38,
+            "ttft_ms": 603.2639999999956,
+            "queue_to_start_ms": 183.24299999999556,
+            "stream_tokens_per_second": 4.809984900096805
+          },
+          "cache": {
+            "status": "hit",
+            "matched_tokens": 12224,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          }
+        },
+        "timings": {
+          "prompt_n": 12258,
+          "prompt_ms": 420.021,
+          "prompt_per_second": 80.94833353570417,
+          "predicted_n": 252,
+          "predicted_ms": 52183.116,
+          "predicted_per_second": 4.809984900096805,
+          "cache_n": 12224
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 34,
+        "prefill_wall_ms": 419.5769999999902,
+        "decode_output_tokens": 252,
+        "decode_wall_ms": 52094.19330000001,
+        "decode_cycle_ms": 52183.1302,
+        "drafted_tokens": 0,
+        "accepted_draft_tokens": 0
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 207.07591349206348,
+      "draft_acceptance": 0.0,
+      "state_disk_reads": 491356160,
+      "cooldown_seconds": 15.158879791852087,
+      "native_decode_tps": 4.837391348950977
+    },
+    {
+      "phase": "round-2-off",
+      "mode": "off",
+      "key": "20480-stable_unique-prime",
+      "temperature": 0,
+      "seconds": 151.41880670795217,
+      "response": {
+        "id": "chatcmpl-a9f666be71f357674613ba50241d1da7",
+        "object": "chat.completion",
+        "created": 1792172062,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "```"
+            },
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 20659,
+          "completion_tokens": 1,
+          "total_tokens": 20660,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 20659
+          },
+          "decode": {
+            "tokens": 0
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 151358.481,
+            "first_token_to_done_ms": 0.006,
+            "wall_ms": 151358.612,
+            "ttft_ms": 151358.606,
+            "queue_to_start_ms": 0.125
+          },
+          "cache": {
+            "status": "miss",
+            "matched_tokens": 0,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          }
+        },
+        "timings": {
+          "prompt_n": 20659,
+          "prompt_ms": 151358.481,
+          "prompt_per_second": 136.49053467971842,
+          "predicted_n": 1,
+          "predicted_ms": 0.006,
+          "predicted_per_second": 0.0,
+          "cache_n": 0
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 20659,
+        "prefill_wall_ms": 151254.71724000003,
+        "decode_output_tokens": 1,
+        "decode_wall_ms": 9.433199999999488,
+        "decode_cycle_ms": 9.492499999993015,
+        "drafted_tokens": 0,
+        "accepted_draft_tokens": 0
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 9.492499999993015,
+      "draft_acceptance": 0.0,
+      "state_disk_reads": 0,
+      "cooldown_seconds": 15.047264750115573,
+      "native_decode_tps": 106.00856549209752
+    },
+    {
+      "phase": "round-3-off",
+      "mode": "off",
+      "key": "4096-merge_intervals-prime",
+      "temperature": 0,
+      "seconds": 20.504172459011897,
+      "response": {
+        "id": "chatcmpl-4814eaeea9220ac29cadbb9801459285",
+        "object": "chat.completion",
+        "created": 1792172345,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "def"
+            },
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4026,
+          "completion_tokens": 1,
+          "total_tokens": 4027,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 4026
+          },
+          "decode": {
+            "tokens": 0
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 20491.367,
+            "first_token_to_done_ms": 0.004,
+            "wall_ms": 20491.543,
+            "ttft_ms": 20491.539,
+            "queue_to_start_ms": 0.1720000000022992
+          },
+          "cache": {
+            "status": "miss",
+            "matched_tokens": 0,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          }
+        },
+        "timings": {
+          "prompt_n": 4026,
+          "prompt_ms": 20491.367,
+          "prompt_per_second": 196.47298298839704,
+          "predicted_n": 1,
+          "predicted_ms": 0.004,
+          "predicted_per_second": 0.0,
+          "cache_n": 0
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 4026,
+        "prefill_wall_ms": 20482.96392,
+        "decode_output_tokens": 0,
+        "decode_wall_ms": 0,
+        "decode_cycle_ms": 0,
+        "drafted_tokens": 0,
+        "accepted_draft_tokens": 0
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 0.0,
+      "draft_acceptance": 0.0,
+      "state_disk_reads": 0,
+      "cooldown_seconds": 0.0058460410218685865,
+      "native_decode_tps": null
+    },
+    {
+      "phase": "round-3-off",
+      "mode": "off",
+      "key": "4096-merge_intervals-cached-1",
+      "temperature": 0,
+      "seconds": 21.627033917000517,
+      "response": {
+        "id": "chatcmpl-61bd4ca2d25e3f6a1d09358cfbcf9db2",
+        "object": "chat.completion",
+        "created": 1792172366,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "def merge_intervals(intervals):\n    if not intervals:\n        return []\n    sorted_intervals = sorted(intervals, key=lambda x: (x[0], x[1]))\n    merged = []\n    current_start, current_end = sorted_intervals[0]\n    for start, end in sorted_intervals[1:]:\n        if start <= current_end:\n            current_end = max(current_end, end)\n        else:\n            merged.append([current_start, current_end])\n            current_start, current_end = start, end\n    merged.append([current_start, current_end])\n    return merged"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4026,
+          "completion_tokens": 130,
+          "total_tokens": 4156,
+          "prompt_tokens_details": {
+            "cached_tokens": 4000
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 26
+          },
+          "decode": {
+            "tokens": 129
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 223.77,
+            "first_token_to_done_ms": 21377.292,
+            "wall_ms": 21625.767,
+            "ttft_ms": 248.47499999999854,
+            "queue_to_start_ms": 24.704999999998535,
+            "stream_tokens_per_second": 6.034440657871913
+          },
+          "cache": {
+            "status": "hit",
+            "matched_tokens": 4000,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          }
+        },
+        "timings": {
+          "prompt_n": 4026,
+          "prompt_ms": 223.77,
+          "prompt_per_second": 116.19073155472137,
+          "predicted_n": 130,
+          "predicted_ms": 21377.292,
+          "predicted_per_second": 6.034440657871913,
+          "cache_n": 4000
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 26,
+        "prefill_wall_ms": 223.40225000000282,
+        "decode_output_tokens": 130,
+        "decode_wall_ms": 21332.3335,
+        "decode_cycle_ms": 21377.29092,
+        "drafted_tokens": 0,
+        "accepted_draft_tokens": 0
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 164.44069938461539,
+      "draft_acceptance": 0.0,
+      "state_disk_reads": 86671360,
+      "cooldown_seconds": 0.05724174901843071,
+      "native_decode_tps": 6.09403561030958
+    },
+    {
+      "phase": "round-3-off",
+      "mode": "off",
+      "key": "4096-merge_intervals-cached-2",
+      "temperature": 0,
+      "seconds": 21.540636457968503,
+      "response": {
+        "id": "chatcmpl-19b099564e9282e070f72b4971047932",
+        "object": "chat.completion",
+        "created": 1792172402,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "def merge_intervals(intervals):\n    if not intervals:\n        return []\n    sorted_intervals = sorted(intervals, key=lambda x: (x[0], x[1]))\n    merged = []\n    current_start, current_end = sorted_intervals[0]\n    for start, end in sorted_intervals[1:]:\n        if start <= current_end:\n            current_end = max(current_end, end)\n        else:\n            merged.append([current_start, current_end])\n            current_start, current_end = start, end\n    merged.append([current_start, current_end])\n    return merged"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4026,
+          "completion_tokens": 130,
+          "total_tokens": 4156,
+          "prompt_tokens_details": {
+            "cached_tokens": 4000
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 26
+          },
+          "decode": {
+            "tokens": 129
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 228.726,
+            "first_token_to_done_ms": 21243.36,
+            "wall_ms": 21538.13,
+            "ttft_ms": 294.77000000000044,
+            "queue_to_start_ms": 66.04400000000044,
+            "stream_tokens_per_second": 6.0724857084754955
+          },
+          "cache": {
+            "status": "hit",
+            "matched_tokens": 4000,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          }
+        },
+        "timings": {
+          "prompt_n": 4026,
+          "prompt_ms": 228.726,
+          "prompt_per_second": 113.67312854682021,
+          "predicted_n": 130,
+          "predicted_ms": 21243.36,
+          "predicted_per_second": 6.0724857084754955,
+          "cache_n": 4000
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 26,
+        "prefill_wall_ms": 228.29608000000007,
+        "decode_output_tokens": 130,
+        "decode_wall_ms": 21197.39054,
+        "decode_cycle_ms": 21243.37666,
+        "drafted_tokens": 0,
+        "accepted_draft_tokens": 0
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 163.4105896923077,
+      "draft_acceptance": 0.0,
+      "state_disk_reads": 217661440,
+      "cooldown_seconds": 15.110357501078397,
+      "native_decode_tps": 6.132830347899983
+    },
+    {
+      "phase": "round-3-off",
+      "mode": "off",
+      "key": "12288-review_intervals-prime",
+      "temperature": 0,
+      "seconds": 78.19761933316477,
+      "response": {
+        "id": "chatcmpl-84c8ed2d900b537ea5c1173d57373072",
+        "object": "chat.completion",
+        "created": 1792172439,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "-"
+            },
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12258,
+          "completion_tokens": 1,
+          "total_tokens": 12259,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 12258
+          },
+          "decode": {
+            "tokens": 0
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 78168.365,
+            "first_token_to_done_ms": 0.004,
+            "wall_ms": 78168.598,
+            "ttft_ms": 78168.594,
+            "queue_to_start_ms": 0.22899999999208376
+          },
+          "cache": {
+            "status": "miss",
+            "matched_tokens": 0,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          }
+        },
+        "timings": {
+          "prompt_n": 12258,
+          "prompt_ms": 78168.365,
+          "prompt_per_second": 156.81535618661079,
+          "predicted_n": 1,
+          "predicted_ms": 0.004,
+          "predicted_per_second": 0.0,
+          "cache_n": 0
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 12258,
+        "prefill_wall_ms": 78138.40567000001,
+        "decode_output_tokens": 0,
+        "decode_wall_ms": 0.0,
+        "decode_cycle_ms": 0.0,
+        "drafted_tokens": 0,
+        "accepted_draft_tokens": 0
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 0.0,
+      "draft_acceptance": 0.0,
+      "state_disk_reads": 0,
+      "cooldown_seconds": 15.038342666812241,
+      "native_decode_tps": null
+    },
+    {
+      "phase": "round-3-off",
+      "mode": "off",
+      "key": "12288-review_intervals-cached-1",
+      "temperature": 0,
+      "seconds": 54.67897812486626,
+      "response": {
+        "id": "chatcmpl-9262e5716b75c0fecb6d05bd00bbca4d",
+        "object": "chat.completion",
+        "created": 1792172532,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "- Input mutation: the original code sorts the caller\u2019s list in place, changing the caller\u2019s data; a corrected utility should copy the input before sorting.\n- Nested intervals: the original code only extends the last merged interval when `start < merged[-1][1]`, but it does not handle cases where a later interval is fully contained in an earlier one without updating the end correctly.\n- Touching endpoints: the original code treats `start == merged[-1][1]` as non-overlapping, so touching intervals are not merged; the corrected version should merge when `start <= merged[-1][1]`.\n\n```python\ndef merge_intervals(intervals):\n    if not intervals:\n        return []\n    sorted_intervals = sorted(intervals, key=lambda x: (x[0], x[1]))\n    merged = [[sorted_intervals[0][0], sorted_intervals[0][1]]]\n    for start, end in sorted_intervals[1:]:\n        if start <= merged[-1][1]:\n            merged[-1][1] = max(merged[-1][1], end)\n        else:\n            merged.append([start, end])\n    return merged\n```"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12258,
+          "completion_tokens": 252,
+          "total_tokens": 12510,
+          "prompt_tokens_details": {
+            "cached_tokens": 12224
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 34
+          },
+          "decode": {
+            "tokens": 251
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 421.335,
+            "first_token_to_done_ms": 54088.432,
+            "wall_ms": 54676.409,
+            "ttft_ms": 587.976999999999,
+            "queue_to_start_ms": 166.64199999999897,
+            "stream_tokens_per_second": 4.640548648184144
+          },
+          "cache": {
+            "status": "hit",
+            "matched_tokens": 12224,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          }
+        },
+        "timings": {
+          "prompt_n": 12258,
+          "prompt_ms": 421.335,
+          "prompt_per_second": 80.69588332324635,
+          "predicted_n": 252,
+          "predicted_ms": 54088.432,
+          "predicted_per_second": 4.640548648184144,
+          "cache_n": 12224
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 34,
+        "prefill_wall_ms": 420.8651600000012,
+        "decode_output_tokens": 252,
+        "decode_wall_ms": 53996.66034,
+        "decode_cycle_ms": 54088.44841999999,
+        "drafted_tokens": 0,
+        "accepted_draft_tokens": 0
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 214.63670007936506,
+      "draft_acceptance": 0.0,
+      "state_disk_reads": 491356160,
+      "cooldown_seconds": 15.150588541291654,
+      "native_decode_tps": 4.666955297109769
+    },
+    {
+      "phase": "round-3-off",
+      "mode": "off",
+      "key": "12288-review_intervals-cached-2",
+      "temperature": 0,
+      "seconds": 53.986940999981016,
+      "response": {
+        "id": "chatcmpl-5aecbbe7bbac41d5cefe795d17d55bf0",
+        "object": "chat.completion",
+        "created": 1792172602,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "- Input mutation: the original code sorts the caller\u2019s list in place, changing the caller\u2019s data; a corrected utility should copy the input before sorting.\n- Nested intervals: the original code only extends the last merged interval when `start < merged[-1][1]`, but it does not handle cases where a later interval is fully contained in an earlier one without updating the end correctly.\n- Touching endpoints: the original code treats `start == merged[-1][1]` as non-overlapping, so touching intervals are not merged; the corrected version should merge when `start <= merged[-1][1]`.\n\n```python\ndef merge_intervals(intervals):\n    if not intervals:\n        return []\n    sorted_intervals = sorted(intervals, key=lambda x: (x[0], x[1]))\n    merged = [[sorted_intervals[0][0], sorted_intervals[0][1]]]\n    for start, end in sorted_intervals[1:]:\n        if start <= merged[-1][1]:\n            merged[-1][1] = max(merged[-1][1], end)\n        else:\n            merged.append([start, end])\n    return merged\n```"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12258,
+          "completion_tokens": 252,
+          "total_tokens": 12510,
+          "prompt_tokens_details": {
+            "cached_tokens": 12224
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 34
+          },
+          "decode": {
+            "tokens": 251
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 419.347,
+            "first_token_to_done_ms": 53392.957,
+            "wall_ms": 53983.822,
+            "ttft_ms": 590.864999999998,
+            "queue_to_start_ms": 171.51799999999798,
+            "stream_tokens_per_second": 4.700994552521225
+          },
+          "cache": {
+            "status": "hit",
+            "matched_tokens": 12224,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          }
+        },
+        "timings": {
+          "prompt_n": 12258,
+          "prompt_ms": 419.347,
+          "prompt_per_second": 81.07843862004498,
+          "predicted_n": 252,
+          "predicted_ms": 53392.957,
+          "predicted_per_second": 4.700994552521225,
+          "cache_n": 12224
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 34,
+        "prefill_wall_ms": 418.9077499999985,
+        "decode_output_tokens": 252,
+        "decode_wall_ms": 53282.83061999999,
+        "decode_cycle_ms": 53392.9788,
+        "drafted_tokens": 0,
+        "accepted_draft_tokens": 0
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 211.87689999999998,
+      "draft_acceptance": 0.0,
+      "state_disk_reads": 491356160,
+      "cooldown_seconds": 15.14400416589342,
+      "native_decode_tps": 4.72947846553427
+    },
+    {
+      "phase": "round-4-on",
+      "mode": "on",
+      "key": "4096-merge_intervals-prime",
+      "temperature": 0,
+      "seconds": 24.61169408285059,
+      "response": {
+        "id": "chatcmpl-da7f7325ca671d276d43778609102d80",
+        "object": "chat.completion",
+        "created": 1792172697,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "def"
+            },
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4026,
+          "completion_tokens": 1,
+          "total_tokens": 4027,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 4026
+          },
+          "decode": {
+            "tokens": 0
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 24597.032,
+            "first_token_to_done_ms": 0.004,
+            "wall_ms": 24597.284,
+            "ttft_ms": 24597.28,
+            "queue_to_start_ms": 0.24799999999959255
+          },
+          "cache": {
+            "status": "miss",
+            "matched_tokens": 0,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          }
+        },
+        "timings": {
+          "prompt_n": 4026,
+          "prompt_ms": 24597.032,
+          "prompt_per_second": 163.67828443691906,
+          "predicted_n": 1,
+          "predicted_ms": 0.004,
+          "predicted_per_second": 0.0,
+          "cache_n": 0
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 4026,
+        "prefill_wall_ms": 24586.56175,
+        "decode_output_tokens": 0,
+        "decode_wall_ms": 0,
+        "decode_cycle_ms": 0,
+        "drafted_tokens": 0,
+        "accepted_draft_tokens": 0
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 0.0,
+      "draft_acceptance": 0.0,
+      "state_disk_reads": 0,
+      "cooldown_seconds": 15.059654251206666,
+      "native_decode_tps": null
+    },
+    {
+      "phase": "round-4-on",
+      "mode": "on",
+      "key": "4096-merge_intervals-cached-1",
+      "temperature": 0,
+      "seconds": 4.11450087511912,
+      "response": {
+        "id": "chatcmpl-ce48e21f75fac26ddd258dbd9a5771d7",
+        "object": "chat.completion",
+        "created": 1792172737,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "def merge_intervals(intervals):\n    if not intervals:\n        return []\n    sorted_intervals = sorted(intervals, key=lambda x: (x[0], x[1]))\n    merged = []\n    current_start, current_end = sorted_intervals[0]\n    for start, end in sorted_intervals[1:]:\n        if start <= current_end:\n            current_end = max(current_end, end)\n        else:\n            merged.append([current_start, current_end])\n            current_start, current_end = start, end\n    merged.append([current_start, current_end])\n    return merged"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4026,
+          "completion_tokens": 130,
+          "total_tokens": 4156,
+          "prompt_tokens_details": {
+            "cached_tokens": 4000
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 26
+          },
+          "decode": {
+            "tokens": 129
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 228.696,
+            "first_token_to_done_ms": 3817.035,
+            "wall_ms": 4112.068,
+            "ttft_ms": 295.03300000000036,
+            "queue_to_start_ms": 66.33700000000036,
+            "stream_tokens_per_second": 33.79586511520068
+          },
+          "cache": {
+            "status": "hit",
+            "matched_tokens": 4000,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          },
+          "speculation": {
+            "drafted_tokens": 133,
+            "accepted_draft_tokens": 110,
+            "cycles": 19
+          }
+        },
+        "timings": {
+          "prompt_n": 4026,
+          "prompt_ms": 228.696,
+          "prompt_per_second": 113.6880400181901,
+          "predicted_n": 130,
+          "predicted_ms": 3817.035,
+          "predicted_per_second": 33.79586511520068,
+          "cache_n": 4000,
+          "draft_n": 133,
+          "draft_n_accepted": 110
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 26,
+        "prefill_wall_ms": 228.24836999999752,
+        "decode_output_tokens": 130,
+        "decode_wall_ms": 3806.847913,
+        "decode_cycle_ms": 3817.041,
+        "drafted_tokens": 133,
+        "accepted_draft_tokens": 110
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 29.36185384615385,
+      "draft_acceptance": 0.8270676691729323,
+      "state_disk_reads": 217661440,
+      "cooldown_seconds": 15.114409832749516,
+      "native_decode_tps": 34.148987028366214
+    },
+    {
+      "phase": "round-4-on",
+      "mode": "on",
+      "key": "4096-merge_intervals-cached-2",
+      "temperature": 0,
+      "seconds": 3.8534137909300625,
+      "response": {
+        "id": "chatcmpl-c8df1e44fb6a17b3e9a94b503ad936d2",
+        "object": "chat.completion",
+        "created": 1792172756,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "def merge_intervals(intervals):\n    if not intervals:\n        return []\n    sorted_intervals = sorted(intervals, key=lambda x: (x[0], x[1]))\n    merged = []\n    current_start, current_end = sorted_intervals[0]\n    for start, end in sorted_intervals[1:]:\n        if start <= current_end:\n            current_end = max(current_end, end)\n        else:\n            merged.append([current_start, current_end])\n            current_start, current_end = start, end\n    merged.append([current_start, current_end])\n    return merged"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 4026,
+          "completion_tokens": 130,
+          "total_tokens": 4156,
+          "prompt_tokens_details": {
+            "cached_tokens": 4000
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 26
+          },
+          "decode": {
+            "tokens": 129
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 228.516,
+            "first_token_to_done_ms": 3559.1,
+            "wall_ms": 3850.982,
+            "ttft_ms": 291.88200000000006,
+            "queue_to_start_ms": 63.36600000000007,
+            "stream_tokens_per_second": 36.24511814784637
+          },
+          "cache": {
+            "status": "hit",
+            "matched_tokens": 4000,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          },
+          "speculation": {
+            "drafted_tokens": 133,
+            "accepted_draft_tokens": 110,
+            "cycles": 19
+          }
+        },
+        "timings": {
+          "prompt_n": 4026,
+          "prompt_ms": 228.516,
+          "prompt_per_second": 113.77759106583346,
+          "predicted_n": 130,
+          "predicted_ms": 3559.1,
+          "predicted_per_second": 36.24511814784637,
+          "cache_n": 4000,
+          "draft_n": 133,
+          "draft_n_accepted": 110
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 26,
+        "prefill_wall_ms": 228.10271000000284,
+        "decode_output_tokens": 130,
+        "decode_wall_ms": 3549.152541,
+        "decode_cycle_ms": 3559.110125,
+        "drafted_tokens": 133,
+        "accepted_draft_tokens": 110
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 27.377770192307693,
+      "draft_acceptance": 0.8270676691729323,
+      "state_disk_reads": 217661440,
+      "cooldown_seconds": 15.128690417157486,
+      "native_decode_tps": 36.62846228733002
+    },
+    {
+      "phase": "round-4-on",
+      "mode": "on",
+      "key": "12288-review_intervals-prime",
+      "temperature": 0,
+      "seconds": 71.9404894579202,
+      "response": {
+        "id": "chatcmpl-0ecadd1192732ab4100b87ea0df96362",
+        "object": "chat.completion",
+        "created": 1792172775,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "-"
+            },
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12258,
+          "completion_tokens": 1,
+          "total_tokens": 12259,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 12258
+          },
+          "decode": {
+            "tokens": 0
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 71910.611,
+            "first_token_to_done_ms": 0.007,
+            "wall_ms": 71910.857,
+            "ttft_ms": 71910.85,
+            "queue_to_start_ms": 0.23900000000139698
+          },
+          "cache": {
+            "status": "miss",
+            "matched_tokens": 0,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          }
+        },
+        "timings": {
+          "prompt_n": 12258,
+          "prompt_ms": 71910.611,
+          "prompt_per_second": 170.46163048176575,
+          "predicted_n": 1,
+          "predicted_ms": 0.007,
+          "predicted_per_second": 0.0,
+          "cache_n": 0
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 12258,
+        "prefill_wall_ms": 71880.52105,
+        "decode_output_tokens": 0,
+        "decode_wall_ms": 0.0,
+        "decode_cycle_ms": 0.0,
+        "drafted_tokens": 0,
+        "accepted_draft_tokens": 0
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 0.0,
+      "draft_acceptance": 0.0,
+      "state_disk_reads": 0,
+      "cooldown_seconds": 15.061970001086593,
+      "native_decode_tps": null
+    },
+    {
+      "phase": "round-4-on",
+      "mode": "on",
+      "key": "12288-review_intervals-cached-1",
+      "temperature": 0,
+      "seconds": 13.837558874860406,
+      "response": {
+        "id": "chatcmpl-16533ae115d531449213609a77b852e6",
+        "object": "chat.completion",
+        "created": 1792172862,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "- Input mutation: the original `intervals` list is mutated by `intervals.sort()`, so the caller\u2019s list is reordered in place.\n- Nested intervals: the current logic only extends the last merged interval when `start < merged[-1][1]`; it does not correctly handle a fully nested interval whose `end` is smaller than the current merged end.\n- Touching endpoints: intervals that touch at endpoints, e.g. `[1, 2]` and `[2, 3]`, are not merged because the condition uses strict `<` instead of `<=`.\n\n```python\ndef merge_intervals(intervals):\n    if not intervals:\n        return []\n\n    sorted_intervals = sorted(intervals, key=lambda x: (x[0], x[1]))\n    merged = [[sorted_intervals[0][0], sorted_intervals[0][1]]]\n\n    for start, end in sorted_intervals[1:]:\n        last = merged[-1]\n        if start <= last[1]:\n            last[1] = max(last[1], end)\n        else:\n            merged.append([start, end])\n\n    return merged\n```"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12258,
+          "completion_tokens": 247,
+          "total_tokens": 12505,
+          "prompt_tokens_details": {
+            "cached_tokens": 12224
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 34
+          },
+          "decode": {
+            "tokens": 246
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 420.974,
+            "first_token_to_done_ms": 13240.324,
+            "wall_ms": 13834.357,
+            "ttft_ms": 594.0329999999994,
+            "queue_to_start_ms": 173.05899999999946,
+            "stream_tokens_per_second": 18.57960575587123
+          },
+          "cache": {
+            "status": "hit",
+            "matched_tokens": 12224,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          },
+          "speculation": {
+            "drafted_tokens": 392,
+            "accepted_draft_tokens": 190,
+            "cycles": 56
+          }
+        },
+        "timings": {
+          "prompt_n": 12258,
+          "prompt_ms": 420.974,
+          "prompt_per_second": 80.76508287922769,
+          "predicted_n": 247,
+          "predicted_ms": 13240.324,
+          "predicted_per_second": 18.57960575587123,
+          "cache_n": 12224,
+          "draft_n": 392,
+          "draft_n_accepted": 190
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 34,
+        "prefill_wall_ms": 420.5240000000049,
+        "decode_output_tokens": 247,
+        "decode_wall_ms": 13216.457626,
+        "decode_cycle_ms": 13240.339875000001,
+        "drafted_tokens": 392,
+        "accepted_draft_tokens": 190
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 53.60461487854251,
+      "draft_acceptance": 0.4846938775510204,
+      "state_disk_reads": 491356160,
+      "cooldown_seconds": 15.177362042013556,
+      "native_decode_tps": 18.688820180839585
+    },
+    {
+      "phase": "round-4-on",
+      "mode": "on",
+      "key": "12288-review_intervals-cached-2",
+      "temperature": 0,
+      "seconds": 13.079839874990284,
+      "response": {
+        "id": "chatcmpl-b1a64d99e86305a24764d68479b46125",
+        "object": "chat.completion",
+        "created": 1792172891,
+        "model": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "- Input mutation: the original `intervals` list is mutated by `intervals.sort()`, so the caller\u2019s list is reordered in place.\n- Nested intervals: the current logic only extends the last merged interval when `start < merged[-1][1]`; it does not correctly handle a fully nested interval whose `end` is smaller than the current merged end.\n- Touching endpoints: intervals that touch at endpoints, e.g. `[1, 2]` and `[2, 3]`, are not merged because the condition uses strict `<` instead of `<=`.\n\n```python\ndef merge_intervals(intervals):\n    if not intervals:\n        return []\n\n    sorted_intervals = sorted(intervals, key=lambda x: (x[0], x[1]))\n    merged = [[sorted_intervals[0][0], sorted_intervals[0][1]]]\n\n    for start, end in sorted_intervals[1:]:\n        last = merged[-1]\n        if start <= last[1]:\n            last[1] = max(last[1], end)\n        else:\n            merged.append([start, end])\n\n    return merged\n```"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12258,
+          "completion_tokens": 247,
+          "total_tokens": 12505,
+          "prompt_tokens_details": {
+            "cached_tokens": 12224
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "metrics": {
+          "prefill": {
+            "tokens": 34
+          },
+          "decode": {
+            "tokens": 246
+          },
+          "request_latency": {
+            "start_to_first_token_ms": 420.586,
+            "first_token_to_done_ms": 12486.631,
+            "wall_ms": 13076.78,
+            "ttft_ms": 590.1490000000013,
+            "queue_to_start_ms": 169.56300000000124,
+            "stream_tokens_per_second": 19.701070689123434
+          },
+          "cache": {
+            "status": "hit",
+            "matched_tokens": 12224,
+            "deduplicated_tokens": 0,
+            "lane": 0
+          },
+          "speculation": {
+            "drafted_tokens": 392,
+            "accepted_draft_tokens": 190,
+            "cycles": 56
+          }
+        },
+        "timings": {
+          "prompt_n": 12258,
+          "prompt_ms": 420.586,
+          "prompt_per_second": 80.83959047614519,
+          "predicted_n": 247,
+          "predicted_ms": 12486.631,
+          "predicted_per_second": 19.701070689123434,
+          "cache_n": 12224,
+          "draft_n": 392,
+          "draft_n_accepted": 190
+        }
+      },
+      "metrics_delta": {
+        "prefill_input_tokens": 34,
+        "prefill_wall_ms": 420.16125000000466,
+        "decode_output_tokens": 247,
+        "decode_wall_ms": 12464.513000000003,
+        "decode_cycle_ms": 12486.627459999996,
+        "drafted_tokens": 392,
+        "accepted_draft_tokens": 190
+      },
+      "correct": true,
+      "error": "",
+      "thermal": [
+        "fair",
+        "fair"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "cycle_ms_per_token": 50.553147611336016,
+      "draft_acceptance": 0.4846938775510204,
+      "state_disk_reads": 491356160,
+      "cooldown_seconds": 15.128722167108208,
+      "native_decode_tps": 19.816257562569827
+    }
+  ],
+  "workload_file_sha256": "c9b2a0c69d2c1b73344c62eddc37173e0213a81c96a8686fb6e4a6f67abf056a",
+  "production_decision": "Keep DFlash2 speculation enabled; production configuration unchanged."
+}
