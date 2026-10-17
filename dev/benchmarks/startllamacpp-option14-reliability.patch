@@ -1,0 +1,47 @@
+--- a/startllamacpp.sh
++++ b/startllamacpp.sh
+@@ -25,7 +25,9 @@
+ SPLASH_HERETIC_CACHE_DIR="${SPLASH_HERETIC_CACHE_DIR:-$HOME/Library/Caches/Splash/bonsai-option16}"
+ SPLASH_BONSAI_MAX_CONTEXT="${SPLASH_BONSAI_MAX_CONTEXT:-24K}"
+ SPLASH_BONSAI_OPENCODE_CONTEXT="${SPLASH_BONSAI_OPENCODE_CONTEXT:-auto}"
+-SPLASH_BONSAI_MAX_TOKENS="${SPLASH_BONSAI_MAX_TOKENS:-1024}"
++splash_bonsai_default_output=0
++[[ -n "${SPLASH_BONSAI_MAX_TOKENS:-}" ]] || splash_bonsai_default_output=1
++SPLASH_BONSAI_MAX_TOKENS="${SPLASH_BONSAI_MAX_TOKENS:-4096}"
+ SPLASH_BONSAI_MAX_CACHE_DISK="${SPLASH_BONSAI_MAX_CACHE_DISK:-8G}"
+ SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT="${SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT:-60}"
+ SPLASH_BONSAI_PREFILL_CHUNK_TOKENS="${SPLASH_BONSAI_PREFILL_CHUNK_TOKENS:-512}"
+@@ -123,6 +125,12 @@
+   else
+     splash_client_context="${splash_client_context} tokens"
+   fi
++  local splash_client_output="$SPLASH_BONSAI_MAX_TOKENS"
++  local splash_client_token_count="${splash_client_context%% *}"
++  if [[ "$splash_client_token_count" =~ ^[0-9]+$ ]] &&
++     (( splash_bonsai_default_output && splash_client_token_count <= splash_client_output )); then
++    splash_client_output="$((splash_client_token_count / 2))"
++  fi
+   [[ -e "$QWEN_9B_MODEL" ]] || qwen_9b_status=" — model not installed"
+   [[ -e "$GEMMA_12B_MODEL" ]] || gemma_status=" — model not installed"
+   [[ -e "$LFM_8B_MODEL" ]] || lfm_status=" — model not installed"
+@@ -165,7 +173,7 @@
+   echo "10) Qwen3.5 9B MLX 4-bit — MTP reasoning${mlx_status}${mlx_mtp_status}"
+   echo "   $((MLX_MTP_CONTEXT / 1024))K context | $((MLX_MTP_MAX_TOKENS / 1024))K output | reasoning on (no separate budget) | native MTP width ${MLX_MTP_DRAFT_BLOCK_SIZE} | Q4 KV | ${mlx_apc_status}"
+   echo "14) Ternary Bonsai 2 27B PTQ1_0 — Splash (downloads on first run)${splash_status}"
+-  echo "   ${SPLASH_BONSAI_MAX_CONTEXT} server / ${splash_client_context} OpenCode context | $((SPLASH_BONSAI_MAX_TOKENS / 1024))K output | INT8 KV | ${SPLASH_BONSAI_STATE_FORMAT} state | ${SPLASH_BONSAI_PREFILL_CHUNK_TOKENS}-token prefill chunks | ${SPLASH_BONSAI_MAX_CACHE_DISK} SSD cache | ${SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT}s resource wait"
++  echo "   ${SPLASH_BONSAI_MAX_CONTEXT} server / ${splash_client_context} OpenCode context | ${splash_client_output} output tokens | INT8 KV | ${SPLASH_BONSAI_STATE_FORMAT} state | ${SPLASH_BONSAI_PREFILL_CHUNK_TOKENS}-token prefill chunks | ${SPLASH_BONSAI_MAX_CACHE_DISK} SSD cache | ${SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT}s resource wait"
+   echo "   Persistent prefix cache: ${SPLASH_BONSAI_PERSISTENT_CACHE} (1=keep across restarts, 0=temporary) | startup retries: ${SPLASH_BONSAI_STARTUP_MAX_RETRIES}"
+   echo "   Memory pressure monitor: Splash controls admission/recovery; 24K requires room for other apps"
+   echo "   Source: ${SPLASH_BONSAI_MODEL_ID}"
+@@ -1431,6 +1439,11 @@
+       echo "SPLASH_BONSAI_OPENCODE_CONTEXT must be auto or 2-22528 tokens, smaller than the server context." >&2
+       exit 1
+     fi
++    # Preserve small-context launches while giving the normal 24K profile
++    # enough output for complete tool arguments. Explicit overrides stay exact.
++    if (( splash_bonsai_default_output && SPLASH_BONSAI_OPENCODE_CONTEXT <= SPLASH_BONSAI_MAX_TOKENS )); then
++      SPLASH_BONSAI_MAX_TOKENS="$((SPLASH_BONSAI_OPENCODE_CONTEXT / 2))"
++    fi
+     if ! splash_uint_in_range "$SPLASH_BONSAI_MAX_TOKENS" 1 "$((SPLASH_BONSAI_OPENCODE_CONTEXT - 1))"; then
+       echo "SPLASH_BONSAI_MAX_TOKENS must be positive and smaller than SPLASH_BONSAI_OPENCODE_CONTEXT." >&2
+       exit 1

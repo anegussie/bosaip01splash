@@ -100,9 +100,22 @@ print('Ready test server',flush=True)
         config = json.loads(self.config.read_text())
         self.assertEqual(
             config["provider"]["local-llama"]["models"]["bonsai-27b-splash"]["limit"],
-            {"context": 22528, "output": 1024},
+            {"context": 22528, "output": 4096},
         )
         self.assertEqual(config["compaction"]["keep"]["tokens"], 1536)
+        self.assertEqual(config["compaction"]["buffer"], 4096)
+
+    def test_output_override_updates_compaction_reserve(self):
+        r = self.run_launcher(SPLASH_BONSAI_MAX_TOKENS="1024")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        config = json.loads(self.config.read_text())
+        self.assertEqual(
+            config["provider"]["local-llama"]["models"]["bonsai-27b-splash"]["limit"][
+                "output"
+            ],
+            1024,
+        )
+        self.assertEqual(config["compaction"]["buffer"], 1024)
 
     def test_option16_uses_local_weights_and_separate_alias_cache_and_log(self):
         model = self.root / "Heretic model.gguf"
@@ -161,6 +174,7 @@ print('Ready test server',flush=True)
             2048,
         )
         self.assertEqual(config["compaction"]["keep"]["tokens"], 512)
+        self.assertEqual(config["compaction"]["buffer"], 1024)
 
     def test_cache_opt_out(self):
         for overrides in (
