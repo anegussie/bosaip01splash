@@ -1,0 +1,269 @@
+{
+  "commit": "538bd4dfa10f8c81bce8b797ecbcc2465fcc6342",
+  "build_id": "src-17aa01b274ec2db4791bdc212074156f02c28a51532ee90eaf29764eeca8a7e9",
+  "measurement": "Current merged build characterization; no matched baseline",
+  "completion": "partial: third round failed startup memory admission after two retries",
+  "blocked_tests": [
+    "third measured round",
+    "near-full context",
+    "clean-restart persistence"
+  ],
+  "completed_rounds": 2,
+  "settings": {
+    "target": "prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0",
+    "target_revision": "b072e1d3b35a0a630cece372c2127528e0994386",
+    "target_artifact_digest": "53107f530aa52eb00912263ab1ee29bd199261c87cd7b4ad4ca1318c1fe33ee3",
+    "draft": "/Users/mymac/.cache/huggingface/hub/models--incoai--Qwen3.8-27B-DFlash2/snapshots/015e795645c74b1a0eeef3b570031fb62e769bc5",
+    "backend": "Splash Metal",
+    "gpu": "Apple M5, 8 GPU cores, 16 GiB",
+    "kv": "int8",
+    "state": "bf16",
+    "prefill_chunk_tokens": 512,
+    "server_context": 24576,
+    "client_context": 22528,
+    "max_active_requests": 1,
+    "temperature": 0,
+    "reasoning_effort": "none",
+    "speculation": "DFlash2",
+    "requested_cache_bytes": 8589934592
+  },
+  "summary": [
+    {
+      "workload": "merge_intervals",
+      "decode_median": 35.891387764830924,
+      "decode_min": 35.59328736965606,
+      "decode_max": 36.189488160005794,
+      "decode_spread_percent": 1.6611249312960141,
+      "prefill_median": 191.31100399769272,
+      "prefill_min": 190.70703670428244,
+      "prefill_max": 191.914971291103,
+      "prefill_spread_percent": 0.6313983835635113,
+      "seconds_median": 22.16788772912696
+    },
+    {
+      "workload": "stable_unique",
+      "decode_median": 32.852046711655134,
+      "decode_min": 32.66621659879353,
+      "decode_max": 33.037876824516744,
+      "decode_spread_percent": 1.1313152845096703,
+      "prefill_median": 182.47010873133212,
+      "prefill_min": 181.2557415589033,
+      "prefill_max": 183.68447590376095,
+      "prefill_spread_percent": 1.3310313463087253,
+      "seconds_median": 21.45839945843909
+    },
+    {
+      "workload": "chunked",
+      "decode_median": 36.86532440434794,
+      "decode_min": 35.44160926716294,
+      "decode_max": 38.28903954153294,
+      "decode_spread_percent": 7.7238714710297485,
+      "prefill_median": 139.031321461421,
+      "prefill_min": 135.45977986969748,
+      "prefill_max": 142.6028630531445,
+      "prefill_spread_percent": 5.1377510537646,
+      "seconds_median": 2.0433575209463015
+    },
+    {
+      "workload": "cold",
+      "decode_median": 36.70692260720746,
+      "decode_min": 34.18581972197933,
+      "decode_max": 39.2280254924356,
+      "decode_spread_percent": 13.73638924845807,
+      "prefill_median": 171.82230542572952,
+      "prefill_min": 169.77717751897515,
+      "prefill_max": 173.8674333324839,
+      "prefill_spread_percent": 2.3805150346308017,
+      "seconds_median": 31.08421364543028
+    },
+    {
+      "workload": "cached",
+      "decode_median": 36.35530435115538,
+      "decode_min": 36.28153247082583,
+      "decode_max": 36.42907623148493,
+      "decode_spread_percent": 0.40583833168875194,
+      "prefill_median": 99.07191630025565,
+      "prefill_min": 93.01583926862975,
+      "prefill_max": 105.12799333188157,
+      "prefill_spread_percent": 12.225618031394196,
+      "seconds_median": 2.9142626664834097
+    }
+  ],
+  "rows": [
+    {
+      "phase": "round-1",
+      "workload": "merge_intervals",
+      "prompt_tokens": 3662,
+      "cached_tokens": 0,
+      "output_tokens": 109,
+      "prefill_tps": 190.70703670428244,
+      "decode_tps": 36.189488160005794,
+      "seconds": 22.19546425016597,
+      "thermal": "see phase snapshots",
+      "correct": true
+    },
+    {
+      "phase": "round-1",
+      "workload": "stable_unique",
+      "prompt_tokens": 3663,
+      "cached_tokens": 0,
+      "output_tokens": 46,
+      "prefill_tps": 183.68447590376095,
+      "decode_tps": 33.037876824516744,
+      "seconds": 21.316185707924888,
+      "thermal": "see phase snapshots",
+      "correct": true
+    },
+    {
+      "phase": "round-1",
+      "workload": "chunked",
+      "prompt_tokens": 3667,
+      "cached_tokens": 3584,
+      "output_tokens": 53,
+      "prefill_tps": 135.45977986969748,
+      "decode_tps": 35.44160926716294,
+      "seconds": 2.112964625004679,
+      "thermal": "see phase snapshots",
+      "correct": true
+    },
+    {
+      "phase": "round-1",
+      "workload": "cold",
+      "prompt_tokens": 4892,
+      "cached_tokens": 0,
+      "output_tokens": 96,
+      "prefill_tps": 173.8674333324839,
+      "decode_tps": 39.2280254924356,
+      "seconds": 30.566525040892884,
+      "thermal": "fair",
+      "correct": true
+    },
+    {
+      "phase": "round-1",
+      "workload": "cached",
+      "prompt_tokens": 4892,
+      "cached_tokens": 4864,
+      "output_tokens": 96,
+      "prefill_tps": 93.01583926862975,
+      "decode_tps": 36.42907623148493,
+      "seconds": 2.923248916864395,
+      "thermal": "fair",
+      "correct": true
+    },
+    {
+      "phase": "round-2",
+      "workload": "merge_intervals",
+      "prompt_tokens": 3662,
+      "cached_tokens": 0,
+      "output_tokens": 109,
+      "prefill_tps": 191.914971291103,
+      "decode_tps": 35.59328736965606,
+      "seconds": 22.14031120808795,
+      "thermal": "see phase snapshots",
+      "correct": true
+    },
+    {
+      "phase": "round-2",
+      "workload": "stable_unique",
+      "prompt_tokens": 3663,
+      "cached_tokens": 0,
+      "output_tokens": 46,
+      "prefill_tps": 181.2557415589033,
+      "decode_tps": 32.66621659879353,
+      "seconds": 21.60061320895329,
+      "thermal": "see phase snapshots",
+      "correct": true
+    },
+    {
+      "phase": "round-2",
+      "workload": "chunked",
+      "prompt_tokens": 3667,
+      "cached_tokens": 3584,
+      "output_tokens": 53,
+      "prefill_tps": 142.6028630531445,
+      "decode_tps": 38.28903954153294,
+      "seconds": 1.973750416887924,
+      "thermal": "see phase snapshots",
+      "correct": true
+    },
+    {
+      "phase": "round-2",
+      "workload": "cold",
+      "prompt_tokens": 4892,
+      "cached_tokens": 0,
+      "output_tokens": 96,
+      "prefill_tps": 169.77717751897515,
+      "decode_tps": 34.18581972197933,
+      "seconds": 31.60190224996768,
+      "thermal": "fair",
+      "correct": true
+    },
+    {
+      "phase": "round-2",
+      "workload": "cached",
+      "prompt_tokens": 4892,
+      "cached_tokens": 4864,
+      "output_tokens": 96,
+      "prefill_tps": 105.12799333188157,
+      "decode_tps": 36.28153247082583,
+      "seconds": 2.9052764161024243,
+      "thermal": "fair",
+      "correct": true
+    }
+  ],
+  "coding_correct": 6,
+  "coding_total": 6,
+  "coding_isolated": true,
+  "thermal_states": [
+    "fair",
+    "nominal"
+  ],
+  "memory_pressure": [
+    "warning"
+  ],
+  "peak_metal_bytes": 8554053632,
+  "metal_healthy": true,
+  "failed_inference_requests_completed_rounds": 0,
+  "startup_refusals": 4,
+  "startup_failure_evidence": [
+    {
+      "log": "/Users/mymac/splash/splash/build/validation/performance-538bd4df/round-3-launcher.log",
+      "errors": [
+        "[2026-10-21T16:35:41-0400] error: runtime bootstrap failed [decode_warmup]: decode_warmup threw: not enough free memory to start (1355 MiB reclaimable, 1638 MiB protected for macOS, system pressure warning): close other applications for the best performance, or pass --max-memory to limit Splash's memory",
+        "[2026-10-21T16:36:53-0400] error: runtime bootstrap failed [decode_warmup]: decode_warmup threw: not enough free memory to start (1599 MiB reclaimable, 1638 MiB protected for macOS, system pressure warning): close other applications for the best performance, or pass --max-memory to limit Splash's memory",
+        "[2026-10-21T16:38:06-0400] error: runtime bootstrap failed [decode_warmup]: decode_warmup threw: not enough free memory to start (1523 MiB reclaimable, 1638 MiB protected for macOS, system pressure warning): close other applications for the best performance, or pass --max-memory to limit Splash's memory"
+      ]
+    },
+    {
+      "log": "/Users/mymac/splash/splash/build/validation/performance-538bd4df/smoke-launcher.log",
+      "errors": [
+        "[2026-10-21T16:28:26-0400] error: runtime bootstrap failed [decode_warmup]: decode_warmup threw: not enough free memory to start (1605 MiB reclaimable, 1638 MiB protected for macOS, system pressure warning): close other applications for the best performance, or pass --max-memory to limit Splash's memory"
+      ]
+    }
+  ],
+  "startup_seconds": [
+    21.1045265418943,
+    29.058384333038703
+  ],
+  "smoke_startup_seconds": 161.26133520784788,
+  "swap": [
+    {
+      "phase": "round-1",
+      "before": "vm.swapusage: total = 7168.00M  used = 6336.31M  free = 831.69M  (encrypted)",
+      "after": "vm.swapusage: total = 7168.00M  used = 6247.94M  free = 920.06M  (encrypted)"
+    },
+    {
+      "phase": "round-2",
+      "before": "vm.swapusage: total = 7168.00M  used = 6150.75M  free = 1017.25M  (encrypted)",
+      "after": "vm.swapusage: total = 7168.00M  used = 6354.56M  free = 813.44M  (encrypted)"
+    }
+  ],
+  "swap_after_abort": "vm.swapusage: total = 7168.00M  used = 6662.12M  free = 505.88M  (encrypted)",
+  "effective_cache_bytes": [
+    3795746816,
+    3209449472
+  ],
+  "servers_stopped": true,
+  "primary_unchanged": true,
+  "raw_results_directory": "/Users/mymac/splash/splash/build/validation/performance-538bd4df"
+}
