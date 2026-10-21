@@ -13,7 +13,6 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
-from contextlib import ExitStack
 from pathlib import Path
 
 if __name__ == "__main__" and not __package__:
@@ -26,7 +25,7 @@ if __name__ == "__main__" and not __package__:
 # library alone: the launcher runs before .venv exists.
 from server import serve_options
 
-from . import assembly, clients, paths
+from . import clients, paths
 from . import models as model_artifacts
 
 ROOT = paths.ROOT
@@ -198,7 +197,6 @@ def serve(args):
     # Keep both locks across exec until the foreground server exits.
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
     with (
-        ExitStack() as held_records,
         (RUNTIME_DIR / "serve.lock").open("a+") as installation,
         (RUNTIME_DIR / f"serve-{args.port}.lock").open("a+") as lock,
     ):
@@ -236,25 +234,19 @@ def serve(args):
             draft_model=args.draft_model,
         )
         _ensure_installed(selection)
-        # A concurrent install may advance the selection link. Keep this
-        # process's tokenizer, draft and target on one immutable assembly,
-        # held until the server exits.
-        root, record = assembly.hold(selection.link, selection.models_root)
-        if record is not None:
-            held_records.enter_context(record)
-            os.set_inheritable(record.fileno(), True)
         # The server package of this installation, from any working
         # directory: -P keeps the directory, which may hold a package of the
-        # same name, off sys.path, and PYTHONPATH names the root.
+        # same name, off sys.path, and PYTHONPATH names the root. The server
+        # holds the assembly the selection link names when it starts, and
+        # serves from it until it exits, however an installation advances the
+        # link meanwhile.
         command = [
             str(paths.PYTHON),
             "-u",
             "-P",
             "-m",
             "server.server",
-            str(root),
-            "--tokenizer",
-            str(root / "tokenizer"),
+            str(selection.link),
             "--model",
             args.model,
             "--binary",

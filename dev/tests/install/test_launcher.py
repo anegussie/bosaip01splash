@@ -15,7 +15,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
-from dev.tests.installer_fixtures import link_assembly
 from dev.tests.server_fixtures import keep_stop_signals, server_arguments
 from install import launcher
 from server import serve_options
@@ -64,7 +63,7 @@ class LauncherTests(unittest.TestCase):
         ):
             os.environ.pop(name, None)
         keep_stop_signals(self)
-        # Serve installs and holds models under a models root of the test's.
+        # Serve installs models under a models root of the test's.
         models = Path(self.enterContext(tempfile.TemporaryDirectory())) / "models"
         self.enterContext(mock.patch.object(launcher.paths, "MODELS", models))
 
@@ -78,8 +77,6 @@ class LauncherTests(unittest.TestCase):
                 served = api.parse_args(
                     [
                         "model",
-                        "--tokenizer",
-                        "tokenizer",
                         "--model",
                         MODEL_ID,
                         *forwarded,
@@ -146,9 +143,7 @@ class LauncherTests(unittest.TestCase):
                 tempfile.TemporaryDirectory() as temporary,
                 mock.patch.object(launcher, "RUNTIME_DIR", Path(temporary)),
                 mock.patch.object(launcher.socket, "socket") as factory,
-                mock.patch.object(
-                    launcher, "_ensure_installed", side_effect=link_assembly
-                ),
+                mock.patch.object(launcher, "_ensure_installed"),
                 mock.patch.object(launcher.os, "execve") as execute,
             ):
                 arguments = [
@@ -213,7 +208,6 @@ class LauncherTests(unittest.TestCase):
 
             def check_install(chosen):
                 self.assertEqual(json.loads(lock_path.read_text()), owner)
-                link_assembly(chosen)
 
             def check_exec(binary, argv, environment):
                 self.assertEqual(binary, str(launcher.paths.PYTHON))
@@ -427,9 +421,7 @@ class LauncherTests(unittest.TestCase):
                 # without interfering with a user's server on port 8000.
                 with (
                     mock.patch.object(launcher, "RUNTIME_DIR", Path(temporary)),
-                    mock.patch.object(
-                        launcher, "_ensure_installed", side_effect=link_assembly
-                    ) as install,
+                    mock.patch.object(launcher, "_ensure_installed") as install,
                     mock.patch.object(launcher.os, "execve") as execute,
                     mock.patch("sys.stderr", io.StringIO()),
                 ):
@@ -616,9 +608,7 @@ class LauncherTests(unittest.TestCase):
 
             with (
                 mock.patch.object(launcher, "RUNTIME_DIR", runtime),
-                mock.patch.object(
-                    launcher, "_ensure_installed", side_effect=link_assembly
-                ) as install,
+                mock.patch.object(launcher, "_ensure_installed") as install,
                 mock.patch.object(launcher.os, "execve", side_effect=execute),
                 mock.patch("sys.stderr", io.StringIO()) as error,
             ):
@@ -643,12 +633,11 @@ class LauncherTests(unittest.TestCase):
             runtime = root / "runtime"
             script = (
                 "import sys\nfrom pathlib import Path\nfrom install import launcher\n"
-                "from dev.tests.installer_fixtures import link_assembly\n"
                 "launcher.ROOT = Path(sys.argv[1])\n"
                 "launcher.RUNTIME_DIR = launcher.ROOT / 'runtime'\n"
                 "launcher.paths.MODELS = launcher.ROOT / 'models'\n"
                 "launcher.paths.PYTHON = Path(sys.executable)\n"
-                "launcher._ensure_installed = link_assembly\n"
+                "launcher._ensure_installed = lambda selection: None\n"
                 "launcher.main(['serve', '--model', 'test/model', '--port', sys.argv[2]])\n"
             )
             processes = []
@@ -988,9 +977,7 @@ class LauncherTests(unittest.TestCase):
             with (
                 mock.patch.object(launcher, "RUNTIME_DIR", runtime),
                 mock.patch.object(launcher.socket, "socket"),
-                mock.patch.object(
-                    launcher, "_ensure_installed", side_effect=link_assembly
-                ) as install,
+                mock.patch.object(launcher, "_ensure_installed") as install,
                 mock.patch.object(
                     launcher.model_artifacts,
                     "selection_link",
@@ -1016,9 +1003,9 @@ class LauncherTests(unittest.TestCase):
                 (MODEL_ID, runtime / "selected"),
             )
             root.assert_called_once_with(chosen.models_root, MODEL_ID, **options)
-            # The server runs from the assembly the selection links.
+            # The server serves the assembly the selection link names.
             argv = execute.call_args.args[1]
-            self.assertEqual(server_arguments(argv)[0], str(chosen.link.resolve()))
+            self.assertEqual(server_arguments(argv)[0], str(chosen.link))
 
             with (
                 mock.patch.object(
@@ -1056,7 +1043,6 @@ class LauncherTests(unittest.TestCase):
 
                 def install(selection):
                     seen["installer"] = os.environ.get("HF_HUB_OFFLINE")
-                    link_assembly(selection)
 
                 with (
                     mock.patch.object(launcher, "RUNTIME_DIR", runtime),
@@ -1086,47 +1072,24 @@ class LauncherTests(unittest.TestCase):
                 # The server has no such option: the environment carries it.
                 self.assertNotIn("--offline", argv)
 
-    def test_server_holds_the_assembly_it_serves(self):
+    def test_server_is_given_the_selection_link_whose_assembly_it_holds(self):
+        # The server holds the assembly the link names when it starts, and
+        # serves it however an installation moves the link.
         with tempfile.TemporaryDirectory() as temporary:
             runtime = Path(temporary)
-            assembly = runtime / "models/.resolved/assembly"
-            assembly.mkdir(parents=True)
-            (assembly / "model.json").write_text("{}")
             selection = runtime / "models/owner/model"
-            selection.parent.mkdir()
-            selection.symlink_to(assembly)
-            held = []
-            records = []
-            hold = launcher.assembly.hold
-
-            def track_hold(*args):
-                root, record = hold(*args)
-                records.append(record)
-                return root, record
-
-            def execute(program, argv, environment):
-                # Installations remove no assembly a server holds.
-                with (assembly / "model.json").open("rb") as record:
-                    try:
-                        fcntl.flock(record, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    except BlockingIOError:
-                        held.append(server_arguments(argv)[0])
-
             with (
                 mock.patch.object(launcher, "RUNTIME_DIR", runtime),
-                mock.patch.object(launcher.paths, "MODELS", runtime / "models"),
                 mock.patch.object(launcher.socket, "socket"),
                 mock.patch.object(launcher, "_ensure_installed"),
                 mock.patch.object(
                     launcher.model_artifacts, "selection_link", return_value=selection
                 ),
-                mock.patch.object(launcher.os, "execve", side_effect=execute),
-                mock.patch.object(launcher.assembly, "hold", side_effect=track_hold),
+                mock.patch.object(launcher.os, "execve") as execute,
             ):
                 launcher.main(["serve", "--model", MODEL_ID])
-            self.assertEqual(held, [str(assembly.resolve())])
-            self.assertTrue(records)
-            self.assertTrue(all(record.closed for record in records))
+            served = api.parse_args(server_arguments(execute.call_args.args[1]))
+            self.assertEqual(served.model_root, str(selection))
 
     def test_serve_takes_the_stop_signals_and_holds_them_across_the_exec(self):
         # A non-interactive shell starts background jobs with SIGINT ignored.
@@ -1143,7 +1106,7 @@ class LauncherTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as temporary,
             mock.patch.object(launcher, "RUNTIME_DIR", Path(temporary)),
             mock.patch.object(launcher.socket, "socket"),
-            mock.patch.object(launcher, "_ensure_installed", side_effect=link_assembly),
+            mock.patch.object(launcher, "_ensure_installed"),
             mock.patch.object(launcher.os, "execve", side_effect=execute),
         ):
             launcher.main(["serve", "--model", MODEL_ID])
@@ -1209,8 +1172,7 @@ class LauncherTests(unittest.TestCase):
     def test_programs_take_a_stop_held_from_their_start(self):
         home = self.enterContext(tempfile.TemporaryDirectory())
         # Unstopped, each would go on to fail at its first step.
-        server = ["-m", "server.server", "model", "--tokenizer", "tokenizer"]
-        server += ["--model", MODEL_ID, "--port", "0"]
+        server = ["-m", "server.server", "model", "--model", MODEL_ID, "--port", "0"]
         installer = ["install/models.py", "--models", home, "--model", MODEL_ID]
         installer.append("prepare")
         environment = {

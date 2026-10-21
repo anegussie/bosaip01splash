@@ -1,6 +1,7 @@
 #pragma once
 
 #include "model/ModelFactory.hpp"
+#include "TestDrafts.hpp"
 #include "model/QwenTargetLoader.hpp"
 #include "metal/abi/QuantFormat.h"
 
@@ -14,8 +15,8 @@ model::LoadedModel runtimeGeometryPackage() {
   model::LoadedModel result;
   Weights target;
   const model::DFlashDraftLayout draft = std::is_same_v<Weights, model::Qwen3_6MoeWeights>
-                                             ? model::kQwen3_6MoeDraftLayout
-                                             : model::kQwen3_8DraftLayout;
+                                             ? test::qwen3_6MoeDraft()
+                                             : test::qwen3_8Draft();
   const auto projection = [](uint32_t n, uint32_t k) {
     return ops::Projection(n, k, ops::BlockWeights{{ops::QuantizedSegment::planes(GGUF_FMT_AF4G64, n, k, {}, {}, {})}});
   };

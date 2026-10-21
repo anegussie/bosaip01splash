@@ -3,6 +3,8 @@
 //   decode-profile METALLIB MODEL_ROOT [--prompt-tokens N] [--cycles K] [--kv-format int8|bf16]
 //                  [--state-format fp32|bf16]
 //                  [--max-lanes 1..4] [--prefill-chunk-tokens 128..2048]
+//                  [--state-format fp32|bf16] [--expert-memory SIZE] [--ple-memory SIZE]
+//                  [--dispatch-list FILE]
 //   decode-profile METALLIB MODEL_ROOT --images HxW[,HxW...] [--cycles K]
 //
 // Drives the real model runtime with Metal dispatch profiling enabled, so
@@ -11,6 +13,7 @@
 // Fused (unprofiled) cycle timing is reported alongside. Attribution uses
 // separate decode cycles and dispatch submissions; different inputs and GPU
 // clock/thermal conditions mean their gap is not a dispatch-overhead estimate.
+// --dispatch-list writes the attributed B1 dispatches in order.
 // With --images it profiles the vision encoder instead, loading only the
 // model's vision role: K encodes of a synthetic image per patch grid (height
 // x width in patches), fused and then attributed.
@@ -23,10 +26,12 @@
 #include "metal/CommandGraph.hpp"
 #include "metal/MetalBackend.hpp"
 #include "model/ModelFactory.hpp"
+#include "model/SsdReaders.hpp"
 #include "model/VisionLoader.hpp"
 #include "model/WeightImages.hpp"
 #include "engine/MemoryGovernor.hpp"
 #include "model/QwenState.hpp"
+#include "tools/LoadOptions.hpp"
 
 #import <Foundation/Foundation.h>
 
@@ -327,6 +332,8 @@ int main(int argc, char **argv) {
                      "[--prompt-tokens N] [--cycles K] [--kv-format int8|bf16] "
                      "[--state-format fp32|bf16]\n"
                      "                     [--max-lanes 1..4] [--prefill-chunk-tokens 128..2048]\n"
+                     "[--state-format fp32|bf16] [--expert-memory SIZE] [--ple-memory SIZE] "
+                     "[--dispatch-list FILE]\n"
                      "       decode-profile METALLIB MODEL_ROOT "
                      "--images HxW[,HxW...] [--cycles K]\n";
         return 2;
@@ -338,7 +345,10 @@ int main(int argc, char **argv) {
       kv::Format format = kv::Format::Int8;
       ops::GdnStateFormat stateFormat = ops::GdnStateFormat::Float32;
       std::vector<ops::ImageGrid> grids;
+      // Streamed routed experts and PLE table (tools/LoadOptions.hpp).
+      model::ModelLoadOptions loadOptions;
       bool textOptions = false;
+      std::string dispatchList;
       for (int index = 3; index < argc; index += 2) {
         const std::string_view option(argv[index]);
         if (index + 1 >= argc)
@@ -370,6 +380,11 @@ int main(int argc, char **argv) {
             throw std::invalid_argument("--state-format takes fp32 or bf16");
           stateFormat = value == "fp32" ? ops::GdnStateFormat::Float32 : ops::GdnStateFormat::BFloat16;
           textOptions = true;
+        } else if (tools::takeLoadOption(option, argv[index + 1], loadOptions)) {
+          textOptions = true;
+        } else if (option == "--dispatch-list") {
+          dispatchList = argv[index + 1];
+          textOptions = true;
         } else if (option == "--images")
           grids = parseGrids(argv[index + 1]);
         else
@@ -386,8 +401,10 @@ int main(int argc, char **argv) {
         profileImages(backend, root, grids, cycles);
         return 0;
       }
+      // Streamed weights read on a pool of SSD readers, as the engine's do.
+      loadOptions.readers = std::make_shared<model::SsdReaders>(model::kSsdReaders);
       model::LoadedModel model =
-          model::loadModel(backend, root, model::inspectModelRoot(root));
+          model::loadModel(backend, root, model::inspectModelRoot(root), loadOptions);
       ops::ExecutionPlans operators(backend.capabilities());
 
       // Only reserve KV pages for the lane widths being measured.
@@ -466,9 +483,18 @@ int main(int argc, char **argv) {
         for (uint32_t cycle = 0; cycle < cycles; ++cycle)
           static_cast<void>(decodeCycle(backend, executor, active));
         BackendInstrumentation::setDispatchProfiling(backend, false);
+        const std::vector<metal::DispatchTiming> timings =
+            BackendInstrumentation::takeDispatchProfile(backend);
+        if (!dispatchList.empty() && active.size() == 1) {
+          FILE *file = std::fopen(dispatchList.c_str(), "w");
+          if (!file) throw std::runtime_error("cannot write " + dispatchList);
+          for (size_t index = 0; index < timings.size(); ++index)
+            std::fprintf(file, "%zu %s %.2f\n", index, timings[index].pipelineName.c_str(),
+                         timings[index].gpuSeconds * 1e6);
+          std::fclose(file);
+        }
         Table table;
-        accumulate(table,
-                   BackendInstrumentation::takeDispatchProfile(backend));
+        accumulate(table, timings);
         print(title, table, cycles, median.gpuSeconds);
       };
       profileWidth("B1 decode cycle", std::span<Lane>(&lanes[0], 1));
