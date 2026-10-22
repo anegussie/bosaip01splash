@@ -1,0 +1,842 @@
+{
+  "window": {
+    "start": "2026-10-15T14:22:49.594181-04:00",
+    "end": "2026-10-22T14:22:49.594181-04:00",
+    "timezone": "America/Toronto",
+    "files": [
+      {
+        "source": "/Users/mymac/.local/state/llama-server/bonsai-27b-splash-20261015-135942.log",
+        "snapshot": "/Users/mymac/splash/splash/build/validation/log-audit-20261022/logs/bonsai-27b-splash-20261015-135942.log",
+        "bytes": 194405
+      },
+      {
+        "source": "/Users/mymac/.local/state/llama-server/bonsai-27b-splash-20261015-165952.log",
+        "snapshot": "/Users/mymac/splash/splash/build/validation/log-audit-20261022/logs/bonsai-27b-splash-20261015-165952.log",
+        "bytes": 6438
+      },
+      {
+        "source": "/Users/mymac/.local/state/llama-server/bonsai-27b-splash-20261015-224839.log",
+        "snapshot": "/Users/mymac/splash/splash/build/validation/log-audit-20261022/logs/bonsai-27b-splash-20261015-224839.log",
+        "bytes": 381126
+      },
+      {
+        "source": "/Users/mymac/.local/state/llama-server/bonsai-27b-splash-20261016-135647.log",
+        "snapshot": "/Users/mymac/splash/splash/build/validation/log-audit-20261022/logs/bonsai-27b-splash-20261016-135647.log",
+        "bytes": 219513
+      },
+      {
+        "source": "/Users/mymac/.local/state/llama-server/bonsai-27b-splash-20261017-132713.log",
+        "snapshot": "/Users/mymac/splash/splash/build/validation/log-audit-20261022/logs/bonsai-27b-splash-20261017-132713.log",
+        "bytes": 2293239
+      }
+    ],
+    "opencode_events_source": "/Users/mymac/.local/state/opencode/performance.jsonl"
+  },
+  "scope": "Option-14 primary profile logs only; isolated benchmarks and other model profiles excluded. OpenCode timing records are reconciled by session/call ID.",
+  "requests": {
+    "terminal": 5289,
+    "done": 5285,
+    "cancelled": 4,
+    "thinking_modes": {
+      "True": {
+        "requests": 6,
+        "prefill_seconds": 20.22,
+        "decode_seconds": 1877.4,
+        "output_tokens": 26552
+      },
+      "False": {
+        "requests": 5283,
+        "prefill_seconds": 68191.59,
+        "decode_seconds": 78667.22,
+        "output_tokens": 1244921
+      },
+      "None": {
+        "requests": 0,
+        "prefill_seconds": 0,
+        "decode_seconds": 0,
+        "output_tokens": 0
+      }
+    },
+    "cross_boundary": 1,
+    "started_in_window": 5289,
+    "unmatched_start_lines_in_window": [
+      {
+        "time": 1792693345.0,
+        "prompt_tokens": 4458,
+        "thinking": false,
+        "effort": "none",
+        "file": "bonsai-27b-splash-20261017-132713.log",
+        "line": 9790
+      }
+    ]
+  },
+  "stage_seconds_union": {
+    "prefill": 68208.17599272728,
+    "decode": 80524.36481761932,
+    "native_queue": 513.7469265460968,
+    "native_other": 8.895021200180054,
+    "frontend_queue": 1974.376000404358
+  },
+  "request_totals_unclipped": {
+    "input_tokens": 61858040,
+    "cached_tokens": 52837376,
+    "output_tokens": 1271473,
+    "prefill_tokens": 9020664,
+    "decode_tokens": 1264190,
+    "prefill_seconds": 68211.80999999988,
+    "decode_seconds": 80544.62000000005,
+    "frontend_queue_seconds": 1975.133,
+    "native_queue_seconds": 513.7710000000067,
+    "native_wall_seconds": 149270.25999999986,
+    "native_other_seconds": 8.895000000000408
+  },
+  "throughput": {
+    "prefill_tokens_per_second": 132.2460177323285,
+    "decode_tokens_per_second": 15.698219737146065,
+    "median_prefill_tps": 121.49188269180414,
+    "median_decode_tps": 17.098445595854923
+  },
+  "tools": {
+    "database_count": 5242,
+    "journal_events": 5190,
+    "journal_matched": 5190,
+    "journal_only": 0,
+    "duplicate_database_ids": 0,
+    "repeated_journal_ids": 5,
+    "total": 5242,
+    "by_tool": {
+      "subagent": {
+        "count": 445,
+        "error_or_nonzero": 94,
+        "seconds_sum": 106570.97499847412,
+        "timed_count": 426,
+        "kind": "delegation"
+      },
+      "read": {
+        "count": 1018,
+        "error_or_nonzero": 27,
+        "seconds_sum": 16.769003868103027,
+        "timed_count": 1018,
+        "kind": "leaf"
+      },
+      "shell": {
+        "count": 3031,
+        "error_or_nonzero": 458,
+        "seconds_sum": 1760.548995256424,
+        "timed_count": 3022,
+        "kind": "leaf"
+      },
+      "execute": {
+        "count": 100,
+        "error_or_nonzero": 73,
+        "seconds_sum": 1.4499988555908203,
+        "timed_count": 98,
+        "kind": "leaf"
+      },
+      "grep": {
+        "count": 232,
+        "error_or_nonzero": 5,
+        "seconds_sum": 6.794999361038208,
+        "timed_count": 232,
+        "kind": "leaf"
+      },
+      "webfetch": {
+        "count": 21,
+        "error_or_nonzero": 11,
+        "seconds_sum": 5.458000183105469,
+        "timed_count": 21,
+        "kind": "leaf"
+      },
+      "websearch": {
+        "count": 27,
+        "error_or_nonzero": 1,
+        "seconds_sum": 40.73599934577942,
+        "timed_count": 27,
+        "kind": "leaf"
+      },
+      "glob": {
+        "count": 18,
+        "error_or_nonzero": 1,
+        "seconds_sum": 0.5909998416900635,
+        "timed_count": 18,
+        "kind": "leaf"
+      },
+      "write": {
+        "count": 106,
+        "error_or_nonzero": 20,
+        "seconds_sum": 0.9540002346038818,
+        "timed_count": 99,
+        "kind": "leaf"
+      },
+      "question": {
+        "count": 42,
+        "error_or_nonzero": 31,
+        "seconds_sum": 24256.087999343872,
+        "timed_count": 42,
+        "kind": "question"
+      },
+      "edit": {
+        "count": 190,
+        "error_or_nonzero": 47,
+        "seconds_sum": 1.4699997901916504,
+        "timed_count": 182,
+        "kind": "leaf"
+      },
+      "skill": {
+        "count": 11,
+        "error_or_nonzero": 1,
+        "seconds_sum": 0.10199975967407227,
+        "timed_count": 11,
+        "kind": "leaf"
+      },
+      "command": {
+        "count": 1,
+        "error_or_nonzero": 1,
+        "seconds_sum": 0.03500008583068848,
+        "timed_count": 1,
+        "kind": "leaf"
+      }
+    },
+    "leaf_seconds_sum": 1834.9089965820312,
+    "leaf_seconds_union": 1818.7159969806671,
+    "leaf_seconds_outside_model": 1600.4909980297089,
+    "question_seconds_sum": 24256.087999343872,
+    "question_seconds_outside_model_and_leaf": 24254.091000318527,
+    "delegation_seconds_sum": 106570.97499847412,
+    "delegation_seconds_union": 106443.13781738281
+  },
+  "compaction": {
+    "count": 244,
+    "seconds_sum": 11703.695,
+    "seconds_union": 11703.694999933243,
+    "by_mode": {
+      "model": 238,
+      "extractive": 6
+    }
+  },
+  "events": {
+    "tool": 5190,
+    "read_window": 956,
+    "read_context": 2796,
+    "compaction": 244,
+    "worker_slice_checkpoint": 195,
+    "worker_scope_normalized": 3,
+    "child_loop_stopped": 3,
+    "question_schema_fallback": 85,
+    "tool_failure_recovery": 39
+  },
+  "agents": {
+    "context_worker": {
+      "messages": 3866,
+      "input_tokens": 4584921,
+      "cached_input_tokens": 42138880,
+      "output_tokens": 738092,
+      "reasoning_tokens": 0,
+      "llm_envelope_seconds": 80022.98499999999,
+      "errors": 5
+    },
+    "router": {
+      "messages": 547,
+      "input_tokens": 2796332,
+      "cached_input_tokens": 4190752,
+      "output_tokens": 295141,
+      "reasoning_tokens": 0,
+      "llm_envelope_seconds": 42416.126999999986,
+      "errors": 9
+    },
+    "general_worker": {
+      "messages": 608,
+      "input_tokens": 852054,
+      "cached_input_tokens": 6408864,
+      "output_tokens": 126357,
+      "reasoning_tokens": 0,
+      "llm_envelope_seconds": 14634.208000000011,
+      "errors": 0
+    }
+  },
+  "top_sessions": [
+    {
+      "session_id": "ses_eb5187d83ffeliSfnTGtJ4Bgyu",
+      "parent": null,
+      "title": "Periodic table organization review",
+      "directory": "/Users/mymac/tt",
+      "agent": "router",
+      "messages": 213,
+      "llm_envelope_seconds": 17745.677000000003,
+      "output_tokens": 146633,
+      "reasoning_tokens": 0,
+      "tool_count": 195
+    },
+    {
+      "session_id": "ses_ea8aec408ffeOPtK2foRks3kCg",
+      "parent": null,
+      "title": "Fix table rendering as list",
+      "directory": "/Users/mymac/tt",
+      "agent": "router",
+      "messages": 91,
+      "llm_envelope_seconds": 9003.313999999997,
+      "output_tokens": 57584,
+      "reasoning_tokens": 0,
+      "tool_count": 82
+    },
+    {
+      "session_id": "ses_e9fc89ca1ffeS8zKEsNmeznZNQ",
+      "parent": null,
+      "title": "Periodic-table.html improvements",
+      "directory": "/Users/mymac/tt",
+      "agent": "router",
+      "messages": 42,
+      "llm_envelope_seconds": 6578.838999999999,
+      "output_tokens": 19632,
+      "reasoning_tokens": 0,
+      "tool_count": 39
+    },
+    {
+      "session_id": "ses_eba24236cffeGHO3xgyFd9C0Xo",
+      "parent": null,
+      "title": "periodic-table.html layout review",
+      "directory": "/Users/mymac/tt",
+      "agent": "router",
+      "messages": 94,
+      "llm_envelope_seconds": 4574.544000000001,
+      "output_tokens": 33107,
+      "reasoning_tokens": 0,
+      "tool_count": 78
+    },
+    {
+      "session_id": "ses_eba23246dffeAaPdaL3zjouXRS",
+      "parent": "ses_eba24236cffeGHO3xgyFd9C0Xo",
+      "title": "Review periodic table HTML",
+      "directory": "/Users/mymac/tt",
+      "agent": "context_worker",
+      "messages": 123,
+      "llm_envelope_seconds": 2792.4770000000003,
+      "output_tokens": 27231,
+      "reasoning_tokens": 0,
+      "tool_count": 121
+    },
+    {
+      "session_id": "ses_ebd62cd01ffepQKTuv2UH2EW36",
+      "parent": null,
+      "title": "Periodic table display",
+      "directory": "/Users/mymac/tt",
+      "agent": "router",
+      "messages": 71,
+      "llm_envelope_seconds": 2634.5809999999988,
+      "output_tokens": 20511,
+      "reasoning_tokens": 0,
+      "tool_count": 63
+    },
+    {
+      "session_id": "ses_ea9ad246affePmjX5S5r6DrlzJ",
+      "parent": null,
+      "title": "Periodic table HTML layout review",
+      "directory": "/Users/mymac/tt",
+      "agent": "router",
+      "messages": 18,
+      "llm_envelope_seconds": 1258.877,
+      "output_tokens": 14443,
+      "reasoning_tokens": 0,
+      "tool_count": 16
+    },
+    {
+      "session_id": "ses_ebd3c995cffeyYZXc4Zy1mPWAD",
+      "parent": "ses_ebd62cd01ffepQKTuv2UH2EW36",
+      "title": "Append elements 51-75",
+      "directory": "/Users/mymac/tt",
+      "agent": "context_worker",
+      "messages": 50,
+      "llm_envelope_seconds": 1004.8429999999996,
+      "output_tokens": 12079,
+      "reasoning_tokens": 0,
+      "tool_count": 50
+    },
+    {
+      "session_id": "ses_e9f6cfcfeffek6P5jc7MIPprlm",
+      "parent": "ses_e9fc89ca1ffeS8zKEsNmeznZNQ",
+      "title": "Verify blk field state",
+      "directory": "/Users/mymac/tt",
+      "agent": "context_worker",
+      "messages": 18,
+      "llm_envelope_seconds": 914.4530000000001,
+      "output_tokens": 3613,
+      "reasoning_tokens": 0,
+      "tool_count": 19
+    },
+    {
+      "session_id": "ses_e9f939618ffe4ydx4wiSk0KKNY",
+      "parent": "ses_e9fc89ca1ffeS8zKEsNmeznZNQ",
+      "title": "Fix data category accuracy",
+      "directory": "/Users/mymac/tt",
+      "agent": "context_worker",
+      "messages": 9,
+      "llm_envelope_seconds": 830.565,
+      "output_tokens": 3681,
+      "reasoning_tokens": 0,
+      "tool_count": 8
+    },
+    {
+      "session_id": "ses_eb94f1079ffeyvN0IHicGrgrXA",
+      "parent": "ses_eba24236cffeGHO3xgyFd9C0Xo",
+      "title": "Write corrected generator",
+      "directory": "/Users/mymac/tt",
+      "agent": "context_worker",
+      "messages": 32,
+      "llm_envelope_seconds": 703.545,
+      "output_tokens": 9662,
+      "reasoning_tokens": 0,
+      "tool_count": 29
+    },
+    {
+      "session_id": "ses_eb288b43fffeoEMYhGPvCFYO92",
+      "parent": "ses_eb5187d83ffeliSfnTGtJ4Bgyu",
+      "title": "Fix final duplicates",
+      "directory": "/Users/mymac/tt",
+      "agent": "context_worker",
+      "messages": 13,
+      "llm_envelope_seconds": 697.6510000000001,
+      "output_tokens": 8044,
+      "reasoning_tokens": 0,
+      "tool_count": 13
+    }
+  ],
+  "longest_requests": [
+    {
+      "file": "bonsai-27b-splash-20261017-132713.log",
+      "line": 8495,
+      "end": 1792617291.0,
+      "day": "2026-10-21",
+      "request_id": 3514,
+      "outcome": "done",
+      "input_tokens": 570,
+      "cached_tokens": 0,
+      "output_tokens": 24006,
+      "prefill_tokens": 570,
+      "prefill_seconds": 2.85,
+      "decode_tokens": 24005,
+      "decode_seconds": 1676.72,
+      "frontend_queue_seconds": 0.0,
+      "native_queue_seconds": 6.578,
+      "native_wall_seconds": 1686.15,
+      "thinking": true,
+      "effort": "low",
+      "logged_start": 1792615611.0,
+      "native_other_seconds": 0.0020000000001543228,
+      "inferred_start": 1792615604.85,
+      "crosses_window_start": false
+    },
+    {
+      "file": "bonsai-27b-splash-20261017-132713.log",
+      "line": 8127,
+      "end": 1792590168.0,
+      "day": "2026-10-21",
+      "request_id": 3416,
+      "outcome": "done",
+      "input_tokens": 15010,
+      "cached_tokens": 0,
+      "output_tokens": 1727,
+      "prefill_tokens": 15010,
+      "prefill_seconds": 137.54,
+      "decode_tokens": 1724,
+      "decode_seconds": 188.18,
+      "frontend_queue_seconds": 0.0,
+      "native_queue_seconds": 0.0,
+      "native_wall_seconds": 325.716,
+      "thinking": false,
+      "effort": "absent \u2192 none",
+      "logged_start": 1792589842.0,
+      "native_other_seconds": 0,
+      "inferred_start": 1792589842.284,
+      "crosses_window_start": false
+    },
+    {
+      "file": "bonsai-27b-splash-20261017-132713.log",
+      "line": 8101,
+      "end": 1792589160.0,
+      "day": "2026-10-21",
+      "request_id": 3405,
+      "outcome": "done",
+      "input_tokens": 11659,
+      "cached_tokens": 8768,
+      "output_tokens": 3059,
+      "prefill_tokens": 2891,
+      "prefill_seconds": 23.45,
+      "decode_tokens": 3057,
+      "decode_seconds": 289.8,
+      "frontend_queue_seconds": 0.0,
+      "native_queue_seconds": 0.115,
+      "native_wall_seconds": 313.372,
+      "thinking": false,
+      "effort": "absent \u2192 none",
+      "logged_start": 1792588846.0,
+      "native_other_seconds": 0.007000000000014092,
+      "inferred_start": 1792588846.628,
+      "crosses_window_start": false
+    },
+    {
+      "file": "bonsai-27b-splash-20261017-132713.log",
+      "line": 4868,
+      "end": 1792376375.0,
+      "day": "2026-10-18",
+      "request_id": 2186,
+      "outcome": "done",
+      "input_tokens": 17184,
+      "cached_tokens": 15680,
+      "output_tokens": 4096,
+      "prefill_tokens": 1504,
+      "prefill_seconds": 9.06,
+      "decode_tokens": 4095,
+      "decode_seconds": 286.43,
+      "frontend_queue_seconds": 0.0,
+      "native_queue_seconds": 0.024,
+      "native_wall_seconds": 295.522,
+      "thinking": false,
+      "effort": "absent \u2192 none",
+      "logged_start": 1792376079.0,
+      "native_other_seconds": 0.007999999999982264,
+      "inferred_start": 1792376079.478,
+      "crosses_window_start": false
+    },
+    {
+      "file": "bonsai-27b-splash-20261017-132713.log",
+      "line": 7241,
+      "end": 1792536975.0,
+      "day": "2026-10-20",
+      "request_id": 3077,
+      "outcome": "done",
+      "input_tokens": 6882,
+      "cached_tokens": 6016,
+      "output_tokens": 4096,
+      "prefill_tokens": 866,
+      "prefill_seconds": 6.69,
+      "decode_tokens": 4095,
+      "decode_seconds": 288.68,
+      "frontend_queue_seconds": 0.0,
+      "native_queue_seconds": 0.023,
+      "native_wall_seconds": 295.39,
+      "thinking": false,
+      "effort": "absent \u2192 none",
+      "logged_start": 1792536679.0,
+      "native_other_seconds": 0,
+      "inferred_start": 1792536679.61,
+      "crosses_window_start": false
+    },
+    {
+      "file": "bonsai-27b-splash-20261017-132713.log",
+      "line": 2436,
+      "end": 1792297517.0,
+      "day": "2026-10-18",
+      "request_id": 1125,
+      "outcome": "done",
+      "input_tokens": 14232,
+      "cached_tokens": 9728,
+      "output_tokens": 4096,
+      "prefill_tokens": 4504,
+      "prefill_seconds": 34.34,
+      "decode_tokens": 4092,
+      "decode_seconds": 257.84,
+      "frontend_queue_seconds": 0.0,
+      "native_queue_seconds": 0.133,
+      "native_wall_seconds": 292.308,
+      "thinking": false,
+      "effort": "absent \u2192 none",
+      "logged_start": 1792297225.0,
+      "native_other_seconds": 0,
+      "inferred_start": 1792297224.692,
+      "crosses_window_start": false
+    },
+    {
+      "file": "bonsai-27b-splash-20261017-132713.log",
+      "line": 2478,
+      "end": 1792298286.0,
+      "day": "2026-10-18",
+      "request_id": 1144,
+      "outcome": "done",
+      "input_tokens": 10761,
+      "cached_tokens": 8896,
+      "output_tokens": 4096,
+      "prefill_tokens": 1865,
+      "prefill_seconds": 14.41,
+      "decode_tokens": 4092,
+      "decode_seconds": 255.24,
+      "frontend_queue_seconds": 0.0,
+      "native_queue_seconds": 0.178,
+      "native_wall_seconds": 269.827,
+      "thinking": false,
+      "effort": "absent \u2192 none",
+      "logged_start": 1792298017.0,
+      "native_other_seconds": 0,
+      "inferred_start": 1792298016.173,
+      "crosses_window_start": false
+    },
+    {
+      "file": "bonsai-27b-splash-20261017-132713.log",
+      "line": 5584,
+      "end": 1792436164.0,
+      "day": "2026-10-19",
+      "request_id": 2441,
+      "outcome": "done",
+      "input_tokens": 16411,
+      "cached_tokens": 0,
+      "output_tokens": 3176,
+      "prefill_tokens": 16411,
+      "prefill_seconds": 88.9,
+      "decode_tokens": 3172,
+      "decode_seconds": 167.97,
+      "frontend_queue_seconds": 0.0,
+      "native_queue_seconds": 0.0,
+      "native_wall_seconds": 256.873,
+      "thinking": false,
+      "effort": "absent \u2192 none",
+      "logged_start": 1792435908.0,
+      "native_other_seconds": 0.002999999999985903,
+      "inferred_start": 1792435907.127,
+      "crosses_window_start": false
+    },
+    {
+      "file": "bonsai-27b-splash-20261017-132713.log",
+      "line": 8151,
+      "end": 1792590894.0,
+      "day": "2026-10-21",
+      "request_id": 3427,
+      "outcome": "done",
+      "input_tokens": 17205,
+      "cached_tokens": 0,
+      "output_tokens": 1456,
+      "prefill_tokens": 17205,
+      "prefill_seconds": 138.51,
+      "decode_tokens": 1455,
+      "decode_seconds": 111.27,
+      "frontend_queue_seconds": 0.0,
+      "native_queue_seconds": 0.0,
+      "native_wall_seconds": 249.78,
+      "thinking": false,
+      "effort": "absent \u2192 none",
+      "logged_start": 1792590645.0,
+      "native_other_seconds": 1.4210854715202004e-14,
+      "inferred_start": 1792590644.22,
+      "crosses_window_start": false
+    },
+    {
+      "file": "bonsai-27b-splash-20261017-132713.log",
+      "line": 1448,
+      "end": 1792281561.0,
+      "day": "2026-10-17",
+      "request_id": 663,
+      "outcome": "done",
+      "input_tokens": 4246,
+      "cached_tokens": 0,
+      "output_tokens": 3964,
+      "prefill_tokens": 4246,
+      "prefill_seconds": 36.12,
+      "decode_tokens": 3963,
+      "decode_seconds": 212.25,
+      "frontend_queue_seconds": 0.0,
+      "native_queue_seconds": 0.001,
+      "native_wall_seconds": 248.367,
+      "thinking": false,
+      "effort": "absent \u2192 none",
+      "logged_start": 1792281312.0,
+      "native_other_seconds": 0,
+      "inferred_start": 1792281312.633,
+      "crosses_window_start": false
+    },
+    {
+      "file": "bonsai-27b-splash-20261017-132713.log",
+      "line": 8885,
+      "end": 1792625316.0,
+      "day": "2026-10-21",
+      "request_id": 3695,
+      "outcome": "done",
+      "input_tokens": 17752,
+      "cached_tokens": 0,
+      "output_tokens": 959,
+      "prefill_tokens": 17752,
+      "prefill_seconds": 165.29,
+      "decode_tokens": 955,
+      "decode_seconds": 73.03,
+      "frontend_queue_seconds": 0.0,
+      "native_queue_seconds": 0.0,
+      "native_wall_seconds": 238.325,
+      "thinking": false,
+      "effort": "none",
+      "logged_start": 1792625078.0,
+      "native_other_seconds": 0.0049999999999954525,
+      "inferred_start": 1792625077.675,
+      "crosses_window_start": false
+    },
+    {
+      "file": "bonsai-27b-splash-20261017-132713.log",
+      "line": 6656,
+      "end": 1792500364.0,
+      "day": "2026-10-20",
+      "request_id": 2855,
+      "outcome": "done",
+      "input_tokens": 15658,
+      "cached_tokens": 0,
+      "output_tokens": 1575,
+      "prefill_tokens": 15658,
+      "prefill_seconds": 109.25,
+      "decode_tokens": 1571,
+      "decode_seconds": 123.29,
+      "frontend_queue_seconds": 0.0,
+      "native_queue_seconds": 0.0,
+      "native_wall_seconds": 232.534,
+      "thinking": false,
+      "effort": "absent \u2192 none",
+      "logged_start": 1792500132.0,
+      "native_other_seconds": 0,
+      "inferred_start": 1792500131.466,
+      "crosses_window_start": false
+    }
+  ],
+  "daily": {
+    "2026-10-15": {
+      "prefill": 2709.9020006656647,
+      "decode": 4365.731818199158,
+      "native_queue": 24.66399312019348,
+      "native_other": 0.7750020027160645,
+      "frontend_queue": 12.321000099182129,
+      "leaf_tools": 31.006999969482422,
+      "questions": 4.419000148773193,
+      "requests": 380,
+      "tool_calls": 344
+    },
+    "2026-10-16": {
+      "prefill": 8672.642000436783,
+      "decode": 11581.984996080399,
+      "native_queue": 102.76498055458069,
+      "native_other": 1.3880033493041992,
+      "frontend_queue": 18.33899998664856,
+      "leaf_tools": 255.64899969100952,
+      "questions": 4382.618999958038,
+      "requests": 864,
+      "tool_calls": 783
+    },
+    "2026-10-17": {
+      "prefill": 12283.299997806549,
+      "decode": 16908.700000286102,
+      "native_queue": 84.55598139762878,
+      "native_other": 1.9140052795410156,
+      "frontend_queue": 165.0659999847412,
+      "leaf_tools": 15.202999591827393,
+      "questions": 1822.3640003204346,
+      "requests": 1110,
+      "tool_calls": 1066
+    },
+    "2026-10-18": {
+      "prefill": 16376.549998283386,
+      "decode": 20735.272008657455,
+      "native_queue": 143.59198307991028,
+      "native_other": 2.142002582550049,
+      "leaf_tools": 1120.1009995937347,
+      "questions": 6404.871999979019,
+      "requests": 1317,
+      "tool_calls": 1316
+    },
+    "2026-10-19": {
+      "prefill": 5282.489999294281,
+      "decode": 5771.2760009765625,
+      "native_queue": 46.8739972114563,
+      "native_other": 0.5600011348724365,
+      "frontend_queue": 38.7720000743866,
+      "leaf_tools": 34.31699991226196,
+      "questions": 7599.011999845505,
+      "requests": 344,
+      "tool_calls": 346
+    },
+    "2026-10-20": {
+      "prefill": 6728.065999746323,
+      "decode": 7417.979999303818,
+      "native_queue": 57.071993827819824,
+      "native_other": 0.854001522064209,
+      "leaf_tools": 131.71199941635132,
+      "questions": 437.6270000934601,
+      "requests": 512,
+      "tool_calls": 555
+    },
+    "2026-10-21": {
+      "prefill": 15842.62599682808,
+      "decode": 13499.969994068146,
+      "native_queue": 48.29299759864807,
+      "native_other": 1.2180054187774658,
+      "frontend_queue": 1739.8780002593994,
+      "leaf_tools": 12.480000019073486,
+      "questions": 3603.177999973297,
+      "requests": 746,
+      "tool_calls": 769
+    },
+    "2026-10-22": {
+      "prefill": 312.599999666214,
+      "decode": 243.45000004768372,
+      "native_queue": 5.930999755859375,
+      "native_other": 0.04399991035461426,
+      "leaf_tools": 0.021999835968017578,
+      "requests": 16,
+      "tool_calls": 18
+    }
+  },
+  "source_logs": [
+    {
+      "file": "bonsai-27b-splash-20261015-135942.log",
+      "counts": {
+        "done": 192
+      },
+      "bytes": 194405
+    },
+    {
+      "file": "bonsai-27b-splash-20261015-165952.log",
+      "counts": {
+        "done": 4
+      },
+      "bytes": 6438
+    },
+    {
+      "file": "bonsai-27b-splash-20261015-224839.log",
+      "counts": {
+        "done": 719
+      },
+      "bytes": 381126
+    },
+    {
+      "file": "bonsai-27b-splash-20261016-135647.log",
+      "counts": {
+        "done": 344,
+        "cancelled": 2
+      },
+      "bytes": 219513
+    },
+    {
+      "file": "bonsai-27b-splash-20261017-132713.log",
+      "counts": {
+        "done": 4026,
+        "cancelled": 2
+      },
+      "bytes": 2293239
+    }
+  ],
+  "observed_span": {
+    "first": 1792088578.0,
+    "last": 1792693345.0
+  },
+  "coverage_notes": [
+    "Stage intervals are inferred from rounded terminal log timestamps and native latencies; boundary/overlap attribution is approximate to seconds.",
+    "PP is logged start-to-first-token elapsed time; decode is first-token-to-done elapsed time, not GPU kernel-only time.",
+    "Frontend queue time overlaps work serving another request; do not add it to GPU busy time.",
+    "Delegation and compaction are enclosing/subset views of model/tool work; do not add them to primary categories.",
+    "Unknown gaps include user reading, idle/offline time, uninstrumented work and logging gaps; they are not all model overhead.",
+    "Tool error/nonzero includes expected nonzero shell results such as searches with no matches; it is not a source-test failure count."
+  ],
+  "derived": {
+    "inference_seconds": 148732.5408103466,
+    "prefill_inference_percent": 45.859618628919684,
+    "decode_inference_percent": 54.140381371080316,
+    "cached_prompt_token_percent": 85.41715191751953,
+    "leaf_tool_calls": 4755,
+    "error_or_nonzero_calls": 770,
+    "error_or_nonzero_percent": 14.689049980923311,
+    "question_count": 42,
+    "delegation_count": 445,
+    "compaction_inference_share_upper_bound_percent": 7.868953852488635
+  }
+}

@@ -26,7 +26,7 @@ from install import assembly
 from install.models import ModelError
 
 from . import images as image_input
-from . import json_codec, judgments, serve_options
+from . import json_codec, judgments, serve_options, telemetry
 from . import protocol as wire
 from . import runtime as engine_runtime
 from .api_shapes import (
@@ -437,6 +437,18 @@ class FrontendHandler(BaseHTTPRequestHandler):
         if self._response_started:
             return
         status, code, payload = self.errors.answer(error)
+        telemetry.emit(
+            {
+                "event": "http_request_error",
+                "http_status": status,
+                "error_code": code,
+                "method": self.command,
+                "route": self.route if self.route in POST_ROUTES else "unmatched",
+                "correlation": getattr(self, "_telemetry_correlation", {})
+                if self.command == "POST"
+                else telemetry.correlation(getattr(self, "headers", {})),
+            }
+        )
         if log:
             self._log_api_error(code)
         try:
@@ -639,6 +651,18 @@ class FrontendHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         started_at = time.monotonic()
+        self._telemetry_correlation = {
+            **telemetry.correlation(self.headers),
+            "http_request_id": secrets.token_hex(16),
+        }
+        telemetry.emit(
+            {
+                "event": "http_request_ingress",
+                "method": "POST",
+                "route": self.route if self.route in POST_ROUTES else "unmatched",
+                "correlation": self._telemetry_correlation,
+            }
+        )
         route = POST_ROUTES.get(self.route)
         if route is None:
             self._safe_error(APIError(404, "not found", "not_found"))
@@ -716,6 +740,10 @@ class FrontendHandler(BaseHTTPRequestHandler):
     def _generate(self, job, respond, streaming, started_at):
         """Submit a prepared generation and answer with its output. The
         request's input bytes stay reserved only for what the job retains."""
+        job.telemetry = dict(self._telemetry_correlation)
+        job.telemetry["http_preparation_ms"] = (time.monotonic() - started_at) * 1000.0
+        job.telemetry["route"] = self.route
+        self.app.backend._telemetry(job, "request_prepared", streaming=streaming)
         self._body_reservation.retain_for(job)
         self._body_reservation = None
         job.latency = RequestLatency(self.app.latencies, started_at)
@@ -1573,6 +1601,7 @@ class FrontendServer(HTTPServer):
 
     def status(self):
         status = self.app.status()
+        status["telemetry"] = telemetry.health()
         status["instance"] = {
             "id": self.instance_id,
             "pid": os.getpid(),
