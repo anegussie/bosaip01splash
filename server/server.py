@@ -1781,6 +1781,7 @@ def main():
     server = None
     runtime = None
     backend = None
+    held = None
     # A server started in the background from a non-interactive shell inherits
     # SIGINT as ignored and Python then leaves it alone; install both stop
     # signals explicitly so scripts and supervisors can interrupt it.
@@ -1875,6 +1876,13 @@ def main():
             vision=readiness.vision,
         )
         server.app = app
+        telemetry.run_manifest(
+            args,
+            model_root,
+            _native_command(args, model_root),
+            backend.status,
+            server.instance_id,
+        )
         server.server_activate()
         address = f"http://{args.host}:{server.server_port}"
         context = (
@@ -1915,8 +1923,12 @@ def main():
                 backend.close()
         finally:
             signal.signal(signal.SIGINT, signal.SIG_IGN)
-            if server is not None:
-                server.server_close()
+            try:
+                if server is not None:
+                    server.server_close()
+            finally:
+                if held is not None:
+                    held.close()
 
 
 if __name__ == "__main__":

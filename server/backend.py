@@ -5,7 +5,7 @@ import functools
 import queue
 import threading
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 
 from tokenizers.decoders import DecodeStream
 
@@ -1150,6 +1150,8 @@ class NativeBackend:
             "correlation": job.telemetry,
             "prompt_tokens": len(job.prompt_tokens),
             "max_new_tokens": job.max_new_tokens,
+            "seed": job.seed,
+            "sampling": asdict(job.sampling),
             "thinking": job.thinking,
             "thinking_token_budget": job.thinking_token_budget,
             "reasoning_effort_sent": job.reasoning.sent if job.reasoning else None,

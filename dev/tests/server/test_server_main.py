@@ -53,6 +53,7 @@ class ServerMainTests(unittest.TestCase):
         server.serve_forever.side_effect = serve
         with (
             mock.patch.object(api, "parse_args", return_value=args),
+            mock.patch.object(api.telemetry, "run_manifest") as manifest,
             unprepared_hold(),
             mock.patch.object(api, "load_thinking_key", return_value=None),
             mock.patch.object(
@@ -112,6 +113,9 @@ class ServerMainTests(unittest.TestCase):
         backend.close.assert_called_once()
         server.server_bind.assert_called_once_with()
         server.server_activate.assert_called_once_with()
+        manifest.assert_called_once_with(
+            args, Path("model"), command, backend.status, server.instance_id
+        )
         self.assertEqual(order, ["bind", "runtime"])
 
     def test_main_takes_vision_from_the_ready_event(self):
@@ -387,6 +391,7 @@ class ServerMainTests(unittest.TestCase):
         ):
             api.main()
         self.assertEqual(held, [True])
+        self.assertFalse(api.assembly.is_held(served))
         # The tokenizer and every engine, a relaunched one too, are the
         # assembly's the link named, wherever the link points later.
         tokenizer.assert_called_once_with(
