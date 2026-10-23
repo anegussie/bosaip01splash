@@ -1,0 +1,192 @@
+--- a/startllamacpp.sh
++++ b/startllamacpp.sh
+@@ -48,6 +48,15 @@
+ SPLASH_PRESSURE_RESTART_INTERVAL="${SPLASH_PRESSURE_RESTART_INTERVAL:-5}"
+ SPLASH_PRESSURE_RESTART_SAMPLES="${SPLASH_PRESSURE_RESTART_SAMPLES:-3}"
+ QWEN_MTP_9B_MODEL="/Users/mymac/.lmstudio/models/unsloth/Qwen3.5-9B-MTP-GGUF/Qwen3.5-9B-UD-Q4_K_XL.gguf"
++SPLASH_QWEN_ROOT="${SPLASH_QWEN_ROOT:-/Users/mymac/splash/qwen3.5-9B}"
++SPLASH_QWEN_PYTHON="${SPLASH_QWEN_PYTHON:-$SPLASH_QWEN_ROOT/.venv/bin/python}"
++SPLASH_QWEN_BIN="${SPLASH_QWEN_BIN:-$SPLASH_QWEN_ROOT/build/splash}"
++SPLASH_QWEN_MODEL="${SPLASH_QWEN_MODEL:-$QWEN_MTP_9B_MODEL}"
++SPLASH_QWEN_MODEL_ID="unsloth/Qwen3.5-9B-MTP-GGUF:UD-Q4_K_XL"
++SPLASH_QWEN_ALIAS="qwen3.5-9b-splash"
++SPLASH_QWEN_MAX_CONTEXT="${SPLASH_QWEN_MAX_CONTEXT:-8K}"
++SPLASH_QWEN_MAX_TOKENS="${SPLASH_QWEN_MAX_TOKENS:-1024}"
++SPLASH_QWEN_QUEUE_SIZE="${SPLASH_QWEN_QUEUE_SIZE:-8}"
+ MLX_VLM_PYTHON="${MLX_VLM_PYTHON:-$HOME/mlx-project/.venv/bin/python3}"
+ MLX_LM_PYTHON="${MLX_LM_PYTHON:-$HOME/mlx-project/.venv/bin/python3}"
+ MLX_TARGET_ID="mlx-community/Qwen3.5-9B-4bit"
+@@ -121,6 +130,12 @@
+   local mlx_mtp_status=""
+   local mlx_apc_status="APC configuration invalid"
+   local splash_status=""
++  local splash_qwen_status=""
++  if [[ ! -x "$SPLASH_QWEN_BIN" || ! -x "$SPLASH_QWEN_PYTHON" ]]; then
++    splash_qwen_status=" - runtime not built"
++  elif [[ ! -f "$SPLASH_QWEN_MODEL" ]]; then
++    splash_qwen_status=" - GGUF model not installed"
++  fi
+   local splash_client_context="$SPLASH_BONSAI_OPENCODE_CONTEXT"
+   if [[ "$splash_client_context" == "auto" ]]; then
+     splash_client_context="$(splash_context_tokens "$SPLASH_BONSAI_MAX_CONTEXT" 2>/dev/null)" || splash_client_context=0
+@@ -192,6 +207,8 @@
+   echo "   ${SPLASH_BONSAI_MAX_CONTEXT} server / ${splash_client_context} OpenCode context | INT8 KV | ${SPLASH_BONSAI_STATE_FORMAT} state | ${SPLASH_BONSAI_PREFILL_CHUNK_TOKENS}-token chunks"
+   echo "   Source: ${SPLASH_HERETIC_MODEL}"
+   echo "   Separate option-16 prefix cache | DFlash2 draft; acceptance depends on these weights"
++  echo "17) Qwen3.5 9B Q4_K_XL - Splash target-only (${SPLASH_QWEN_MAX_CONTEXT}, int8 KV)${splash_qwen_status}"
++  echo "   Source: ${SPLASH_QWEN_MODEL} | no MTP or DFlash2 | ${SPLASH_QWEN_MAX_TOKENS} output tokens"
+   echo "18) Qwen3.6 35B A3B UD-Q2_K_XL - Splash SSD expert streaming (downloads on first run)${splash_status}"
+   echo "   ${SPLASH_QWEN36_MAX_CONTEXT} server context | ${SPLASH_QWEN36_MAX_TOKENS} output tokens | 8 GiB Metal budget | automatic expert RAM cache / SSD reads"
+   echo "   INT8 KV | BF16 state | 512-token prefill chunks | one active request | reasoning off | DFlash2"
+@@ -669,6 +686,41 @@
+   echo "OpenCode model synchronized: $model_id (Splash, int8 KV)"
+ }
+ 
++sync_opencode_qwen_splash() {
++  local config_path="${OPENCODE_CONFIG_PATH:-$HOME/.config/opencode/opencode.json}"
++  local temp_path="" model_id="local-llama/${SPLASH_QWEN_ALIAS}"
++  [[ -f "$config_path" ]] || return 0
++  command -v jq >/dev/null 2>&1 || {
++    echo "jq is required to synchronize OpenCode with Splash." >&2
++    return 1
++  }
++  temp_path="$(mktemp "${config_path}.tmp.XXXXXX")"
++  if ! jq --arg model "$model_id" --arg alias "$SPLASH_QWEN_ALIAS" \
++      --arg base_url "http://${HOST}:${PORT}/v1" \
++      --argjson context "$splash_qwen_client_context" \
++      --argjson output "$SPLASH_QWEN_MAX_TOKENS" \
++      '.provider["local-llama"].options.baseURL = $base_url |
++       .provider["local-llama"].models[$alias] = {
++         name: "Qwen3.5 9B Q4_K_XL via Splash (target-only, int8 KV)",
++         limit: {context: $context, output: $output}
++       } |
++       .model = $model | .small_model = $model |
++       .agent |= ((. // {}) | with_entries(
++         if (.value | type) == "object" and ((.value.model // "") | startswith("local-llama/"))
++         then .value.model = $model | .value.reasoningEffort = "none" else . end
++       )) |
++       .compaction = ((.compaction // {}) + {
++         auto: true, keep: {tokens: ([1536, (($context - $output) / 2 | floor)] | min)}, buffer: $output
++       })' "$config_path" > "$temp_path"; then
++    rm -f "$temp_path"
++    echo "Failed to update OpenCode model selection." >&2
++    return 1
++  fi
++  chmod 600 "$temp_path"
++  mv "$temp_path" "$config_path"
++  echo "OpenCode model synchronized: $model_id"
++}
++
+ sync_opencode_lithos() {
+   local config_path="${OPENCODE_CONFIG_PATH:-$HOME/.config/opencode/opencode.json}"
+   local temp_path=""
+@@ -778,7 +830,7 @@
+ Usage:
+   startllamacpp.sh                  Select a model, or choose 9 to stop serving
+   startllamacpp.sh --watch [1-7|10] Start a watchdog-managed server
+-  startllamacpp.sh --direct [1-8|10|14|15|16|18] Start the selected server without the watchdog
++  startllamacpp.sh --direct [1-8|10|14|15|16|17|18] Start the selected server without the watchdog
+   startllamacpp.sh --hermes [1-7]  Start a model and its matching Hermes profile
+   startllamacpp.sh --list           List model choices
+ 
+@@ -837,32 +889,32 @@
+   choice="$DIRECT_CHOICE"
+ else
+   print_models
+-  if ! read -r -p "Enter choice (1-10, 14-16 or 18; 9 stops): " choice; then
++  if ! read -r -p "Enter choice (1-10, 14-18; 9 stops): " choice; then
+     echo "No model choice received." >&2
+     exit 2
+   fi
+ fi
+ 
+ case "$choice" in
+-  1|2|3|4|5|6|7|8|10|14|15|16|18) ;;
++  1|2|3|4|5|6|7|8|10|14|15|16|17|18) ;;
+   9)
+     stop_llamacpp
+     exit $?
+     ;;
+   *)
+-    echo "Invalid choice: $choice (expected 1-10, 14-16 or 18; 9 stops)." >&2
++    echo "Invalid choice: $choice (expected 1-10, 14-18; 9 stops)." >&2
+     exit 2
+     ;;
+ esac
+ 
+-if [[ "$choice" == "8" || "$choice" == "10" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "18" ]]; then
++if [[ "$choice" == "8" || "$choice" == "10" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" ]]; then
+   if (( HERMES_LAUNCH == 1 )); then
+-    echo "Options 8, 10, and 14-16 or 18 do not use hermeslocal profiles; run them from the interactive menu or with --direct." >&2
++    echo "Options 8, 10, and 14-18 do not use hermeslocal profiles; run them from the interactive menu or with --direct." >&2
+     exit 2
+   fi
+   # Keep the reasoning-only profile direct; MTP option 10 is supervised by the
+   # watchdog unless the caller explicitly requests --direct.
+-  if [[ "$choice" == "8" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "18" ]]; then
++  if [[ "$choice" == "8" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" ]]; then
+     DIRECT_LAUNCH=1
+   fi
+ fi
+@@ -1425,6 +1477,61 @@
+       --prefill-chunk-size "$LITHOS_BONSAI_PREFILL" \
+       --warmup-prefill-tokens "$LITHOS_BONSAI_WARMUP_PREFILL" \
+       --host "$HOST" --port "$PORT"
++    ;;
++
++  17)
++    if ! splash_qwen_context="$(splash_context_tokens "$SPLASH_QWEN_MAX_CONTEXT")" ||
++       (( splash_qwen_context < 4096 || splash_qwen_context > 32768 )); then
++      echo "SPLASH_QWEN_MAX_CONTEXT must be 4096-32768 tokens (default 8K)." >&2
++      exit 1
++    fi
++    splash_qwen_client_context="$((splash_qwen_context - 1024))"
++    if ! splash_uint_in_range "$SPLASH_QWEN_MAX_TOKENS" 1 "$((splash_qwen_client_context - 1))"; then
++      echo "SPLASH_QWEN_MAX_TOKENS must be positive and smaller than the client context." >&2
++      exit 1
++    fi
++    if ! splash_uint_in_range "$SPLASH_QWEN_QUEUE_SIZE" 1 32; then
++      echo "SPLASH_QWEN_QUEUE_SIZE must be 1-32 requests (default 8)." >&2
++      exit 1
++    fi
++    require_model "$SPLASH_QWEN_MODEL" "Qwen3.5 9B Splash"
++    for splash_qwen_required in "$SPLASH_QWEN_PYTHON" "$SPLASH_QWEN_BIN"; do
++      if [[ ! -x "$splash_qwen_required" ]]; then
++        echo "Qwen Splash runtime is missing or not executable: $splash_qwen_required" >&2
++        exit 1
++      fi
++    done
++    if [[ ! -f "$SPLASH_QWEN_ROOT/dev/tests/prepare_qwen35_local_gguf.py" ]]; then
++      echo "Qwen Splash local GGUF preparation helper is missing." >&2
++      exit 1
++    fi
++    command -v lsof >/dev/null 2>&1 || { echo "Option 17 requires lsof." >&2; exit 1; }
++    if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
++      echo "Port $PORT is already in use; choose option 9 before starting Splash." >&2
++      exit 1
++    fi
++    "$SPLASH_QWEN_BIN" device-check
++    "$SPLASH_QWEN_PYTHON" "$SPLASH_QWEN_ROOT/dev/tests/prepare_qwen35_local_gguf.py" \
++      "$SPLASH_QWEN_MODEL" --model "$SPLASH_QWEN_MODEL_ID"
++    sync_opencode_qwen_splash
++    splash_qwen_log_dir="${LLAMA_LOG_DIR:-$HOME/.local/state/llama-server}"
++    mkdir -p "$splash_qwen_log_dir"
++    splash_qwen_log="$splash_qwen_log_dir/qwen-9b-splash-$(date '+%Y%m%d-%H%M%S').log"
++    : > "$splash_qwen_log"
++    ln -sfn "$splash_qwen_log" "$splash_qwen_log_dir/qwen-9b-splash-latest.log"
++    ln -sfn "$splash_qwen_log" "$splash_qwen_log_dir/splash-latest.log"
++    echo "Starting Qwen3.5 9B Splash on http://${HOST}:${PORT}"
++    echo "Target-only | context: $splash_qwen_context | client: $splash_qwen_client_context | OpenCode output: $SPLASH_QWEN_MAX_TOKENS | int8 KV"
++    echo "Run log: $splash_qwen_log"
++    echo "Press Ctrl-C in this Terminal to stop it."
++    cd "$SPLASH_QWEN_ROOT"
++    "$SPLASH_QWEN_PYTHON" -u -m server.server "$SPLASH_QWEN_ROOT/build/qwen35-gguf-model" \
++      --tokenizer "$SPLASH_QWEN_ROOT/build/qwen35-gguf-model/tokenizer" \
++      --model "$SPLASH_QWEN_MODEL_ID" --binary "$SPLASH_QWEN_BIN" \
++      --served-model-name "$SPLASH_QWEN_ALIAS" --announce-served-name \
++      --host "$HOST" --port "$PORT" --max-context "$splash_qwen_context" \
++      --queue-size "$SPLASH_QWEN_QUEUE_SIZE" --kv-format int8 --default-reasoning-effort none \
++      2>&1 | tee -a "$splash_qwen_log"
+     ;;
+ 
+   14|16|18)

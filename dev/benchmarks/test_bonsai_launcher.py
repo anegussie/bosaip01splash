@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test the external option-14 launcher on macOS using a mock server and temporary config.
+"""Test the external Splash launcher profiles using a mock server and temporary config.
 
 Run with OPTION14_LAUNCHER=/path/to/startllamacpp.sh python3 this_file.py.
 """
@@ -74,7 +74,7 @@ print('Ready test server',flush=True)
         }
         for name in list(self.env):
             if (
-                name.startswith("SPLASH_BONSAI_")
+                name.startswith(("SPLASH_BONSAI_", "SPLASH_QWEN36_"))
                 and name != "SPLASH_BONSAI_STARTUP_RETRY_DELAY"
             ):
                 del self.env[name]
@@ -151,6 +151,97 @@ print('Ready test server',flush=True)
         self.assertNotEqual(r.returncode, 0)
         self.assertEqual(self.config.read_bytes(), before)
         self.assertFalse((self.root / "attempts").exists())
+
+    def test_option18_streaming_and_independent_profile(self):
+        cache = self.root / "qwen-cache"
+        r = self.run_launcher(
+            "18",
+            SPLASH_QWEN36_CACHE_DIR=str(cache),
+            SPLASH_BONSAI_MAX_CONTEXT="24K",
+            SPLASH_BONSAI_MAX_TOKENS="4096",
+            SPLASH_BONSAI_STATE_FORMAT="fp32",
+            SPLASH_BONSAI_MAX_ACTIVE_REQUESTS="3",
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        for flag, value in {
+            "--model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q2_K_XL",
+            "--served-model-name": "qwen3.6-35b-a3b-q2-splash",
+            "--max-context": "24K",
+            "--expert-memory": "auto",
+            "--max-memory": "8G",
+            "--kv-format": "int8",
+            "--state-format": "bf16",
+            "--max-active-requests": "1",
+            "--prefill-chunk-tokens": "512",
+            "--max-cache-disk": "2147483648",
+            "--cache-dir": str(cache),
+        }.items():
+            self.assertEqual(args[args.index(flag) + 1], value, flag)
+        self.assertIn("--language-only", args)
+        self.assertIn("--persistent-cache", args)
+        config = json.loads(self.config.read_text())
+        self.assertEqual(config["model"], "local-llama/qwen3.6-35b-a3b-q2-splash")
+        self.assertEqual(
+            config["provider"]["local-llama"]["models"]["qwen3.6-35b-a3b-q2-splash"][
+                "limit"
+            ],
+            {"context": 22528, "output": 2048},
+        )
+        self.assertEqual(config["compaction"]["buffer"], 2048)
+        self.assertTrue(
+            (self.root / "logs/qwen3.6-35b-a3b-q2-splash-latest.log").is_symlink()
+        )
+
+    def test_option18_menu_and_interactive_selection(self):
+        r = subprocess.run(
+            ["bash", LAUNCHER],
+            input="18\n",
+            env=self.env,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("18) Qwen3.6 35B A3B UD-Q2_K_XL", r.stdout)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--expert-memory") + 1], "auto")
+
+    def test_option18_overrides_and_cache_opt_out(self):
+        r = self.run_launcher(
+            "18",
+            SPLASH_QWEN36_MAX_CONTEXT="16K",
+            SPLASH_QWEN36_OPENCODE_CONTEXT="12288",
+            SPLASH_QWEN36_MAX_TOKENS="3072",
+            SPLASH_QWEN36_MAX_CACHE_DISK="0",
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--max-context") + 1], "16K")
+        self.assertNotIn("--persistent-cache", args)
+        self.assertNotIn("--cache-dir", args)
+        config = json.loads(self.config.read_text())
+        self.assertEqual(
+            config["provider"]["local-llama"]["models"]["qwen3.6-35b-a3b-q2-splash"][
+                "limit"
+            ],
+            {"context": 12288, "output": 3072},
+        )
+
+    def test_option18_invalid_context_and_output_do_not_mutate_config(self):
+        before = self.config.read_bytes()
+        for overrides in (
+            {"SPLASH_QWEN36_MAX_CONTEXT": "25K"},
+            {"SPLASH_QWEN36_OPENCODE_CONTEXT": "24576"},
+            {"SPLASH_QWEN36_MAX_TOKENS": "22528"},
+            {"SPLASH_QWEN36_MAX_CACHE_DISK": "9G"},
+            {"SPLASH_QWEN36_PERSISTENT_CACHE": "2"},
+        ):
+            with self.subTest(overrides=overrides):
+                r = self.run_launcher("18", **overrides)
+                self.assertNotEqual(r.returncode, 0)
+                self.assertEqual(self.config.read_bytes(), before)
+                self.assertFalse((self.root / "attempts").exists())
 
     def test_state_and_chunk_overrides(self):
         r = self.run_launcher(

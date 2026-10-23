@@ -1,0 +1,670 @@
+{
+  "classification": "current-profile characterization; no matched baseline",
+  "started_utc": "2026-10-23T18:00:30Z",
+  "completed_utc": "2026-10-23T18:10:38Z",
+  "checkout_commit": "b3a4348ff03b75b93cef103103cf76f988485396",
+  "build_id": "src-17aa01b274ec2db4791bdc212074156f02c28a51532ee90eaf29764eeca8a7e9",
+  "device": {
+    "device_name": "Apple M5",
+    "macos_version": "26.5.2",
+    "apple_gpu_family": 10,
+    "gpu_core_count": 8,
+    "physical_memory_bytes": 17179869184,
+    "recommended_max_working_set_bytes": 12713115648,
+    "max_buffer_length_bytes": 9534832640,
+    "max_threadgroup_memory_bytes": 32768,
+    "max_threadgroup_width": 1024,
+    "has_unified_memory": true
+  },
+  "target_sha256": "96b9c0af5c77a4ecaabe3983175112b5ece763261c1ece12b2494b692a70dad7",
+  "assembly": {
+    "family": "Qwen3.6-35B-A3B",
+    "files": {
+      "config.json": {
+        "bytes": 296,
+        "ctime_ns": 1792777565629598789,
+        "digest": "98a92a176f9daf4ad495a2aa789feac57942417bf2071e2280db3d2c0ffb24b9",
+        "mtime_ns": 1792777565629598789,
+        "path": "/Users/mymac/splash/splash/install/models/.metadata/beacca890c38afc365ce0ad8b009fc6b3daf1df2196c38b9cb7573ca5b30a01b/config.json"
+      },
+      "draft/config.json": {
+        "bytes": 1291,
+        "ctime_ns": 1792773764071231583,
+        "digest": "8608b21225ca5368677b627f61eb2441c572e875",
+        "mtime_ns": 1792773764070794539,
+        "path": "/Users/mymac/.cache/huggingface/hub/models--incoai--Qwen3.6-35B-A3B-DFlash2/snapshots/51ef7b6923ad6c14cb1bb41c37a9041446496ab6/config.json"
+      },
+      "draft/model.safetensors": {
+        "bytes": 1052513456,
+        "ctime_ns": 1792773916769054780,
+        "digest": "d1f16c0ff85afbe6166fabfae998af3ec16fa11da87da4391b5e0e0a7c796a4d",
+        "mtime_ns": 1792773916768058566,
+        "path": "/Users/mymac/.cache/huggingface/hub/models--incoai--Qwen3.6-35B-A3B-DFlash2/snapshots/51ef7b6923ad6c14cb1bb41c37a9041446496ab6/model.safetensors"
+      },
+      "target/Qwen3.6-35B-A3B-UD-Q2_K_XL.gguf": {
+        "bytes": 12290628576,
+        "ctime_ns": 1792777565172976884,
+        "digest": "96b9c0af5c77a4ecaabe3983175112b5ece763261c1ece12b2494b692a70dad7",
+        "mtime_ns": 1792777565171291107,
+        "path": "/Users/mymac/.cache/huggingface/hub/models--unsloth--Qwen3.6-35B-A3B-GGUF/snapshots/a483e9e6cbd595906af30beda3187c2663a1118c/Qwen3.6-35B-A3B-UD-Q2_K_XL.gguf"
+      },
+      "tokenizer/chat_template.jinja": {
+        "bytes": 8057,
+        "ctime_ns": 1792777565638244391,
+        "digest": "55d4931433fe502b794226ee7f4d206a6bdd436ac9f80eb7d8ebb4c639f9ea0c",
+        "mtime_ns": 1792777565638244391,
+        "path": "/Users/mymac/splash/splash/install/models/.metadata/beacca890c38afc365ce0ad8b009fc6b3daf1df2196c38b9cb7573ca5b30a01b/tokenizer/chat_template.jinja"
+      },
+      "tokenizer/config.json": {
+        "bytes": 296,
+        "ctime_ns": 1792777565629598789,
+        "digest": "98a92a176f9daf4ad495a2aa789feac57942417bf2071e2280db3d2c0ffb24b9",
+        "mtime_ns": 1792777565629598789,
+        "path": "/Users/mymac/splash/splash/install/models/.metadata/beacca890c38afc365ce0ad8b009fc6b3daf1df2196c38b9cb7573ca5b30a01b/config.json"
+      },
+      "tokenizer/tokenizer.json": {
+        "bytes": 10085571,
+        "ctime_ns": 1792777565637832728,
+        "digest": "8e852142d8ab38bb7678f650bd504ba28c29d9c6357e6ed762bebdbd474689eb",
+        "mtime_ns": 1792777565637832728,
+        "path": "/Users/mymac/splash/splash/install/models/.metadata/beacca890c38afc365ce0ad8b009fc6b3daf1df2196c38b9cb7573ca5b30a01b/tokenizer/tokenizer.json"
+      },
+      "tokenizer/tokenizer_config.json": {
+        "bytes": 6198,
+        "ctime_ns": 1792777565638148571,
+        "digest": "c0435ea80b819a4fb16914a820960ff7c38f9d48cb94e7e8a28780fe01e8dea0",
+        "mtime_ns": 1792777565638148571,
+        "path": "/Users/mymac/splash/splash/install/models/.metadata/beacca890c38afc365ce0ad8b009fc6b3daf1df2196c38b9cb7573ca5b30a01b/tokenizer/tokenizer_config.json"
+      }
+    },
+    "metadata": "beacca890c38afc365ce0ad8b009fc6b3daf1df2196c38b9cb7573ca5b30a01b",
+    "model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q2_K_XL",
+    "sources": {
+      "draft": {
+        "repo": "incoai/Qwen3.6-35B-A3B-DFlash2",
+        "revision": "51ef7b6923ad6c14cb1bb41c37a9041446496ab6"
+      },
+      "target": {
+        "repo": "unsloth/Qwen3.6-35B-A3B-GGUF",
+        "revision": "a483e9e6cbd595906af30beda3187c2663a1118c"
+      }
+    },
+    "target_format": "gguf",
+    "version": 1,
+    "vision_format": "none"
+  },
+  "profile": {
+    "context_tokens": 24576,
+    "opencode_context_tokens": 22528,
+    "opencode_output_limit": 2048,
+    "kv": "int8",
+    "state": "bf16",
+    "prefill_chunk_tokens": 512,
+    "max_active_requests": 1,
+    "metal_budget_bytes": 8589934592,
+    "expert_slots": 3428,
+    "total_experts": 10240,
+    "expert_arena_bytes": 3584131072,
+    "expert_staging_bytes": 314572800,
+    "configured_disk_cache_bytes": 2147483648,
+    "effective_disk_cache_bytes": 0,
+    "verify_rows": "auto",
+    "speculation": "Qwen3.6 DFlash2"
+  },
+  "requests_delta": {
+    "submitted": 21,
+    "completed": 21,
+    "cancelled": 0,
+    "failed": 0
+  },
+  "four_k_medians": {
+    "prefill_tps": 1280.9088347039528,
+    "decode_tps": 119.27940213782499,
+    "request_seconds": 4.180451165884733
+  },
+  "four_k_decode_spread_pct": 17.703184452694064,
+  "varied_coding_decode_range": [
+    59.11453811225112,
+    69.22427279901424
+  ],
+  "peak_metal_bytes": 7792885760,
+  "swap_start": "vm.swapusage: total = 5120.00M  used = 4034.88M  free = 1085.12M  (encrypted)",
+  "swap_end": "vm.swapusage: total = 5120.00M  used = 3994.88M  free = 1125.12M  (encrypted)",
+  "rows": [
+    {
+      "key": "smoke-recall",
+      "phase": "smoke",
+      "prompt_tokens": 402,
+      "cached_tokens": 0,
+      "output_tokens": 128,
+      "prefill_tps": 344.07792252255337,
+      "decode_tps": 96.15188060207734,
+      "request_seconds": 2.493736374657601,
+      "draft_acceptance": 0.9090909090909091,
+      "correct": true,
+      "excluded": false,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 5849006080,
+        "decode": 5276631040
+      }
+    },
+    {
+      "key": "smoke-repeated-prefix",
+      "phase": "smoke",
+      "prompt_tokens": 402,
+      "cached_tokens": 384,
+      "output_tokens": 128,
+      "prefill_tps": 48.23758619118699,
+      "decode_tps": 111.58125575478131,
+      "request_seconds": 1.5151847093366086,
+      "draft_acceptance": 0.9568965517241379,
+      "correct": true,
+      "excluded": false,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 1600978944,
+        "decode": 4178804736
+      }
+    },
+    {
+      "key": "smoke-tool-call",
+      "phase": "smoke",
+      "prompt_tokens": 295,
+      "cached_tokens": 0,
+      "output_tokens": 37,
+      "prefill_tps": 206.0034287350342,
+      "decode_tps": 41.234073339172745,
+      "request_seconds": 2.2468284158967435,
+      "draft_acceptance": 0.54,
+      "correct": true,
+      "excluded": false,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 6507151360,
+        "decode": 4639883264
+      }
+    },
+    {
+      "key": "smoke-tool-result",
+      "phase": "smoke",
+      "prompt_tokens": 351,
+      "cached_tokens": 288,
+      "output_tokens": 12,
+      "prefill_tps": 79.81938014549932,
+      "decode_tps": 48.76938583086777,
+      "request_seconds": 0.9160512909293175,
+      "draft_acceptance": 0.6428571428571429,
+      "correct": true,
+      "excluded": false,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 2826813440,
+        "decode": 1380286464
+      }
+    },
+    {
+      "key": "4k-trial-1",
+      "phase": "full",
+      "prompt_tokens": 3986,
+      "cached_tokens": 0,
+      "output_tokens": 128,
+      "prefill_tps": 1285.2061359726167,
+      "decode_tps": 101.41728661643184,
+      "request_seconds": 4.358630375005305,
+      "draft_acceptance": 0.9736842105263158,
+      "correct": true,
+      "excluded": false,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 7488389120,
+        "decode": 5010948096
+      }
+    },
+    {
+      "key": "4k-repeated-prefix",
+      "phase": "full",
+      "prompt_tokens": 3986,
+      "cached_tokens": 3968,
+      "output_tokens": 128,
+      "prefill_tps": 48.884483250274975,
+      "decode_tps": 112.02979463262608,
+      "request_seconds": 1.5040414580143988,
+      "draft_acceptance": 1.0,
+      "correct": true,
+      "excluded": false,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 1532149760,
+        "decode": 4109434880
+      }
+    },
+    {
+      "key": "4k-trial-2",
+      "phase": "full",
+      "prompt_tokens": 3986,
+      "cached_tokens": 0,
+      "output_tokens": 128,
+      "prefill_tps": 1280.9088347039528,
+      "decode_tps": 121.617454690316,
+      "request_seconds": 4.157551458105445,
+      "draft_acceptance": 1.0,
+      "correct": true,
+      "excluded": false,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 7572176896,
+        "decode": 3304833024
+      }
+    },
+    {
+      "key": "4k-trial-3",
+      "phase": "full",
+      "prompt_tokens": 3986,
+      "cached_tokens": 0,
+      "output_tokens": 128,
+      "prefill_tps": 1279.8789605687466,
+      "decode_tps": 119.27940213782499,
+      "request_seconds": 4.180451165884733,
+      "draft_acceptance": 0.9736842105263158,
+      "correct": true,
+      "excluded": false,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 7544569856,
+        "decode": 3341352960
+      }
+    },
+    {
+      "key": "12k-first",
+      "phase": "full",
+      "prompt_tokens": 12176,
+      "cached_tokens": 0,
+      "output_tokens": 128,
+      "prefill_tps": 1184.3377556974613,
+      "decode_tps": 113.54005371249156,
+      "request_seconds": 11.411403458099812,
+      "draft_acceptance": 0.9736842105263158,
+      "correct": true,
+      "excluded": false,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 22402007040,
+        "decode": 3562651648
+      }
+    },
+    {
+      "key": "20k-first",
+      "phase": "full",
+      "prompt_tokens": 20366,
+      "cached_tokens": 0,
+      "output_tokens": 128,
+      "prefill_tps": 1032.9281738589646,
+      "decode_tps": 106.85936130075609,
+      "request_seconds": 20.926179707981646,
+      "draft_acceptance": 0.9736842105263158,
+      "correct": true,
+      "excluded": false,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 30970494976,
+        "decode": 3972644864
+      }
+    },
+    {
+      "key": "20k-repeated-prefix",
+      "phase": "full",
+      "prompt_tokens": 20366,
+      "cached_tokens": 0,
+      "output_tokens": 128,
+      "prefill_tps": 1035.7347825279894,
+      "decode_tps": 107.73814371420039,
+      "request_seconds": 20.84441174985841,
+      "draft_acceptance": 0.9823008849557522,
+      "correct": true,
+      "excluded": false,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 30904123392,
+        "decode": 3887644672
+      }
+    },
+    {
+      "key": "coding-merge_intervals",
+      "phase": "full",
+      "prompt_tokens": 4015,
+      "cached_tokens": 0,
+      "output_tokens": 121,
+      "prefill_tps": 1102.3756951281857,
+      "decode_tps": 65.12282164161608,
+      "request_seconds": 5.49125162512064,
+      "draft_acceptance": 0.8571428571428571,
+      "correct": true,
+      "excluded": false,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 8955609088,
+        "decode": 8893087744
+      }
+    },
+    {
+      "key": "coding-stable_unique",
+      "phase": "full",
+      "prompt_tokens": 4016,
+      "cached_tokens": 0,
+      "output_tokens": 41,
+      "prefill_tps": 1118.54735903337,
+      "decode_tps": 59.00653644907515,
+      "request_seconds": 4.274194250348955,
+      "draft_acceptance": 0.673469387755102,
+      "correct": true,
+      "excluded": false,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 8511815680,
+        "decode": 3186196480
+      }
+    },
+    {
+      "key": "coding-chunked",
+      "phase": "full",
+      "prompt_tokens": 4020,
+      "cached_tokens": 0,
+      "output_tokens": 64,
+      "prefill_tps": 1106.7002163846691,
+      "decode_tps": 64.19001875774993,
+      "request_seconds": 4.620932915713638,
+      "draft_acceptance": 0.7571428571428571,
+      "correct": true,
+      "excluded": false,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 8626454528,
+        "decode": 4700618752
+      }
+    },
+    {
+      "key": "varied-merge_intervals",
+      "phase": "real-code",
+      "prompt_tokens": 3989,
+      "cached_tokens": 0,
+      "output_tokens": 145,
+      "prefill_tps": 1246.3599665054428,
+      "decode_tps": 59.11453811225112,
+      "request_seconds": 5.643500625155866,
+      "draft_acceptance": 0.7531645569620253,
+      "correct": true,
+      "excluded": false,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 7682883584,
+        "decode": 11672338432
+      }
+    },
+    {
+      "key": "varied-stable_unique",
+      "phase": "real-code",
+      "prompt_tokens": 3990,
+      "cached_tokens": 0,
+      "output_tokens": 46,
+      "prefill_tps": 1251.1716014776996,
+      "decode_tps": 62.93935164075896,
+      "request_seconds": 3.9088703747838736,
+      "draft_acceptance": 0.7916666666666666,
+      "correct": true,
+      "excluded": false,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 7687864320,
+        "decode": 3468738560
+      }
+    },
+    {
+      "key": "varied-chunked",
+      "phase": "real-code",
+      "prompt_tokens": 3994,
+      "cached_tokens": 0,
+      "output_tokens": 96,
+      "prefill_tps": 1249.8274993968346,
+      "decode_tps": 69.22427279901424,
+      "request_seconds": 4.572778292000294,
+      "draft_acceptance": 0.8080808080808081,
+      "correct": true,
+      "excluded": false,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 7680933888,
+        "decode": 6371344384
+      }
+    },
+    {
+      "key": "varied-explanation",
+      "phase": "real-code",
+      "prompt_tokens": 3939,
+      "cached_tokens": 0,
+      "output_tokens": 41,
+      "prefill_tps": 1239.3367173088363,
+      "decode_tps": 27.217105406405818,
+      "request_seconds": 4.652698458172381,
+      "draft_acceptance": 0.16666666666666666,
+      "correct": false,
+      "excluded": true,
+      "error": "Incomplete explanation stopped mid-sentence before quoting a chat-control marker from the source. Raw response retained; attribution is tested with escaped-marker input.",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 7683391488,
+        "decode": 5799870464
+      }
+    },
+    {
+      "key": "varied-prose-256",
+      "phase": "prose",
+      "prompt_tokens": 3961,
+      "cached_tokens": 0,
+      "output_tokens": 14,
+      "prefill_tps": 1239.469515808947,
+      "decode_tps": 21.655802672326047,
+      "request_seconds": 3.8078872920013964,
+      "draft_acceptance": 0.16666666666666666,
+      "correct": false,
+      "excluded": true,
+      "error": "Incomplete explanation stopped mid-sentence before quoting a chat-control marker from the source. Raw response retained; attribution is tested with escaped-marker input.",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 8577056768,
+        "decode": 2894790656
+      }
+    },
+    {
+      "key": "varied-prose-escaped",
+      "phase": "prose",
+      "prompt_tokens": 3981,
+      "cached_tokens": 0,
+      "output_tokens": 256,
+      "prefill_tps": 1260.430370008026,
+      "decode_tps": 41.26155505577834,
+      "request_seconds": 9.343967291992158,
+      "draft_acceptance": 0.21368715083798884,
+      "correct": true,
+      "excluded": false,
+      "error": "",
+      "thermal": [
+        "nominal",
+        "nominal"
+      ],
+      "memory_pressure": [
+        "warning",
+        "warning"
+      ],
+      "expert_read_bytes": {
+        "prefill": 7565213696,
+        "decode": 16542760960
+      }
+    }
+  ],
+  "raw_directory": "/Users/mymac/splash/splash/build/validation/performance-option18-20261023",
+  "active_log": "/Users/mymac/.local/state/llama-server/qwen3.6-35b-a3b-q2-splash-20261023-134906.log",
+  "diagnostics": {
+    "excluded_early_stop_keys": [
+      "varied-explanation",
+      "varied-prose-256"
+    ],
+    "note": "Raw source contains a chat-control marker. Both explanations stopped before quoting it; an escaped-marker prompt produced 256 tokens. Attribution to marker emission is an inference."
+  },
+  "system_vm_counter_deltas": {
+    "Pageouts": 2644,
+    "Swapins": 1961,
+    "Swapouts": 0
+  },
+  "prose_output_cap": 256
+}
