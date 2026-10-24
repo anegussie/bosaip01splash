@@ -243,7 +243,7 @@ print('Ready test server',flush=True)
                 self.assertEqual(self.config.read_bytes(), before)
                 self.assertFalse((self.root / "attempts").exists())
 
-    def test_option19_q4_profile_is_independent_of_option18(self):
+    def test_option19_iq3_profile_is_independent_of_option18(self):
         r = self.run_launcher(
             "19",
             SPLASH_QWEN36_MAX_CONTEXT="invalid",
@@ -254,8 +254,8 @@ print('Ready test server',flush=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         args = json.loads((self.root / "argv.json").read_text())
         for flag, value in {
-            "--model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_M",
-            "--served-model-name": "qwen3.6-35b-a3b-q4-splash",
+            "--model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+            "--served-model-name": "qwen3.6-35b-a3b-iq3-xxs-splash",
             "--max-context": "24K",
             "--expert-memory": "auto",
             "--max-memory": "8G",
@@ -266,23 +266,23 @@ print('Ready test server',flush=True)
             "--max-cache-disk": "2147483648",
             "--default-reasoning-effort": "none",
             "--cache-dir": str(
-                pathlib.Path.home() / "Library/Caches/Splash/qwen36-option19"
+                pathlib.Path.home() / "Library/Caches/Splash/qwen36-option19-iq3-xxs"
             ),
         }.items():
             self.assertEqual(args[args.index(flag) + 1], value, flag)
         self.assertIn("--persistent-cache", args)
         self.assertIn("--language-only", args)
         config = json.loads(self.config.read_text())
-        self.assertEqual(config["model"], "local-llama/qwen3.6-35b-a3b-q4-splash")
+        self.assertEqual(config["model"], "local-llama/qwen3.6-35b-a3b-iq3-xxs-splash")
         self.assertEqual(
-            config["provider"]["local-llama"]["models"]["qwen3.6-35b-a3b-q4-splash"][
-                "limit"
-            ],
+            config["provider"]["local-llama"]["models"][
+                "qwen3.6-35b-a3b-iq3-xxs-splash"
+            ]["limit"],
             {"context": 22528, "output": 2048},
         )
         self.assertEqual(config["compaction"]["buffer"], 2048)
         self.assertTrue(
-            (self.root / "logs/qwen3.6-35b-a3b-q4-splash-latest.log").is_symlink()
+            (self.root / "logs/qwen3.6-35b-a3b-iq3-xxs-splash-latest.log").is_symlink()
         )
 
     def test_option19_interactive_selection_and_overrides(self):
@@ -291,37 +291,37 @@ print('Ready test server',flush=True)
             input="19\n",
             env={
                 **self.env,
-                "SPLASH_QWEN36_Q4_MAX_CONTEXT": "16K",
-                "SPLASH_QWEN36_Q4_OPENCODE_CONTEXT": "12288",
-                "SPLASH_QWEN36_Q4_MAX_TOKENS": "3072",
-                "SPLASH_QWEN36_Q4_MAX_CACHE_DISK": "0",
+                "SPLASH_QWEN36_IQ3_MAX_CONTEXT": "16K",
+                "SPLASH_QWEN36_IQ3_OPENCODE_CONTEXT": "12288",
+                "SPLASH_QWEN36_IQ3_MAX_TOKENS": "3072",
+                "SPLASH_QWEN36_IQ3_MAX_CACHE_DISK": "0",
             },
             capture_output=True,
             text=True,
             timeout=15,
         )
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("19) Qwen3.6 35B A3B UD-Q4_K_M", r.stdout)
+        self.assertIn("19) Qwen3.6 35B A3B UD-IQ3_XXS", r.stdout)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertEqual(args[args.index("--max-context") + 1], "16K")
         self.assertNotIn("--persistent-cache", args)
         self.assertNotIn("--cache-dir", args)
         config = json.loads(self.config.read_text())
         self.assertEqual(
-            config["provider"]["local-llama"]["models"]["qwen3.6-35b-a3b-q4-splash"][
-                "limit"
-            ],
+            config["provider"]["local-llama"]["models"][
+                "qwen3.6-35b-a3b-iq3-xxs-splash"
+            ]["limit"],
             {"context": 12288, "output": 3072},
         )
 
     def test_option19_invalid_settings_do_not_mutate_config(self):
         before = self.config.read_bytes()
         for overrides in (
-            {"SPLASH_QWEN36_Q4_MAX_CONTEXT": "25K"},
-            {"SPLASH_QWEN36_Q4_OPENCODE_CONTEXT": "24576"},
-            {"SPLASH_QWEN36_Q4_MAX_TOKENS": "22528"},
-            {"SPLASH_QWEN36_Q4_MAX_CACHE_DISK": "9G"},
-            {"SPLASH_QWEN36_Q4_PERSISTENT_CACHE": "2"},
+            {"SPLASH_QWEN36_IQ3_MAX_CONTEXT": "25K"},
+            {"SPLASH_QWEN36_IQ3_OPENCODE_CONTEXT": "24576"},
+            {"SPLASH_QWEN36_IQ3_MAX_TOKENS": "22528"},
+            {"SPLASH_QWEN36_IQ3_MAX_CACHE_DISK": "9G"},
+            {"SPLASH_QWEN36_IQ3_PERSISTENT_CACHE": "2"},
         ):
             with self.subTest(overrides=overrides):
                 r = self.run_launcher("19", **overrides)
