@@ -1,0 +1,157 @@
+--- a/startllamacpp.sh
++++ b/startllamacpp.sh
+@@ -30,6 +30,13 @@
+ SPLASH_QWEN36_MAX_CACHE_DISK="${SPLASH_QWEN36_MAX_CACHE_DISK:-2G}"
+ SPLASH_QWEN36_PERSISTENT_CACHE="${SPLASH_QWEN36_PERSISTENT_CACHE:-1}"
+ SPLASH_QWEN36_CACHE_DIR="${SPLASH_QWEN36_CACHE_DIR:-$HOME/Library/Caches/Splash/qwen36-option18}"
++SPLASH_QWEN36_Q4_MODEL_ID="unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_M"
++SPLASH_QWEN36_Q4_MAX_CONTEXT="${SPLASH_QWEN36_Q4_MAX_CONTEXT:-24K}"
++SPLASH_QWEN36_Q4_OPENCODE_CONTEXT="${SPLASH_QWEN36_Q4_OPENCODE_CONTEXT:-auto}"
++SPLASH_QWEN36_Q4_MAX_TOKENS="${SPLASH_QWEN36_Q4_MAX_TOKENS:-2048}"
++SPLASH_QWEN36_Q4_MAX_CACHE_DISK="${SPLASH_QWEN36_Q4_MAX_CACHE_DISK:-2G}"
++SPLASH_QWEN36_Q4_PERSISTENT_CACHE="${SPLASH_QWEN36_Q4_PERSISTENT_CACHE:-1}"
++SPLASH_QWEN36_Q4_CACHE_DIR="${SPLASH_QWEN36_Q4_CACHE_DIR:-$HOME/Library/Caches/Splash/qwen36-option19}"
+ SPLASH_BONSAI_MAX_CONTEXT="${SPLASH_BONSAI_MAX_CONTEXT:-24K}"
+ SPLASH_BONSAI_OPENCODE_CONTEXT="${SPLASH_BONSAI_OPENCODE_CONTEXT:-auto}"
+ splash_bonsai_default_output=0
+@@ -214,6 +221,11 @@
+   echo "   INT8 KV | BF16 state | 512-token prefill chunks | one active request | reasoning off | DFlash2"
+   echo "   Source: ${SPLASH_QWEN36_MODEL_ID}"
+   echo "   Separate option-18 prefix cache: ${SPLASH_QWEN36_MAX_CACHE_DISK} | persistent: ${SPLASH_QWEN36_PERSISTENT_CACHE}"
++  echo "19) Qwen3.6 35B A3B UD-Q4_K_M - Splash SSD expert streaming (downloads on first run)${splash_status}"
++  echo "   ${SPLASH_QWEN36_Q4_MAX_CONTEXT} server context | ${SPLASH_QWEN36_Q4_MAX_TOKENS} output tokens | 8 GiB Metal budget | automatic expert RAM cache / SSD reads"
++  echo "   INT8 KV | BF16 state | 512-token prefill chunks | one active request | reasoning off | DFlash2"
++  echo "   Source: ${SPLASH_QWEN36_Q4_MODEL_ID}"
++  echo "   Separate option-19 prefix cache: ${SPLASH_QWEN36_Q4_MAX_CACHE_DISK} | persistent: ${SPLASH_QWEN36_Q4_PERSISTENT_CACHE}"
+ 
+ }
+ 
+@@ -830,7 +842,7 @@
+ Usage:
+   startllamacpp.sh                  Select a model, or choose 9 to stop serving
+   startllamacpp.sh --watch [1-7|10] Start a watchdog-managed server
+-  startllamacpp.sh --direct [1-8|10|14|15|16|17|18] Start the selected server without the watchdog
++  startllamacpp.sh --direct [1-8|10|14|15|16|17|18|19] Start the selected server without the watchdog
+   startllamacpp.sh --hermes [1-7]  Start a model and its matching Hermes profile
+   startllamacpp.sh --list           List model choices
+ 
+@@ -889,32 +901,32 @@
+   choice="$DIRECT_CHOICE"
+ else
+   print_models
+-  if ! read -r -p "Enter choice (1-10, 14-18; 9 stops): " choice; then
++  if ! read -r -p "Enter choice (1-10, 14-19; 9 stops): " choice; then
+     echo "No model choice received." >&2
+     exit 2
+   fi
+ fi
+ 
+ case "$choice" in
+-  1|2|3|4|5|6|7|8|10|14|15|16|17|18) ;;
++  1|2|3|4|5|6|7|8|10|14|15|16|17|18|19) ;;
+   9)
+     stop_llamacpp
+     exit $?
+     ;;
+   *)
+-    echo "Invalid choice: $choice (expected 1-10, 14-18; 9 stops)." >&2
++    echo "Invalid choice: $choice (expected 1-10, 14-19; 9 stops)." >&2
+     exit 2
+     ;;
+ esac
+ 
+-if [[ "$choice" == "8" || "$choice" == "10" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" ]]; then
++if [[ "$choice" == "8" || "$choice" == "10" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" ]]; then
+   if (( HERMES_LAUNCH == 1 )); then
+-    echo "Options 8, 10, and 14-18 do not use hermeslocal profiles; run them from the interactive menu or with --direct." >&2
++    echo "Options 8, 10, and 14-19 do not use hermeslocal profiles; run them from the interactive menu or with --direct." >&2
+     exit 2
+   fi
+   # Keep the reasoning-only profile direct; MTP option 10 is supervised by the
+   # watchdog unless the caller explicitly requests --direct.
+-  if [[ "$choice" == "8" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" ]]; then
++  if [[ "$choice" == "8" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" ]]; then
+     DIRECT_LAUNCH=1
+   fi
+ fi
+@@ -1534,7 +1546,7 @@
+       2>&1 | tee -a "$splash_qwen_log"
+     ;;
+ 
+-  14|16|18)
++  14|16|18|19)
+     splash_model_args=()
+     if [[ "$choice" == "16" ]]; then
+       require_model "$SPLASH_HERETIC_MODEL" "Bonsai 2 Uncensored Heretic GGUF"
+@@ -1546,7 +1558,7 @@
+       SPLASH_BONSAI_ALIAS="bonsai-heretic-27b-splash"
+       SPLASH_BONSAI_DISPLAY_NAME="Ternary Bonsai 2 27B Uncensored Heretic PTQ1_0 via Splash"
+       SPLASH_BONSAI_CACHE_DIR="$SPLASH_HERETIC_CACHE_DIR"
+-    elif [[ "$choice" == "18" ]]; then
++    elif [[ "$choice" == "18" || "$choice" == "19" ]]; then
+       SPLASH_BONSAI_MODEL_ID="$SPLASH_QWEN36_MODEL_ID"
+       SPLASH_BONSAI_ALIAS="qwen3.6-35b-a3b-q2-splash"
+       SPLASH_BONSAI_DISPLAY_NAME="Qwen3.6 35B A3B UD-Q2_K_XL via Splash SSD expert streaming"
+@@ -1557,6 +1569,17 @@
+       SPLASH_BONSAI_MAX_CACHE_DISK="$SPLASH_QWEN36_MAX_CACHE_DISK"
+       SPLASH_BONSAI_PERSISTENT_CACHE="$SPLASH_QWEN36_PERSISTENT_CACHE"
+       SPLASH_BONSAI_CACHE_DIR="$SPLASH_QWEN36_CACHE_DIR"
++      if [[ "$choice" == "19" ]]; then
++        SPLASH_BONSAI_MODEL_ID="$SPLASH_QWEN36_Q4_MODEL_ID"
++        SPLASH_BONSAI_ALIAS="qwen3.6-35b-a3b-q4-splash"
++        SPLASH_BONSAI_DISPLAY_NAME="Qwen3.6 35B A3B UD-Q4_K_M via Splash SSD expert streaming"
++        SPLASH_BONSAI_MAX_CONTEXT="$SPLASH_QWEN36_Q4_MAX_CONTEXT"
++        SPLASH_BONSAI_OPENCODE_CONTEXT="$SPLASH_QWEN36_Q4_OPENCODE_CONTEXT"
++        SPLASH_BONSAI_MAX_TOKENS="$SPLASH_QWEN36_Q4_MAX_TOKENS"
++        SPLASH_BONSAI_MAX_CACHE_DISK="$SPLASH_QWEN36_Q4_MAX_CACHE_DISK"
++        SPLASH_BONSAI_PERSISTENT_CACHE="$SPLASH_QWEN36_Q4_PERSISTENT_CACHE"
++        SPLASH_BONSAI_CACHE_DIR="$SPLASH_QWEN36_Q4_CACHE_DIR"
++      fi
+       SPLASH_BONSAI_STATE_FORMAT="bf16"
+       SPLASH_BONSAI_PREFILL_CHUNK_TOKENS=512
+       SPLASH_BONSAI_MAX_ACTIVE_REQUESTS=1
+@@ -1564,7 +1587,7 @@
+     fi
+     if ! splash_context_limit="$(splash_context_tokens "$SPLASH_BONSAI_MAX_CONTEXT")" ||
+        (( splash_context_limit < 4096 || splash_context_limit > 24576 )); then
+-      echo "Splash context must be 4096-24576 tokens (option 18: SPLASH_QWEN36_MAX_CONTEXT; options 14/16: SPLASH_BONSAI_MAX_CONTEXT)." >&2
++      echo "Splash context must be 4096-24576 tokens (option 18: SPLASH_QWEN36_MAX_CONTEXT; option 19: SPLASH_QWEN36_Q4_MAX_CONTEXT; options 14/16: SPLASH_BONSAI_MAX_CONTEXT)." >&2
+       exit 1
+     fi
+     if [[ "$SPLASH_BONSAI_OPENCODE_CONTEXT" == "auto" ]]; then
+@@ -1572,7 +1595,7 @@
+     fi
+     if ! splash_uint_in_range "$SPLASH_BONSAI_OPENCODE_CONTEXT" 2 22528 ||
+        (( SPLASH_BONSAI_OPENCODE_CONTEXT >= splash_context_limit )); then
+-      echo "Splash OpenCode context must be auto or 2-22528 tokens, smaller than the server context (option 18: SPLASH_QWEN36_OPENCODE_CONTEXT; options 14/16: SPLASH_BONSAI_OPENCODE_CONTEXT)." >&2
++      echo "Splash OpenCode context must be auto or 2-22528 tokens, smaller than the server context (option 18: SPLASH_QWEN36_OPENCODE_CONTEXT; option 19: SPLASH_QWEN36_Q4_OPENCODE_CONTEXT; options 14/16: SPLASH_BONSAI_OPENCODE_CONTEXT)." >&2
+       exit 1
+     fi
+     # Preserve small-context launches while giving the normal 24K profile
+@@ -1581,7 +1604,7 @@
+       SPLASH_BONSAI_MAX_TOKENS="$((SPLASH_BONSAI_OPENCODE_CONTEXT / 2))"
+     fi
+     if ! splash_uint_in_range "$SPLASH_BONSAI_MAX_TOKENS" 1 "$((SPLASH_BONSAI_OPENCODE_CONTEXT - 1))"; then
+-      echo "Splash output must be positive and smaller than its OpenCode context (option 18: SPLASH_QWEN36_MAX_TOKENS; options 14/16: SPLASH_BONSAI_MAX_TOKENS)." >&2
++      echo "Splash output must be positive and smaller than its OpenCode context (option 18: SPLASH_QWEN36_MAX_TOKENS; option 19: SPLASH_QWEN36_Q4_MAX_TOKENS; options 14/16: SPLASH_BONSAI_MAX_TOKENS)." >&2
+       exit 1
+     fi
+     if ! splash_uint_in_range "$SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT" 1 4294967295; then
+@@ -1634,7 +1657,7 @@
+     done
+     prepare_splash_run
+     sync_opencode_splash
+-    if [[ "$choice" == "18" ]]; then
++    if [[ "$choice" == "18" || "$choice" == "19" ]]; then
+       printf 'SSD expert streaming: automatic RAM slots within an 8 GiB Metal budget; missing routed experts read from the model file.\n' | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+     fi
+     printf 'Native inference concurrency: %s (FIFO queue across clients; no worker tool-call budget)\n' "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+@@ -1700,7 +1723,7 @@
+         exit "$splash_status"
+       fi
+       if (( splash_startup_retries >= SPLASH_BONSAI_STARTUP_MAX_RETRIES )); then
+-        echo "Splash startup stopped after ${splash_startup_retries} retries. Close memory-heavy apps or lower the context (option 18: SPLASH_QWEN36_MAX_CONTEXT; options 14/16: SPLASH_BONSAI_MAX_CONTEXT), then launch option $choice again." |
++        echo "Splash startup stopped after ${splash_startup_retries} retries. Close memory-heavy apps or lower the context (option 18: SPLASH_QWEN36_MAX_CONTEXT; option 19: SPLASH_QWEN36_Q4_MAX_CONTEXT; options 14/16: SPLASH_BONSAI_MAX_CONTEXT), then launch option $choice again." |
+           timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+         exit "$splash_status"
+       fi
