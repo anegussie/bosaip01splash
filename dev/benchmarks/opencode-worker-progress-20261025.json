@@ -1,0 +1,29 @@
+{
+  "installed": true,
+  "targets": [
+    "/Users/mymac/runtime/opencode/plugins/worker-slice-policy.ts",
+    "/Users/mymac/.config/opencode/plugins/worker-slice-policy.ts",
+    "/Users/mymac/runtime/opencode/plugins/lib/progress-ledger.ts",
+    "/Users/mymac/.config/opencode/plugins/lib/progress-ledger.ts",
+    "/Users/mymac/runtime/opencode/tests/worker-slice-policy.test.ts",
+    "/Users/mymac/runtime/opencode/tests/worker-slice-e2e.test.mjs"
+  ],
+  "hashesVerified": true,
+  "focusedUnitPassed": 23,
+  "installedWorkerUnitPassed": 9,
+  "native": [
+    "baseline failed expected duplicate-source-tool assertions",
+    "candidate progress passed",
+    "inventory passed",
+    "checkpoint passed",
+    "installed progress passed"
+  ],
+  "report": "/Users/mymac/splash/splash/dev/benchmarks/opencode-worker-progress-20261025.md",
+  "measuredSpeedup": null,
+  "activation": "New OpenCode session",
+  "limitations": [
+    "exact structured scope matching",
+    "one short no-tool duplicate child completion remains",
+    "no actual-model speedup measured"
+  ]
+}
