@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from dev.tests.server_fixtures import main_args, unprepared_hold
-from server import backend as backend_api
+from install import families
 from server import diagnostics
 from server import protocol as native_wire
 from server import server as api
@@ -101,7 +101,7 @@ class ServerMainTests(unittest.TestCase):
             tokenizer,
             request_logger=diagnostics.print_request,
             max_active_requests=0,
-            thinking_end=backend_api.DEFAULT_THINKING_END,
+            thinking_end=None,
         )
         self.assertEqual(app_type.call_args.args[3], 262144)
         # No --request-timeout, no deadline.
@@ -375,6 +375,10 @@ class ServerMainTests(unittest.TestCase):
             mock.patch.object(
                 api.AutoTokenizer, "from_pretrained", return_value=object()
             ) as tokenizer,
+            # The record names the family the model was installed as.
+            mock.patch.object(
+                api.assembly, "family", return_value=families.named("Qwen3.8-27B")
+            ),
             mock.patch.object(api, "validate_tokenizer"),
             mock.patch.object(api, "ChatTemplates"),
             mock.patch.object(

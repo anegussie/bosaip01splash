@@ -26,20 +26,21 @@ void include(Workspace &bound, const Workspace &required,
 ExecutionPlans::ExecutionPlans(const DeviceCapabilities &device, uint32_t maximumContextTokens)
     : linear_(device),
       family_(gpuFamilyClass(device.appleGpuFamily)),
+      gpuCores_(plannedGpuCores(device)),
       maximumHistoryTokens_(std::min(maximumContextTokens, kv::kMaximumPhysicalTokens - kv::kVerifyRows)) {
   if (!maximumContextTokens || maximumContextTokens > kv::kMaximumLogicalTokens)
     throw std::invalid_argument("invalid execution context capacity");
 }
 
 PrefillAttentionPlan ExecutionPlans::prefillAttention(
-    uint32_t rows, uint32_t queryHeads, kv::Layout layout) const {
-  return PagedAttention::prefillPlan(rows, queryHeads, layout);
+    uint32_t rows, uint32_t queryHeads, kv::Layout layout, AttentionVariant variant) const {
+  return PagedAttention::prefillPlan(rows, queryHeads, layout, variant);
 }
 
 VerifyAttentionPlan ExecutionPlans::verifyAttention(
     uint32_t lanes, uint32_t queryHeads, kv::Layout layout,
-    std::span<const uint32_t> historyTokens) const {
-  const auto plan = PagedAttention::verifyPlan(lanes, queryHeads, layout, historyTokens);
+    std::span<const uint32_t> historyTokens, AttentionVariant variant) const {
+  const auto plan = PagedAttention::verifyPlan(lanes, queryHeads, layout, historyTokens, variant);
   for (uint32_t history : historyTokens)
     if (history > maximumHistoryTokens_)
       throw std::invalid_argument("verify history exceeds planned context capacity");
@@ -54,10 +55,10 @@ DraftAttentionPlan ExecutionPlans::draftAttention(DraftAttentionShape shape,
 // The expert tiles and their rows, and the router's tile.
 MoeConfig ExecutionPlans::moeConfig(MoeShape shape, uint32_t rows, MoePhase phase) const {
   MoeConfig config;
-  config.ggufTile = moeGgufTile(family_, shape);
+  config.ggufTile = moeGgufTile(family_, gpuCores_, shape);
   config.expertTile =
       phase == MoePhase::Prefill ? moeGgufPrefillTile(shape, rows, config.ggufTile) : MoeExpertTile::M8;
-  config.ggufRouterTile = linear_.ggufFloatTile(rows, shape.experts);
+  config.ggufRouterTile = linear_.ggufFloatTile(rows, shape.experts, shape.routerFormat);
   return config;
 }
 

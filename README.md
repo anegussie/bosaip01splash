@@ -15,8 +15,6 @@ It reuses cached prefixes and batches concurrent requests automatically.
 ## Quick start
 
 Apple M3 or newer, macOS 26.4 or later, and [Homebrew](https://brew.sh).
-The 4-bit examples need at least 36 GB of unified memory (48 GB recommended);
-24 GB Macs can use [smaller GGUF variants](#models).
 
 ```bash
 brew install incoai/tap/splash
@@ -73,7 +71,9 @@ automatically:
 | --- | --- | --- |
 | Qwen3.8-27B | `unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_M` | `mlx-community/Qwen3.8-27B-4bit` |
 | Qwen3.6-35B-A3B | `unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_M` | `mlx-community/Qwen3.6-35B-A3B-4bit` |
+| Ornith-1.5-122B | `unsloth/Ornith-1.5-122B-GGUF:UD-Q4_K_XL` | `ornith-ai/Ornith-1.5-122B-MLX-4bit` |
 | Qwen3.8-Flash-Next | `ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0` | — |
+| Flint | `unsloth/flint-GGUF:UD-Q4_K_XL` | — |
 
 Override the draft with `--draft-model OWNER/REPO` or a local BF16 DFlash2
 checkpoint directory. `SPLASH_DRAFT_MODEL` supplies the same default when a
@@ -94,6 +94,7 @@ checkpoints and NVFP4 GGUFs also load. Smaller variants run on
 [24 GB Macs](docs/performance.md#smaller-ggufs-on-24-gb-macs).
 [27B variants](https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/tree/main) ·
 [35B variants](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/tree/main) ·
+[Ornith-1.5-122B variants](https://huggingface.co/unsloth/Ornith-1.5-122B-GGUF/tree/main) ·
 [Flash-Next variants](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/tree/main)
 
 Vision and the tokenizer come from the target model's source.
@@ -110,6 +111,20 @@ Its configuration, tokenizer and chat template come from that file. Local
 targets are checked on each start and use a separate assembly from Hub models.
 The family's DFlash2 draft is selected automatically; acceptance with altered
 weights needs measurement. `--revision` applies only to Hub targets.
+
+To serve files already on this Mac, pass the target's GGUF file or GGUF/MLX
+directory directly, and a compatible local DFlash2 draft:
+
+```bash
+splash serve --model local/qwen \
+  --model-dir /models/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q4_K_M.gguf \
+  --draft-model /models/Qwen3.8-27B-DFlash2
+```
+
+This prepares local files without contacting the Hub; `--model` is the name
+reported by the API. Omit `--draft-model` to use the family's draft from the
+Hub cache, or add `--mmproj /models/mmproj-BF16.gguf` for a GGUF's vision.
+See [local model files](DEVELOPMENT.md#local-model-files) for details.
 
 ## Settings
 
