@@ -150,9 +150,9 @@ class MonitorTests(unittest.TestCase):
         log = (self.log / "splash-latest.log").read_text()
         self.assertEqual(log.count("Performance 300s"), 2)
         self.assertEqual(log.count("===== [PERF] Performance"), 2)
-        self.assertIn("PP=3000 tok/s TPS=60 tok/s", log)
-        self.assertIn("PP=idle TPS=idle", log)
-        self.assertIn("engine lifetime", log)
+        self.assertEqual(log.count("average since engine start PP=2990 tok/s TPS=60.1 tok/s"), 2)
+        self.assertIn("interval counts:", log)
+        self.assertNotIn("interval average", log)
 
     def test_quiet_launcher_mirrors_one_summary_to_terminal_with_local_time(self):
         terminal = self.root / "terminal-output"
@@ -163,8 +163,7 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(terminal.read_text(), log)
         self.assertEqual(log.count("[PERF]"), 1)
         self.assertIn("1969-12-31T19:21:40-0500", log)
-        self.assertIn("interval average PP=idle", log)
-        self.assertIn("engine lifetime average PP=1000 tok/s", log)
+        self.assertIn("average since engine start PP=1000 tok/s", log)
 
     def test_missing_terminal_does_not_interrupt_file_logging(self):
         self.env["SPLASH_MONITOR_TTY"] = str(self.root / "missing" / "terminal")

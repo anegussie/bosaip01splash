@@ -89,7 +89,7 @@ log_performance_summary() {
   timestamp="$(date -r "$(jq -r '.ts' <<< "$summary")" '+%Y-%m-%dT%H:%M:%S%z')" || return 1
   line="$(jq -r --arg timestamp "$timestamp" '
     def rate: if . == null then "idle" else "\((.*10|round)/10) tok/s" end;
-    "\($timestamp) ===== [PERF] Performance \(.interval_seconds)s (native): interval average PP=\(.interval.pp_tokens_per_second|rate) TPS=\(.interval.decode_tokens_per_second|rate); engine lifetime average PP=\(.lifetime.pp_tokens_per_second|rate) TPS=\(.lifetime.decode_tokens_per_second|rate); processed=\(.interval.prefill_tokens) generated=\(.interval.output_tokens) cached=\(.interval.cached_tokens // "n/a"); requests=\(.interval.completed // "n/a") failed=\(.interval.failed // "n/a") cancelled=\(.interval.cancelled // "n/a"); memory=\(.memory_pressure) thermal=\(.thermal_state); engine=\(.instance)/restart\(.restarts)"
+    "\($timestamp) ===== [PERF] Performance \(.interval_seconds)s (native): average since engine start PP=\(.lifetime.pp_tokens_per_second|rate) TPS=\(.lifetime.decode_tokens_per_second|rate); interval counts: processed=\(.interval.prefill_tokens) generated=\(.interval.output_tokens) cached=\(.interval.cached_tokens // "n/a"); requests=\(.interval.completed // "n/a") failed=\(.interval.failed // "n/a") cancelled=\(.interval.cancelled // "n/a"); memory=\(.memory_pressure) thermal=\(.thermal_state); engine=\(.instance)/restart\(.restarts)"
   ' <<< "$summary")" || return 1
   printf '%s\n' "$summary" >> "$PERFORMANCE" || return 1
   printf '%s\n' "$line" >> "$LATEST_LOG" || return 1

@@ -23,8 +23,9 @@ can be overridden with `SPLASH_MONITOR_INTERVAL` (positive integer seconds).
 
 Every five minutes the monitor also appends a `performance_summary` to
 `splash-performance.jsonl` and a readable `===== [PERF] Performance 300s (native)` line to
-`splash-latest.log` (the active profile log). It records interval and engine
-lifetime PP/TPS, processed/generated/cached token counts, completed/failed/
+`splash-latest.log` (the active profile log). The readable line shows PP/TPS
+since engine startup and labels the token and request counts as interval counts.
+The JSON records both interval and engine lifetime PP/TPS, processed/generated/cached token counts, completed/failed/
 cancelled requests, and thermal/memory state. Rates are total native stage
 tokens divided by total stage elapsed time, not averages of request rates or
 tokens divided by five minutes of clock time. Engine lifetime includes startup
