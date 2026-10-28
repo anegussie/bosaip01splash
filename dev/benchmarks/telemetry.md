@@ -25,6 +25,15 @@ Every five minutes the monitor also appends a `performance_summary` to
 `splash-performance.jsonl` and a readable `===== [PERF] Performance 300s (native)` line to
 `splash-latest.log` (the active profile log). The readable line shows PP/TPS
 since engine startup and labels the token and request counts as interval counts.
+It also shows the time-weighted sampled average of allocated KV memory since
+monitoring began for the current engine, including free space in allocated pages.
+The previous valid sample is held until the next; stale, missing, or failed
+samples break coverage. Restarting the monitor or engine resets this KV average,
+and the line reports the number of sampled seconds.
+The line also gives the time-weighted active KV page capacity in tokens,
+calculated from active pages times tokens per page, with its own sampled seconds.
+It is a page-level capacity estimate across the pool, including partly filled
+or shared pages; it is not an exact per-request filled context length.
 The JSON records both interval and engine lifetime PP/TPS, processed/generated/cached token counts, completed/failed/
 cancelled requests, and thermal/memory state. Rates are total native stage
 tokens divided by total stage elapsed time, not averages of request rates or

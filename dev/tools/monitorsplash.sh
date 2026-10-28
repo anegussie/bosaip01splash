@@ -10,6 +10,8 @@ LATEST_LOG="$LOG_DIR/splash-latest.log"
 PERFORMANCE="$LOG_DIR/splash-performance.jsonl"
 SUMMARY_INTERVAL="${SPLASH_SUMMARY_INTERVAL:-300}"
 SUMMARY_BASELINE='{}'
+KV_AVERAGE='{"sum":0,"seconds":0,"last":null}'
+KV_TOKEN_AVERAGE='{"sum":0,"seconds":0,"last":null}'
 SUMMARY_TTY="${SPLASH_MONITOR_TTY:-}"
 if [[ -z "${SPLASH_MONITOR_TTY+x}" ]]; then
   summary_tty_name="$(ps -o tty= -p "${SPLASH_MONITOR_OWNER_PID:-$PPID}" 2>/dev/null | tr -d ' ' || true)"
@@ -62,11 +64,36 @@ log_performance_summary() {
          $b.ts < $a.ts or any($keys[]; . as $key | $b[$key] < $a[$key]) then "reset"
     elif $b.ts-$a.ts >= $seconds then "emit" else "wait" end
   ')" || return 1
+  KV_AVERAGE="$(jq -nc --argjson state "$KV_AVERAGE" --argjson sample "$current" --arg action "$action" '
+    if $action == "skip" then $state | .last = null
+    elif $action == "reset" then
+      {sum:0,seconds:0,last:(if ($sample.kv.allocated_bytes|type) == "number" then {ts:$sample.ts,bytes:$sample.kv.allocated_bytes} else null end)}
+    elif ($sample.kv.allocated_bytes|type) != "number" then $state | .last = null
+    else
+      ($state.last) as $last |
+      (if $last != null and $sample.ts > $last.ts then $sample.ts-$last.ts else 0 end) as $dt |
+      {sum:($state.sum + (if $dt > 0 then $last.bytes*$dt else 0 end)),
+       seconds:($state.seconds+$dt),last:{ts:$sample.ts,bytes:$sample.kv.allocated_bytes}}
+    end
+  ')" || return 1
+  KV_TOKEN_AVERAGE="$(jq -nc --argjson state "$KV_TOKEN_AVERAGE" --argjson sample "$current" --arg action "$action" '
+    (if ($sample.kv.pages_active|type) == "number" and ($sample.kv.block_tokens|type) == "number"
+     then $sample.kv.pages_active * $sample.kv.block_tokens else null end) as $tokens |
+    if $action == "skip" then $state | .last = null
+    elif $action == "reset" then {sum:0,seconds:0,last:(if $tokens != null then {ts:$sample.ts,value:$tokens} else null end)}
+    elif $tokens == null then $state | .last = null
+    else
+      $state.last as $last |
+      (if $last != null and $sample.ts > $last.ts then $sample.ts-$last.ts else 0 end) as $dt |
+      {sum:($state.sum + (if $dt > 0 then $last.value*$dt else 0 end)),
+       seconds:($state.seconds+$dt),last:{ts:$sample.ts,value:$tokens}}
+    end
+  ')" || return 1
   case "$action" in
     reset) SUMMARY_BASELINE="$current"; return 0 ;;
     skip|wait) return 0 ;;
   esac
-  summary="$(jq -nc --argjson a "$SUMMARY_BASELINE" --argjson b "$current" '
+  summary="$(jq -nc --argjson a "$SUMMARY_BASELINE" --argjson b "$current" --argjson kv "$KV_AVERAGE" --argjson kvt "$KV_TOKEN_AVERAGE" '
     def delta($key):
       if ($a[$key]|type) == "number" and ($b[$key]|type) == "number" and $b[$key] >= $a[$key]
       then $b[$key]-$a[$key] else null end;
@@ -81,7 +108,11 @@ log_performance_summary() {
        completed:delta("completed"),failed:delta("failed"),cancelled:delta("cancelled"),
        cached_tokens:delta("cached_tokens")},
      lifetime:{pp_tokens_per_second:rate($b.pp_tokens;$b.pp_ms),
-       decode_tokens_per_second:rate($b.output_tokens;$b.decode_ms),completed:$b.completed},
+       decode_tokens_per_second:rate($b.output_tokens;$b.decode_ms),completed:$b.completed,
+       kv_allocated_average_bytes:(if $kv.seconds > 0 then $kv.sum/$kv.seconds else null end),
+       kv_average_sampled_seconds:$kv.seconds,
+       kv_active_capacity_average_tokens:(if $kvt.seconds > 0 then $kvt.sum/$kvt.seconds else null end),
+       kv_token_average_sampled_seconds:$kvt.seconds},
      ttft_p50_ms:$b.ttft_p50_ms,ttft_p95_ms:$b.ttft_p95_ms,
      memory_pressure:$b.memory_pressure,thermal_state:$b.thermal_state,
      status_stale:$b.status_stale}
@@ -89,7 +120,7 @@ log_performance_summary() {
   timestamp="$(date -r "$(jq -r '.ts' <<< "$summary")" '+%Y-%m-%dT%H:%M:%S%z')" || return 1
   line="$(jq -r --arg timestamp "$timestamp" '
     def rate: if . == null then "idle" else "\((.*10|round)/10) tok/s" end;
-    "\($timestamp) ===== [PERF] Performance \(.interval_seconds)s (native): average since engine start PP=\(.lifetime.pp_tokens_per_second|rate) TPS=\(.lifetime.decode_tokens_per_second|rate); interval counts: processed=\(.interval.prefill_tokens) generated=\(.interval.output_tokens) cached=\(.interval.cached_tokens // "n/a"); requests=\(.interval.completed // "n/a") failed=\(.interval.failed // "n/a") cancelled=\(.interval.cancelled // "n/a"); memory=\(.memory_pressure) thermal=\(.thermal_state); engine=\(.instance)/restart\(.restarts)"
+    "\($timestamp) ===== [PERF] Performance \(.interval_seconds)s (native): average since engine start PP=\(.lifetime.pp_tokens_per_second|rate) TPS=\(.lifetime.decode_tokens_per_second|rate); average KV allocated since monitoring began=\(if .lifetime.kv_allocated_average_bytes == null then "n/a" else "\((.lifetime.kv_allocated_average_bytes/1048576*10|round)/10) MiB" end) (sampled \(.lifetime.kv_average_sampled_seconds)s); average active KV page capacity=\(if .lifetime.kv_active_capacity_average_tokens == null then "n/a" else "\(.lifetime.kv_active_capacity_average_tokens|round) tokens" end) (sampled \(.lifetime.kv_token_average_sampled_seconds)s); interval counts: processed=\(.interval.prefill_tokens) generated=\(.interval.output_tokens) cached=\(.interval.cached_tokens // "n/a"); requests=\(.interval.completed // "n/a") failed=\(.interval.failed // "n/a") cancelled=\(.interval.cancelled // "n/a"); memory=\(.memory_pressure) thermal=\(.thermal_state); engine=\(.instance)/restart\(.restarts)"
   ' <<< "$summary")" || return 1
   printf '%s\n' "$summary" >> "$PERFORMANCE" || return 1
   printf '%s\n' "$line" >> "$LATEST_LOG" || return 1
@@ -106,6 +137,8 @@ log_performance_summary() {
 record_once() {
   local payload probe_seconds swap_snapshot vm_snapshot process_snapshot server_pid process_rows previous='{}'
   if ! payload="$(curl --max-time 5 -fsS -w '\n%{time_total}' "$STATUS_URL")"; then
+    KV_AVERAGE="$(jq -c '.last = null' <<< "$KV_AVERAGE")"
+    KV_TOKEN_AVERAGE="$(jq -c '.last = null' <<< "$KV_TOKEN_AVERAGE")"
     mkdir -p "$LOG_DIR"
     jq -cn '{schemaVersion:2,event:"status_sample_error",ts:now}' >> "$LOG_DIR/splash-status-errors.jsonl"
     return 1

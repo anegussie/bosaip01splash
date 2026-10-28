@@ -171,6 +171,38 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(len(self.summaries()), 1)
         self.assertIn("[PERF]", (self.log / "splash-latest.log").read_text())
 
+    def test_kv_average_is_time_weighted_and_resets_with_engine(self):
+        mib = 1048576
+        self.summary_steps([
+            (1000, {"kv": {"allocated_bytes": 100 * mib}}),
+            (1100, {"kv": {"allocated_bytes": 400 * mib}}),
+            (1300, {"kv": {"allocated_bytes": 200 * mib}}),
+            (1301, {"instance": {**self.status["instance"], "id": "run2"}, "kv": {"allocated_bytes": 50 * mib}}),
+            (1601, {"instance": {**self.status["instance"], "id": "run2"}, "kv": {"allocated_bytes": 70 * mib}}),
+        ])
+        first, second = self.summaries()
+        self.assertEqual(first["lifetime"]["kv_allocated_average_bytes"], 300 * mib)
+        self.assertEqual(first["lifetime"]["kv_average_sampled_seconds"], 300)
+        self.assertEqual(second["lifetime"]["kv_allocated_average_bytes"], 50 * mib)
+        self.assertIn("average KV allocated since monitoring began=300 MiB", (self.log / "splash-latest.log").read_text())
+
+    def test_kv_token_capacity_average_handles_missing_samples_and_restart(self):
+        run2 = {**self.status["instance"], "id": "run2"}
+        self.summary_steps([
+            (1000, {"kv": {"pages_active": 10, "block_tokens": 32}}),
+            (1100, {"kv": {"pages_active": 40, "block_tokens": 32}}),
+            (1200, {"kv": {}}),
+            (1250, {"kv": {"pages_active": 20, "block_tokens": 32}}),
+            (1300, {"kv": {"pages_active": 30, "block_tokens": 32}}),
+            (1301, {"instance": run2, "kv": {"pages_active": 5, "block_tokens": 32}}),
+            (1601, {"instance": run2, "kv": {"pages_active": 6, "block_tokens": 32}}),
+        ])
+        first, second = self.summaries()
+        self.assertAlmostEqual(first["lifetime"]["kv_active_capacity_average_tokens"], 1280 / 3)
+        self.assertEqual(first["lifetime"]["kv_token_average_sampled_seconds"], 150)
+        self.assertEqual(second["lifetime"]["kv_active_capacity_average_tokens"], 160)
+        self.assertIn("average active KV page capacity=427 tokens", (self.log / "splash-latest.log").read_text())
+
     def test_summary_resets_on_engine_restart_and_ignores_stale_status(self):
         metrics = {
             **self.status["metrics"],
