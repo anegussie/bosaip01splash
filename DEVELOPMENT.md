@@ -1,5 +1,8 @@
 # Development
 
+This legacy document retains local branch guidance. The upstream development
+documentation now lives in [docs/README.md](docs/README.md).
+
 This document runs from using Splash to working on it: running and
 configuring the server, the [API](#api), the [models](#models) it loads, its
 [internals](#internals), then [validation](#validate) and
