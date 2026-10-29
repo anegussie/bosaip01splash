@@ -221,6 +221,39 @@ void ggufMoePlans() {
           "invalid MoE expert tile configuration", "a decode plan took 32-row tiles");
 }
 
+// Check every prefix bound, including maxima just beyond the M8/M32
+// transition. Shared slices can make tile descriptor counts fall there:
+// 256 experts, top-1 and one shared slice need 288 tiles at 256 rows,
+// but only 280 at 384 rows.
+void moePrefillPrefixBounds() {
+  for (uint32_t family : {9U, 10U, 11U}) {
+    for (uint32_t cores : {8U, 32U}) {
+      auto capabilities = device(family);
+      capabilities.gpuCoreCount = cores;
+      const ExecutionPlans plans(capabilities);
+      for (uint32_t experts : {1U, 7U, 256U, 512U}) {
+        for (uint32_t topK : {1U, 3U, 8U, 10U}) {
+          if (topK > experts) continue;
+          for (const auto &routing : kCompiledMoeRoutings) {
+            MoeShape shape{2048, experts, topK, 512};
+            shape.router = routing.router;
+            shape.sharedSlices = routing.sharedSlices;
+            shape.sharedGate = routing.sharedGate;
+            MoeWorkspace prefix;
+            for (uint32_t rows = 1; rows <= 2048; ++rows) {
+              const auto needed = plans.moePrefill(shape, rows).workspace();
+              for (const auto field : kMoeWorkspaceFields)
+                prefix.*field = std::max(prefix.*field, needed.*field);
+              require(plans.moePrefillWorkspace(shape, rows) == prefix,
+                      "MoE prefill prefix bound misses a smaller plan or overallocates");
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 // A device that reports no core count gets the plans of kAssumedGpuCores
 // cores, Linear and MoE alike.
 void unknownCoreCount() {
@@ -346,6 +379,7 @@ int main() {
   try {
     baselinePlans();
     ggufMoePlans();
+    moePrefillPrefixBounds();
     unknownCoreCount();
     workspaceBounds();
     invalidLookupsAndContextEdges();

@@ -2,6 +2,18 @@
 
 ## Date: 2026-10-28
 
+## Interpretation corrected October 29
+
+These are historical microbenchmark measurements, not a matched branch-versus-base
+comparison. They do not establish an inference speedup. The M5 already selects
+staged MoE tiles; the register comparison is not an unused production optimization.
+
+The subsequent baseline/branch/branch/baseline option-19 comparison found no
+demonstrated request-latency improvement at approximately 4K and 12K prompt depths.
+Its raw measurements are retained locally in
+`build/validation/branch-perf-20261029/run.json`. The reader count and wait changes
+were rolled back conservatively, without attributing the result to either alone.
+
 ## System
 - Platform: macOS (Apple Silicon, 16 GB RAM)
 - Branch: macAir16gb
@@ -59,14 +71,21 @@
 | 2048 | 14.25 ms | 0.095 ms | 0.30 ms |
 | 131072 | 907.43 ms | 2.90 ms | 11.33 ms |
 
-**Note:** Prefill split dominates (~95% of prefill time)
+The earlier claim that attention split accounts for ~95% of prefill is not
+supported by a full-model breakdown here and must not be interpreted as a share
+of end-to-end model prefill time.
 
 ## Failed Benchmarks (insufficient memory)
 - `backend-benchmark` — requires ~11 GB fixed overhead, Metal OOM on 16 GB system
 - `decode-profile` — same memory constraint
 
-## Performance Improvements Applied
+## Original Experimental Changes (not demonstrated improvements)
 1. kAheadReaders: 4 → 8 (ExpertStore.cpp:35)
 2. partial_sort instead of stable_sort (ExpertStore.cpp:589-593)
 3. sleep_for(50us) instead of yield() (ExpertStore.cpp:502-504)
 4. Single return instead of O(maximumRows) loop (ExecutionPlans.cpp:98)
+
+Current corrections restore four readers, `yield()`, and stable prediction
+sorting. Workspace planning now includes the M8/M32 transition endpoint as well
+as the maximum-row plan; checking only the maximum can underallocate tile
+descriptors for smaller batches. Diagnostics remain enabled.

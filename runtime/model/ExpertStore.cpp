@@ -584,18 +584,10 @@ std::span<const uint32_t> ExpertStore::Impl::predictedExperts(uint32_t rows, con
       sum += weights[at];
     }
   }
-  const uint32_t kAhead = std::min<uint32_t>(predictionOrder.size(),
-    places.count - static_cast<uint32_t>(staged.size()));
-  std::ranges::partial_sort(predictionOrder, predictionOrder.begin() + kAhead,
-                            [&](uint32_t a, uint32_t b) {
-                              return predictionSum[a] > predictionSum[b];
-                            });
-  if (kAhead < predictionOrder.size()) {
-    std::ranges::sort(predictionOrder.begin() + kAhead, predictionOrder.end(),
-                      [&](uint32_t a, uint32_t b) {
-                        return predictionSum[a] > predictionSum[b];
-                      });
-  }
+  // The caller filters resident experts afterward, so every remaining
+  // candidate must be ordered. Preserve routing order for equal weights.
+  std::ranges::stable_sort(predictionOrder, std::ranges::greater{},
+                           [&](uint32_t expert) { return predictionSum[expert]; });
   for (const uint32_t expert : predictionOrder) predictionSum[expert] = -1;
   return predictionOrder;
 }

@@ -93,9 +93,17 @@ DraftAttentionWorkspace ExecutionPlans::draftAttentionWorkspacePerLane(
 
 MoeWorkspace ExecutionPlans::moePrefillWorkspace(MoeShape shape,
                                                uint32_t maximumRows) const {
-  // Validate the bound before iterating; every row is included even if a
-  // future grouped layout's largest field is not monotone in row count.
-  return moePrefill(shape, maximumRows).workspace();
+  auto bound = moePrefill(shape, maximumRows).workspace();
+  // Each workspace field is monotone within a fixed expert tile size.
+  // Staged prefill changes from M8 to M32 after one route per expert;
+  // shared slices can make the tile descriptor count fall at that boundary.
+  // Include the last M8 plan as well as the final plan. The router's tile
+  // changes no workspace fields. Keep moePrefillPrefixBounds in sync with
+  // any new row-dependent layout policy.
+  const uint32_t lastM8Rows = shape.experts / shape.expertsPerToken;
+  if (lastM8Rows < maximumRows)
+    include(bound, moePrefill(shape, lastM8Rows).workspace(), kMoeWorkspaceFields);
+  return bound;
 }
 
 MoeWorkspace ExecutionPlans::moeDecodeWorkspacePerLane(MoeShape shape) const {
