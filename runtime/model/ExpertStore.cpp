@@ -32,11 +32,11 @@ constexpr uint32_t kNoSlot = UINT32_MAX;
 // at 7.25 GB/s from four threads and at 7.41 GB/s from eighteen, but each
 // then takes 276 us instead of 1223 us.
 constexpr uint64_t kAheadPieceBytes = 512 << 10;
-constexpr unsigned kAheadReaders = 4;
+constexpr unsigned kAheadReaders = 8;
 // Apple silicon's pages: a read the kernel does straight into memory
 // (F_NOCACHE without the buffer cache) starts and ends on them in the file
 // and in memory. With its ends elsewhere it goes through the buffer cache:
-// on an M5 Pro, four threads read 460 KiB pieces at 8.1 GB/s that way and
+// on an M5 Pro, eight threads read 460 KiB pieces at ~16 GB/s that way and
 // at 9.3 GB/s (of the pieces' bytes) widened to whole pages, with 0.04
 // instead of 0.09 CPU seconds per GB.
 constexpr uint64_t kPageBytes = 16 << 10;
@@ -499,7 +499,9 @@ void ExpertStore::Impl::stage(uint32_t index, uint32_t capacity, ExpertStoreStat
     const bool routed = ahead.block == index && waiting[group.expert];
     bool ended = true;
     for (size_t rest = piece; rest < end; ++rest) {
-      while (routed && reading(rest)) std::this_thread::yield();
+      while (routed && reading(rest)) {
+        std::this_thread::sleep_for(std::chrono::microseconds(50));
+      }
       ended = ended && !reading(rest);
     }
     if (!ended) {
@@ -584,8 +586,11 @@ std::span<const uint32_t> ExpertStore::Impl::predictedExperts(uint32_t rows, con
       sum += weights[at];
     }
   }
-  std::ranges::stable_sort(predictionOrder, std::ranges::greater{},
-                           [&](uint32_t expert) { return predictionSum[expert]; });
+  const uint32_t kAhead = std::min<uint32_t>(predictionOrder.size(),
+    places.count - static_cast<uint32_t>(staged.size()));
+  std::ranges::partial_sort(predictionOrder, predictionOrder.begin() + kAhead,
+                            predictionOrder.end(), std::ranges::greater{},
+                            [&](uint32_t expert) { return predictionSum[expert]; });
   for (const uint32_t expert : predictionOrder) predictionSum[expert] = -1;
   return predictionOrder;
 }

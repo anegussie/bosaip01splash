@@ -3488,6 +3488,11 @@ ModelMemoryActual Runtime::actualRuntimeMemory() const {
 
 ModelTelemetry Runtime::telemetry() const noexcept {
   ModelTelemetry result = impl_->counters;
+  result.effectivePrefillChunkTokens = impl_->geometry.prefillChunkTokens;
+  result.allocatedPrefillChunks = impl_->geometry.prefillChunks;
+  result.prefillGroupRows = prefillGroupRows(false);
+  result.prefillSpillGroupRows = prefillGroupRows(true);
+  result.maximumPrefillLayerPasses = prefillPasses();
   result.stateAllocatedBytes = impl_->states.actualAllocatedBytes();
   result.idleGdnCells = impl_->states.idleCells();
   result.idleDraftRings = impl_->states.idleRings();

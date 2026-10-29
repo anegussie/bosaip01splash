@@ -235,7 +235,15 @@ void checkPrefillChunkSizing(const model::LoadedModel &package) {
     ops::ExecutionPlans plans(device);
     const auto maximum = model::RuntimeGeometry::from(package, format, stateFormat);
     const uint64_t maximumBytes = model::plannedPrefillBytes(maximum, plans);
-    for (uint32_t chunk : {128U, 512U, 1024U, 2048U}) {
+    uint64_t streamedBytes = 0;
+    for (uint32_t chunk : {128U, 256U, 512U, 1024U, 2048U}) {
+      const auto streamed = model::RuntimeGeometry::from(
+          package, format, stateFormat, model::StreamedParts{.experts = true}, chunk);
+      const auto bytes = model::plannedPrefillBytes(streamed, plans);
+      if (!streamedBytes) streamedBytes = bytes;
+      require(streamed.prefillChunkTokens == 2048 && streamed.prefillChunks == 4 &&
+                  bytes == streamedBytes,
+              "requested chunk unexpectedly changed streamed group geometry or allocation");
       const auto geometry = model::RuntimeGeometry::from(package, format, stateFormat, chunk);
       const auto layout = model::planPrefillArena(geometry, plans);
       require(geometry.prefillChunkTokens == chunk &&

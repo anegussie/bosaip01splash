@@ -410,6 +410,12 @@ expert, as a SIZE that holds them all does.
   slice: other requests' decode steps run between passes, and a cancel
   waits for one pass at most. A pass reads its own layers' experts, so
   passes add no reads ([Admission and eviction](#admission-and-eviction)).
+  `/status.prefill_geometry` separates the requested warmup chunk from the
+  effective executor chunk, allocated chunks, group row limits and maximum
+  layer passes. These are capacities; `metrics.current_prefill_batch.input_tokens`
+  counts prompt rows committed by the most recently completed batch;
+  intermediate layer passes may report zero. Changing
+  `--prefill-chunk-tokens` does not resize streamed groups.
 - A load checks its files unchanged after it read them. A read is tried once
   more when it fails. A load that fails (a routed expert cannot be read, or
   a file was written) fails its command, and every later load fails too.

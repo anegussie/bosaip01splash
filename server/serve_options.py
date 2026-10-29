@@ -418,8 +418,9 @@ SERVE_OPTIONS = (
         dict(
             type=parse_prefill_chunk_tokens,
             default=DEFAULT_PREFILL_CHUNK_TOKENS,
-            help="maximum prompt tokens per native batch, in multiples of 128 up to "
-            "2048 (default: 512); smaller chunks reduce scratch memory",
+            help="maximum resident prompt rows per native batch, in multiples of 128 up to "
+            "2048 (default: 512); smaller chunks reduce resident scratch memory; "
+            "streamed prefill groups retain native 2048-row chunks",
         ),
     ),
     ServeOption(

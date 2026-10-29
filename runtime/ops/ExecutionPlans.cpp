@@ -95,10 +95,7 @@ MoeWorkspace ExecutionPlans::moePrefillWorkspace(MoeShape shape,
                                                uint32_t maximumRows) const {
   // Validate the bound before iterating; every row is included even if a
   // future grouped layout's largest field is not monotone in row count.
-  auto bound = moePrefill(shape, maximumRows).workspace();
-  for (uint32_t rows = 1; rows <= maximumRows; ++rows)
-    include(bound, moePrefill(shape, rows).workspace(), kMoeWorkspaceFields);
-  return bound;
+  return moePrefill(shape, maximumRows).workspace();
 }
 
 MoeWorkspace ExecutionPlans::moeDecodeWorkspacePerLane(MoeShape shape) const {

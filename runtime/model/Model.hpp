@@ -671,6 +671,13 @@ struct ModelMemoryActual final {
 };
 
 struct ModelTelemetry final {
+  // Allocated executor geometry and scheduling limits, not observed batch
+  // sizes. Streamed groups can exceed the configured warmup chunk size.
+  uint32_t effectivePrefillChunkTokens = 0;
+  uint32_t allocatedPrefillChunks = 0;
+  uint32_t prefillGroupRows = 0;
+  uint32_t prefillSpillGroupRows = 0;
+  uint32_t maximumPrefillLayerPasses = 0;
   uint64_t stateAllocatedBytes = 0;
   // Pooled state buffers no lane holds: GDN parity cells, draft rings and
   // context windows.

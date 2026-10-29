@@ -317,6 +317,12 @@ std::string runtimeStatusJson(
       << "\"ready\":" << boolean(ready)
       << ",\"maximum_context_tokens\":" << core.maximumContextTokens
       << ",\"prefill_chunk_tokens\":" << warmup.maximumPrefillRows
+      << ",\"prefill_geometry\":{\"requested_chunk_tokens\":" << warmup.maximumPrefillRows
+      << ",\"effective_chunk_tokens\":" << executorTelemetry.effectivePrefillChunkTokens
+      << ",\"allocated_chunks\":" << executorTelemetry.allocatedPrefillChunks
+      << ",\"group_rows\":" << executorTelemetry.prefillGroupRows
+      << ",\"spill_group_rows\":" << executorTelemetry.prefillSpillGroupRows
+      << ",\"maximum_layer_passes\":" << executorTelemetry.maximumPrefillLayerPasses << "}"
       << ",\"memory_pressure\":"
       << json::quote(memoryPressureName(memoryGovernor.pressure))
       << ",\"thermal_state\":" << json::quote(thermalStateName(thermalState))

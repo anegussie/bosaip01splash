@@ -225,6 +225,7 @@ def run_manifest(args, model_root, native_command, status, instance_id):
                     "memory_plan",
                     "maximum_context_tokens",
                     "prefill_chunk_tokens",
+                    "prefill_geometry",
                     "verify_rows",
                     "streamed_experts",
                     "disk",

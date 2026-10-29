@@ -126,6 +126,15 @@ class WriterTests(unittest.TestCase):
             snapshot = {
                 "identity": {"cache": {"build_id": "build1"}},
                 "memory_plan": {"device": {"device_name": "Apple M5"}},
+                "prefill_chunk_tokens": 512,
+                "prefill_geometry": {
+                    "requested_chunk_tokens": 512,
+                    "effective_chunk_tokens": 2048,
+                    "allocated_chunks": 4,
+                    "group_rows": 8192,
+                    "spill_group_rows": 8192,
+                    "maximum_layer_passes": 40,
+                },
                 "requests": {"completed": 0},
             }
             with mock.patch.dict(os.environ, {"SPLASH_TELEMETRY_PATH": str(path)}):
@@ -148,6 +157,11 @@ class WriterTests(unittest.TestCase):
             self.assertEqual(
                 record["initial_status"],
                 {key: snapshot.get(key) for key in record["initial_status"]},
+            )
+            self.assertEqual(record["initial_status"]["prefill_chunk_tokens"], 512)
+            self.assertEqual(
+                record["initial_status"]["prefill_geometry"],
+                snapshot["prefill_geometry"],
             )
             self.assertIn("backend.py", record["server_source_sha256"])
             self.assertEqual(len(record["assembly_record_sha256"]), 64)

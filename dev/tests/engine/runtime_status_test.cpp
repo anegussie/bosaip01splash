@@ -181,6 +181,11 @@ void testCleanRuntimeStatus(const char *goldenPath) {
   governor.hostGrowthAllowed = true;
 
   model::ModelTelemetry executorTelemetry;
+  executorTelemetry.effectivePrefillChunkTokens = 2048;
+  executorTelemetry.allocatedPrefillChunks = 4;
+  executorTelemetry.prefillGroupRows = 8192;
+  executorTelemetry.prefillSpillGroupRows = 8192;
+  executorTelemetry.maximumPrefillLayerPasses = 40;
   executorTelemetry.stateAllocatedBytes = 350'224'384;
   executorTelemetry.idleGdnCells = 1;
   executorTelemetry.idleDraftRings = 2;
@@ -271,6 +276,10 @@ void testCleanRuntimeStatus(const char *goldenPath) {
   const auto smallerStatus = runtimeStatusJson(memoryPlan, engine, metal, smallerWarmup,
       audit(memoryPlan), metrics, executorTelemetry, identity, governor, true, {}, {}, {}, {}, {}, ThermalState::Fair);
   require(smallerStatus.find("\"prefill_chunk_tokens\":512") != std::string::npos &&
+              smallerStatus.find("\"prefill_geometry\":{\"requested_chunk_tokens\":512,"
+                                 "\"effective_chunk_tokens\":2048,\"allocated_chunks\":4,"
+                                 "\"group_rows\":8192,\"spill_group_rows\":8192,"
+                                 "\"maximum_layer_passes\":40}") != std::string::npos &&
               smallerStatus.find("\"prefill_512\"") != std::string::npos &&
               smallerStatus.find("prefill_2048") == std::string::npos,
           "status advertised a prefill size other than the configured warmup");
