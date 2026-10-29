@@ -589,8 +589,15 @@ std::span<const uint32_t> ExpertStore::Impl::predictedExperts(uint32_t rows, con
   const uint32_t kAhead = std::min<uint32_t>(predictionOrder.size(),
     places.count - static_cast<uint32_t>(staged.size()));
   std::ranges::partial_sort(predictionOrder, predictionOrder.begin() + kAhead,
-                            predictionOrder.end(), std::ranges::greater{},
-                            [&](uint32_t expert) { return predictionSum[expert]; });
+                            [&](uint32_t a, uint32_t b) {
+                              return predictionSum[a] > predictionSum[b];
+                            });
+  if (kAhead < predictionOrder.size()) {
+    std::ranges::sort(predictionOrder.begin() + kAhead, predictionOrder.end(),
+                      [&](uint32_t a, uint32_t b) {
+                        return predictionSum[a] > predictionSum[b];
+                      });
+  }
   for (const uint32_t expert : predictionOrder) predictionSum[expert] = -1;
   return predictionOrder;
 }
