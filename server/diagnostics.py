@@ -56,11 +56,15 @@ def _reasoning_parts(reasoning):
 def print_request(record):
     outcome = record["outcome"]
     if outcome == "error":
-        suffix = f" · request={record['request_id']}" if "request_id" in record else ""
-        print_status(
-            f"Error · {record.get('error_code', 'runtime_error')}{suffix} · frontend_queue={record.get('frontend_queue_ms', 0) / 1000:.3f}s",
-            error=True,
-        )
+        parts = ["Error", record.get("error_code", "runtime_error")]
+        # Only the engine's own wording of a resource failure, never the
+        # request's error message, which may quote it.
+        if record.get("engine_reason"):
+            parts.append(record["engine_reason"])
+        if "request_id" in record:
+            parts.append(f"request={record['request_id']}")
+        parts.append(f"frontend_queue={record.get('frontend_queue_ms', 0) / 1000:.3f}s")
+        print_status(" · ".join(parts), error=True)
         return
     if outcome == "started":
         # The engine admitted the request: a long prompt's prefill runs
