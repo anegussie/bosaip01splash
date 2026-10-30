@@ -186,9 +186,9 @@ LinearScratchSize Linear::prefillScratchSize(ProjectionShape shape, uint32_t max
   if (!maximumRows || maximumRows > SPLASH_PREFILL_TOKEN_BUDGET)
     throw std::invalid_argument("invalid prefill scratch row bound");
   LinearScratchSize bound;
-  // Prefill plans take split scratch only in chunks of up to a decode batch,
-  // which a GGUF projection runs on the staged tile (LinearGguf.cpp).
-  for (uint32_t rows = 1; rows <= std::min(maximumRows, kMaximumDecodeTileRows); ++rows)
+  // Prefill plans take split scratch only in chunks that run the staged tile,
+  // of up to kMaximumStagedPrefillRows rows (LinearGguf.cpp).
+  for (uint32_t rows = 1; rows <= std::min(maximumRows, kMaximumStagedPrefillRows); ++rows)
     for (const auto epilogue : {LinearEpilogue::None, LinearEpilogue::Residual, LinearEpilogue::UpWithGate})
       bound.include(plan({{shape.outputSize, shape.inputSize}, rows, LinearPhase::Prefill, epilogue}).scratchSize());
   // Every prefill plan stores at most the token budget.
