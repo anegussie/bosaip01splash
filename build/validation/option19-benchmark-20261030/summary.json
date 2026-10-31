@@ -1,0 +1,54 @@
+{
+  "model": "Qwen3.6-35B-A3B UD-IQ3_XXS",
+  "launcher": "option 19 (Splash SSD expert streaming)",
+  "server_context": 81920,
+  "prefill_chunk": 512,
+  "kv_format": "int8",
+  "state_format": "bf16",
+  "budget_gb": 8,
+  "concurrency": 1,
+  "reasoning": "off",
+  "thermal": "fair",
+  "memory_pressure": "warning",
+  "swap": "vm.swapusage: total = 2048.00M  used = 1070.88M  free = 977.12M  (encrypted)",
+  "smoke_passed": true,
+  "streaming_ttft_s": 0.49,
+  "depths": {
+    "4096": {
+      "cold_mean_pp_tok_s": 222.2,
+      "cold_median_pp_tok_s": 34.5,
+      "cold_mean_tg_tok_s": 49.6,
+      "cold_median_tg_tok_s": 50.0,
+      "cold_mean_s": 5.19,
+      "cached_mean_s": 3.74,
+      "coding_passed": false
+    },
+    "16384": {
+      "cold_mean_pp_tok_s": 205.6,
+      "cold_median_pp_tok_s": 30.1,
+      "cold_mean_tg_tok_s": 47.5,
+      "cold_median_tg_tok_s": 47.2,
+      "cold_mean_s": 12.57,
+      "cached_mean_s": 2.89,
+      "coding_passed": false
+    },
+    "32768": {
+      "cold_mean_pp_tok_s": 164.7,
+      "cold_median_pp_tok_s": 34.6,
+      "cold_mean_tg_tok_s": 41.4,
+      "cold_median_tg_tok_s": 41.6,
+      "cold_mean_s": 19.39,
+      "cached_mean_s": 3.71,
+      "coding_passed": false
+    },
+    "57344": {
+      "cold_mean_pp_tok_s": 134.9,
+      "cold_median_pp_tok_s": 30.8,
+      "cold_mean_tg_tok_s": 39.2,
+      "cold_median_tg_tok_s": 39.1,
+      "cold_mean_s": 31.3,
+      "cached_mean_s": 3.74,
+      "coding_passed": false
+    }
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "key": "coding-merge_intervals",
+  "prompt_tokens": 3989,
+  "generated_tokens": 118,
+  "seconds": 3.707,
+  "response": {
+    "id": "chatcmpl-abd3ce62dbcdb9ac316c6c053764be92",
+    "object": "chat.completion",
+    "created": 1793417865,
+    "model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "```python\ndef merge_intervals(intervals):\n    if not intervals:\n        return []\n    \n    sorted_intervals = sorted(intervals, key=lambda x: x[0])\n    merged = [sorted_intervals[0]]\n    \n    for current in sorted_intervals[1:]:\n        prev = merged[-1]\n        if current[0] <= prev[1]:\n            merged[-1] = [prev[0], max(prev[1], current[1])]\n        else:\n            merged.append(current)\n    \n    return merged\n```"
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 3989,
+      "completion_tokens": 118,
+      "total_tokens": 4107,
+      "prompt_tokens_details": {
+        "cached_tokens": 3968
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    },
+    "metrics": {
+      "prefill": {
+        "tokens": 21
+      },
+      "decode": {
+        "tokens": 117
+      },
+      "request_latency": {
+        "start_to_first_token_ms": 570.282,
+        "first_token_to_done_ms": 3115.688,
+        "wall_ms": 3703.226,
+        "ttft_ms": 587.538,
+        "queue_to_start_ms": 17.255999999999972,
+        "stream_tokens_per_second": 37.55189864967224
+      },
+      "cache": {
+        "status": "hit",
+        "matched_tokens": 3968,
+        "deduplicated_tokens": 0,
+        "lane": 0
+      },
+      "speculation": {
+        "drafted_tokens": 103,
+        "accepted_draft_tokens": 99,
+        "cycles": 18
+      }
+    },
+    "timings": {
+      "prompt_n": 3989,
+      "prompt_ms": 570.282,
+      "prompt_per_second": 36.82388712952539,
+      "predicted_n": 118,
+      "predicted_ms": 3115.688,
+      "predicted_per_second": 37.55189864967224,
+      "cache_n": 3968,
+      "draft_n": 103,
+      "draft_n_accepted": 99
+    }
+  },
+  "prefill_tok_s": 36.9,
+  "decode_tok_s": 38.2,
+  "ttft_s": 3.707,
+  "cache_n": 0,
+  "swap_before": "vm.swapusage: total = 2048.00M  used = 1078.88M  free = 969.12M  (encrypted)",
+  "swap_after": "vm.swapusage: total = 2048.00M  used = 1078.88M  free = 969.12M  (encrypted)",
+  "thermal": [
+    "fair",
+    "fair"
+  ],
+  "memory_pressure": [
+    "warning",
+    "warning"
+  ]
+}

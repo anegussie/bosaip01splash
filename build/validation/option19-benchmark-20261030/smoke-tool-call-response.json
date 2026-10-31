@@ -1,0 +1,75 @@
+{
+  "id": "chatcmpl-8b480280a10cc66320651fd47e5d7e67",
+  "object": "chat.completion",
+  "created": 1793417565,
+  "model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "call_8b480280a10cc66320651fd47e5d7e67_0",
+            "type": "function",
+            "function": {
+              "name": "add",
+              "arguments": "{\"a\":17,\"b\":25}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 295,
+    "completion_tokens": 37,
+    "total_tokens": 332,
+    "prompt_tokens_details": {
+      "cached_tokens": 288
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    }
+  },
+  "metrics": {
+    "prefill": {
+      "tokens": 7
+    },
+    "decode": {
+      "tokens": 33
+    },
+    "request_latency": {
+      "start_to_first_token_ms": 442.788,
+      "first_token_to_done_ms": 1453.714,
+      "wall_ms": 1913.363,
+      "ttft_ms": 459.6490000000001,
+      "queue_to_start_ms": 16.861000000000104,
+      "stream_tokens_per_second": 22.70047615968478
+    },
+    "cache": {
+      "status": "hit",
+      "matched_tokens": 288,
+      "deduplicated_tokens": 0,
+      "lane": 0
+    },
+    "speculation": {
+      "drafted_tokens": 38,
+      "accepted_draft_tokens": 25,
+      "cycles": 11
+    }
+  },
+  "timings": {
+    "prompt_n": 295,
+    "prompt_ms": 442.788,
+    "prompt_per_second": 15.808919844259554,
+    "predicted_n": 37,
+    "predicted_ms": 1453.714,
+    "predicted_per_second": 22.70047615968478,
+    "cache_n": 288,
+    "draft_n": 38,
+    "draft_n_accepted": 25
+  }
+}

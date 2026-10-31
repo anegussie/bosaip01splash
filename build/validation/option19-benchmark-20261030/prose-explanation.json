@@ -1,0 +1,85 @@
+{
+  "key": "prose-explanation",
+  "prompt_tokens": 3967,
+  "generated_tokens": 216,
+  "seconds": 9.938,
+  "response": {
+    "id": "chatcmpl-c18337b10d4ffd1f5e28d43c0f8e18d0",
+    "object": "chat.completion",
+    "created": 1793417869,
+    "model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "The cache mechanism leverages pure Python utilities to ensure that caller data remains intact and ordering is strictly preserved. By avoiding external dependencies or complex binary interfaces, the system minimizes overhead and potential side effects. This approach guarantees that every interaction with the cache is transparent, allowing developers to trace data flow accurately without unexpected mutations or loss of context.\n\nStable ordering is critical for deterministic behavior in concurrent environments. The implementation uses ordered data structures, such as dictionaries with insertion order preservation or explicit lists, to maintain the sequence of operations. This ensures that even when multiple threads or processes access the cache simultaneously, the results remain consistent and predictable, preventing race conditions that could lead to data corruption or inconsistent states.\n\nFurthermore, the design prioritizes simplicity and maintainability. By relying on standard library features, the cache avoids the complexity of custom memory management or locking mechanisms. This results in a lightweight solution that is easy to debug and extend. The emphasis on preserving caller data means that any modifications made within the cache do not inadvertently alter the original input, ensuring data integrity throughout the application lifecycle."
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 3967,
+      "completion_tokens": 216,
+      "total_tokens": 4183,
+      "prompt_tokens_details": {
+        "cached_tokens": 3936
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    },
+    "metrics": {
+      "prefill": {
+        "tokens": 31
+      },
+      "decode": {
+        "tokens": 215
+      },
+      "request_latency": {
+        "start_to_first_token_ms": 687.638,
+        "first_token_to_done_ms": 9229.493,
+        "wall_ms": 9934.255,
+        "ttft_ms": 704.7619999999988,
+        "queue_to_start_ms": 17.123999999998773,
+        "stream_tokens_per_second": 23.29488737897087
+      },
+      "cache": {
+        "status": "hit",
+        "matched_tokens": 3936,
+        "deduplicated_tokens": 0,
+        "lane": 0
+      },
+      "speculation": {
+        "drafted_tokens": 164,
+        "accepted_draft_tokens": 108,
+        "cycles": 96
+      }
+    },
+    "timings": {
+      "prompt_n": 3967,
+      "prompt_ms": 687.638,
+      "prompt_per_second": 45.08185993211544,
+      "predicted_n": 216,
+      "predicted_ms": 9229.493,
+      "predicted_per_second": 23.29488737897087,
+      "cache_n": 3936,
+      "draft_n": 164,
+      "draft_n_accepted": 108
+    }
+  },
+  "prefill_tok_s": 45.1,
+  "decode_tok_s": 23.6,
+  "ttft_s": 9.938,
+  "cache_n": 0,
+  "swap_before": "vm.swapusage: total = 2048.00M  used = 1078.88M  free = 969.12M  (encrypted)",
+  "swap_after": "vm.swapusage: total = 2048.00M  used = 1070.88M  free = 977.12M  (encrypted)",
+  "thermal": [
+    "fair",
+    "fair"
+  ],
+  "memory_pressure": [
+    "warning",
+    "warning"
+  ]
+}
