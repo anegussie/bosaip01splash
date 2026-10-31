@@ -1,0 +1,191 @@
+{
+  "date": "2026-10-31",
+  "hardware": {
+    "cpu": "Apple M5",
+    "gpu_cores": 8,
+    "physical_memory_bytes": 17179869184
+  },
+  "model_header_inspection": {
+    "repository": "unsloth/Qwen3.8-Flash-Next-GGUF",
+    "revision": "766911a6b7369840a91dbcd95f9f997acaab6cd6",
+    "parts": {
+      "UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00001-of-00003.gguf": 10946624,
+      "UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00002-of-00003.gguf": 49567921344,
+      "UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00003-of-00003.gguf": 32382955968
+    },
+    "total_bytes": 81961823936,
+    "loadable_header": true,
+    "stored_bytes_by_category": {
+      "resident_target": 4522949120,
+      "PLE": 28800138240,
+      "routed_experts": 48627712000
+    },
+    "largest_resident_tensors": [
+      {
+        "name": "output.weight",
+        "bytes": 521472000,
+        "type": "Q6_K",
+        "shape": [
+          2560,
+          248320
+        ]
+      },
+      {
+        "name": "token_embd.weight",
+        "bytes": 521472000,
+        "type": "Q6_K",
+        "shape": [
+          2560,
+          248320
+        ]
+      },
+      {
+        "name": "blk.1.ple_key.weight",
+        "bytes": 27852800,
+        "type": "Q8_0",
+        "shape": [
+          2560,
+          10240
+        ]
+      },
+      {
+        "name": "blk.2.attn_qkv.weight",
+        "bytes": 27852800,
+        "type": "Q8_0",
+        "shape": [
+          2560,
+          10240
+        ]
+      },
+      {
+        "name": "blk.3.attn_q.weight",
+        "bytes": 25804800,
+        "type": "Q6_K",
+        "shape": [
+          2560,
+          12288
+        ]
+      },
+      {
+        "name": "blk.7.attn_q.weight",
+        "bytes": 25804800,
+        "type": "Q6_K",
+        "shape": [
+          2560,
+          12288
+        ]
+      },
+      {
+        "name": "blk.11.attn_q.weight",
+        "bytes": 25804800,
+        "type": "Q6_K",
+        "shape": [
+          2560,
+          12288
+        ]
+      },
+      {
+        "name": "blk.15.attn_q.weight",
+        "bytes": 25804800,
+        "type": "Q6_K",
+        "shape": [
+          2560,
+          12288
+        ]
+      },
+      {
+        "name": "blk.19.attn_q.weight",
+        "bytes": 25804800,
+        "type": "Q6_K",
+        "shape": [
+          2560,
+          12288
+        ]
+      },
+      {
+        "name": "blk.23.attn_q.weight",
+        "bytes": 25804800,
+        "type": "Q6_K",
+        "shape": [
+          2560,
+          12288
+        ]
+      }
+    ]
+  },
+  "external_drive": {
+    "volume": "/Volumes/Untitled",
+    "filesystem": "ExFAT",
+    "capacity_bytes": 500089094144,
+    "free_bytes": 458181181440,
+    "bridge": "JMicron USB to ATA/ATAPI Bridge",
+    "negotiated_link": "5 Gb/s",
+    "solid_state": "not identified by diskutil"
+  },
+  "read_sample": {
+    "device": "USB SATA bridge, negotiated 5 Gb/s",
+    "volume": "/Volumes/Untitled",
+    "sample_file_bytes": 718998097,
+    "uncached": true,
+    "read_only": true,
+    "sequential": [
+      {
+        "bytes": 134217728,
+        "seconds": 1.7036399170028744,
+        "MB_s": 78.78292041672886
+      },
+      {
+        "bytes": 134217728,
+        "seconds": 1.5674967499944614,
+        "MB_s": 85.62552234987041
+      }
+    ],
+    "random_512KiB_qd4": {
+      "reads": 128,
+      "bytes": 67108864,
+      "seconds": 1.8699645409942605,
+      "MB_s": 35.88777355335209,
+      "latency_median_ms": 58.62849999539321,
+      "latency_max_ms": 77.9189589957241
+    }
+  },
+  "read_method": {
+    "open_mode": "O_RDONLY",
+    "cache_control": "fcntl F_NOCACHE=1",
+    "sequential_offsets_bytes": [
+      33554432,
+      402653184
+    ],
+    "sequential_block_bytes": 4194304,
+    "sequential_bytes_per_run": 134217728,
+    "random_seed": 42,
+    "random_offset_alignment_bytes": 16384,
+    "random_read_bytes": 524288,
+    "random_reads": 128,
+    "random_workers": 4,
+    "scope": "existing 718998097-byte file; no file contents or source filename retained"
+  },
+  "estimates_not_model_measurements": {
+    "conditions": "text-only, one request, current Splash expert and PLE streaming, assuming startup fits RAM; cache, draft acceptance, and routing unmeasured",
+    "cold_prompt_tokens_per_second": [
+      3,
+      12
+    ],
+    "decode_tokens_per_second": [
+      0.03,
+      0.2
+    ],
+    "cold_32k_minutes": [
+      45,
+      180
+    ],
+    "confidence": "low"
+  },
+  "validation_limits": [
+    "GGUF headers passed install.gguf.require_loadable; no full download or native startup was performed.",
+    "Disk sample is small and from one existing file, not a sustained model-sized or whole-device benchmark.",
+    "Stored tensor byte counts include alignment padding and are not native allocation sizes.",
+    "Draft, KV, caches, workspace, memory pressure and thermals were not measured for this model."
+  ],
+  "source_commit": "b7007becb59560801879e943e6631bf2ac236e66"
+}
