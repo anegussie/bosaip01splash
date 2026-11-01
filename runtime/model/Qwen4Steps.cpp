@@ -16,7 +16,6 @@ namespace splash::model {
 namespace {
 
 constexpr uint32_t kLanes = ExecutionLimits::maximumBatchWidth;
-constexpr uint32_t kChunkRows = ExecutionLimits::prefillTokenBudget;
 constexpr uint32_t kVerifyRows = ExecutionLimits::targetVerifyRows;
 // A decode step's most rows: every lane's verify rows, packed.
 constexpr uint32_t kStepRows = kLanes * kVerifyRows;
@@ -36,7 +35,9 @@ constexpr uint32_t blockCount(uint64_t position, uint32_t rows) noexcept {
 // A prefill chunk's blocks, each sequence's after the one before it: a
 // sequence completes at most one block more than its rows hold whole, and a
 // chunk holds at most a sequence per lane. A verify lane's.
-constexpr uint64_t kChunkBlockBytes = (kChunkRows / BLOCK_INDEXER_BLOCK + kLanes) * sizeof(BlockIndexerBlock);
+constexpr uint64_t chunkBlockBytes(uint32_t rows) {
+  return (rows / BLOCK_INDEXER_BLOCK + kLanes) * sizeof(BlockIndexerBlock);
+}
 constexpr uint64_t kLaneBlockBytes =
     (kVerifyRows + BLOCK_INDEXER_BLOCK - 1) / BLOCK_INDEXER_BLOCK * sizeof(BlockIndexerBlock);
 
@@ -138,11 +139,13 @@ struct Layout final {
   uint64_t decodeBytes = 0;
 };
 
-Layout layout(const QwenTargetGeometry &g, uint64_t pleRowBytes, uint32_t chunks) {
+Layout layout(const QwenTargetGeometry &g, uint64_t pleRowBytes, uint32_t chunks, uint32_t rows) {
+  if (!validPrefillChunkTokens(rows) || !chunks)
+    throw std::invalid_argument("invalid Flash-Next scratch chunk geometry");
   Layout result;
   for (const Tensor &tensor : tensors(g, pleRowBytes, false))
-    result.prefillBlocks += alignUp(bytesOf(tensor, kChunkRows)) * (tensor.carried ? chunks : 1);
-  result.prefillBytes = result.prefillBlocks + alignUp(kChunkBlockBytes) * chunks;
+    result.prefillBlocks += alignUp(bytesOf(tensor, rows)) * (tensor.carried ? chunks : 1);
+  result.prefillBytes = result.prefillBlocks + alignUp(chunkBlockBytes(rows)) * chunks;
   for (const Tensor &tensor : tensors(g, pleRowBytes, true)) result.decodeBlocks += alignUp(bytesOf(tensor, kStepRows));
   result.decodePrior = result.decodeBlocks + alignUp(kLanes * kLaneBlockBytes);
   result.decodeBytes = result.decodePrior + alignUp(bytesFor<uint32_t>(kLanes * priorCount(g)));
@@ -174,13 +177,13 @@ uint64_t pleRowBytes(const Qwen4ExpWeights &weights) {
 } // namespace
 
 Qwen4Steps::Qwen4Steps(const Qwen4ExpWeights &weights, const QwenTargetGeometry &geometry,
-                       metal::MetalBackend &backend, uint32_t prefillChunks)
-    : weights_(weights), geometry_(geometry), backend_(backend), prefillChunks_(prefillChunks),
+                       metal::MetalBackend &backend, uint32_t prefillChunks, uint32_t prefillRows)
+    : weights_(weights), geometry_(geometry), backend_(backend), prefillChunks_(prefillChunks), prefillRows_(prefillRows),
       pleRowBytes_(pleRowBytes(weights)) {
   // The hash keeps at most NGRAM_EMBEDDING_MAXIMUM_NGRAM tokens of a row's n-grams.
   if (!prefillChunks_ || geometry_.pleNgram < 2 || geometry_.pleNgram > NGRAM_EMBEDDING_MAXIMUM_NGRAM)
     throw std::invalid_argument("invalid Qwen3.8-Flash-Next step geometry");
-  const Layout bytes = layout(geometry_, pleRowBytes_, prefillChunks_);
+  const Layout bytes = layout(geometry_, pleRowBytes_, prefillChunks_, prefillRows_);
   prefill_ = backend_.allocateBuffer(bytes.prefillBytes, metal::BufferStorage::Shared, "qwen4-prefill-scratch");
   decode_ = backend_.allocateBuffer(bytes.decodeBytes, metal::BufferStorage::Shared, "qwen4-decode-scratch");
   prefillBlocksOffset_ = bytes.prefillBlocks;
@@ -189,7 +192,7 @@ Qwen4Steps::Qwen4Steps(const Qwen4ExpWeights &weights, const QwenTargetGeometry 
   uint64_t cursor = 0;
   for (const Tensor &tensor : tensors(geometry_, pleRowBytes_, false)) {
     prefillTensors_.push_back({tensor.field, tensor.rowBytes, tensor.fixedBytes, tensor.carried, cursor});
-    cursor += alignUp(bytesOf(tensor, kChunkRows)) * (tensor.carried ? prefillChunks_ : 1);
+    cursor += alignUp(bytesOf(tensor, prefillRows_)) * (tensor.carried ? prefillChunks_ : 1);
   }
   cursor = 0;
   for (const Tensor &tensor : tensors(geometry_, pleRowBytes_, true)) {
@@ -202,8 +205,8 @@ Qwen4Steps::Qwen4Steps(const Qwen4ExpWeights &weights, const QwenTargetGeometry 
 }
 
 QwenTargetScratchBytes Qwen4Steps::scratchBytes(const QwenTargetGeometry &geometry, uint64_t tableRowBytes,
-                                                uint32_t prefillChunks) {
-  const Layout bytes = layout(geometry, tableRowBytes, prefillChunks);
+                                                uint32_t prefillChunks, uint32_t prefillRows) {
+  const Layout bytes = layout(geometry, tableRowBytes, prefillChunks, prefillRows);
   return {bytes.prefillBytes, bytes.decodeBytes};
 }
 
@@ -218,7 +221,7 @@ Qwen4Scratch Qwen4Steps::prefillScratch(uint32_t index) const {
                        .maskWords = maskWords(geometry_),
                        .listStride = listStride(geometry_)};
   for (const Placed &tensor : prefillTensors_) {
-    const uint64_t bytes = tensor.rowBytes * kChunkRows + tensor.fixedBytes;
+    const uint64_t bytes = tensor.rowBytes * prefillRows_ + tensor.fixedBytes;
     scratch.*tensor.field =
         backend_.view(prefill_, tensor.offset + (tensor.carried ? index * alignUp(bytes) : 0), bytes);
   }
@@ -227,15 +230,17 @@ Qwen4Scratch Qwen4Steps::prefillScratch(uint32_t index) const {
 
 std::vector<Qwen4Blocks> Qwen4Steps::prefillBlocks(uint32_t index, const QwenTargetPrefillChunk &chunk) const {
   if (index >= prefillChunks_) throw std::out_of_range("Qwen3.8-Flash-Next prefill chunk");
+  if (!chunk.rows || chunk.rows > prefillRows_)
+    throw std::invalid_argument("Flash-Next prefill exceeds allocated scratch rows");
   const metal::MetalBuffer records =
-      backend_.view(prefill_, prefillBlocksOffset_ + index * alignUp(kChunkBlockBytes), kChunkBlockBytes);
+      backend_.view(prefill_, prefillBlocksOffset_ + index * alignUp(chunkBlockBytes(prefillRows_)), chunkBlockBytes(prefillRows_));
   std::vector<Qwen4Blocks> blocks;
   uint64_t written = 0;
   for (const QwenTargetPrefillSequence &sequence : chunk.sequences) {
     const uint32_t count = blockCount(sequence.chunk.committed_tokens, sequence.rows);
     const uint64_t bytes = count * sizeof(BlockIndexerBlock);
     if (sequence.tokens.size() != sequence.rows || uint64_t{sequence.rowBegin} + sequence.rows > chunk.rows ||
-        written + bytes > kChunkBlockBytes)
+        written + bytes > chunkBlockBytes(prefillRows_))
       throw std::invalid_argument("invalid Qwen3.8-Flash-Next prefill sequence");
     blocks.push_back(count ? Qwen4Blocks{backend_.view(records, written, bytes), count} : Qwen4Blocks{});
     written += bytes;
@@ -273,7 +278,7 @@ void Qwen4Steps::readAhead(std::span<const QwenTargetPrefillChunk> chunks) {
   const uint32_t heads = geometry_.pleHeads();
   ahead_.clear();
   // The next command's rows: a command's chunks of rows at most.
-  uint64_t budget = uint64_t{prefillChunks_} * kChunkRows;
+  uint64_t budget = uint64_t{prefillChunks_} * prefillRows_;
   for (const QwenTargetPrefillSequence *sequence : last) {
     if (!sequence) continue;
     const std::span<const uint32_t> prompt = sequence->request.tokens;

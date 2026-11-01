@@ -765,9 +765,10 @@ RuntimeResources::create(const RuntimeResourcesConfig &config,
   bool kvFileOpen = true;
   // The context a relaunch keeps, which only an automatic context does.
   const uint32_t relaunchContext = requestedContextTokens ? 0 : config.relaunchContext;
-  // The pages of a prefill group's rows (model::kPrefillGroupChunks chunks).
+  // The pages of a prefill group's rows (model::kFullRowPrefillGroupChunks
+  // full-size chunks).
   constexpr uint32_t groupPages =
-      model::kPrefillGroupChunks * model::ExecutionLimits::prefillTokenBudget / kv::kPageTokens;
+      model::kFullRowPrefillGroupChunks * model::ExecutionLimits::prefillTokenBudget / kv::kPageTokens;
   // The plan with the parts set as `experts` and `table`, `stagingBytes` set
   // aside for the disk tier's state staging and `aneFfnBytes` for the
   // prefill FFN's Neural Engine split.

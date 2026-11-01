@@ -27,6 +27,13 @@
 // every one of its experts, in its floor chunk alone: they are read when the
 // store is built or restored, and nothing loads them again.
 //
+// If the memory budget cannot hold one layer of every format, the store
+// instead shares one arena large enough for the largest layer. Every format
+// streams, including single-layer formats. Switching formats evicts the old
+// format only after its GPU work completes; repeated layers of the same format
+// may reuse their cached slots. This mode has no elastic chunks and counts
+// the shared allocation once through release and restore.
+//
 // A streamed block's load runs after its steps' grouping (ops::
 // MoeExpertStream), in rounds: each a host step of the command, which claims
 // a slot for each routed expert that is not resident (in the first round),
@@ -212,8 +219,7 @@ public:
   [[nodiscard]] static uint64_t fixedBytes(const StreamedBlocks &blocks, ops::MoeShape shape);
   // The smallest store of these blocks (ExpertStoreOptions::memoryBytes and
   // floorBytes), which the constructor refuses a byte less than: its fixed
-  // bytes, a block's experts of each streamed size and every expert of a
-  // size of one block.
+  // bytes and one shared arena holding the largest layer of experts.
   [[nodiscard]] static uint64_t minimumBytes(const StreamedBlocks &blocks, ops::MoeShape shape);
 
 private:

@@ -93,11 +93,11 @@ class Qwen4Steps final {
 public:
   // Scratch for prefill commands of up to `prefillChunks` chunks.
   Qwen4Steps(const Qwen4ExpWeights &weights, const QwenTargetGeometry &geometry, metal::MetalBackend &backend,
-             uint32_t prefillChunks);
+             uint32_t prefillChunks, uint32_t prefillRows = ExecutionLimits::prefillTokenBudget);
   // The scratch of a target whose streamed table's rows are `tableRowBytes`
   // each (zero: the table loads).
   [[nodiscard]] static QwenTargetScratchBytes scratchBytes(const QwenTargetGeometry &geometry, uint64_t tableRowBytes,
-                                                           uint32_t prefillChunks);
+                                                           uint32_t prefillChunks, uint32_t prefillRows = ExecutionLimits::prefillTokenBudget);
   // What the constructor allocated, scratchBytes' of its geometry.
   [[nodiscard]] QwenTargetScratchBytes allocatedBytes() const noexcept;
 
@@ -162,6 +162,7 @@ private:
   QwenTargetGeometry geometry_;
   metal::MetalBackend &backend_;
   uint32_t prefillChunks_ = 0;
+  uint32_t prefillRows_ = 0;
   // The bytes of a row of a streamed PLE table, which a step stages; zero
   // for a table in memory.
   uint64_t pleRowBytes_ = 0;

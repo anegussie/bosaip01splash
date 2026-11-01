@@ -40,6 +40,10 @@ inline constexpr uint32_t kPrefillRows = ExecutionLimits::prefillTokenBudget;
 // arrive while it runs wait for the whole command: four chunks read a layer
 // once per 8192 rows and keep both bounded.
 inline constexpr uint32_t kPrefillGroupChunks = 4;
+// The chunks a group runs when they are full-size (kPrefillRows rows each):
+// four of them take more prefill arena than the memory budget leaves beside
+// streamed weights, so full-size chunks run in pairs.
+inline constexpr uint32_t kFullRowPrefillGroupChunks = 2;
 inline constexpr uint32_t kTileRows = kv::kPageTokens;
 inline constexpr uint32_t kDraftCacheStride = ExecutionLimits::draftContextTokens;
 inline constexpr uint32_t kMaximumPageTableEntries =
@@ -84,10 +88,21 @@ struct RuntimeGeometry final {
     result.target.stateLayout = model.stateLayout(stateFormat).target;
     result.target.ropeScaling = model.descriptor.ropeScaling;
     if (parts.kv) result.spilledKv = model.descriptor.capabilities.sparseKv;
-    if (parts.experts || parts.kv) result.prefillChunks = kPrefillGroupChunks;
+    if (parts.experts || parts.kv)
+      result.prefillChunks = prefillChunkTokens >= kPrefillRows ? kFullRowPrefillGroupChunks : kPrefillGroupChunks;
+    // Flash-Next's per-chunk scratch is large. Honor a smaller requested
+    // chunk by running one at a time, including when its experts stream.
+    // Planning and execution share this geometry; grouped streaming still
+    // uses the fixed row stride when the full-size chunk is requested.
+    if (std::holds_alternative<Qwen4ExpWeights>(model.target) && prefillChunkTokens < kPrefillRows)
+      result.prefillChunks = 1;
     // Streamed groups use the target's fixed row stride across chunks.
     // Resident targets retain the configurable small prefill allocation.
-    if (result.prefillChunks > 1) result.prefillChunkTokens = kPrefillRows;
+    // Forcing the full row stride caps the group at the pairs the budget holds.
+    if (result.prefillChunks > 1) {
+      result.prefillChunkTokens = kPrefillRows;
+      result.prefillChunks = std::min(result.prefillChunks, kFullRowPrefillGroupChunks);
+    }
     if (!result.target.valid() || !result.draft.stateLayout().valid() ||
         (parts.kv && (!result.spilledKv || !result.target.kvLayout.spillable())) ||
         result.target.contextTokens() != model.descriptor.capabilities.maximumContextTokens ||
@@ -99,7 +114,11 @@ struct RuntimeGeometry final {
     // Sized from the geometry, once it is valid.
     result.targetScratch = std::visit(
         [&](const auto &weights) {
-          return qwenTargetScratchBytes(weights, result.target, result.prefillChunks, parts.tableRowBytes);
+          if constexpr (std::is_same_v<std::decay_t<decltype(weights)>, Qwen4ExpWeights>)
+            return qwenTargetScratchBytes(weights, result.target, result.prefillChunks, parts.tableRowBytes,
+                                           result.prefillChunkTokens);
+          else
+            return qwenTargetScratchBytes(weights, result.target, result.prefillChunks, parts.tableRowBytes);
         },
         model.target);
     return result;

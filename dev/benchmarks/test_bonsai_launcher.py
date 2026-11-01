@@ -36,6 +36,7 @@ count=root/'attempts'
 n=int(count.read_text())+1 if count.exists() else 1
 count.write_text(str(n))
 (root/'argv.json').write_text(json.dumps(sys.argv[1:]))
+(root/'environment.json').write_text(json.dumps({'HF_HUB_CACHE':os.environ.get('HF_HUB_CACHE')}))
 (root/'server.pid').write_text(str(os.getpid()))
 mode=os.environ.get('MOCK_MODE','exit')
 if mode=='memory':
@@ -74,7 +75,9 @@ print('Ready test server',flush=True)
         }
         for name in list(self.env):
             if (
-                name.startswith(("SPLASH_BONSAI_", "SPLASH_QWEN36_"))
+                name.startswith(
+                    ("SPLASH_BONSAI_", "SPLASH_QWEN36_", "SPLASH_FLASH_NEXT_")
+                )
                 and name != "SPLASH_BONSAI_STARTUP_RETRY_DELAY"
             ):
                 del self.env[name]
@@ -256,8 +259,8 @@ print('Ready test server',flush=True)
         for flag, value in {
             "--model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
             "--served-model-name": "qwen3.6-35b-a3b-iq3-xxs-splash",
-            "--max-context": "24K",
-            "--expert-memory": "auto",
+            "--max-context": "80K",
+            "--expert-memory": "1900M",
             "--max-memory": "8G",
             "--kv-format": "int8",
             "--state-format": "bf16",
@@ -271,16 +274,17 @@ print('Ready test server',flush=True)
         }.items():
             self.assertEqual(args[args.index(flag) + 1], value, flag)
         self.assertIn("--persistent-cache", args)
-        self.assertIn("--language-only", args)
+        self.assertNotIn("--language-only", args)
+        self.assertEqual(args[args.index("--max-image-pixels") + 1], "1048576")
         config = json.loads(self.config.read_text())
         self.assertEqual(config["model"], "local-llama/qwen3.6-35b-a3b-iq3-xxs-splash")
         self.assertEqual(
             config["provider"]["local-llama"]["models"][
                 "qwen3.6-35b-a3b-iq3-xxs-splash"
             ]["limit"],
-            {"context": 22528, "output": 2048},
+            {"context": 79872, "output": 4096},
         )
-        self.assertEqual(config["compaction"]["buffer"], 2048)
+        self.assertEqual(config["compaction"]["buffer"], 4096)
         self.assertTrue(
             (self.root / "logs/qwen3.6-35b-a3b-iq3-xxs-splash-latest.log").is_symlink()
         )
@@ -317,9 +321,9 @@ print('Ready test server',flush=True)
     def test_option19_invalid_settings_do_not_mutate_config(self):
         before = self.config.read_bytes()
         for overrides in (
-            {"SPLASH_QWEN36_IQ3_MAX_CONTEXT": "25K"},
-            {"SPLASH_QWEN36_IQ3_OPENCODE_CONTEXT": "24576"},
-            {"SPLASH_QWEN36_IQ3_MAX_TOKENS": "22528"},
+            {"SPLASH_QWEN36_IQ3_MAX_CONTEXT": "81K"},
+            {"SPLASH_QWEN36_IQ3_OPENCODE_CONTEXT": "81920"},
+            {"SPLASH_QWEN36_IQ3_MAX_TOKENS": "79872"},
             {"SPLASH_QWEN36_IQ3_MAX_CACHE_DISK": "9G"},
             {"SPLASH_QWEN36_IQ3_PERSISTENT_CACHE": "2"},
         ):
@@ -328,6 +332,169 @@ print('Ready test server',flush=True)
                 self.assertNotEqual(r.returncode, 0)
                 self.assertEqual(self.config.read_bytes(), before)
                 self.assertFalse((self.root / "attempts").exists())
+
+    def test_option20_defaults_are_independent_and_enable_reasoning(self):
+        config = json.loads(self.config.read_text())
+        config["agent"]["context_worker"] = {
+            "model": "local-llama/old",
+            "temperature": 0.4,
+        }
+        self.config.write_text(json.dumps(config))
+        r = self.run_launcher(
+            "20",
+            SPLASH_QWEN36_MAX_CONTEXT="invalid",
+            SPLASH_QWEN36_IQ3_MAX_CONTEXT="invalid",
+            SPLASH_BONSAI_MAX_CONTEXT="invalid",
+            SPLASH_BONSAI_STATE_FORMAT="fp32",
+            SPLASH_BONSAI_MAX_ACTIVE_REQUESTS="3",
+            HF_HUB_CACHE="/Volumes/Untitled/unwanted-inherited-cache",
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        for flag, value in {
+            "--model": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS",
+            "--served-model-name": "qwen3.8-flash-next-iq3-xxs-splash",
+            "--max-context": "32761",
+            "--max-memory": "8G",
+            "--expert-memory": "auto",
+            "--ple-memory": "64M",
+            "--kv-format": "int8",
+            "--state-format": "bf16",
+            "--prefill-chunk-tokens": "1024",
+            "--max-active-requests": "1",
+            "--default-reasoning-effort": "medium",
+            "--max-cache-disk": "0",
+        }.items():
+            self.assertEqual(args[args.index(flag) + 1], value, flag)
+        self.assertIn("--language-only", args)
+        self.assertNotIn("--persistent-cache", args)
+        environment = json.loads((self.root / "environment.json").read_text())
+        self.assertEqual(
+            environment["HF_HUB_CACHE"],
+            str(pathlib.Path.home() / ".cache/huggingface/hub"),
+        )
+        config = json.loads(self.config.read_text())
+        alias = "qwen3.8-flash-next-iq3-xxs-splash"
+        self.assertEqual(config["model"], "local-llama/" + alias)
+        model = config["provider"]["local-llama"]["models"][alias]
+        self.assertEqual(model["limit"], {"context": 30713, "output": 1024})
+        self.assertEqual(model["modalities"], {"input": ["text"], "output": ["text"]})
+        self.assertTrue(model["reasoning"])
+        self.assertEqual(
+            model["variants"]["bounded-compaction"]["reasoning_effort"], "none"
+        )
+        self.assertEqual(config["agent"]["general"]["reasoningEffort"], "medium")
+        self.assertEqual(config["agent"]["general"]["temperature"], 1.0)
+        self.assertEqual(config["agent"]["general"]["top_p"], 0.95)
+        self.assertEqual(config["agent"]["context_worker"]["temperature"], 0.4)
+        self.assertEqual(config["compaction"]["buffer"], 1024)
+        self.assertIn("reasoning=medium", r.stdout)
+        self.assertTrue((self.root / f"logs/{alias}-latest.log").is_symlink())
+
+    def test_option20_interactive_and_help(self):
+        r = subprocess.run(
+            ["bash", LAUNCHER],
+            input="20\n",
+            env=self.env,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("20) Qwen3.8 Flash-Next GSQ-RCO IQ3_XXS", r.stdout)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--max-memory") + 1], "8G")
+        for flag in ("--list", "--help"):
+            r = subprocess.run(
+                ["bash", LAUNCHER, flag],
+                env=self.env,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("20", r.stdout)
+
+    def test_option20_overrides_and_reasoning_off(self):
+        hub = self.root / "internal-model-cache"
+        r = self.run_launcher(
+            "20",
+            SPLASH_FLASH_NEXT_MAX_CONTEXT="32761",
+            SPLASH_FLASH_NEXT_OPENCODE_CONTEXT="28672",
+            SPLASH_FLASH_NEXT_MAX_TOKENS="3072",
+            SPLASH_FLASH_NEXT_MAX_MEMORY="9G",
+            SPLASH_FLASH_NEXT_REASONING_EFFORT="none",
+            SPLASH_FLASH_NEXT_MAX_CACHE_DISK="0",
+            SPLASH_FLASH_NEXT_HF_HUB_CACHE=str(hub),
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--max-context") + 1], "32761")
+        self.assertEqual(args[args.index("--max-memory") + 1], "9G")
+        self.assertEqual(args[args.index("--default-reasoning-effort") + 1], "none")
+        self.assertNotIn("--persistent-cache", args)
+        self.assertNotIn("--cache-dir", args)
+        environment = json.loads((self.root / "environment.json").read_text())
+        self.assertEqual(environment["HF_HUB_CACHE"], str(hub))
+        config = json.loads(self.config.read_text())
+        model = config["provider"]["local-llama"]["models"][
+            "qwen3.8-flash-next-iq3-xxs-splash"
+        ]
+        self.assertEqual(model["limit"], {"context": 28672, "output": 3072})
+        self.assertEqual(config["agent"]["general"]["reasoningEffort"], "none")
+        self.assertEqual(config["agent"]["general"]["temperature"], 0.7)
+        self.assertEqual(config["agent"]["general"]["top_p"], 0.8)
+
+    def test_option20_small_context_reserves_output(self):
+        r = self.run_launcher("20", SPLASH_FLASH_NEXT_MAX_CONTEXT="4K")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        config = json.loads(self.config.read_text())
+        model = config["provider"]["local-llama"]["models"][
+            "qwen3.8-flash-next-iq3-xxs-splash"
+        ]
+        self.assertEqual(model["limit"], {"context": 2048, "output": 1024})
+
+    def test_option20_invalid_settings_preserve_config(self):
+        before = self.config.read_bytes()
+        for name, values in {
+            "SPLASH_FLASH_NEXT_MAX_CONTEXT": ["33K", "0", "999999999999999K"],
+            "SPLASH_FLASH_NEXT_OPENCODE_CONTEXT": ["32768", "016384"],
+            "SPLASH_FLASH_NEXT_MAX_TOKENS": ["30720", "0"],
+            "SPLASH_FLASH_NEXT_MAX_MEMORY": ["7G", "12G", "auto"],
+            "SPLASH_FLASH_NEXT_REASONING_EFFORT": ["invalid", "HIGH"],
+            "SPLASH_FLASH_NEXT_MAX_CACHE_DISK": ["9G", "-1"],
+            "SPLASH_FLASH_NEXT_PERSISTENT_CACHE": ["2"],
+            "SPLASH_FLASH_NEXT_HF_HUB_CACHE": ["relative/cache"],
+        }.items():
+            for value in values:
+                with self.subTest(name=name, value=value):
+                    r = self.run_launcher("20", **{name: value})
+                    self.assertNotEqual(r.returncode, 0)
+                    self.assertEqual(self.config.read_bytes(), before)
+                    self.assertFalse((self.root / "attempts").exists())
+
+    def test_option20_occupied_port_preserves_config(self):
+        (self.root / "bin/lsof").write_text("#!/bin/sh\nexit 0\n")
+        before = self.config.read_bytes()
+        r = self.run_launcher("20")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("already in use", r.stdout + r.stderr)
+        self.assertEqual(self.config.read_bytes(), before)
+        self.assertFalse((self.root / "attempts").exists())
+
+    def test_option20_rejects_hermes_and_out_of_range_selection(self):
+        before = self.config.read_bytes()
+        for args in (["--hermes", "20"], ["--direct", "21"]):
+            r = subprocess.run(
+                ["bash", LAUNCHER, *args],
+                env=self.env,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+            self.assertEqual(self.config.read_bytes(), before)
+            self.assertFalse((self.root / "attempts").exists())
 
     def test_state_and_chunk_overrides(self):
         r = self.run_launcher(

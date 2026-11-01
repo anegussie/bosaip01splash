@@ -756,6 +756,27 @@ void qsaScratchCoversWindow(MetalBackend &backend) {
     }
     return !graph.empty();
   };
+  // Planning and allocation agree for smaller chunks, including carried
+  // tensors in groups. Decode capacity must remain independent of prefill.
+  for (const uint32_t rows : {128U, 512U, 1024U}) {
+    for (const uint32_t chunks : {1U, 4U}) {
+      const model::Qwen4Steps small(weights, native, backend, chunks, rows);
+      const auto planned = model::Qwen4Steps::scratchBytes(native, 0, chunks, rows);
+      const auto full = model::Qwen4Steps::scratchBytes(native, 0, chunks);
+      const auto actual = small.allocatedBytes();
+      check(actual.prefill == planned.prefill && actual.decode == planned.decode &&
+                actual.prefill < full.prefill && actual.decode == full.decode,
+            "small Flash-Next scratch allocation matches plan and preserves decode");
+      check(selects(small.prefillScratch(chunks - 1), rows, {262144U - rows}),
+            "small Flash-Next scratch covers the last rows of the context");
+      model::QwenTargetPrefillChunk oversized;
+      oversized.rows = rows + 1;
+      bool refused = false;
+      try { static_cast<void>(small.prefillBlocks(0, oversized)); }
+      catch (const std::invalid_argument &) { refused = true; }
+      check(refused, "Flash-Next refuses chunks larger than allocated scratch");
+    }
+  }
   uint64_t nativeScores = 0;
   for (const auto &[geometry, window] : {std::pair{&native, 262'144U}, std::pair{&yarn, 1'010'000U}}) {
     const model::Qwen4Steps steps(weights, *geometry, backend, 1);

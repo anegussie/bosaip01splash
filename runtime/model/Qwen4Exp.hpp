@@ -191,10 +191,11 @@ struct Qwen4ExpWeights final : QwenTargetWeightsBase {
                                                          const QwenTargetGeometry &geometry,
                                                          metal::MetalBackend &backend,
                                                          const ops::ExecutionPlans &operators,
-                                                         uint32_t prefillChunks);
+                                                         uint32_t prefillChunks, uint32_t prefillRows = ExecutionLimits::prefillTokenBudget);
 [[nodiscard]] QwenTargetScratchBytes qwenTargetScratchBytes(const Qwen4ExpWeights &weights,
                                                             const QwenTargetGeometry &geometry,
-                                                            uint32_t prefillChunks, uint64_t tableRowBytes);
+                                                            uint32_t prefillChunks, uint64_t tableRowBytes,
+                                                            uint32_t prefillRows = ExecutionLimits::prefillTokenBudget);
 void includeFamilyProjections(QwenTargetGeometry &geometry, const Qwen4ExpWeights &weights);
 // The rows of its PLE table, when it streams, that a step stages and the
 // read-ahead may have queued (SparseRowStoreOptions::stageRows and

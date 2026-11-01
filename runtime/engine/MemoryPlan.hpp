@@ -153,7 +153,7 @@ struct ModelMemoryProfile final {
   // A spill-capable target's (planStreamedMemory); disabled for others.
   KvSpillPlan spill{};
   // The pages one lane's prefill command writes at most: a group's where
-  // its routed experts stream (model::kPrefillGroupChunks chunks), zero for
+  // its routed experts stream (model::kFullRowPrefillGroupChunks chunks), zero for
   // a chunk's. A windowed layout's lane keeps them Full (kvWindowFloorPages).
   uint32_t commandPages = 0;
 
@@ -201,7 +201,7 @@ struct StreamedMemoryInputs final {
   uint64_t kvSlotBytes = 0;
   uint64_t stateSlotBytes = 0;
   uint64_t activeLimitBytes = 0;
-  // The pages of a prefill group's rows (model::kPrefillGroupChunks chunks).
+  // The pages of a prefill group's rows (model::kFullRowPrefillGroupChunks chunks).
   uint32_t groupPages = 0;
 };
 

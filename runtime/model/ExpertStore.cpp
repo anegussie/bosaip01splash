@@ -123,9 +123,8 @@ struct Places final {
 
 // What a store's blocks alone decide (the store and ExpertStore::
 // fixedBytes): each block's layout, the layouts and their blocks, and the
-// native bytes of each projection of a place, the most of a streamed
-// layout's expert (of any layout's when none streams: the staging then only
-// reads the sizes of one block, Impl::fill).
+// native bytes of each projection of a place, the most of any layout's
+// expert: every layout may stream through the shared arena.
 struct Geometry final {
   std::vector<uint32_t> layoutOf;
   std::vector<ExpertLayout> layouts;
@@ -150,11 +149,9 @@ Geometry geometryOf(const StreamedBlocks &streamed, ops::MoeShape shape) {
     ++g.blocks[index];
     g.layoutOf.push_back(index);
   }
-  const bool streaming = std::ranges::any_of(g.blocks, [](uint32_t blocks) { return blocks > 1; });
   for (uint32_t layout = 0; layout < g.layouts.size(); ++layout)
-    if (g.streams(layout) || !streaming)
-      for (size_t z = 0; z < 3; ++z)
-        g.nativeBytes[z] = std::max(g.nativeBytes[z], g.layouts[layout][z].nativeBytes());
+    for (size_t z = 0; z < 3; ++z)
+      g.nativeBytes[z] = std::max(g.nativeBytes[z], g.layouts[layout][z].nativeBytes());
   return g;
 }
 
@@ -175,13 +172,13 @@ uint64_t fixedBytesOf(const Geometry &g, uint32_t blocks, ops::MoeShape shape) {
 }
 
 // The smallest store (ExpertStore::minimumBytes): its fixed bytes and the
-// chunks of each layout of a block's experts, which for a layout of one block
-// are all of its experts.
+// shared arena large enough for a complete layer of any layout.
 uint64_t minimumBytesOf(const Geometry &g, uint32_t blocks, ops::MoeShape shape) {
   uint64_t bytes = fixedBytesOf(g, blocks, shape);
+  uint64_t arena = 0;
   for (const ExpertLayout &layout : g.layouts)
-    bytes += arenaBytes(layout, shape.experts);
-  return bytes;
+    arena = std::max(arena, arenaBytes(layout, shape.experts));
+  return bytes + arena;
 }
 
 } // namespace
@@ -367,6 +364,9 @@ struct ExpertStore::Impl {
   // their projections' sources (MoE::addExpertLoad's), and its grid
   // (MTLDispatchThreadgroupsIndirectArguments), all Shared.
   metal::MetalBuffer tables, staging, jobs, sources, grid;
+  // Low-memory stores reuse one arena across formats, only between completed layers.
+  metal::MetalBuffer sharedArena;
+  uint32_t activeSize = kNoSlot;
   // A decode step's prediction of the next block's routes (addLoad): its
   // router's fp32 scores of this block's input, then each row's experts and
   // routing weights as the routing selects them (ops::MoE::addRoutes), for
@@ -929,6 +929,12 @@ void ExpertStore::Impl::forgetRepack() {
 void ExpertStore::Impl::countLive() {
   counters.chunks = counters.arenaBytes = counters.slots = 0;
   if (released) return;
+  if (sharedArena.sizeBytes()) {
+    counters.chunks = 1;
+    counters.arenaBytes = sharedArena.sizeBytes();
+    counters.slots = shape.experts;
+    return;
+  }
   for (const Size &size : sizes) {
     const uint32_t live = size.chunks.liveChunks();
     counters.chunks += live;
@@ -959,6 +965,15 @@ void ExpertStore::Impl::load(uint32_t index, ops::MoePhase phase, uint32_t rows,
       // slots of the experts it had not staged; one that fails before it
       // routes frees none of the last load's (abandon).
       abandon();
+      const uint32_t nextSize = blocks[index].size;
+      if (sharedArena.sizeBytes() && activeSize != nextSize) {
+        if (activeSize != kNoSlot) {
+          Size &previous = sizes[activeSize];
+          for (uint32_t slot = 0; slot < previous.slots; ++slot) evict(previous, slot);
+          previous.recycling.reset();
+        }
+        activeSize = nextSize;
+      }
       partTiles.clear();
       for (const PartTiles &part : parts) {
         const auto *counted = static_cast<const MoeTileCount *>(part.count.contents());
@@ -1035,19 +1050,30 @@ ExpertStore::ExpertStore(metal::MetalBackend &backend, StreamedBlocks streamed, 
   if (options.memoryBytes < minimum)
     throw std::invalid_argument("expert memory of " + std::to_string(options.memoryBytes >> 20) +
                                 " MiB holds fewer slots than the smallest store (" + std::to_string(minimum >> 20) +
-                                " MiB): a block's experts of each size and every expert of a size of one block, "
+                                " MiB): the largest layer of experts in a shared arena, "
                                 "beside the staging and tables");
   if (options.floorBytes && (options.floorBytes < minimum || options.floorBytes > options.memoryBytes))
     throw std::invalid_argument("an expert floor of " + std::to_string(options.floorBytes >> 20) +
                                 " MiB lies outside the smallest store and the store's " +
                                 std::to_string(options.memoryBytes >> 20) + " MiB");
   const uint64_t fixed = fixedBytesOf(geometry, blocks, shape);
+  uint64_t separateMinimum = fixed;
+  for (const ExpertLayout &layout : geometry.layouts)
+    separateMinimum += arenaBytes(layout, shape.experts);
+  const bool shared = options.memoryBytes < separateMinimum;
   const uint64_t largest = options.bufferBytes && options.bufferBytes < backend.capabilities().maxBufferLengthBytes
                                ? options.bufferBytes
                                : backend.capabilities().maxBufferLengthBytes;
+  if (shared) {
+    if (minimum - fixed > largest)
+      throw std::invalid_argument("shared expert arena is more than the device's largest buffer");
+    impl.sharedArena = backend.allocateBuffer(minimum - fixed, metal::BufferStorage::Shared, "experts/shared-arena");
+    logLine("Expert formats share one ", (minimum - fixed) >> 20,
+            " MiB arena; changing formats evicts the previous format's cached experts.");
+  }
   for (uint32_t layout = 0; layout < geometry.layouts.size(); ++layout)
     impl.sizes.push_back(
-        {.layout = geometry.layouts[layout], .blocks = geometry.blocks[layout], .streams = geometry.streams(layout)});
+        {.layout = geometry.layouts[layout], .blocks = geometry.blocks[layout], .streams = shared || geometry.streams(layout)});
   for (uint32_t block = 0; block < blocks; ++block) impl.blocks[block].size = geometry.layoutOf[block];
   // Every streamed size holds the same share of its experts, but at least a
   // block's (a prefill chunk may route them all) and at most all of them; a
@@ -1056,6 +1082,7 @@ ExpertStore::ExpertStore(metal::MetalBackend &backend, StreamedBlocks streamed, 
   // kExpertFloorShare of its slots). The minimum above holds a block's
   // experts of each size.
   const auto slotsAt = [&](uint32_t size, double share) {
+    if (shared) return uint64_t{shape.experts};
     const uint64_t all = uint64_t{impl.sizes[size].blocks} * shape.experts;
     if (!impl.sizes[size].streams) return all;
     return std::clamp<uint64_t>(static_cast<uint64_t>(share * double(all)), shape.experts, all);
@@ -1099,9 +1126,10 @@ ExpertStore::ExpertStore(metal::MetalBackend &backend, StreamedBlocks streamed, 
     // Each chunk's regions over its own slots, in the expert kernels' order
     // (ops::ExpertChunks): plane1's is meta's for a format without one.
     const ExpertSlotPlanes slotPlanes{size.layout[0].planes, size.layout[1].planes, size.layout[2].planes};
-    size.chunkLayout = size.streams ? streamedExpertChunkLayout(slotPlanes, size.slots, floorSlots, shape.experts,
-                                                                largest, options.elasticChunkBytes)
-                                    : wholeExpertChunkLayout(slotPlanes, size.slots, largest);
+    size.chunkLayout = !shared && size.streams
+        ? streamedExpertChunkLayout(slotPlanes, size.slots, floorSlots, shape.experts,
+                                    largest, options.elasticChunkBytes)
+        : wholeExpertChunkLayout(slotPlanes, size.slots, largest);
     const ExpertChunkLayout &chunks = size.chunkLayout;
     std::vector<metal::MetalBuffer> planes;
     for (uint32_t chunk = 0; chunk < chunks.chunks; ++chunk) {
@@ -1113,9 +1141,12 @@ ExpertStore::ExpertStore(metal::MetalBackend &backend, StreamedBlocks streamed, 
           regions[z][plane] = bytes;
           bytes += alignWeightOffset(held * size.layout[z].planes[plane]);
         }
-      const metal::MetalBuffer &buffer = size.buffers.emplace_back(backend.allocateBuffer(
-          bytes, metal::BufferStorage::Shared,
-          "experts/arena-" + std::to_string(index) + "-" + std::to_string(chunk)));
+      if (shared && chunks.chunks != 1)
+        throw std::invalid_argument("shared expert arena requires one buffer per layout");
+      const metal::MetalBuffer &buffer = size.buffers.emplace_back(shared
+          ? backend.view(impl.sharedArena, 0, bytes)
+          : backend.allocateBuffer(bytes, metal::BufferStorage::Shared,
+              "experts/arena-" + std::to_string(index) + "-" + std::to_string(chunk)));
       for (size_t z = 0; z < 3; ++z) {
         const std::array<uint64_t, 3> &regionBytes = size.layout[z].planes;
         const metal::MetalBuffer meta = backend.view(buffer, regions[z][2], held * regionBytes[2]);
@@ -1156,6 +1187,10 @@ ExpertStore::ExpertStore(metal::MetalBackend &backend, StreamedBlocks streamed, 
   std::memset(impl.grid.contents(), 0, 4 * sizeof(uint32_t));
   impl.routedIn.assign(shape.experts, 0);
   impl.waiting.assign(shape.experts, 0);
+  if (shared) {
+    impl.counters.capBytes = impl.sharedArena.sizeBytes();
+    impl.counters.floorBytes = impl.sharedArena.sizeBytes();
+  }
   impl.counters.capBytes += fixed;
   impl.counters.floorBytes += fixed;
   impl.counters.stagingBytes = impl.staging.sizeBytes();
@@ -1163,6 +1198,7 @@ ExpertStore::ExpertStore(metal::MetalBackend &backend, StreamedBlocks streamed, 
     impl.counters.capChunks += size.chunkLayout.chunks;
     impl.counters.experts += uint64_t{size.blocks} * shape.experts;
   }
+  if (shared) impl.counters.capChunks = 1;
   impl.countLive();
   impl.fill();
   impl.publish();
@@ -1283,8 +1319,11 @@ void ExpertStore::release() {
   for (Impl::Block &block : impl.blocks) std::ranges::fill(block.slot, kNoSlot);
   std::memset(impl.tables.contents(), 0, impl.tables.sizeBytes());
   // The chunks past the live ones were given back already.
+  if (impl.sharedArena.sizeBytes()) impl.backend.releaseMemory(impl.sharedArena);
+  impl.activeSize = kNoSlot;
   for (Impl::Size &size : impl.sizes) {
-    for (uint32_t chunk = 0; chunk < size.chunks.liveChunks(); ++chunk) impl.backend.releaseMemory(size.buffers[chunk]);
+    if (!impl.sharedArena.sizeBytes())
+      for (uint32_t chunk = 0; chunk < size.chunks.liveChunks(); ++chunk) impl.backend.releaseMemory(size.buffers[chunk]);
     std::ranges::fill(size.ownerBlock, kNoSlot);
     std::ranges::fill(size.ownerExpert, kNoSlot);
     size.recycling.reset();
@@ -1303,7 +1342,8 @@ bool ExpertStore::restore(const metal::AllocationAdmission &admit, const metal::
   if (!impl.released) throw std::logic_error("expert memory is not released");
   // The floor chunks and the staging come back in one part, or none of them.
   std::vector<const metal::MetalBuffer *> floor{&impl.staging};
-  for (const Impl::Size &size : impl.sizes)
+  if (impl.sharedArena.sizeBytes()) floor.push_back(&impl.sharedArena);
+  else for (const Impl::Size &size : impl.sizes)
     for (uint32_t chunk = 0; chunk < size.chunkLayout.floorChunks; ++chunk) floor.push_back(&size.buffers[chunk]);
   uint64_t bytes = 0;
   for (const metal::MetalBuffer *buffer : floor) bytes += buffer->sizeBytes();

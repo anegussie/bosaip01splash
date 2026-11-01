@@ -1,0 +1,1839 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LLAMA_SERVER="/opt/homebrew/opt/llama.cpp/bin/llama-server"
+PRISM_LLAMA_SERVER="/Users/mymac/prism-llama.cpp/build/bin/llama-server"
+SPLASH_BIN="${SPLASH_BIN:-/Users/mymac/splash/splash/splash}"
+LITHOS_ROOT="${LITHOS_ROOT:-/Users/mymac/lithos/lithos-metal}"
+LITHOS_PYTHON="${LITHOS_PYTHON:-$LITHOS_ROOT/.venv/bin/python}"
+LITHOS_BONSAI_MODEL="${LITHOS_BONSAI_MODEL:-}"
+LITHOS_BONSAI_ALIAS="bonsai2-27b-lithos"
+LITHOS_BONSAI_CONTEXT="${LITHOS_BONSAI_CONTEXT:-4096}"
+LITHOS_BONSAI_OUTPUT="${LITHOS_BONSAI_OUTPUT:-1024}"
+LITHOS_BONSAI_PREFILL="${LITHOS_BONSAI_PREFILL:-2}"
+LITHOS_BONSAI_WARMUP_PREFILL="${LITHOS_BONSAI_WARMUP_PREFILL:-16}"
+LITHOS_BONSAI_DOWNLOAD_DIR="${LITHOS_BONSAI_DOWNLOAD_DIR:-$LITHOS_ROOT/.model-cache}"
+LITHOS_BONSAI_PACK_DIR="${LITHOS_BONSAI_PACK_DIR:-$LITHOS_ROOT/.packs/option15}"
+QWEN_9B_MODEL="/Users/mymac/.lmstudio/models/unsloth/Qwen3.5-9B-GGUF/Qwen3.5-9B-UD-Q4_K_XL.gguf"
+GEMMA_12B_MODEL="/Users/mymac/.lmstudio/models/unsloth/gemma-4-12b-it-GGUF/gemma-4-12b-it-IQ4_XS.gguf"
+LFM_8B_MODEL="/Users/mymac/.lmstudio/models/unsloth/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-UD-Q6_K_XL.gguf"
+BONSAI_27B_MODEL="/Users/mymac/.lmstudio/models/prism-ml/Ternary-Bonsai-2-27B-gguf/Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+SPLASH_BONSAI_MODEL_ID="prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0"
+SPLASH_BONSAI_ALIAS="bonsai-27b-splash"
+SPLASH_BONSAI_DISPLAY_NAME="Ternary Bonsai 2 27B PTQ1_0 via Splash (non-thinking, int8 KV)"
+SPLASH_HERETIC_MODEL="${SPLASH_HERETIC_MODEL:-$HOME/.cache/huggingface/hub/models--prism-ml--Ternary-Bonsai-2-27B-gguf/snapshots/b072e1d3b35a0a630cece372c2127528e0994386/Ternary-Bonsai-2-27B-Uncensored-Heretic-PTQ1_0.gguf}"
+SPLASH_HERETIC_CACHE_DIR="${SPLASH_HERETIC_CACHE_DIR:-$HOME/Library/Caches/Splash/bonsai-option16}"
+SPLASH_QWEN36_MODEL_ID="unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q2_K_XL"
+SPLASH_QWEN36_MAX_CONTEXT="${SPLASH_QWEN36_MAX_CONTEXT:-24K}"
+SPLASH_QWEN36_OPENCODE_CONTEXT="${SPLASH_QWEN36_OPENCODE_CONTEXT:-auto}"
+SPLASH_QWEN36_MAX_TOKENS="${SPLASH_QWEN36_MAX_TOKENS:-2048}"
+SPLASH_QWEN36_MAX_CACHE_DISK="${SPLASH_QWEN36_MAX_CACHE_DISK:-2G}"
+SPLASH_QWEN36_PERSISTENT_CACHE="${SPLASH_QWEN36_PERSISTENT_CACHE:-1}"
+SPLASH_QWEN36_CACHE_DIR="${SPLASH_QWEN36_CACHE_DIR:-$HOME/Library/Caches/Splash/qwen36-option18}"
+SPLASH_QWEN36_IQ3_MODEL_ID="unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS"
+SPLASH_QWEN36_IQ3_MAX_CONTEXT="${SPLASH_QWEN36_IQ3_MAX_CONTEXT:-80K}"
+SPLASH_QWEN36_IQ3_OPENCODE_CONTEXT="${SPLASH_QWEN36_IQ3_OPENCODE_CONTEXT:-auto}"
+splash_qwen36_iq3_default_output=0
+[[ -n "${SPLASH_QWEN36_IQ3_MAX_TOKENS:-}" ]] || splash_qwen36_iq3_default_output=1
+SPLASH_QWEN36_IQ3_MAX_TOKENS="${SPLASH_QWEN36_IQ3_MAX_TOKENS:-4096}"
+SPLASH_QWEN36_IQ3_MAX_CACHE_DISK="${SPLASH_QWEN36_IQ3_MAX_CACHE_DISK:-2G}"
+SPLASH_QWEN36_IQ3_PERSISTENT_CACHE="${SPLASH_QWEN36_IQ3_PERSISTENT_CACHE:-1}"
+SPLASH_QWEN36_IQ3_CACHE_DIR="${SPLASH_QWEN36_IQ3_CACHE_DIR:-$HOME/Library/Caches/Splash/qwen36-option19-iq3-xxs}"
+SPLASH_FLASH_NEXT_MODEL_ID="ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS"
+SPLASH_FLASH_NEXT_MAX_CONTEXT="${SPLASH_FLASH_NEXT_MAX_CONTEXT:-131072}"
+SPLASH_FLASH_NEXT_OPENCODE_CONTEXT="${SPLASH_FLASH_NEXT_OPENCODE_CONTEXT:-auto}"
+splash_flash_next_default_output=0
+[[ -n "${SPLASH_FLASH_NEXT_MAX_TOKENS:-}" ]] || splash_flash_next_default_output=1
+SPLASH_FLASH_NEXT_MAX_TOKENS="${SPLASH_FLASH_NEXT_MAX_TOKENS:-1024}"
+SPLASH_FLASH_NEXT_MAX_MEMORY="${SPLASH_FLASH_NEXT_MAX_MEMORY:-8G}"
+SPLASH_FLASH_NEXT_REASONING_EFFORT="${SPLASH_FLASH_NEXT_REASONING_EFFORT:-medium}"
+SPLASH_FLASH_NEXT_MAX_CACHE_DISK="${SPLASH_FLASH_NEXT_MAX_CACHE_DISK:-0}"
+SPLASH_FLASH_NEXT_PERSISTENT_CACHE="${SPLASH_FLASH_NEXT_PERSISTENT_CACHE:-1}"
+SPLASH_FLASH_NEXT_CACHE_DIR="${SPLASH_FLASH_NEXT_CACHE_DIR:-$HOME/Library/Caches/Splash/flash-next-option20-iq3-xxs}"
+SPLASH_FLASH_NEXT_HF_HUB_CACHE="${SPLASH_FLASH_NEXT_HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}"
+SPLASH_BONSAI_MAX_CONTEXT="${SPLASH_BONSAI_MAX_CONTEXT:-24K}"
+SPLASH_BONSAI_OPENCODE_CONTEXT="${SPLASH_BONSAI_OPENCODE_CONTEXT:-auto}"
+splash_bonsai_default_output=0
+[[ -n "${SPLASH_BONSAI_MAX_TOKENS:-}" ]] || splash_bonsai_default_output=1
+SPLASH_BONSAI_MAX_TOKENS="${SPLASH_BONSAI_MAX_TOKENS:-4096}"
+SPLASH_BONSAI_MAX_CACHE_DISK="${SPLASH_BONSAI_MAX_CACHE_DISK:-8G}"
+SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT="${SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT:-60}"
+SPLASH_BONSAI_PREFILL_CHUNK_TOKENS="${SPLASH_BONSAI_PREFILL_CHUNK_TOKENS:-512}"
+SPLASH_BONSAI_STATE_FORMAT="${SPLASH_BONSAI_STATE_FORMAT:-bf16}"
+SPLASH_BONSAI_MAX_ACTIVE_REQUESTS="${SPLASH_BONSAI_MAX_ACTIVE_REQUESTS:-1}"
+SPLASH_BONSAI_STARTUP_RETRY_DELAY="${SPLASH_BONSAI_STARTUP_RETRY_DELAY:-30}"
+SPLASH_BONSAI_STARTUP_MAX_RETRIES="${SPLASH_BONSAI_STARTUP_MAX_RETRIES:-2}"
+SPLASH_BONSAI_PERSISTENT_CACHE="${SPLASH_BONSAI_PERSISTENT_CACHE:-1}"
+SPLASH_BONSAI_CACHE_DIR="${SPLASH_BONSAI_CACHE_DIR:-$HOME/Library/Caches/Splash/bonsai-option14}"
+SPLASH_PRESSURE_RESTART_HEADROOM_BYTES="${SPLASH_PRESSURE_RESTART_HEADROOM_BYTES:-1073741824}"
+SPLASH_PRESSURE_RESTART_INTERVAL="${SPLASH_PRESSURE_RESTART_INTERVAL:-5}"
+SPLASH_PRESSURE_RESTART_SAMPLES="${SPLASH_PRESSURE_RESTART_SAMPLES:-3}"
+QWEN_MTP_9B_MODEL="/Users/mymac/.lmstudio/models/unsloth/Qwen3.5-9B-MTP-GGUF/Qwen3.5-9B-UD-Q4_K_XL.gguf"
+SPLASH_QWEN_ROOT="${SPLASH_QWEN_ROOT:-/Users/mymac/splash/qwen3.5-9B}"
+SPLASH_QWEN_PYTHON="${SPLASH_QWEN_PYTHON:-$SPLASH_QWEN_ROOT/.venv/bin/python}"
+SPLASH_QWEN_BIN="${SPLASH_QWEN_BIN:-$SPLASH_QWEN_ROOT/build/splash}"
+SPLASH_QWEN_MODEL="${SPLASH_QWEN_MODEL:-$QWEN_MTP_9B_MODEL}"
+SPLASH_QWEN_MODEL_ID="unsloth/Qwen3.5-9B-MTP-GGUF:UD-Q4_K_XL"
+SPLASH_QWEN_ALIAS="qwen3.5-9b-splash"
+SPLASH_QWEN_MAX_CONTEXT="${SPLASH_QWEN_MAX_CONTEXT:-8K}"
+SPLASH_QWEN_MAX_TOKENS="${SPLASH_QWEN_MAX_TOKENS:-1024}"
+SPLASH_QWEN_QUEUE_SIZE="${SPLASH_QWEN_QUEUE_SIZE:-8}"
+MLX_VLM_PYTHON="${MLX_VLM_PYTHON:-$HOME/mlx-project/.venv/bin/python3}"
+MLX_LM_PYTHON="${MLX_LM_PYTHON:-$HOME/mlx-project/.venv/bin/python3}"
+MLX_TARGET_ID="mlx-community/Qwen3.5-9B-4bit"
+MLX_MTP_DRAFT_PATH="${MLX_MTP_DRAFT_PATH:-$HOME/.lmstudio/models/mlx-community/Qwen3.5-9B-MTP-4bit}"
+MLX_MTP_ALIAS="qwen3.5-9b-mlx-mtp"
+MLX_MTP_CONTEXT="${MLX_MTP_CONTEXT:-22528}"
+MLX_MTP_MAX_TOKENS="${MLX_MTP_MAX_TOKENS:-3072}"
+MLX_MTP_DRAFT_BLOCK_SIZE="${MLX_MTP_DRAFT_BLOCK_SIZE:-2}"
+MLX_API_ALIAS="qwen3.5-9b-mlx-reasoner"
+MLX_BALANCED_ALIAS="qwen3.5-9b-mlx-balanced"
+MLX_WORKER_ALIAS="qwen3.5-9b-mlx-worker"
+MLX_CONTEXT_WINDOW="${MLX_CONTEXT_WINDOW:-49152}"
+MLX_OPENCODE_CONTEXT="${MLX_OPENCODE_CONTEXT:-32768}"
+MLX_MAX_TOKENS="${MLX_MAX_TOKENS:-12288}"
+MLX_THINKING_BUDGET="${MLX_THINKING_BUDGET:-8192}"
+MLX_BALANCED_MAX_TOKENS="${MLX_BALANCED_MAX_TOKENS:-6144}"
+MLX_BALANCED_THINKING_BUDGET="${MLX_BALANCED_THINKING_BUDGET:-4096}"
+MLX_WORKER_MAX_TOKENS="${MLX_WORKER_MAX_TOKENS:-4096}"
+MLX_KV_BITS="${MLX_KV_BITS:-4}"
+MLX_PREFILL_STEP_SIZE="${MLX_PREFILL_STEP_SIZE:-1024}"
+MLX_MTP_PREFILL_STEP_SIZE="${MLX_MTP_PREFILL_STEP_SIZE:-1024}"
+MLX_APC_ENABLED="${MLX_APC_ENABLED:-1}"
+MLX_APC_BLOCK_SIZE="${MLX_APC_BLOCK_SIZE:-16}"
+MLX_APC_NUM_BLOCKS="${MLX_APC_NUM_BLOCKS:-256}"
+MLX_MTP_APC_NUM_BLOCKS="${MLX_MTP_APC_NUM_BLOCKS:-$MLX_APC_NUM_BLOCKS}"
+PORT="${LLAMA_PORT:-1235}"
+HOST="${LLAMA_HOST:-127.0.0.1}"
+DIRECT_LAUNCH=0
+DIRECT_CHOICE=""
+HERMES_LAUNCH=0
+
+timestamp_log_stream() {
+  local line timestamp
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    timestamp="$(date '+%Y-%m-%dT%H:%M:%S%z')"
+    printf '[%s] %s\n' "$timestamp" "$line"
+  done
+}
+
+find_hf_snapshot() {
+  local model_id="$1"
+  local cache_name="models--${model_id//\//--}"
+  local candidate=""
+  local weight=""
+
+  for candidate in "$HOME/.cache/huggingface/hub/$cache_name/snapshots/"*; do
+    [[ -d "$candidate" ]] || continue
+    [[ -f "$candidate/config.json" ]] || continue
+    weight=""
+    for weight in "$candidate"/*.safetensors; do
+      [[ -e "$weight" ]] && break
+      weight=""
+    done
+    [[ -n "$weight" ]] || continue
+    if find "$HOME/.cache/huggingface/hub/$cache_name" -name '*.incomplete' -print -quit 2>/dev/null | grep -q .; then
+      continue
+    fi
+    printf '%s\n' "$candidate"
+    return 0
+  done
+  return 1
+}
+
+print_models() {
+  local qwen_9b_status=""
+  local gemma_status=""
+  local lfm_status=""
+  local bonsai_27b_status=""
+  local qwen_mtp_status=""
+  local mlx_status=""
+  local mlx_mtp_status=""
+  local mlx_apc_status="APC configuration invalid"
+  local splash_status=""
+  local splash_qwen_status=""
+  if [[ ! -x "$SPLASH_QWEN_BIN" || ! -x "$SPLASH_QWEN_PYTHON" ]]; then
+    splash_qwen_status=" - runtime not built"
+  elif [[ ! -f "$SPLASH_QWEN_MODEL" ]]; then
+    splash_qwen_status=" - GGUF model not installed"
+  fi
+  local splash_client_context="$SPLASH_BONSAI_OPENCODE_CONTEXT"
+  if [[ "$splash_client_context" == "auto" ]]; then
+    splash_client_context="$(splash_context_tokens "$SPLASH_BONSAI_MAX_CONTEXT" 2>/dev/null)" || splash_client_context=0
+    if (( splash_client_context >= 4096 && splash_client_context <= 24576 )); then
+      splash_client_context="$((splash_client_context - 2048)) tokens"
+    else
+      splash_client_context="auto (invalid server context)"
+    fi
+  else
+    splash_client_context="${splash_client_context} tokens"
+  fi
+  local splash_client_output="$SPLASH_BONSAI_MAX_TOKENS"
+  local splash_client_token_count="${splash_client_context%% *}"
+  if [[ "$splash_client_token_count" =~ ^[0-9]+$ ]] &&
+     (( splash_bonsai_default_output && splash_client_token_count <= splash_client_output )); then
+    splash_client_output="$((splash_client_token_count / 2))"
+  fi
+  [[ -e "$QWEN_9B_MODEL" ]] || qwen_9b_status=" — model not installed"
+  [[ -e "$GEMMA_12B_MODEL" ]] || gemma_status=" — model not installed"
+  [[ -e "$LFM_8B_MODEL" ]] || lfm_status=" — model not installed"
+  [[ -f "$BONSAI_27B_MODEL" ]] || bonsai_27b_status=" — GGUF model not installed"
+  [[ -e "$QWEN_MTP_9B_MODEL" ]] || qwen_mtp_status=" — model not installed"
+  if [[ ! -x "$MLX_VLM_PYTHON" ]]; then
+    mlx_status=" — mlx-vlm runtime not installed"
+  elif ! find_hf_snapshot "$MLX_TARGET_ID" >/dev/null; then
+    mlx_status=" — target model not downloaded"
+  fi
+  if [[ ! -f "$MLX_MTP_DRAFT_PATH/config.json" || ! -f "$MLX_MTP_DRAFT_PATH/model.safetensors" ]]; then
+    mlx_mtp_status=" — MTP drafter not installed"
+  fi
+  if [[ "$MLX_APC_ENABLED" == "0" ]]; then
+    mlx_apc_status="APC off"
+  elif [[ "$MLX_APC_ENABLED" == "1" && "$MLX_APC_BLOCK_SIZE" =~ ^[1-9][0-9]*$ && "$MLX_APC_NUM_BLOCKS" =~ ^[1-9][0-9]*$ ]]; then
+    mlx_apc_status="APC on: $((MLX_APC_BLOCK_SIZE * MLX_APC_NUM_BLOCKS)) cached tokens"
+  fi
+  [[ -x "$SPLASH_BIN" ]] || splash_status=" — Splash executable missing"
+  echo "Available local models:"
+  echo "1) Qwen3.5 9B Q4_K_XL — llama.cpp planner${qwen_9b_status}"
+  echo "   32K context | 4K output | reasoning on (4K budget) | Q4 KV | MTP off"
+  echo "2) Gemma 4 12B IQ4_XS — general use${gemma_status}"
+  echo "   32K context | 4K output | reasoning off | Q4 KV | MTP off"
+  echo "3) LFM 2.5 8B Q6_K_XL — compact model${lfm_status}"
+  echo "   32K context | 4K output | reasoning auto | Q4 KV | MTP off"
+  echo "4) Ternary Bonsai 2 27B PTQ1 GGUF — llama-server${bonsai_27b_status}"
+  echo "   24K server / 20K OpenCode context | 4K output | non-thinking instruct sampling | Q4 KV | 512 MiB RAM cache | single sequence | guarded"
+  echo "5) Qwen3.5 9B MTP Q4_K_XL — speculative decoding${qwen_mtp_status}"
+  echo "   16K context | 2K output | reasoning off | MTP 3 | Q4 target/Q8 draft KV"
+  echo "6) Qwen3.5 9B Q4_K_XL — fast non-MTP${qwen_9b_status}"
+  echo "   16K context | 2K output | reasoning off | Q4 KV | MTP off"
+  echo "7) Qwen3.5 9B MTP Q4_K_XL — long-context speculative${qwen_mtp_status}"
+  echo "   32K context | 2K output | reasoning off | MTP 4 | Q4 target/Q8 draft KV"
+  echo "8) Qwen3.5 9B MLX 4-bit — deep reasoning${mlx_status}"
+  echo "   General coding + optional long_analysis agent | all tools enabled"
+  echo "   $((MLX_OPENCODE_CONTEXT / 1024))K OpenCode / $((MLX_CONTEXT_WINDOW / 1024))K server | ${MLX_MAX_TOKENS} generation reserve"
+  echo "   Q4 KV | MTP off | ${mlx_apc_status}"
+  echo "9) Stop local LLM watchdog and server"
+  echo "10) Qwen3.5 9B MLX 4-bit — MTP reasoning${mlx_status}${mlx_mtp_status}"
+  echo "   $((MLX_MTP_CONTEXT / 1024))K context | $((MLX_MTP_MAX_TOKENS / 1024))K output | reasoning on (no separate budget) | native MTP width ${MLX_MTP_DRAFT_BLOCK_SIZE} | Q4 KV | ${mlx_apc_status}"
+  echo "14) Ternary Bonsai 2 27B PTQ1_0 — Splash (downloads on first run)${splash_status}"
+  echo "   ${SPLASH_BONSAI_MAX_CONTEXT} server / ${splash_client_context} OpenCode context | ${splash_client_output} output tokens | INT8 KV | ${SPLASH_BONSAI_STATE_FORMAT} state | ${SPLASH_BONSAI_PREFILL_CHUNK_TOKENS}-token prefill chunks | ${SPLASH_BONSAI_MAX_CACHE_DISK} SSD cache | ${SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT}s resource wait"
+  echo "   Persistent prefix cache: ${SPLASH_BONSAI_PERSISTENT_CACHE} (1=keep across restarts, 0=temporary) | startup retries: ${SPLASH_BONSAI_STARTUP_MAX_RETRIES}"
+  echo "   Memory pressure monitor: Splash controls admission/recovery; 24K requires room for other apps"
+  echo "   Source: ${SPLASH_BONSAI_MODEL_ID}"
+  echo "   Monitor: bash /Users/mymac/monitorsplash.sh --once (or --report 24)"
+  echo "15) Ternary Bonsai 2 27B PTQ1_0 GGUF — Lithos Metal (experimental BF16 execution)"
+  echo "   ${LITHOS_BONSAI_CONTEXT}-token context | ${LITHOS_BONSAI_OUTPUT}-token OpenCode output reserve | BF16 KV | ${LITHOS_BONSAI_PREFILL}-token prefill | warmup ${LITHOS_BONSAI_WARMUP_PREFILL} tokens | target-only"
+  echo "   Source: ${LITHOS_BONSAI_MODEL:-same local GGUF as option 14} | local weight pack prepared on first run"
+  echo "16) Ternary Bonsai 2 27B Uncensored Heretic PTQ1_0 - Splash (local GGUF)"
+  echo "   ${SPLASH_BONSAI_MAX_CONTEXT} server / ${splash_client_context} OpenCode context | INT8 KV | ${SPLASH_BONSAI_STATE_FORMAT} state | ${SPLASH_BONSAI_PREFILL_CHUNK_TOKENS}-token chunks"
+  echo "   Source: ${SPLASH_HERETIC_MODEL}"
+  echo "   Separate option-16 prefix cache | DFlash2 draft; acceptance depends on these weights"
+  echo "17) Qwen3.5 9B Q4_K_XL - Splash target-only (${SPLASH_QWEN_MAX_CONTEXT}, int8 KV)${splash_qwen_status}"
+  echo "   Source: ${SPLASH_QWEN_MODEL} | no MTP or DFlash2 | ${SPLASH_QWEN_MAX_TOKENS} output tokens"
+  echo "18) Qwen3.6 35B A3B UD-Q2_K_XL - Splash SSD expert streaming (downloads on first run)${splash_status}"
+  echo "   ${SPLASH_QWEN36_MAX_CONTEXT} server context | ${SPLASH_QWEN36_MAX_TOKENS} output tokens | 8 GiB Metal budget | automatic expert RAM cache / SSD reads"
+  echo "   INT8 KV | BF16 state | 512-token prefill chunks | one active request | reasoning off | DFlash2"
+  echo "   Source: ${SPLASH_QWEN36_MODEL_ID}"
+  echo "   Separate option-18 prefix cache: ${SPLASH_QWEN36_MAX_CACHE_DISK} | persistent: ${SPLASH_QWEN36_PERSISTENT_CACHE}"
+  echo "19) Qwen3.6 35B A3B UD-IQ3_XXS - Splash SSD expert streaming (downloads on first run)${splash_status}"
+  echo "   ${SPLASH_QWEN36_IQ3_MAX_CONTEXT} server context | up to ${SPLASH_QWEN36_IQ3_MAX_TOKENS} worker output tokens (parent up to 2048) | 8 GiB Metal budget | expert RAM cache / SSD reads"
+  echo "   INT8 KV | BF16 state | 512-token prefill chunks | one active request | reasoning off | DFlash2"
+  echo "   Vision: at most 1,048,576 resized pixels per image (4096 patches; about 1024x1024)"
+  echo "   Source: ${SPLASH_QWEN36_IQ3_MODEL_ID}"
+  echo "   Separate option-19 prefix cache: ${SPLASH_QWEN36_IQ3_MAX_CACHE_DISK} | persistent: ${SPLASH_QWEN36_IQ3_PERSISTENT_CACHE}"
+  echo "20) Qwen3.8 Flash-Next GSQ-RCO IQ3_XXS - Splash SSD streaming (downloads on first run)${splash_status}"
+  echo "   ${SPLASH_FLASH_NEXT_MAX_CONTEXT} server context | ${SPLASH_FLASH_NEXT_MAX_TOKENS} output tokens | ${SPLASH_FLASH_NEXT_MAX_MEMORY} Metal cap | reasoning ${SPLASH_FLASH_NEXT_REASONING_EFFORT}"
+  echo "   INT8 KV | BF16 state | text only | one active request | automatic expert and PLE caches | DFlash2"
+  echo "   Source: ${SPLASH_FLASH_NEXT_MODEL_ID} | about 75.8 GB plus draft on first launch"
+  echo "   Download cache: ${SPLASH_FLASH_NEXT_HF_HUB_CACHE}"
+  echo "   Separate option-20 prefix cache: ${SPLASH_FLASH_NEXT_MAX_CACHE_DISK} | persistent: ${SPLASH_FLASH_NEXT_PERSISTENT_CACHE}"
+
+}
+
+# Check length before arithmetic so huge decimal overrides cannot wrap.
+splash_uint_in_range() {
+  local value="$1" minimum="$2" maximum="$3"
+  [[ "$value" =~ ^(0|[1-9][0-9]*)$ ]] &&
+    [[ ${#value} -le ${#maximum} ]] &&
+    (( value >= minimum && value <= maximum ))
+}
+
+splash_context_tokens() {
+  local value="$1"
+  if [[ "$value" =~ ^([1-9][0-9]*)[Kk]$ ]]; then
+    splash_uint_in_range "${BASH_REMATCH[1]}" 1 256 || return 1
+    echo "$((${value%[Kk]} * 1024))"
+  elif splash_uint_in_range "$value" 1 262144; then
+    echo "$value"
+  else
+    return 1
+  fi
+}
+
+splash_cache_disk_bytes() {
+  local value="$1" multiplier=1 number="$1"
+  case "$value" in
+    *[Gg]) multiplier=1073741824; number="${value%[Gg]}" ;;
+    *[Mm]) multiplier=1048576; number="${value%[Mm]}" ;;
+    *[Kk]) multiplier=1024; number="${value%[Kk]}" ;;
+  esac
+  splash_uint_in_range "$number" 0 "$((8589934592 / multiplier))" || return 1
+  echo "$((number * multiplier))"
+}
+
+splash_stop_monitor() {
+  local pid="$1"
+  [[ -n "$pid" ]] || return 0
+  # Stop the monitor's outstanding curl/sleep as well as its shell.
+  pkill -TERM -P "$pid" 2>/dev/null || true
+  kill -TERM "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+}
+
+splash_cleanup_run() {
+  if [[ -n "$splash_server_pid" ]]; then
+    kill -TERM "$splash_server_pid" 2>/dev/null || true
+    wait "$splash_server_pid" 2>/dev/null || true
+  fi
+  # Close the parent's log writer and drain the final shutdown/cache messages.
+  exec 3>&-
+  if [[ -n "$splash_logger_pid" ]]; then
+    wait "$splash_logger_pid" 2>/dev/null || true
+  fi
+  splash_stop_monitor "$splash_pressure_watchdog_pid"
+  splash_stop_monitor "$splash_monitor_pid"
+  splash_stop_monitor "$splash_retry_pid"
+}
+
+splash_pressure_watchdog() {
+  local consecutive=0
+  local payload state pressure headroom waiting suspended
+  local pressure_active=0
+
+  while :; do
+    payload="$(curl --max-time 3 -fsS "http://${HOST}:${PORT}/status" 2>/dev/null)" || {
+      consecutive=0
+      sleep "$SPLASH_PRESSURE_RESTART_INTERVAL"
+      continue
+    }
+    state="$(jq -r '[.memory_pressure // "unknown",
+      (.memory_governor.host_headroom_bytes // 0 | tostring),
+      (.admission.waiting_memory // 0 | tostring),
+      (.admission.suspended // 0 | tostring)] | @tsv' <<< "$payload")" || {
+      consecutive=0
+      sleep "$SPLASH_PRESSURE_RESTART_INTERVAL"
+      continue
+    }
+    IFS=$'\t' read -r pressure headroom waiting suspended <<< "$state"
+    if [[ "$pressure" == "warning" || "$pressure" == "critical" ]] &&
+       (( headroom <= SPLASH_PRESSURE_RESTART_HEADROOM_BYTES )) &&
+       (( waiting > 0 || suspended > 0 )); then
+      consecutive=$((consecutive + 1))
+    else
+      consecutive=0
+    fi
+    if (( consecutive >= SPLASH_PRESSURE_RESTART_SAMPLES )); then
+      if (( pressure_active == 0 )); then
+        printf '[%s] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" \
+          "Splash pressure monitor: sustained $pressure pressure with ${headroom} bytes headroom and memory waiters (waiting=$waiting suspended=$suspended). Keeping HTTP API online; Splash admission/recovery remains in control." >> "$SPLASH_RUN_LOG"
+        pressure_active=1
+      fi
+    elif (( pressure_active == 1 )); then
+      printf '[%s] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" \
+        "Splash pressure monitor: pressure wait cleared (pressure=$pressure headroom=$headroom waiting=$waiting suspended=$suspended)." >> "$SPLASH_RUN_LOG"
+      pressure_active=0
+    fi
+    sleep "$SPLASH_PRESSURE_RESTART_INTERVAL"
+  done
+}
+
+require_model() {
+  local model_path="$1"
+  local model_label="$2"
+  if [[ ! -f "$model_path" ]]; then
+    echo "$model_label model not found: $model_path" >&2
+    exit 1
+  fi
+}
+
+prepare_llama_run() {
+  local profile_slug="$1"
+  local server_path="${2:-$LLAMA_SERVER}"
+  local log_dir="${LLAMA_LOG_DIR:-$HOME/.local/state/llama-server}"
+  local run_id=""
+
+  if [[ ! -x "$server_path" ]]; then
+    echo "llama-server is missing or not executable: $server_path" >&2
+    exit 1
+  fi
+  if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "Port $PORT is already in use; choose option 9 before switching models." >&2
+    lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >&2 || true
+    exit 1
+  fi
+
+  mkdir -p "$log_dir"
+  run_id="$(date '+%Y%m%d-%H%M%S')"
+  LLAMA_RUN_LOG="$log_dir/${profile_slug}-${run_id}.log"
+  # Create the file before publishing the latest-log links.  This prevents
+  # watchdogs and monitoring tools from following a dangling symlink during
+  # the model-loading window.
+  : > "$LLAMA_RUN_LOG"
+  ln -sfn "$LLAMA_RUN_LOG" "$log_dir/llama-latest.log"
+  ln -sfn "$LLAMA_RUN_LOG" "$log_dir/${profile_slug}-latest.log"
+  echo "Run log: $LLAMA_RUN_LOG"
+  echo "Metrics: http://${HOST}:${PORT}/metrics | Slots: http://${HOST}:${PORT}/slots"
+  echo "Press Ctrl-C in this Terminal to stop it."
+}
+
+prepare_splash_run() {
+  local log_dir="${LLAMA_LOG_DIR:-$HOME/.local/state/llama-server}"
+  local run_id=""
+
+  if [[ ! -x "$SPLASH_BIN" ]]; then
+    echo "Splash is missing or not executable: $SPLASH_BIN" >&2
+    echo "Build or install Splash, or set SPLASH_BIN to its executable path." >&2
+    exit 1
+  fi
+  if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "Port $PORT is already in use; choose option 9 before switching models." >&2
+    lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >&2 || true
+    exit 1
+  fi
+
+  mkdir -p "$log_dir"
+  run_id="$(date '+%Y%m%d-%H%M%S')"
+  SPLASH_RUN_LOG="$log_dir/${SPLASH_BONSAI_ALIAS}-$run_id.log"
+  : > "$SPLASH_RUN_LOG"
+  export SPLASH_TELEMETRY_PATH="${SPLASH_TELEMETRY_PATH:-$SPLASH_RUN_LOG.jsonl}"
+  ln -sfn "$SPLASH_RUN_LOG" "$log_dir/splash-latest.log"
+  ln -sfn "$SPLASH_RUN_LOG" "$log_dir/${SPLASH_BONSAI_ALIAS}-latest.log"
+  echo "Run log: $SPLASH_RUN_LOG"
+  echo "Status: http://${HOST}:${PORT}/status"
+  echo "Press Ctrl-C in this Terminal to stop it."
+}
+
+sync_opencode_model() {
+  local model_alias="$1"
+  local config_path="${OPENCODE_CONFIG_PATH:-$HOME/.config/opencode/opencode.json}"
+  local model_id="local-llama/${model_alias}"
+  local mlx_mtp_model_id="local-llama/${MLX_MTP_ALIAS}"
+  local worker_model_id="$model_id"
+  local reasoner_model_id="$model_id"
+  local balanced_model_id="$model_id"
+  local default_model_id="$model_id"
+  local bonsai_full_model_id="local-llama/bonsai-27b"
+  local bonsai_splash_model_id="local-llama/${SPLASH_BONSAI_ALIAS}"
+  local temp_path=""
+
+  [[ -f "$config_path" ]] || return 0
+  command -v jq >/dev/null 2>&1 || {
+    echo "jq is required to synchronize OpenCode with the selected server profile." >&2
+    return 1
+  }
+
+  if [[ "$model_alias" == "bonsai-27b" ]]; then
+    model_id="$bonsai_full_model_id"
+    worker_model_id="$bonsai_full_model_id"
+    reasoner_model_id="$bonsai_full_model_id"
+    balanced_model_id="$bonsai_full_model_id"
+    default_model_id="$model_id"
+  elif [[ "$model_alias" == "$SPLASH_BONSAI_ALIAS" ]]; then
+    model_id="$bonsai_splash_model_id"
+    worker_model_id="$bonsai_splash_model_id"
+    reasoner_model_id="$bonsai_splash_model_id"
+    balanced_model_id="$bonsai_splash_model_id"
+    default_model_id="$model_id"
+  elif [[ "$model_alias" == "$MLX_API_ALIAS" ]]; then
+    worker_model_id="local-llama/${MLX_WORKER_ALIAS}"
+    reasoner_model_id="$model_id"
+    balanced_model_id="local-llama/${MLX_BALANCED_ALIAS}"
+    default_model_id="$balanced_model_id"
+  elif [[ "$model_alias" == "$MLX_MTP_ALIAS" ]]; then
+    # mlx-vlm 0.7.x resolves the request model literally; route the MTP
+    # profile to the cached target ID instead of the display alias.
+    model_id="local-llama/${MLX_TARGET_ID}"
+    mlx_mtp_model_id="$model_id"
+    worker_model_id="$model_id"
+    reasoner_model_id="$model_id"
+    balanced_model_id="$model_id"
+    default_model_id="$model_id"
+  fi
+
+  temp_path="$(mktemp "${config_path}.tmp.XXXXXX")"
+  if ! jq --arg default_model "$default_model_id" --arg worker "$worker_model_id" --arg reasoner "$reasoner_model_id" --arg selected_alias "$model_alias" \
+    --arg base_url "http://${HOST}:${PORT}/v1" \
+    --arg mlx_reasoner "local-llama/${MLX_API_ALIAS}" \
+    --arg mlx_mtp "$mlx_mtp_model_id" \
+    --arg bonsai_splash "$bonsai_splash_model_id" \
+    --arg mlx_mtp_key "$MLX_TARGET_ID" \
+    --arg bonsai_splash_context "$SPLASH_BONSAI_OPENCODE_CONTEXT" \
+    --argjson bonsai_splash_output "$SPLASH_BONSAI_MAX_TOKENS" \
+    --argjson mlx_context "$MLX_OPENCODE_CONTEXT" \
+    --argjson mlx_mtp_context "$MLX_MTP_CONTEXT" \
+    --argjson mlx_mtp_output "$MLX_MTP_MAX_TOKENS" \
+    --argjson reasoner_output "$MLX_MAX_TOKENS" \
+    --argjson balanced_output "$MLX_BALANCED_MAX_TOKENS" \
+    --argjson worker_output "$MLX_WORKER_MAX_TOKENS" \
+    '.provider["local-llama"].options.baseURL = $base_url |
+     .model = $default_model |
+     .small_model = $worker |
+     .compaction = {
+       auto: true, keep: {tokens: 1536},
+       buffer: (.provider["local-llama"].models[$selected_alias].limit.output // 4096)
+     } |
+     .default_agent = "router" |
+     .experimental = ((.experimental // {}) + {subagent_depth: 1}) |
+     del(.subagent_depth) |
+     .agent = ((.agent // {}) + {
+         router: {
+           description: "Routes every request to an isolated worker so the parent context stays small",
+           prompt: "{file:/Users/mymac/.config/opencode/prompts/router.md}",
+           mode: "primary",
+           model: $default_model,
+           tools: {"*": false, task: true, question: true},
+           temperature: 0.7,
+           top_p: 0.80,
+           permission: {
+             "*": "deny",
+             task: {"*": "deny", context_worker: "allow", general_worker: "allow"},
+             question: "allow"
+           }
+         },
+         general: {
+           description: "Local coding agent with tools and selective delegation",
+           prompt: "{file:/Users/mymac/.config/opencode/prompts/general.md}",
+           mode: "primary",
+           model: $default_model,
+           tools: {
+             read: true, grep: true, glob: true, list: true,
+             edit: true, write: true, todowrite: true,
+             bash: true, task: true, skill: true, question: true,
+             webfetch: true, websearch: true
+           },
+           permission: {
+             read: "allow", grep: "allow", glob: "allow", list: "allow",
+             edit: "allow", write: "allow", todowrite: "allow",
+             bash: "allow", task: "allow", skill: "allow", question: "allow",
+             webfetch: "allow", websearch: "allow"
+           }
+         },
+         long_analysis: {
+           description: "Long-form debugging, planning, and analysis",
+           prompt: "{file:/Users/mymac/.config/opencode/prompts/long-analysis.md}",
+           mode: "all",
+           model: $reasoner,
+           tools: {
+             read: true, grep: true, glob: true, list: true,
+             edit: true, write: true, todowrite: true,
+             bash: true, task: true, skill: true, question: true,
+             webfetch: true, websearch: true
+           },
+           permission: {
+             read: "allow", grep: "allow", glob: "allow", list: "allow",
+             edit: "allow", write: "allow", todowrite: "allow",
+             bash: "allow", task: "allow", skill: "allow", question: "allow",
+             webfetch: "allow", websearch: "allow"
+           }
+         },
+         context_worker: {
+           description: "Use first for section-by-section, large-document, or multi-file work; complete one slice in a separate context and return a concise handoff",
+           prompt: "{file:/Users/mymac/.config/opencode/prompts/context-worker.md}",
+           mode: "subagent",
+           model: $worker,
+           tools: {
+             read: true, grep: true, glob: true, list: true,
+             edit: true, write: true, todowrite: true,
+             bash: true, task: false, skill: true, question: false,
+             webfetch: true, websearch: true
+           },
+           permission: {
+             read: "allow", grep: "allow", glob: "allow", list: "allow",
+             edit: "allow", write: "allow", todowrite: "allow",
+             bash: "allow", task: "deny", skill: "allow", question: "deny",
+             webfetch: "allow", websearch: "allow"
+           }
+         },
+         general_worker: {
+           description: "Completes one assigned task in a fresh child context and reports a concise result",
+           prompt: "{file:/Users/mymac/.config/opencode/prompts/general-worker.md}",
+           mode: "subagent",
+           model: $worker,
+           tools: {
+             read: true, grep: true, glob: true, list: true,
+             edit: true, write: true, todowrite: true,
+             bash: true, task: false, skill: true, question: false,
+             webfetch: true, websearch: true
+           },
+           permission: {
+             read: "allow", grep: "allow", glob: "allow", list: "allow",
+             edit: "allow", write: "allow", todowrite: "allow",
+             bash: "allow", task: "deny", skill: "allow", question: "deny",
+             webfetch: "allow", websearch: "allow"
+           }
+         }
+       }) |
+     .agent |= with_entries(
+       if .key == "router" or .key == "general" or .key == "long_analysis" or
+          .key == "context_worker" or .key == "general_worker"
+       then .value.reasoningEffort = "none" else . end
+     ) |
+     if $default_model == $bonsai_splash then
+       .agent.router.temperature = 0.7 |
+       .agent.router.top_p = 0.80 |
+       .agent.general.temperature = 0.7 |
+       .agent.general.top_p = 0.80 |
+       .agent.long_analysis.temperature = 0.7 |
+       .agent.long_analysis.top_p = 0.80 |
+       .agent.context_worker.temperature = 0.7 |
+       .agent.context_worker.top_p = 0.80 |
+       .agent.general_worker.temperature = 0.7 |
+       .agent.general_worker.top_p = 0.80 |
+       .compaction = ((.compaction // {}) + {
+         auto: true, keep: {tokens: 1536}, buffer: $bonsai_splash_output
+       }) |
+       .tool_output = ((.tool_output // {}) + {max_lines: 100, max_bytes: 8192}) |
+       .provider["local-llama"].models["bonsai-27b-splash"] = {
+         name: "Ternary Bonsai 2 27B PTQ1_0 via Splash (non-thinking, int8 KV)",
+         limit: {context: ($bonsai_splash_context | tonumber), output: $bonsai_splash_output}
+       }
+     elif $selected_alias == "bonsai-27b" then
+       .agent.general.temperature = 0.7 |
+       .agent.general.top_p = 0.80 |
+       .agent.long_analysis.temperature = 0.7 |
+       .agent.long_analysis.top_p = 0.80 |
+       .agent.context_worker.temperature = 0.7 |
+       .agent.context_worker.top_p = 0.80 |
+       .agent.general_worker.temperature = 0.7 |
+       .agent.general_worker.top_p = 0.80 |
+       .compaction = ((.compaction // {}) + {
+         auto: true, keep: {tokens: 1536}, buffer: 4096
+       }) |
+       .tool_output = ((.tool_output // {}) + {max_lines: 100, max_bytes: 8192}) |
+       .provider["local-llama"].models["bonsai-27b"] = {
+         name: "Ternary Bonsai 2 27B PTQ1 GGUF (20K client, 4K output, non-thinking)",
+         limit: {context: 20480, output: 4096}
+       } |
+       .provider["local-llama"].models["bonsai-27b-brief"] = {
+         modelID: "bonsai-27b",
+         name: "Ternary Bonsai 2 27B PTQ1 GGUF (legacy alias, 20K client, 4K output, non-thinking)",
+         limit: {context: 20480, output: 4096}
+       } |
+       del(.provider["local-llama"].models["prism-ml/Bonsai-27B-mlx-1bit"],
+           .provider["local-llama"].models["/Users/mymac/.lmstudio/models/prism-ml/Bonsai-27B-mlx-1bit"])
+     elif $default_model == $mlx_mtp then
+       .compaction = ((.compaction // {}) + {
+         auto: true, keep: {tokens: 2048}, buffer: $mlx_mtp_output
+       }) |
+       .provider["local-llama"].models["qwen3.5-9b-mlx-mtp"] = {
+         name: "Qwen 3.5 9B MLX MTP Safe Long Jobs (\($mlx_mtp_context / 1024)K)",
+         limit: {context: $mlx_mtp_context, output: $mlx_mtp_output}
+       } |
+       .provider["local-llama"].models[$mlx_mtp_key] = {
+         name: "Qwen 3.5 9B MLX MTP Safe Long Jobs (\($mlx_mtp_context / 1024)K)",
+         limit: {context: $mlx_mtp_context, output: $mlx_mtp_output}
+       }
+     elif $reasoner == $mlx_reasoner then
+       .compaction.buffer = $reasoner_output |
+       .provider["local-llama"].models["qwen3.5-9b-mlx-reasoner"].limit = {context: $mlx_context, output: $reasoner_output} |
+       .provider["local-llama"].models["qwen3.5-9b-mlx-balanced"].limit = {context: $mlx_context, output: $balanced_output} |
+       .provider["local-llama"].models["qwen3.5-9b-mlx-worker"].limit = {context: $mlx_context, output: $worker_output}
+     else . end' \
+    "$config_path" >"$temp_path"; then
+    rm -f "$temp_path"
+    echo "Failed to update OpenCode model selection." >&2
+    return 1
+  fi
+  chmod 600 "$temp_path"
+  mv "$temp_path" "$config_path"
+  if [[ "$model_alias" == "bonsai-27b" ]]; then
+    echo "OpenCode model synchronized: $default_model_id (non-thinking)"
+    echo "OpenCode default: task-only router; it delegates to a child. Switch to general to work directly."
+  elif [[ "$model_alias" == "$SPLASH_BONSAI_ALIAS" ]]; then
+    echo "OpenCode model synchronized: $default_model_id (Splash, PTQ1_0, int8 KV)"
+  else
+    echo "OpenCode model synchronized: $default_model_id (agent reasoning effort: none)"
+  fi
+}
+
+sync_opencode_splash() {
+  local config_path="${OPENCODE_CONFIG_PATH:-$HOME/.config/opencode/opencode.json}"
+  local model_id="local-llama/${SPLASH_BONSAI_ALIAS}"
+  local temp_path=""
+
+  [[ -f "$config_path" ]] || return 0
+  command -v jq >/dev/null 2>&1 || {
+    echo "jq is required to synchronize OpenCode with Splash." >&2
+    return 1
+  }
+
+  temp_path="$(mktemp "${config_path}.tmp.XXXXXX")"
+  if ! jq --arg model "$model_id" \
+    --arg alias "$SPLASH_BONSAI_ALIAS" \
+    --arg display_name "$SPLASH_BONSAI_DISPLAY_NAME" \
+    --arg reasoning_effort "${splash_reasoning_effort:-none}" \
+    --argjson temperature "${splash_temperature:-0.7}" \
+    --argjson top_p "${splash_top_p:-0.80}" \
+    --arg base_url "http://${HOST}:${PORT}/v1" \
+    --argjson context "$SPLASH_BONSAI_OPENCODE_CONTEXT" \
+    --argjson output "$SPLASH_BONSAI_MAX_TOKENS" \
+    '.provider["local-llama"].options.baseURL = $base_url |
+     .model = $model |
+     .small_model = $model |
+     .agent |= ((. // {}) | with_entries(
+       if (.value | type) == "object" and ((.value.model // "") | startswith("local-llama/"))
+       then .value.model = $model else . end
+     )) |
+     .agent.router.tools.question = true |
+     .agent.router.permission.question = "allow" |
+     .agent.router.temperature = $temperature |
+     .agent.router.top_p = $top_p |
+     .agent.general.temperature = $temperature |
+     .agent.general.top_p = $top_p |
+     .agent.long_analysis.temperature = $temperature |
+     .agent.long_analysis.top_p = $top_p |
+     .agent.context_worker.temperature = (.agent.context_worker.temperature // $temperature) |
+     .agent.context_worker.top_p = $top_p |
+     .agent.general_worker.temperature = (.agent.general_worker.temperature // $temperature) |
+     .agent.general_worker.top_p = $top_p |
+     .agent |= with_entries(
+       if .key == "router" or .key == "general" or .key == "long_analysis" or
+          .key == "context_worker" or .key == "general_worker"
+       then .value.reasoningEffort = $reasoning_effort else . end
+     ) |
+     .compaction = ((.compaction // {}) + {
+       auto: true, keep: {tokens: ([1536, (($context - $output) / 2 | floor)] | min)}, buffer: $output
+     }) |
+     del(.compaction.prune, .compaction.tail_turns,
+         .compaction.preserve_recent_tokens, .compaction.reserved) |
+     .experimental = ((.experimental // {}) + {subagent_depth: 1}) |
+     del(.subagent_depth) |
+     .tool_output = ((.tool_output // {}) + {max_lines: 100, max_bytes: 8192}) |
+     .provider["local-llama"].models[$alias] |= ((. // {}) + {
+       name: $display_name,
+       limit: ((.limit // {}) + {context: $context, output: $output})
+     }) |
+     if $alias == "qwen3.6-35b-a3b-iq3-xxs-splash" then
+       del(.provider["local-llama"].models[$alias].attachment) |
+       .provider["local-llama"].models[$alias].modalities = {input: ["text", "image"], output: ["text"]} |
+       .provider["local-llama"].models[$alias].variants["bounded-compaction"] |= ((. // {}) + {
+         max_tokens: ([2048, $output] | min), reasoning_effort: "none",
+         chat_template_kwargs: ((.chat_template_kwargs // {}) + {enable_thinking: false})
+       })
+     elif $alias == "qwen3.8-flash-next-iq3-xxs-splash" then
+       .provider["local-llama"].models[$alias].reasoning = true |
+       .provider["local-llama"].models[$alias].modalities = {input: ["text"], output: ["text"]} |
+       .provider["local-llama"].models[$alias].variants["bounded-compaction"] |= ((. // {}) + {
+         max_tokens: ([2048, $output] | min), reasoning_effort: "none",
+         chat_template_kwargs: ((.chat_template_kwargs // {}) + {enable_thinking: false})
+       })
+     else . end' "$config_path" >"$temp_path"; then
+    rm -f "$temp_path"
+    echo "Failed to update OpenCode model selection." >&2
+    return 1
+  fi
+  chmod 600 "$temp_path"
+  mv "$temp_path" "$config_path"
+  echo "OpenCode model synchronized: $model_id (Splash, int8 KV)"
+}
+
+sync_opencode_qwen_splash() {
+  local config_path="${OPENCODE_CONFIG_PATH:-$HOME/.config/opencode/opencode.json}"
+  local temp_path="" model_id="local-llama/${SPLASH_QWEN_ALIAS}"
+  [[ -f "$config_path" ]] || return 0
+  command -v jq >/dev/null 2>&1 || {
+    echo "jq is required to synchronize OpenCode with Splash." >&2
+    return 1
+  }
+  temp_path="$(mktemp "${config_path}.tmp.XXXXXX")"
+  if ! jq --arg model "$model_id" --arg alias "$SPLASH_QWEN_ALIAS" \
+      --arg base_url "http://${HOST}:${PORT}/v1" \
+      --argjson context "$splash_qwen_client_context" \
+      --argjson output "$SPLASH_QWEN_MAX_TOKENS" \
+      '.provider["local-llama"].options.baseURL = $base_url |
+       .provider["local-llama"].models[$alias] = {
+         name: "Qwen3.5 9B Q4_K_XL via Splash (target-only, int8 KV)",
+         limit: {context: $context, output: $output}
+       } |
+       .model = $model | .small_model = $model |
+       .agent |= ((. // {}) | with_entries(
+         if (.value | type) == "object" and ((.value.model // "") | startswith("local-llama/"))
+         then .value.model = $model | .value.reasoningEffort = "none" else . end
+       )) |
+       .compaction = ((.compaction // {}) + {
+         auto: true, keep: {tokens: ([1536, (($context - $output) / 2 | floor)] | min)}, buffer: $output
+       })' "$config_path" > "$temp_path"; then
+    rm -f "$temp_path"
+    echo "Failed to update OpenCode model selection." >&2
+    return 1
+  fi
+  chmod 600 "$temp_path"
+  mv "$temp_path" "$config_path"
+  echo "OpenCode model synchronized: $model_id"
+}
+
+sync_opencode_lithos() {
+  local config_path="${OPENCODE_CONFIG_PATH:-$HOME/.config/opencode/opencode.json}"
+  local temp_path=""
+  [[ -f "$config_path" ]] || return 0
+  command -v jq >/dev/null 2>&1 || { echo "Option 15 requires jq to synchronize OpenCode." >&2; return 1; }
+  temp_path="$(mktemp "${config_path}.tmp.XXXXXX")"
+  if ! jq --arg model "local-llama/${LITHOS_BONSAI_ALIAS}" --arg alias "$LITHOS_BONSAI_ALIAS" \
+      --arg base_url "http://${HOST}:${PORT}/v1" \
+      --argjson context "$LITHOS_BONSAI_CONTEXT" --argjson output "$LITHOS_BONSAI_OUTPUT" \
+      '.provider["local-llama"].options.baseURL = $base_url |
+       .model = $model | .small_model = $model |
+       .agent |= ((. // {}) | with_entries(
+         if (.value | type) == "object" and ((.value.model // "") | startswith("local-llama/"))
+         then .value.model = $model | .value.reasoningEffort = "none" else . end
+       )) |
+       .provider["local-llama"].models[$alias] = {
+         name: "Ternary Bonsai 2 27B via Lithos Metal (experimental BF16)",
+         limit: {context: $context, output: $output}
+       } |
+       .compaction = ((.compaction // {}) + {auto: true, keep: {tokens: 512}, buffer: $output})' \
+      "$config_path" >"$temp_path"; then
+    rm -f "$temp_path"
+    echo "Failed to synchronize OpenCode for option 15." >&2
+    return 1
+  fi
+  chmod 600 "$temp_path"
+  mv "$temp_path" "$config_path"
+  echo "OpenCode model synchronized: local-llama/${LITHOS_BONSAI_ALIAS}"
+}
+
+stop_llamacpp() {
+  local watchdog_pid=""
+  local watchdog_pid_file="${LLAMA_LOG_DIR:-$HOME/.local/state/llama-server}/watchdog-${PORT}.pid"
+  local listener_pids=""
+  local pid=""
+  local parent_pid=""
+  local process_command=""
+  local attempt=0
+
+  if [[ -f "$watchdog_pid_file" ]]; then
+    pid="$(< "$watchdog_pid_file")"
+    process_command="$(ps -o command= -p "$pid" 2>/dev/null || true)"
+    if [[ "$pid" =~ ^[0-9]+$ && "$process_command" == *"/Users/mymac/watchllamacpp.sh"* ]]; then
+      watchdog_pid="$pid"
+    fi
+  fi
+
+  listener_pids="$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true)"
+  # A watchdog started before PID files were added is the parent of its server.
+  if [[ -z "$watchdog_pid" && -n "$listener_pids" ]]; then
+    pid="${listener_pids%%$'\n'*}"
+    parent_pid="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
+    process_command="$(ps -o command= -p "$parent_pid" 2>/dev/null || true)"
+    if [[ "$process_command" == *"/Users/mymac/watchllamacpp.sh"* ]]; then
+      watchdog_pid="$parent_pid"
+    fi
+  fi
+
+  if [[ -n "$watchdog_pid" ]]; then
+    kill -TERM "$watchdog_pid" 2>/dev/null || true
+    for attempt in {1..30}; do
+      kill -0 "$watchdog_pid" 2>/dev/null || break
+      sleep 0.2
+    done
+  fi
+
+  # The watchdog may be draining a request. Stop only the listener on this
+  # port if it remains, including direct llama.cpp and MLX launches.
+  listener_pids="$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true)"
+  if [[ -n "$listener_pids" ]]; then
+    while IFS= read -r pid; do
+      [[ -n "$pid" ]] || continue
+      process_command="$(ps -o command= -p "$pid" 2>/dev/null || true)"
+      if [[ "$process_command" != *"llama-server"* && "$process_command" != *"mlx_vlm.server"* && "$process_command" != *"/splash/"* && "$process_command" != *"-m monolith.cli serve"* ]]; then
+        echo "Port $PORT is owned by an unrelated process (PID $pid); leaving it running." >&2
+        return 1
+      fi
+      kill -TERM "$pid" 2>/dev/null || true
+    done <<< "$listener_pids"
+    for attempt in {1..30}; do
+      if ! lsof -tiTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+        break
+      fi
+      sleep 0.2
+    done
+  fi
+
+  if [[ -n "$watchdog_pid" ]]; then
+    for attempt in {1..60}; do
+      kill -0 "$watchdog_pid" 2>/dev/null || break
+      sleep 0.2
+    done
+  fi
+  listener_pids="$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true)"
+  if { [[ -n "$watchdog_pid" ]] && kill -0 "$watchdog_pid" 2>/dev/null; } || [[ -n "$listener_pids" ]]; then
+    echo "Could not stop the local LLM on port $PORT." >&2
+    [[ -n "$watchdog_pid" ]] && echo "Watchdog PID: $watchdog_pid" >&2
+    [[ -n "$listener_pids" ]] && echo "Remaining listener PID(s): $listener_pids" >&2
+    return 1
+  fi
+
+  echo "Local LLM watchdog and server are stopped."
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  startllamacpp.sh                  Select a model, or choose 9 to stop serving
+  startllamacpp.sh --watch [1-7|10] Start a watchdog-managed server
+  startllamacpp.sh --direct [1-8|10|14|15|16|17|18|19|20] Start the selected server without the watchdog
+  startllamacpp.sh --hermes [1-7]  Start a model and its matching Hermes profile
+  startllamacpp.sh --list           List model choices
+
+Nothing is installed as a background or login service. Interactive watched
+mode remains attached to the Terminal and stops cleanly with Ctrl-C.
+EOF
+}
+
+case "${1:-}" in
+  --help|-h)
+    usage
+    exit 0
+    ;;
+  --list)
+    print_models
+    exit 0
+    ;;
+esac
+
+if [[ "${1:-}" == "--hermes" ]]; then
+  HERMES_LAUNCH=1
+  shift
+  # A non-option argument is the model choice. Any remaining arguments are
+  # forwarded unchanged to Hermes (for example --tui or -z "prompt").
+  case "${1:-}" in
+    ""|-*) ;;
+    *)
+      DIRECT_CHOICE="$1"
+      shift
+      ;;
+  esac
+fi
+
+if (( HERMES_LAUNCH == 0 )) && [[ "${1:-}" == "--direct" ]]; then
+  DIRECT_LAUNCH=1
+  shift
+  DIRECT_CHOICE="${1:-}"
+fi
+
+# Normal mode hands the selected profile to the watchdog. Direct mode is used
+# by the watchdog after it has applied memory-pressure and swap safeguards.
+if (( HERMES_LAUNCH == 0 )) && [[ "${1:-}" == "--watch" ]]; then
+  shift
+  MODEL_CHOICE="${1:-1}"
+  case "$MODEL_CHOICE" in
+    1|2|3|4|5|6|7|10) ;;
+    *)
+      echo "Invalid model choice: $MODEL_CHOICE (expected 1-7 or 10)." >&2
+      exit 2
+      ;;
+  esac
+  exec /Users/mymac/watchllamacpp.sh "$MODEL_CHOICE"
+fi
+
+if (( DIRECT_LAUNCH == 1 || HERMES_LAUNCH == 1 )) && [[ -n "$DIRECT_CHOICE" ]]; then
+  choice="$DIRECT_CHOICE"
+else
+  print_models
+  if ! read -r -p "Enter choice (1-10, 14-20; 9 stops): " choice; then
+    echo "No model choice received." >&2
+    exit 2
+  fi
+fi
+
+case "$choice" in
+  1|2|3|4|5|6|7|8|10|14|15|16|17|18|19|20) ;;
+  9)
+    stop_llamacpp
+    exit $?
+    ;;
+  *)
+    echo "Invalid choice: $choice (expected 1-10, 14-20; 9 stops)." >&2
+    exit 2
+    ;;
+esac
+
+if [[ "$choice" == "8" || "$choice" == "10" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" || "$choice" == "20" ]]; then
+  if (( HERMES_LAUNCH == 1 )); then
+    echo "Options 8, 10, and 14-20 do not use hermeslocal profiles; run them from the interactive menu or with --direct." >&2
+    exit 2
+  fi
+  # Keep the reasoning-only profile direct; MTP option 10 is supervised by the
+  # watchdog unless the caller explicitly requests --direct.
+  if [[ "$choice" == "8" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" || "$choice" == "20" ]]; then
+    DIRECT_LAUNCH=1
+  fi
+fi
+
+if (( HERMES_LAUNCH == 1 )); then
+  exec /Users/mymac/.local/bin/hermeslocal --start "$choice" "$@"
+fi
+
+if (( DIRECT_LAUNCH == 0 )); then
+  exec /Users/mymac/watchllamacpp.sh "$choice"
+fi
+
+case "$choice" in
+  1)
+    require_model "$QWEN_9B_MODEL" "Qwen 3.5 9B"
+    prepare_llama_run "qwen-planner"
+    sync_opencode_model "qwen3.5-9b-planner"
+    exec "$LLAMA_SERVER" \
+      -m "$QWEN_9B_MODEL" \
+      --alias qwen3.5-9b-planner \
+      -c 32768 \
+      --parallel 1 \
+      --no-cont-batching \
+      --flash-attn on \
+      --n-gpu-layers all \
+      --no-host \
+      --cache-type-k q4_0 \
+      --cache-type-v q4_0 \
+      --cache-ram 1024 \
+      --kv-unified \
+      --batch-size 768 \
+      --ubatch-size 384 \
+      --n-predict 4096 \
+      --top-p 0.95 \
+      --top-k 20 \
+      --min-p 0.0 \
+      --presence-penalty 0.0 \
+      --repeat-penalty 1.0 \
+      --host "$HOST" \
+      --port "$PORT" \
+      --cors-origins localhost \
+      --offline \
+      --metrics \
+      --reasoning on \
+      --reasoning-budget 4096 \
+      --log-file "$LLAMA_RUN_LOG" \
+      --log-colors off \
+      --log-timestamps
+    ;;
+
+  2)
+    require_model "$GEMMA_12B_MODEL" "Gemma 4 12B"
+    prepare_llama_run "gemma-12b"
+    sync_opencode_model "gemma-4-12b"
+    exec "$LLAMA_SERVER" \
+      -m "$GEMMA_12B_MODEL" \
+      --alias gemma-4-12b \
+      -c 32768 \
+      --parallel 1 \
+      --no-cont-batching \
+      --flash-attn on \
+      --n-gpu-layers all \
+      --no-host \
+      --cache-type-k q4_0 \
+      --cache-type-v q4_0 \
+      --cache-ram 1024 \
+      --kv-unified \
+      --batch-size 512 \
+      --ubatch-size 256 \
+      --jinja \
+      --n-predict 4096 \
+      --temp 1.0 \
+      --top-p 0.95 \
+      --top-k 64 \
+      --repeat-penalty 1.0 \
+      --host "$HOST" \
+      --port "$PORT" \
+      --cors-origins localhost \
+      --offline \
+      --metrics \
+      --reasoning off \
+      --log-file "$LLAMA_RUN_LOG" \
+      --log-colors off \
+      --log-timestamps
+    ;;
+
+  3)
+    require_model "$LFM_8B_MODEL" "LFM 2.5 8B"
+    prepare_llama_run "lfm-8b"
+    sync_opencode_model "lfm2.5-8b"
+    exec "$LLAMA_SERVER" \
+      -m "$LFM_8B_MODEL" \
+      --alias lfm2.5-8b \
+      -c 32768 \
+      --parallel 1 \
+      --no-cont-batching \
+      --flash-attn on \
+      --n-gpu-layers all \
+      --no-host \
+      --cache-type-k q4_0 \
+      --cache-type-v q4_0 \
+      --cache-ram 512 \
+      --kv-unified \
+      --batch-size 512 \
+      --ubatch-size 256 \
+      --n-predict 4096 \
+      --temp 0.2 \
+      --top-k 80 \
+      --repeat-penalty 1.05 \
+      --host "$HOST" \
+      --port "$PORT" \
+      --cors-origins localhost \
+      --offline \
+      --metrics \
+      --reasoning auto \
+      --log-file "$LLAMA_RUN_LOG" \
+      --log-colors off \
+      --log-timestamps
+    ;;
+
+  4)
+    require_model "$BONSAI_27B_MODEL" "Ternary Bonsai 2 27B GGUF"
+    prepare_llama_run "bonsai-27b" "$PRISM_LLAMA_SERVER"
+    sync_opencode_model "bonsai-27b"
+    exec "$PRISM_LLAMA_SERVER" \
+      -m "$BONSAI_27B_MODEL" \
+      --alias bonsai-27b \
+      -c 24576 \
+      --parallel 1 \
+      --no-cont-batching \
+      --flash-attn on \
+      --n-gpu-layers all \
+      --no-host \
+      --cache-type-k q4_0 \
+      --cache-type-v q4_0 \
+      --cache-ram 512 \
+      --temp 0.7 \
+      --top-p 0.80 \
+      --top-k 20 \
+      --min-p 0.0 \
+      --repeat-penalty 1.0 \
+      --presence-penalty 1.5 \
+      --reasoning off \
+      --n-predict 4096 \
+      --host "$HOST" \
+      --port "$PORT" \
+      --cors-origins localhost \
+      --offline \
+      --metrics \
+      --log-file "$LLAMA_RUN_LOG" \
+      --log-colors off \
+      --log-timestamps
+    ;;
+
+  5)
+    require_model "$QWEN_MTP_9B_MODEL" "Qwen 3.5 9B MTP"
+    prepare_llama_run "qwen-mtp-16k"
+    sync_opencode_model "qwen3.5-9b-mtp"
+    exec "$LLAMA_SERVER" \
+      -m "$QWEN_MTP_9B_MODEL" \
+      --alias qwen3.5-9b-mtp \
+      --spec-type draft-mtp \
+      --spec-draft-n-max 3 \
+      --spec-draft-type-k q8_0 \
+      --spec-draft-type-v q8_0 \
+      -c 16384 \
+      --parallel 1 \
+      --no-cont-batching \
+      --flash-attn on \
+      --n-gpu-layers all \
+      --no-host \
+      --cache-type-k q4_0 \
+      --cache-type-v q4_0 \
+      --cache-ram 256 \
+      --kv-unified \
+      --batch-size 768 \
+      --ubatch-size 384 \
+      --n-predict 2048 \
+      --temp 0.6 \
+      --top-p 0.95 \
+      --top-k 20 \
+      --min-p 0.0 \
+      --presence-penalty 0.0 \
+      --repeat-penalty 1.0 \
+      --host "$HOST" \
+      --port "$PORT" \
+      --cors-origins localhost \
+      --offline \
+      --metrics \
+      --reasoning off \
+      --log-file "$LLAMA_RUN_LOG" \
+      --log-colors off \
+      --log-timestamps
+    ;;
+
+  6)
+    require_model "$QWEN_9B_MODEL" "Qwen 3.5 9B"
+    prepare_llama_run "qwen-fast-16k"
+    sync_opencode_model "qwen3.5-9b-fast"
+    exec "$LLAMA_SERVER" \
+      -m "$QWEN_9B_MODEL" \
+      --alias qwen3.5-9b-fast \
+      -c 16384 \
+      --parallel 1 \
+      --no-cont-batching \
+      --flash-attn on \
+      --n-gpu-layers all \
+      --no-host \
+      --cache-type-k q4_0 \
+      --cache-type-v q4_0 \
+      --cache-ram 1024 \
+      --kv-unified \
+      --batch-size 768 \
+      --ubatch-size 384 \
+      --n-predict 2048 \
+      --temp 0.6 \
+      --top-p 0.95 \
+      --top-k 20 \
+      --min-p 0.0 \
+      --repeat-penalty 1.0 \
+      --host "$HOST" \
+      --port "$PORT" \
+      --cors-origins localhost \
+      --offline \
+      --metrics \
+      --reasoning off \
+      --log-file "$LLAMA_RUN_LOG" \
+      --log-colors off \
+      --log-timestamps
+    ;;
+
+  7)
+    require_model "$QWEN_MTP_9B_MODEL" "Qwen 3.5 9B MTP"
+    prepare_llama_run "qwen-mtp-32k"
+    sync_opencode_model "qwen3.5-9b-mtp-32k"
+    exec "$LLAMA_SERVER" \
+      -m "$QWEN_MTP_9B_MODEL" \
+      --alias qwen3.5-9b-mtp-32k \
+      --spec-type draft-mtp \
+      --spec-draft-n-max 4 \
+      --spec-draft-type-k q8_0 \
+      --spec-draft-type-v q8_0 \
+      -c 32768 \
+      --parallel 1 \
+      --no-cont-batching \
+      --flash-attn on \
+      --n-gpu-layers all \
+      --no-host \
+      --cache-type-k q4_0 \
+      --cache-type-v q4_0 \
+      --cache-ram 256 \
+      --kv-unified \
+      --batch-size 1024 \
+      --ubatch-size 512 \
+      --n-predict 2048 \
+      --temp 0.6 \
+      --top-p 0.95 \
+      --top-k 20 \
+      --min-p 0.0 \
+      --presence-penalty 0.0 \
+      --repeat-penalty 1.0 \
+      --host "$HOST" \
+      --port "$PORT" \
+      --cors-origins localhost \
+      --offline \
+      --metrics \
+      --reasoning off \
+      --log-file "$LLAMA_RUN_LOG" \
+      --log-colors off \
+      --log-timestamps
+    ;;
+
+  8)
+    if ! [[ "$MLX_CONTEXT_WINDOW" =~ ^[1-9][0-9]*$ ]] || (( MLX_CONTEXT_WINDOW < 4096 )); then
+      echo "MLX_CONTEXT_WINDOW must be an integer of at least 4096." >&2
+      exit 1
+    fi
+    if ! [[ "$MLX_MAX_TOKENS" =~ ^[1-9][0-9]*$ ]] || (( MLX_MAX_TOKENS >= MLX_CONTEXT_WINDOW )); then
+      echo "MLX_MAX_TOKENS must be positive and smaller than MLX_CONTEXT_WINDOW." >&2
+      exit 1
+    fi
+    if ! [[ "$MLX_THINKING_BUDGET" =~ ^[1-9][0-9]*$ ]] || (( MLX_THINKING_BUDGET >= MLX_MAX_TOKENS )); then
+      echo "MLX_THINKING_BUDGET must be positive and smaller than MLX_MAX_TOKENS." >&2
+      exit 1
+    fi
+    if ! [[ "$MLX_OPENCODE_CONTEXT" =~ ^[1-9][0-9]*$ ]] || (( MLX_OPENCODE_CONTEXT >= MLX_CONTEXT_WINDOW )); then
+      echo "MLX_OPENCODE_CONTEXT must be positive and smaller than MLX_CONTEXT_WINDOW." >&2
+      exit 1
+    fi
+    if ! [[ "$MLX_BALANCED_MAX_TOKENS" =~ ^[1-9][0-9]*$ ]] || (( MLX_BALANCED_MAX_TOKENS >= MLX_OPENCODE_CONTEXT )); then
+      echo "MLX_BALANCED_MAX_TOKENS must be positive and smaller than MLX_OPENCODE_CONTEXT." >&2
+      exit 1
+    fi
+    if ! [[ "$MLX_BALANCED_THINKING_BUDGET" =~ ^[1-9][0-9]*$ ]] || (( MLX_BALANCED_THINKING_BUDGET >= MLX_BALANCED_MAX_TOKENS )); then
+      echo "MLX_BALANCED_THINKING_BUDGET must be positive and smaller than MLX_BALANCED_MAX_TOKENS." >&2
+      exit 1
+    fi
+    if ! [[ "$MLX_WORKER_MAX_TOKENS" =~ ^[1-9][0-9]*$ ]] || (( MLX_WORKER_MAX_TOKENS >= MLX_OPENCODE_CONTEXT )); then
+      echo "MLX_WORKER_MAX_TOKENS must be positive and smaller than MLX_OPENCODE_CONTEXT." >&2
+      exit 1
+    fi
+    if ! [[ "$MLX_KV_BITS" =~ ^[248]$ ]]; then
+      echo "MLX_KV_BITS must be 2, 4, or 8." >&2
+      exit 1
+    fi
+    if ! [[ "$MLX_PREFILL_STEP_SIZE" =~ ^[1-9][0-9]*$ ]]; then
+      echo "MLX_PREFILL_STEP_SIZE must be a positive integer." >&2
+      exit 1
+    fi
+    if ! [[ "$MLX_APC_ENABLED" =~ ^[01]$ ]]; then
+      echo "MLX_APC_ENABLED must be 0 or 1." >&2
+      exit 1
+    fi
+    if ! [[ "$MLX_APC_BLOCK_SIZE" =~ ^[1-9][0-9]*$ ]]; then
+      echo "MLX_APC_BLOCK_SIZE must be a positive integer." >&2
+      exit 1
+    fi
+    if ! [[ "$MLX_APC_NUM_BLOCKS" =~ ^[1-9][0-9]*$ ]]; then
+      echo "MLX_APC_NUM_BLOCKS must be a positive integer." >&2
+      exit 1
+    fi
+    MLX_APC_CAPACITY_TOKENS=$((MLX_APC_BLOCK_SIZE * MLX_APC_NUM_BLOCKS))
+    if [[ "$MLX_APC_ENABLED" == "1" ]]; then
+      MLX_APC_PROFILE="apc${MLX_APC_CAPACITY_TOKENS}"
+    else
+      MLX_APC_PROFILE="apc-off"
+    fi
+    MLX_TARGET_PATH="$(find_hf_snapshot "$MLX_TARGET_ID" || true)"
+    if [[ ! -x "$MLX_VLM_PYTHON" ]]; then
+      echo "mlx-vlm is not installed at: $MLX_VLM_PYTHON" >&2
+      exit 1
+    fi
+    if [[ -z "$MLX_TARGET_PATH" ]]; then
+      echo "The MLX target model is not completely downloaded: $MLX_TARGET_ID" >&2
+      exit 1
+    fi
+    if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+      echo "Port $PORT is already in use; choose option 9 before starting MLX." >&2
+      lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >&2 || true
+      exit 1
+    fi
+    LOG_DIR="${LLAMA_LOG_DIR:-$HOME/.local/state/llama-server}"
+    mkdir -p "$LOG_DIR"
+    RUN_ID="$(date '+%Y%m%d-%H%M%S')"
+    LOG_FILE="$LOG_DIR/qwen-mlx-reasoning-$RUN_ID.log"
+    LATEST_LOG="$LOG_DIR/qwen-mlx-reasoning-latest.log"
+    METRICS_JSONL="$LOG_DIR/qwen-mlx-reasoning-metrics.jsonl"
+    ln -sfn "$LOG_FILE" "$LATEST_LOG"
+    exec > >(timestamp_log_stream | tee -a "$LOG_FILE") 2>&1
+    echo "Starting Qwen3.5 9B MLX deep reasoning on http://${HOST}:${PORT}"
+    echo "Model ID for API clients: $MLX_API_ALIAS (served model: $MLX_TARGET_ID)"
+    echo "Balanced alias: $MLX_BALANCED_ALIAS (${MLX_BALANCED_THINKING_BUDGET} thinking + $((MLX_BALANCED_MAX_TOKENS - MLX_BALANCED_THINKING_BUDGET)) answer tokens)"
+    echo "Focused subagent alias: $MLX_WORKER_ALIAS (thinking off, ${MLX_WORKER_MAX_TOKENS} output cap)"
+    echo "OpenCode context: ${MLX_OPENCODE_CONTEXT} | compaction reserve: ${MLX_MAX_TOKENS} | planner prompt target: $((MLX_OPENCODE_CONTEXT - MLX_MAX_TOKENS))"
+    echo "Context: ${MLX_CONTEXT_WINDOW} total | output cap: ${MLX_MAX_TOKENS} | thinking cap: ${MLX_THINKING_BUDGET}"
+    echo "Allocation: up to ${MLX_THINKING_BUDGET} reasoning tokens + $((MLX_MAX_TOKENS - MLX_THINKING_BUDGET)) final-answer tokens"
+    echo "KV cache: ${MLX_KV_BITS}-bit from token 0 | prefill chunk: ${MLX_PREFILL_STEP_SIZE} tokens"
+    if [[ "$MLX_APC_ENABLED" == "1" ]]; then
+      echo "Prefix cache: APC enabled | ${MLX_APC_NUM_BLOCKS} x ${MLX_APC_BLOCK_SIZE}-token blocks = ${MLX_APC_CAPACITY_TOKENS} cached tokens"
+    else
+      echo "Prefix cache: APC disabled"
+    fi
+    echo "MTP: disabled because MLX-VLM does not support enforced thinking budgets with speculative decoding"
+    echo "Stats: per-profile PP/TPS, timing, memory, cache, reasoning, utilization, failures, and cumulative totals"
+    echo "Stats JSON: http://${HOST}:${PORT}/v1/metrics"
+    echo "Live monitor: /Users/mymac/monitorllamacpp.sh --watch"
+    echo "Performance report: /Users/mymac/monitorllamacpp.sh --report 24"
+    echo "Live log: /Users/mymac/monitorllamacpp.sh --log"
+    echo "OpenCode: start a new session; existing sessions retain their old model routing"
+    echo "Run log: $LOG_FILE"
+    echo "Durable metrics: $METRICS_JSONL"
+    echo "Press Ctrl-C in this Terminal to stop it."
+    sync_opencode_model "$MLX_API_ALIAS"
+    # The server is kept offline so a normal launch can never redownload or
+    # silently replace the snapshot verified above. Using the HF ID as the
+    # cache key also prevents clients sending the advertised model ID from
+    # forcing an unnecessary unload/reload cycle.
+    exec env HF_HUB_OFFLINE=1 HF_HUB_DISABLE_TELEMETRY=1 \
+      MLX_VLM_PRELOAD_MODEL="$MLX_TARGET_ID" \
+      MLX_VLM_PERF_STATS=1 \
+      MLX_VLM_ENFORCE_MAX_TOKENS=1 \
+      MLX_VLM_FORCE_THINKING=1 \
+      MLX_VLM_ENFORCE_THINKING_BUDGET=1 \
+      APC_ENABLED="$MLX_APC_ENABLED" \
+      APC_BLOCK_SIZE="$MLX_APC_BLOCK_SIZE" \
+      APC_NUM_BLOCKS="$MLX_APC_NUM_BLOCKS" \
+      MLX_VLM_RUN_ID="$RUN_ID" \
+      MLX_VLM_SERVER_PROFILE="option8-mlx-kv${MLX_KV_BITS}-${MLX_CONTEXT_WINDOW}-${MLX_APC_PROFILE}" \
+      MLX_VLM_CLIENT_CONTEXT_LIMIT="$MLX_OPENCODE_CONTEXT" \
+      MLX_VLM_COMPACTION_RESERVE="$MLX_MAX_TOKENS" \
+      MLX_VLM_REASONER_ALIAS="$MLX_API_ALIAS" \
+      MLX_VLM_BALANCED_ALIAS="$MLX_BALANCED_ALIAS" \
+      MLX_VLM_WORKER_ALIAS="$MLX_WORKER_ALIAS" \
+      MLX_VLM_BALANCED_MAX_TOKENS="$MLX_BALANCED_MAX_TOKENS" \
+      MLX_VLM_BALANCED_THINKING_BUDGET="$MLX_BALANCED_THINKING_BUDGET" \
+      MLX_VLM_WORKER_MAX_TOKENS="$MLX_WORKER_MAX_TOKENS" \
+      MLX_VLM_KV_BITS="$MLX_KV_BITS" \
+      MLX_VLM_PREFILL_STEP_SIZE="$MLX_PREFILL_STEP_SIZE" \
+      MLX_VLM_METRICS_JSONL="$METRICS_JSONL" \
+      MLX_VLM_LOG_PROGRESS_INTERVAL=100 \
+      PYTHONUNBUFFERED=1 \
+      "$MLX_VLM_PYTHON" -m mlx_vlm.server \
+      --model "$MLX_TARGET_ID" \
+      --enable-thinking \
+      --thinking-budget "$MLX_THINKING_BUDGET" \
+      --max-kv-size "$MLX_CONTEXT_WINDOW" \
+      --kv-bits "$MLX_KV_BITS" \
+      --quantized-kv-start 0 \
+      --prefill-step-size "$MLX_PREFILL_STEP_SIZE" \
+      --max-tokens "$MLX_MAX_TOKENS" \
+      --host "$HOST" \
+      --port "$PORT" \
+      --log-level INFO
+    ;;
+
+  10)
+    if ! [[ "$MLX_MTP_CONTEXT" =~ ^[1-9][0-9]*$ ]] || (( MLX_MTP_CONTEXT < 4096 )); then
+      echo "MLX_MTP_CONTEXT must be an integer of at least 4096." >&2
+      exit 1
+    fi
+    if ! [[ "$MLX_MTP_MAX_TOKENS" =~ ^[1-9][0-9]*$ ]] || (( MLX_MTP_MAX_TOKENS >= MLX_MTP_CONTEXT )); then
+      echo "MLX_MTP_MAX_TOKENS must be positive and smaller than MLX_MTP_CONTEXT." >&2
+      exit 1
+    fi
+    if ! [[ "$MLX_MTP_DRAFT_BLOCK_SIZE" =~ ^[1-3]$ ]]; then
+      echo "MLX_MTP_DRAFT_BLOCK_SIZE must be 1, 2, or 3." >&2
+      exit 1
+    fi
+    if [[ ! -x "$MLX_VLM_PYTHON" ]]; then
+      echo "mlx-vlm is not installed at: $MLX_VLM_PYTHON" >&2
+      exit 1
+    fi
+    MLX_TARGET_PATH="$(find_hf_snapshot "$MLX_TARGET_ID" || true)"
+    if [[ -z "$MLX_TARGET_PATH" ]]; then
+      echo "The MLX target model is not completely downloaded: $MLX_TARGET_ID" >&2
+      exit 1
+    fi
+    if [[ ! -f "$MLX_MTP_DRAFT_PATH/config.json" || ! -f "$MLX_MTP_DRAFT_PATH/model.safetensors" ]]; then
+      echo "The MLX MTP drafter is incomplete: $MLX_MTP_DRAFT_PATH" >&2
+      exit 1
+    fi
+    if [[ "$(jq -r '.model_type // empty' "$MLX_MTP_DRAFT_PATH/config.json" 2>/dev/null)" != "qwen3_5_mtp" ]]; then
+      echo "The configured drafter is not a qwen3_5_mtp checkpoint: $MLX_MTP_DRAFT_PATH" >&2
+      exit 1
+    fi
+    if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+      echo "Port $PORT is already in use; choose option 9 before starting MLX MTP." >&2
+      lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >&2 || true
+      exit 1
+    fi
+    LOG_DIR="${LLAMA_LOG_DIR:-$HOME/.local/state/llama-server}"
+    mkdir -p "$LOG_DIR"
+    RUN_ID="$(date '+%Y%m%d-%H%M%S')"
+    LOG_FILE="$LOG_DIR/qwen-mlx-mtp-$RUN_ID.log"
+    LATEST_LOG="$LOG_DIR/qwen-mlx-mtp-latest.log"
+    METRICS_JSONL="$LOG_DIR/qwen-mlx-mtp-metrics.jsonl"
+    ln -sfn "$LOG_FILE" "$LATEST_LOG"
+    exec > >(timestamp_log_stream | tee -a "$LOG_FILE") 2>&1
+    echo "Starting Qwen3.5 9B MLX MTP reasoning mode on http://${HOST}:${PORT}"
+    echo "Target: $MLX_TARGET_ID"
+    echo "MTP drafter: $MLX_MTP_DRAFT_PATH | width: $MLX_MTP_DRAFT_BLOCK_SIZE"
+    echo "Context: $MLX_MTP_CONTEXT | total output cap: $MLX_MTP_MAX_TOKENS | reasoning enabled without a separate budget"
+    echo "KV cache: ${MLX_KV_BITS}-bit from token 0 | prefill chunk: ${MLX_MTP_PREFILL_STEP_SIZE} tokens"
+    if [[ "$MLX_APC_ENABLED" == "1" ]]; then
+      echo "Prefix cache: APC enabled | ${MLX_MTP_APC_NUM_BLOCKS} x ${MLX_APC_BLOCK_SIZE}-token blocks = $((MLX_MTP_APC_NUM_BLOCKS * MLX_APC_BLOCK_SIZE)) cached tokens"
+    else
+      echo "Prefix cache: APC disabled"
+    fi
+    echo "Observed recent range: about 76-88% weighted MTP acceptance; long-context decode slows sharply above 20K prompt tokens"
+    echo "Stats JSON: http://${HOST}:${PORT}/v1/metrics"
+    echo "Live monitor: /Users/mymac/monitorllamacpp.sh --watch"
+    echo "Run log: $LOG_FILE"
+    echo "Press Ctrl-C in this Terminal to stop it."
+    sync_opencode_model "$MLX_MTP_ALIAS"
+    exec env -u MLX_VLM_THINKING_BUDGET HF_HUB_OFFLINE=1 HF_HUB_DISABLE_TELEMETRY=1 \
+      MLX_VLM_PRELOAD_MODEL="$MLX_TARGET_ID" \
+      MLX_VLM_PERF_STATS=1 \
+      MLX_VLM_ENFORCE_MAX_TOKENS=1 \
+      MLX_VLM_FORCE_THINKING=1 \
+      MLX_VLM_ENFORCE_THINKING_BUDGET=0 \
+      MLX_VLM_DRAFT_MODEL="$MLX_MTP_DRAFT_PATH" \
+      MLX_VLM_DRAFT_KIND=mtp \
+      MLX_VLM_DRAFT_BLOCK_SIZE="$MLX_MTP_DRAFT_BLOCK_SIZE" \
+      APC_ENABLED="$MLX_APC_ENABLED" \
+      APC_BLOCK_SIZE="$MLX_APC_BLOCK_SIZE" \
+      APC_NUM_BLOCKS="$MLX_MTP_APC_NUM_BLOCKS" \
+      MLX_VLM_RUN_ID="$RUN_ID" \
+      MLX_VLM_SERVER_PROFILE="option10-mlx-mtp-kv${MLX_KV_BITS}-${MLX_MTP_CONTEXT}" \
+      MLX_VLM_CLIENT_CONTEXT_LIMIT="$MLX_MTP_CONTEXT" \
+      MLX_VLM_COMPACTION_RESERVE="$MLX_MTP_MAX_TOKENS" \
+      MLX_VLM_REASONER_ALIAS="$MLX_MTP_ALIAS" \
+      MLX_VLM_KV_BITS="$MLX_KV_BITS" \
+      MLX_VLM_PREFILL_STEP_SIZE="$MLX_MTP_PREFILL_STEP_SIZE" \
+      MLX_VLM_METRICS_JSONL="$METRICS_JSONL" \
+      MLX_VLM_LOG_PROGRESS_INTERVAL=100 \
+      PYTHONUNBUFFERED=1 \
+      "$MLX_VLM_PYTHON" -m mlx_vlm.server \
+      --model "$MLX_TARGET_ID" \
+      --draft-model "$MLX_MTP_DRAFT_PATH" \
+      --draft-kind mtp \
+      --draft-block-size "$MLX_MTP_DRAFT_BLOCK_SIZE" \
+      --max-kv-size "$MLX_MTP_CONTEXT" \
+      --kv-bits "$MLX_KV_BITS" \
+      --quantized-kv-start 0 \
+      --prefill-step-size "$MLX_MTP_PREFILL_STEP_SIZE" \
+      --max-tokens "$MLX_MTP_MAX_TOKENS" \
+      --enable-thinking \
+      --host "$HOST" \
+      --port "$PORT" \
+      --log-level INFO
+    ;;
+
+  15)
+    if ! splash_uint_in_range "$LITHOS_BONSAI_CONTEXT" 512 8192 ||
+       ! splash_uint_in_range "$LITHOS_BONSAI_OUTPUT" 1 "$((LITHOS_BONSAI_CONTEXT - 1))" ||
+       ! splash_uint_in_range "$LITHOS_BONSAI_PREFILL" 1 128 ||
+       ! splash_uint_in_range "$LITHOS_BONSAI_WARMUP_PREFILL" 1 8192; then
+      echo "Option 15 requires context 512-8192, output smaller than context, prefill 1-128, and warmup 1-8192." >&2
+      exit 1
+    fi
+    if [[ ! -x "$LITHOS_PYTHON" || ! -f "$LITHOS_ROOT/monolith/models/bonsai2/model.py" ]]; then
+      echo "Lithos Bonsai 2 runtime is missing: $LITHOS_ROOT ($LITHOS_PYTHON)." >&2
+      exit 1
+    fi
+    if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+      echo "Port $PORT is already in use; choose option 9 before starting option 15." >&2
+      exit 1
+    fi
+    if [[ -z "$LITHOS_BONSAI_MODEL" ]]; then
+      for lithos_gguf_candidate in "$HOME/splash/splash/install/models/.resolved/"*/target/Ternary-Bonsai-2-27B-PTQ1_0.gguf; do
+        [[ -f "$lithos_gguf_candidate" ]] || continue
+        LITHOS_BONSAI_MODEL="$lithos_gguf_candidate"
+        break
+      done
+      if [[ -z "$LITHOS_BONSAI_MODEL" && -f "$BONSAI_27B_MODEL" ]]; then
+        LITHOS_BONSAI_MODEL="$BONSAI_27B_MODEL"
+      fi
+    fi
+    if [[ ! -f "$LITHOS_BONSAI_MODEL" || "$LITHOS_BONSAI_MODEL" != *.gguf ]]; then
+      echo "Option 14's Bonsai GGUF is unavailable; start option 14 to install it, or set LITHOS_BONSAI_MODEL to its GGUF path." >&2
+      exit 1
+    fi
+    cd "$LITHOS_ROOT"
+    LOG_DIR="${LLAMA_LOG_DIR:-$HOME/.local/state/llama-server}"
+    mkdir -p "$LOG_DIR"
+    LOG_FILE="$LOG_DIR/bonsai2-lithos-$(date '+%Y%m%d-%H%M%S').log"
+    ln -sfn "$LOG_FILE" "$LOG_DIR/bonsai2-lithos-latest.log"
+    exec > >(timestamp_log_stream | tee -a "$LOG_FILE") 2>&1
+    echo "Starting Bonsai 2 through Lithos Metal on http://${HOST}:${PORT}"
+    echo "Experimental BF16 activations/KV with signed Hadamard rotations and packed 2-bit weights; no draft."
+    echo "Context: $LITHOS_BONSAI_CONTEXT | OpenCode output reserve: $LITHOS_BONSAI_OUTPUT | prefill: $LITHOS_BONSAI_PREFILL | warmup prompt: $LITHOS_BONSAI_WARMUP_PREFILL tokens"
+    echo "Model: $LITHOS_BONSAI_MODEL | API alias: $LITHOS_BONSAI_ALIAS"
+    echo "Run log: $LOG_FILE"
+    sync_opencode_lithos
+    exec env PYTHONUNBUFFERED=1 HF_HUB_OFFLINE=1 HF_HUB_DISABLE_TELEMETRY=1 \
+      "$LITHOS_PYTHON" -m monolith.cli serve \
+      --model "$LITHOS_BONSAI_MODEL" --served-model-name "$LITHOS_BONSAI_ALIAS" \
+      --download-dir "$LITHOS_BONSAI_DOWNLOAD_DIR" --pack "$LITHOS_BONSAI_PACK_DIR" \
+      --no-draft --max-context "$LITHOS_BONSAI_CONTEXT" \
+      --prefill-chunk-size "$LITHOS_BONSAI_PREFILL" \
+      --warmup-prefill-tokens "$LITHOS_BONSAI_WARMUP_PREFILL" \
+      --host "$HOST" --port "$PORT"
+    ;;
+
+  17)
+    if ! splash_qwen_context="$(splash_context_tokens "$SPLASH_QWEN_MAX_CONTEXT")" ||
+       (( splash_qwen_context < 4096 || splash_qwen_context > 32768 )); then
+      echo "SPLASH_QWEN_MAX_CONTEXT must be 4096-32768 tokens (default 8K)." >&2
+      exit 1
+    fi
+    splash_qwen_client_context="$((splash_qwen_context - 1024))"
+    if ! splash_uint_in_range "$SPLASH_QWEN_MAX_TOKENS" 1 "$((splash_qwen_client_context - 1))"; then
+      echo "SPLASH_QWEN_MAX_TOKENS must be positive and smaller than the client context." >&2
+      exit 1
+    fi
+    if ! splash_uint_in_range "$SPLASH_QWEN_QUEUE_SIZE" 1 32; then
+      echo "SPLASH_QWEN_QUEUE_SIZE must be 1-32 requests (default 8)." >&2
+      exit 1
+    fi
+    require_model "$SPLASH_QWEN_MODEL" "Qwen3.5 9B Splash"
+    for splash_qwen_required in "$SPLASH_QWEN_PYTHON" "$SPLASH_QWEN_BIN"; do
+      if [[ ! -x "$splash_qwen_required" ]]; then
+        echo "Qwen Splash runtime is missing or not executable: $splash_qwen_required" >&2
+        exit 1
+      fi
+    done
+    if [[ ! -f "$SPLASH_QWEN_ROOT/dev/tests/prepare_qwen35_local_gguf.py" ]]; then
+      echo "Qwen Splash local GGUF preparation helper is missing." >&2
+      exit 1
+    fi
+    command -v lsof >/dev/null 2>&1 || { echo "Option 17 requires lsof." >&2; exit 1; }
+    if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+      echo "Port $PORT is already in use; choose option 9 before starting Splash." >&2
+      exit 1
+    fi
+    "$SPLASH_QWEN_BIN" device-check
+    "$SPLASH_QWEN_PYTHON" "$SPLASH_QWEN_ROOT/dev/tests/prepare_qwen35_local_gguf.py" \
+      "$SPLASH_QWEN_MODEL" --model "$SPLASH_QWEN_MODEL_ID"
+    sync_opencode_qwen_splash
+    splash_qwen_log_dir="${LLAMA_LOG_DIR:-$HOME/.local/state/llama-server}"
+    mkdir -p "$splash_qwen_log_dir"
+    splash_qwen_log="$splash_qwen_log_dir/qwen-9b-splash-$(date '+%Y%m%d-%H%M%S').log"
+    : > "$splash_qwen_log"
+    ln -sfn "$splash_qwen_log" "$splash_qwen_log_dir/qwen-9b-splash-latest.log"
+    ln -sfn "$splash_qwen_log" "$splash_qwen_log_dir/splash-latest.log"
+    echo "Starting Qwen3.5 9B Splash on http://${HOST}:${PORT}"
+    echo "Target-only | context: $splash_qwen_context | client: $splash_qwen_client_context | OpenCode output: $SPLASH_QWEN_MAX_TOKENS | int8 KV"
+    echo "Run log: $splash_qwen_log"
+    echo "Press Ctrl-C in this Terminal to stop it."
+    cd "$SPLASH_QWEN_ROOT"
+    "$SPLASH_QWEN_PYTHON" -u -m server.server "$SPLASH_QWEN_ROOT/build/qwen35-gguf-model" \
+      --tokenizer "$SPLASH_QWEN_ROOT/build/qwen35-gguf-model/tokenizer" \
+      --model "$SPLASH_QWEN_MODEL_ID" --binary "$SPLASH_QWEN_BIN" \
+      --served-model-name "$SPLASH_QWEN_ALIAS" --announce-served-name \
+      --host "$HOST" --port "$PORT" --max-context "$splash_qwen_context" \
+      --queue-size "$SPLASH_QWEN_QUEUE_SIZE" --kv-format int8 --default-reasoning-effort none \
+      2>&1 | tee -a "$splash_qwen_log"
+    ;;
+
+  14|16|18|19|20)
+    splash_reasoning_effort=none
+    splash_temperature=0.7
+    splash_top_p=0.80
+    splash_model_args=()
+    splash_vision_args=(--language-only)
+    if [[ "$choice" == "16" ]]; then
+      require_model "$SPLASH_HERETIC_MODEL" "Bonsai 2 Uncensored Heretic GGUF"
+      if [[ "$SPLASH_HERETIC_MODEL" != *.gguf ]]; then
+        echo "SPLASH_HERETIC_MODEL must name a local .gguf file." >&2
+        exit 1
+      fi
+      SPLASH_BONSAI_MODEL_ID="$SPLASH_HERETIC_MODEL"
+      SPLASH_BONSAI_ALIAS="bonsai-heretic-27b-splash"
+      SPLASH_BONSAI_DISPLAY_NAME="Ternary Bonsai 2 27B Uncensored Heretic PTQ1_0 via Splash"
+      SPLASH_BONSAI_CACHE_DIR="$SPLASH_HERETIC_CACHE_DIR"
+    elif [[ "$choice" == "18" || "$choice" == "19" ]]; then
+      SPLASH_BONSAI_MODEL_ID="$SPLASH_QWEN36_MODEL_ID"
+      SPLASH_BONSAI_ALIAS="qwen3.6-35b-a3b-q2-splash"
+      SPLASH_BONSAI_DISPLAY_NAME="Qwen3.6 35B A3B UD-Q2_K_XL via Splash SSD expert streaming"
+      SPLASH_BONSAI_MAX_CONTEXT="$SPLASH_QWEN36_MAX_CONTEXT"
+      SPLASH_BONSAI_OPENCODE_CONTEXT="$SPLASH_QWEN36_OPENCODE_CONTEXT"
+      SPLASH_BONSAI_MAX_TOKENS="$SPLASH_QWEN36_MAX_TOKENS"
+      splash_bonsai_default_output=0
+      SPLASH_BONSAI_MAX_CACHE_DISK="$SPLASH_QWEN36_MAX_CACHE_DISK"
+      SPLASH_BONSAI_PERSISTENT_CACHE="$SPLASH_QWEN36_PERSISTENT_CACHE"
+      SPLASH_BONSAI_CACHE_DIR="$SPLASH_QWEN36_CACHE_DIR"
+      if [[ "$choice" == "19" ]]; then
+        SPLASH_BONSAI_MODEL_ID="$SPLASH_QWEN36_IQ3_MODEL_ID"
+        SPLASH_BONSAI_ALIAS="qwen3.6-35b-a3b-iq3-xxs-splash"
+        SPLASH_BONSAI_DISPLAY_NAME="Qwen3.6 35B A3B UD-IQ3_XXS via Splash SSD expert streaming"
+        SPLASH_BONSAI_MAX_CONTEXT="$SPLASH_QWEN36_IQ3_MAX_CONTEXT"
+        SPLASH_BONSAI_OPENCODE_CONTEXT="$SPLASH_QWEN36_IQ3_OPENCODE_CONTEXT"
+        SPLASH_BONSAI_MAX_TOKENS="$SPLASH_QWEN36_IQ3_MAX_TOKENS"
+        splash_bonsai_default_output="$splash_qwen36_iq3_default_output"
+        SPLASH_BONSAI_MAX_CACHE_DISK="$SPLASH_QWEN36_IQ3_MAX_CACHE_DISK"
+        SPLASH_BONSAI_PERSISTENT_CACHE="$SPLASH_QWEN36_IQ3_PERSISTENT_CACHE"
+        SPLASH_BONSAI_CACHE_DIR="$SPLASH_QWEN36_IQ3_CACHE_DIR"
+      fi
+      SPLASH_BONSAI_STATE_FORMAT="bf16"
+      SPLASH_BONSAI_PREFILL_CHUNK_TOKENS=512
+      SPLASH_BONSAI_MAX_ACTIVE_REQUESTS=1
+      splash_model_args=(--expert-memory auto --max-memory 8G)
+    elif [[ "$choice" == "20" ]]; then
+      SPLASH_BONSAI_MODEL_ID="$SPLASH_FLASH_NEXT_MODEL_ID"
+      SPLASH_BONSAI_ALIAS="qwen3.8-flash-next-iq3-xxs-splash"
+      SPLASH_BONSAI_DISPLAY_NAME="Qwen3.8 Flash-Next GSQ-RCO IQ3_XXS via Splash SSD streaming"
+      SPLASH_BONSAI_MAX_CONTEXT="$SPLASH_FLASH_NEXT_MAX_CONTEXT"
+      SPLASH_BONSAI_OPENCODE_CONTEXT="$SPLASH_FLASH_NEXT_OPENCODE_CONTEXT"
+      SPLASH_BONSAI_MAX_TOKENS="$SPLASH_FLASH_NEXT_MAX_TOKENS"
+      splash_bonsai_default_output="$splash_flash_next_default_output"
+      SPLASH_BONSAI_MAX_CACHE_DISK="$SPLASH_FLASH_NEXT_MAX_CACHE_DISK"
+      SPLASH_BONSAI_PERSISTENT_CACHE="$SPLASH_FLASH_NEXT_PERSISTENT_CACHE"
+      SPLASH_BONSAI_CACHE_DIR="$SPLASH_FLASH_NEXT_CACHE_DIR"
+      SPLASH_BONSAI_STATE_FORMAT=bf16
+      SPLASH_BONSAI_PREFILL_CHUNK_TOKENS=1024
+      SPLASH_BONSAI_MAX_ACTIVE_REQUESTS=1
+      case "$SPLASH_FLASH_NEXT_MAX_MEMORY" in
+        8G|9G|10G|11G) ;;
+        *) echo "SPLASH_FLASH_NEXT_MAX_MEMORY must be 8G, 9G, 10G or 11G." >&2; exit 1 ;;
+      esac
+      case "$SPLASH_FLASH_NEXT_REASONING_EFFORT" in
+        none|low|medium|xhigh) ;;
+        *) echo "SPLASH_FLASH_NEXT_REASONING_EFFORT must be none, low, medium or xhigh." >&2; exit 1 ;;
+      esac
+      if [[ "$SPLASH_FLASH_NEXT_HF_HUB_CACHE" != /* ]]; then
+        echo "SPLASH_FLASH_NEXT_HF_HUB_CACHE must be an absolute path on the intended model drive." >&2
+        exit 1
+      fi
+      export HF_HUB_CACHE="$SPLASH_FLASH_NEXT_HF_HUB_CACHE"
+      splash_reasoning_effort="$SPLASH_FLASH_NEXT_REASONING_EFFORT"
+      if [[ "$splash_reasoning_effort" != "none" ]]; then
+        splash_temperature=1.0
+        splash_top_p=0.95
+      fi
+      splash_model_args=(--expert-memory auto --ple-memory 64M --max-memory "$SPLASH_FLASH_NEXT_MAX_MEMORY")
+    fi
+    if [[ "$choice" == "19" ]]; then
+      splash_vision_args=(--max-image-pixels 1048576)
+    fi
+    splash_context_max=24576
+    [[ "$choice" != "19" ]] || splash_context_max=81920
+    [[ "$choice" != "20" ]] || splash_context_max=131072
+    splash_client_context_max="$((splash_context_max - 2048))"
+    if ! splash_context_limit="$(splash_context_tokens "$SPLASH_BONSAI_MAX_CONTEXT")" ||
+       (( splash_context_limit < 4096 || splash_context_limit > splash_context_max )); then
+      echo "Splash context must be 4096-${splash_context_max} tokens for option $choice (option 18: SPLASH_QWEN36_MAX_CONTEXT; option 19: SPLASH_QWEN36_IQ3_MAX_CONTEXT; option 20: SPLASH_FLASH_NEXT_MAX_CONTEXT; options 14/16: SPLASH_BONSAI_MAX_CONTEXT)." >&2
+      exit 1
+    fi
+    # Leave room for whole KV extents in the 70-80K option-19 profiles.
+    if [[ "$choice" == "19" ]] && (( splash_context_limit >= 70 * 1024 )); then
+      splash_model_args=(--expert-memory 1900M --max-memory 8G)
+    fi
+    if [[ "$SPLASH_BONSAI_OPENCODE_CONTEXT" == "auto" ]]; then
+      SPLASH_BONSAI_OPENCODE_CONTEXT="$((splash_context_limit - 2048))"
+    fi
+    if ! splash_uint_in_range "$SPLASH_BONSAI_OPENCODE_CONTEXT" 2 "$splash_client_context_max" ||
+       (( SPLASH_BONSAI_OPENCODE_CONTEXT >= splash_context_limit )); then
+      echo "Splash OpenCode context must be auto or 2-${splash_client_context_max} tokens for option $choice, smaller than the server context (option 18: SPLASH_QWEN36_OPENCODE_CONTEXT; option 19: SPLASH_QWEN36_IQ3_OPENCODE_CONTEXT; option 20: SPLASH_FLASH_NEXT_OPENCODE_CONTEXT; options 14/16: SPLASH_BONSAI_OPENCODE_CONTEXT)." >&2
+      exit 1
+    fi
+    # Preserve small-context launches while giving the normal profile
+    # enough output for complete tool arguments. Explicit overrides stay exact.
+    if (( splash_bonsai_default_output && SPLASH_BONSAI_OPENCODE_CONTEXT <= SPLASH_BONSAI_MAX_TOKENS )); then
+      SPLASH_BONSAI_MAX_TOKENS="$((SPLASH_BONSAI_OPENCODE_CONTEXT / 2))"
+    fi
+    if ! splash_uint_in_range "$SPLASH_BONSAI_MAX_TOKENS" 1 "$((SPLASH_BONSAI_OPENCODE_CONTEXT - 1))"; then
+      echo "Splash output must be positive and smaller than its OpenCode context (option 18: SPLASH_QWEN36_MAX_TOKENS; option 19: SPLASH_QWEN36_IQ3_MAX_TOKENS; option 20: SPLASH_FLASH_NEXT_MAX_TOKENS; options 14/16: SPLASH_BONSAI_MAX_TOKENS)." >&2
+      exit 1
+    fi
+    if ! splash_uint_in_range "$SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT" 1 4294967295; then
+      echo "SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT must be 1-4294967295 seconds." >&2
+      exit 1
+    fi
+    case "$SPLASH_BONSAI_STATE_FORMAT" in
+      fp32|bf16) ;;
+      *) echo "SPLASH_BONSAI_STATE_FORMAT must be fp32 or bf16." >&2; exit 1 ;;
+    esac
+    if ! splash_uint_in_range "$SPLASH_BONSAI_PREFILL_CHUNK_TOKENS" 128 2048 ||
+       (( SPLASH_BONSAI_PREFILL_CHUNK_TOKENS % 128 != 0 )); then
+      echo "SPLASH_BONSAI_PREFILL_CHUNK_TOKENS must be a multiple of 128 in [128, 2048]." >&2
+      exit 1
+    fi
+    if [[ "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" != "1" ]]; then
+      echo "This 16 GB safety profile requires SPLASH_BONSAI_MAX_ACTIVE_REQUESTS=1. Run one OpenCode job at a time." >&2
+      exit 1
+    fi
+    if ! splash_uint_in_range "$SPLASH_BONSAI_STARTUP_RETRY_DELAY" 1 120 ||
+       ! splash_uint_in_range "$SPLASH_BONSAI_STARTUP_MAX_RETRIES" 0 3; then
+      echo "Splash startup retry delay must be 1-120 seconds and max retries 0-3." >&2
+      exit 1
+    fi
+    if ! splash_uint_in_range "$SPLASH_BONSAI_PERSISTENT_CACHE" 0 1 ||
+       ! splash_cache_disk_limit="$(splash_cache_disk_bytes "$SPLASH_BONSAI_MAX_CACHE_DISK")"; then
+      echo "Splash persistent cache must be 0 or 1, and SSD cache quota 0-8G (e.g. 4G or 512M)." >&2
+      exit 1
+    fi
+    splash_cache_args=()
+    splash_cache_mode="off"
+    if (( splash_cache_disk_limit > 0 )); then
+      splash_cache_mode="temporary"
+      if [[ "$SPLASH_BONSAI_PERSISTENT_CACHE" == "1" ]]; then
+        splash_cache_mode="persistent"
+        splash_cache_args=(--persistent-cache --cache-dir "$SPLASH_BONSAI_CACHE_DIR")
+      fi
+    fi
+    if ! splash_uint_in_range "$SPLASH_PRESSURE_RESTART_HEADROOM_BYTES" 1 17179869184 ||
+       ! splash_uint_in_range "$SPLASH_PRESSURE_RESTART_INTERVAL" 1 60 ||
+       ! splash_uint_in_range "$SPLASH_PRESSURE_RESTART_SAMPLES" 1 12; then
+      echo "Invalid Splash pressure monitor settings; headroom 1-16G bytes, interval 1-60, and samples 1-12." >&2
+      exit 1
+    fi
+    for splash_dependency in jq curl lsof pkill; do
+      command -v "$splash_dependency" >/dev/null 2>&1 || {
+        echo "Option $choice requires $splash_dependency." >&2
+        exit 1
+      }
+    done
+    prepare_splash_run
+    sync_opencode_splash
+    if [[ "$choice" == "19" ]]; then
+      printf 'Vision enabled: up to 1048576 resized pixels / 4096 patches per image (about 1024x1024).\n' | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+    fi
+    if [[ "$choice" == "18" || "$choice" == "19" ]]; then
+      printf 'SSD expert streaming: RAM expert cache within an 8 GiB Metal budget; missing routed experts read from the model file.\n' | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+    fi
+    if [[ "$choice" == "20" ]]; then
+      printf 'Flash-Next: text only; expert and PLE streaming within a %s Metal cap; reasoning %s; download cache %s.\n' \
+        "$SPLASH_FLASH_NEXT_MAX_MEMORY" "$splash_reasoning_effort" "$HF_HUB_CACHE" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+    fi
+    printf 'Native inference concurrency: %s (FIFO queue across clients; no worker tool-call budget)\n' "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+    printf 'Memory safety: run ONE OpenCode job at a time; multiple chats create queue waits and memory replay. Close unused memory-heavy apps before long jobs.\n' | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+    printf 'Launcher: model=%s alias=%s binary=%s server_context=%s client_context=%s output=%s reasoning=%s kv=int8 state=%s prefill_chunk=%s cache_disk=%s cache_mode=%s resource_wait=%ss host=%s port=%s\n' \
+      "$SPLASH_BONSAI_MODEL_ID" "$SPLASH_BONSAI_ALIAS" "$SPLASH_BIN" "$SPLASH_BONSAI_MAX_CONTEXT" \
+      "$SPLASH_BONSAI_OPENCODE_CONTEXT" "$SPLASH_BONSAI_MAX_TOKENS" "$splash_reasoning_effort" "$SPLASH_BONSAI_STATE_FORMAT" "$SPLASH_BONSAI_PREFILL_CHUNK_TOKENS" "$SPLASH_BONSAI_MAX_CACHE_DISK" "$splash_cache_mode" "$SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT" "$HOST" "$PORT" |
+      timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+    if [[ "$splash_cache_mode" == "persistent" ]]; then
+      printf 'Prefix cache kept across restarts: %s\n' "$SPLASH_BONSAI_CACHE_DIR" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+    fi
+    splash_monitor_pid=""
+    splash_pressure_watchdog_pid=""
+    splash_server_pid=""
+    splash_logger_pid=""
+    splash_retry_pid=""
+    trap splash_cleanup_run EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
+    if [[ -f /Users/mymac/monitorsplash.sh ]]; then
+      SPLASH_MONITOR_QUIET=1 bash /Users/mymac/monitorsplash.sh --record "${SPLASH_MONITOR_INTERVAL:-2}" >>"$SPLASH_RUN_LOG" 2>&1 &
+      splash_monitor_pid=$!
+    fi
+    splash_startup_retries=0
+    while :; do
+      splash_pressure_watchdog >>"$SPLASH_RUN_LOG" 2>&1 &
+      splash_pressure_watchdog_pid=$!
+      splash_attempt_offset="$(wc -c < "$SPLASH_RUN_LOG")"
+      exec 3> >(timestamp_log_stream | tee -a "$SPLASH_RUN_LOG")
+      splash_logger_pid=$!
+      "$SPLASH_BIN" serve \
+        --model "$SPLASH_BONSAI_MODEL_ID" \
+        --served-model-name "$SPLASH_BONSAI_ALIAS" \
+        --host "$HOST" \
+        --port "$PORT" \
+        "${splash_vision_args[@]}" \
+        --default-reasoning-effort "$splash_reasoning_effort" \
+        --kv-format int8 \
+        --state-format "$SPLASH_BONSAI_STATE_FORMAT" \
+        --prefill-chunk-tokens "$SPLASH_BONSAI_PREFILL_CHUNK_TOKENS" \
+        --resource-wait-timeout "$SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT" \
+        --max-active-requests "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" \
+        --max-context "$SPLASH_BONSAI_MAX_CONTEXT" \
+        --max-cache-disk "$splash_cache_disk_limit" \
+        ${splash_model_args[@]+"${splash_model_args[@]}"} \
+        ${splash_cache_args[@]+"${splash_cache_args[@]}"} \
+        >&3 2>&1 &
+      splash_server_pid=$!
+      if wait "$splash_server_pid"; then splash_status=0; else splash_status=$?; fi
+      splash_server_pid=""
+      exec 3>&-
+      wait "$splash_logger_pid" || true
+      splash_logger_pid=""
+      splash_stop_monitor "$splash_pressure_watchdog_pid"
+      splash_pressure_watchdog_pid=""
+      if (( splash_status == 0 || splash_status >= 128 )); then
+        exit "$splash_status"
+      fi
+      # Retry only a startup admission failure, never a runtime/Metal failure.
+      if ! tail -c "+$((splash_attempt_offset + 1))" "$SPLASH_RUN_LOG" |
+           grep -Eq 'runtime bootstrap failed.*not enough free memory to start'; then
+        exit "$splash_status"
+      fi
+      if (( splash_startup_retries >= SPLASH_BONSAI_STARTUP_MAX_RETRIES )); then
+        echo "Splash startup stopped after ${splash_startup_retries} retries. Close memory-heavy apps or lower the context (option 18: SPLASH_QWEN36_MAX_CONTEXT; option 19: SPLASH_QWEN36_IQ3_MAX_CONTEXT; option 20: SPLASH_FLASH_NEXT_MAX_CONTEXT; options 14/16: SPLASH_BONSAI_MAX_CONTEXT), then launch option $choice again." |
+          timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+        exit "$splash_status"
+      fi
+      splash_startup_retries=$((splash_startup_retries + 1))
+      echo "Splash startup needs more free memory; retry ${splash_startup_retries}/${SPLASH_BONSAI_STARTUP_MAX_RETRIES} in ${SPLASH_BONSAI_STARTUP_RETRY_DELAY} seconds. Close memory-heavy apps or press Ctrl-C to stop." |
+        timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+      sleep "$SPLASH_BONSAI_STARTUP_RETRY_DELAY" &
+      splash_retry_pid=$!
+      wait "$splash_retry_pid"
+      splash_retry_pid=""
+    done
+    ;;
+
+  *)
+    echo "Invalid choice. Exiting." >&2
+    exit 1
+    ;;
+esac

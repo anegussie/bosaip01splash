@@ -569,6 +569,49 @@ int streamedFaultBeforeRound(const std::string &metallibPath, const MoeShape &sh
   return 0;
 }
 
+// Mixed formats share the largest layer arena when separate caches do not fit.
+// Cross-format evictions, repeated layers, prefill/decode and idle restoration
+// must preserve the exact resident result and count the physical arena once.
+int sharedFormatArena(MetalBackend &backend, const MoeShape &shape, const std::filesystem::path &directory) {
+  const Model trunk = makeModel(backend, shape, Q4K, true), head = makeModel(backend, shape, Q80, true);
+  ExpertFile trunkFile(trunk, directory / "shared-trunk.bin"), headFile(head, directory / "shared-head.bin");
+  StreamedBlocks blocks = trunkFile.blocks;
+  blocks.blocks.push_back(headFile.blocks.blocks.front());
+  blocks.checks.push_back(headFile.blocks.checks.front());
+  const uint64_t minimum = ExpertStore::minimumBytes(blocks, shape);
+  ExpertStoreOptions options = storeOptions(0, blocks, shape);
+  options.memoryBytes = minimum;
+  ExpertStore store(backend, blocks, shape, options);
+  require(store.stats().capBytes == minimum && store.stats().floorBytes == minimum,
+          "shared arena accounting differs from its minimum");
+  require(store.stats().arenaBytes == std::max(arenaBytes(trunk, shape.experts), arenaBytes(head, shape.experts)),
+          "shared arena was counted more than once");
+  std::array<BlockMoeWeights, 3> streamed{trunk.weights, trunk.weights, head.weights};
+  for (uint32_t block = 0; block < 3; ++block) {
+    store.bind(block, streamed[block]);
+    require(streamed[block].stream != nullptr, "shared format was treated as resident");
+  }
+  const MoePlan chunk = prefillPlan(shape, kMaximumRows), decode = MoE::decodePlan(shape, 1, MoeConfig{});
+  for (unsigned pass = 0; pass < 2; ++pass) {
+    for (const uint32_t block : {0U, 2U, 1U, 2U, 2U, 0U}) {
+      const Model &m = block == 2 ? head : trunk;
+      for (const MoePlan *plan : {&chunk, &decode}) {
+        Buffers b;
+        freshRows(backend, b, shape);
+        const auto want = runWeights(backend, m.weights, b, *plan);
+        require(runWeights(backend, streamed[block], b, *plan) == want,
+                "shared format arena differs from resident output");
+        require(slotsHoldTheirExperts(m, streamed[block], b, *plan), "shared format slot contents differ");
+      }
+    }
+    store.release();
+    require(store.stats().arenaBytes == 0, "released shared arena counted live");
+    require(store.restore(splash::test::admitAll, splash::test::admitAll), "shared arena restore failed");
+  }
+  printf("shared format arena: prefill/decode and restore match resident weights bitwise ok\n");
+  return 0;
+}
+
 // A size of one block in a format of its own (a layer a dynamic quantization
 // gave other formats) holds every one of its experts: the store reads them
 // when it is built and again when it is restored, and that block's steps
@@ -1557,7 +1600,8 @@ int main(int argc, const char *argv[]) {
       for (const MoeShape &shape : kShapes) {
         printf("%u experts, top %u, hidden %u, %u wide:\n", shape.experts, shape.expertsPerToken, shape.hiddenSize,
                shape.expertIntermediateSize);
-        failures += streamedExperts(backend, shape, directory.path()) +
+        failures += sharedFormatArena(backend, shape, directory.path()) +
+                    streamedExperts(backend, shape, directory.path()) +
                     streamedChunkOrder(backend, shape, directory.path()) +
                     streamedUnionLoads(backend, shape, directory.path()) +
                     streamedLoneBlockSize(backend, shape, directory.path()) +

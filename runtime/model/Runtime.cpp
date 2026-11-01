@@ -468,8 +468,12 @@ struct Runtime::Impl {
         sampling(geometry.target.vocabularySize),
         targetModel(std::visit(
                         [&](const auto &weights) {
-                          return makeQwenTarget(weights, geometry.target, value.backend, operators,
-                                                geometry.prefillChunks);
+                          if constexpr (std::is_same_v<std::decay_t<decltype(weights)>, Qwen4ExpWeights>)
+                            return makeQwenTarget(weights, geometry.target, value.backend, operators,
+                                                  geometry.prefillChunks, geometry.prefillChunkTokens);
+                          else
+                            return makeQwenTarget(weights, geometry.target, value.backend, operators,
+                                                  geometry.prefillChunks);
                         },
                         value.model.target)),
         draftModel(value.model.draft, value.backend, operators),

@@ -1,0 +1,256 @@
+--- a/startllamacpp.sh
++++ b/startllamacpp.sh
+@@ -39,6 +39,18 @@
+ SPLASH_QWEN36_IQ3_MAX_CACHE_DISK="${SPLASH_QWEN36_IQ3_MAX_CACHE_DISK:-2G}"
+ SPLASH_QWEN36_IQ3_PERSISTENT_CACHE="${SPLASH_QWEN36_IQ3_PERSISTENT_CACHE:-1}"
+ SPLASH_QWEN36_IQ3_CACHE_DIR="${SPLASH_QWEN36_IQ3_CACHE_DIR:-$HOME/Library/Caches/Splash/qwen36-option19-iq3-xxs}"
++SPLASH_FLASH_NEXT_MODEL_ID="ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS"
++SPLASH_FLASH_NEXT_MAX_CONTEXT="${SPLASH_FLASH_NEXT_MAX_CONTEXT:-32761}"
++SPLASH_FLASH_NEXT_OPENCODE_CONTEXT="${SPLASH_FLASH_NEXT_OPENCODE_CONTEXT:-auto}"
++splash_flash_next_default_output=0
++[[ -n "${SPLASH_FLASH_NEXT_MAX_TOKENS:-}" ]] || splash_flash_next_default_output=1
++SPLASH_FLASH_NEXT_MAX_TOKENS="${SPLASH_FLASH_NEXT_MAX_TOKENS:-1024}"
++SPLASH_FLASH_NEXT_MAX_MEMORY="${SPLASH_FLASH_NEXT_MAX_MEMORY:-8G}"
++SPLASH_FLASH_NEXT_REASONING_EFFORT="${SPLASH_FLASH_NEXT_REASONING_EFFORT:-medium}"
++SPLASH_FLASH_NEXT_MAX_CACHE_DISK="${SPLASH_FLASH_NEXT_MAX_CACHE_DISK:-0}"
++SPLASH_FLASH_NEXT_PERSISTENT_CACHE="${SPLASH_FLASH_NEXT_PERSISTENT_CACHE:-1}"
++SPLASH_FLASH_NEXT_CACHE_DIR="${SPLASH_FLASH_NEXT_CACHE_DIR:-$HOME/Library/Caches/Splash/flash-next-option20-iq3-xxs}"
++SPLASH_FLASH_NEXT_HF_HUB_CACHE="${SPLASH_FLASH_NEXT_HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}"
+ SPLASH_BONSAI_MAX_CONTEXT="${SPLASH_BONSAI_MAX_CONTEXT:-24K}"
+ SPLASH_BONSAI_OPENCODE_CONTEXT="${SPLASH_BONSAI_OPENCODE_CONTEXT:-auto}"
+ splash_bonsai_default_output=0
+@@ -229,6 +241,12 @@
+   echo "   Vision: at most 1,048,576 resized pixels per image (4096 patches; about 1024x1024)"
+   echo "   Source: ${SPLASH_QWEN36_IQ3_MODEL_ID}"
+   echo "   Separate option-19 prefix cache: ${SPLASH_QWEN36_IQ3_MAX_CACHE_DISK} | persistent: ${SPLASH_QWEN36_IQ3_PERSISTENT_CACHE}"
++  echo "20) Qwen3.8 Flash-Next GSQ-RCO IQ3_XXS - Splash SSD streaming (downloads on first run)${splash_status}"
++  echo "   ${SPLASH_FLASH_NEXT_MAX_CONTEXT} server context | ${SPLASH_FLASH_NEXT_MAX_TOKENS} output tokens | ${SPLASH_FLASH_NEXT_MAX_MEMORY} Metal cap | reasoning ${SPLASH_FLASH_NEXT_REASONING_EFFORT}"
++  echo "   INT8 KV | BF16 state | text only | one active request | automatic expert and PLE caches | DFlash2"
++  echo "   Source: ${SPLASH_FLASH_NEXT_MODEL_ID} | about 75.8 GB plus draft on first launch"
++  echo "   Download cache: ${SPLASH_FLASH_NEXT_HF_HUB_CACHE}"
++  echo "   Separate option-20 prefix cache: ${SPLASH_FLASH_NEXT_MAX_CACHE_DISK} | persistent: ${SPLASH_FLASH_NEXT_PERSISTENT_CACHE}"
+ 
+ }
+ 
+@@ -653,6 +671,9 @@
+   if ! jq --arg model "$model_id" \
+     --arg alias "$SPLASH_BONSAI_ALIAS" \
+     --arg display_name "$SPLASH_BONSAI_DISPLAY_NAME" \
++    --arg reasoning_effort "${splash_reasoning_effort:-none}" \
++    --argjson temperature "${splash_temperature:-0.7}" \
++    --argjson top_p "${splash_top_p:-0.80}" \
+     --arg base_url "http://${HOST}:${PORT}/v1" \
+     --argjson context "$SPLASH_BONSAI_OPENCODE_CONTEXT" \
+     --argjson output "$SPLASH_BONSAI_MAX_TOKENS" \
+@@ -665,20 +686,20 @@
+      )) |
+      .agent.router.tools.question = true |
+      .agent.router.permission.question = "allow" |
+-     .agent.router.temperature = 0.7 |
+-     .agent.router.top_p = 0.80 |
+-     .agent.general.temperature = 0.7 |
+-     .agent.general.top_p = 0.80 |
+-     .agent.long_analysis.temperature = 0.7 |
+-     .agent.long_analysis.top_p = 0.80 |
+-     .agent.context_worker.temperature = (.agent.context_worker.temperature // 0.7) |
+-     .agent.context_worker.top_p = 0.80 |
+-     .agent.general_worker.temperature = (.agent.general_worker.temperature // 0.7) |
+-     .agent.general_worker.top_p = 0.80 |
++     .agent.router.temperature = $temperature |
++     .agent.router.top_p = $top_p |
++     .agent.general.temperature = $temperature |
++     .agent.general.top_p = $top_p |
++     .agent.long_analysis.temperature = $temperature |
++     .agent.long_analysis.top_p = $top_p |
++     .agent.context_worker.temperature = (.agent.context_worker.temperature // $temperature) |
++     .agent.context_worker.top_p = $top_p |
++     .agent.general_worker.temperature = (.agent.general_worker.temperature // $temperature) |
++     .agent.general_worker.top_p = $top_p |
+      .agent |= with_entries(
+        if .key == "router" or .key == "general" or .key == "long_analysis" or
+           .key == "context_worker" or .key == "general_worker"
+-       then .value.reasoningEffort = "none" else . end
++       then .value.reasoningEffort = $reasoning_effort else . end
+      ) |
+      .compaction = ((.compaction // {}) + {
+        auto: true, keep: {tokens: ([1536, (($context - $output) / 2 | floor)] | min)}, buffer: $output
+@@ -695,6 +716,13 @@
+      if $alias == "qwen3.6-35b-a3b-iq3-xxs-splash" then
+        del(.provider["local-llama"].models[$alias].attachment) |
+        .provider["local-llama"].models[$alias].modalities = {input: ["text", "image"], output: ["text"]} |
++       .provider["local-llama"].models[$alias].variants["bounded-compaction"] |= ((. // {}) + {
++         max_tokens: ([2048, $output] | min), reasoning_effort: "none",
++         chat_template_kwargs: ((.chat_template_kwargs // {}) + {enable_thinking: false})
++       })
++     elif $alias == "qwen3.8-flash-next-iq3-xxs-splash" then
++       .provider["local-llama"].models[$alias].reasoning = true |
++       .provider["local-llama"].models[$alias].modalities = {input: ["text"], output: ["text"]} |
+        .provider["local-llama"].models[$alias].variants["bounded-compaction"] |= ((. // {}) + {
+          max_tokens: ([2048, $output] | min), reasoning_effort: "none",
+          chat_template_kwargs: ((.chat_template_kwargs // {}) + {enable_thinking: false})
+@@ -853,7 +881,7 @@
+ Usage:
+   startllamacpp.sh                  Select a model, or choose 9 to stop serving
+   startllamacpp.sh --watch [1-7|10] Start a watchdog-managed server
+-  startllamacpp.sh --direct [1-8|10|14|15|16|17|18|19] Start the selected server without the watchdog
++  startllamacpp.sh --direct [1-8|10|14|15|16|17|18|19|20] Start the selected server without the watchdog
+   startllamacpp.sh --hermes [1-7]  Start a model and its matching Hermes profile
+   startllamacpp.sh --list           List model choices
+ 
+@@ -912,32 +940,32 @@
+   choice="$DIRECT_CHOICE"
+ else
+   print_models
+-  if ! read -r -p "Enter choice (1-10, 14-19; 9 stops): " choice; then
++  if ! read -r -p "Enter choice (1-10, 14-20; 9 stops): " choice; then
+     echo "No model choice received." >&2
+     exit 2
+   fi
+ fi
+ 
+ case "$choice" in
+-  1|2|3|4|5|6|7|8|10|14|15|16|17|18|19) ;;
++  1|2|3|4|5|6|7|8|10|14|15|16|17|18|19|20) ;;
+   9)
+     stop_llamacpp
+     exit $?
+     ;;
+   *)
+-    echo "Invalid choice: $choice (expected 1-10, 14-19; 9 stops)." >&2
++    echo "Invalid choice: $choice (expected 1-10, 14-20; 9 stops)." >&2
+     exit 2
+     ;;
+ esac
+ 
+-if [[ "$choice" == "8" || "$choice" == "10" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" ]]; then
++if [[ "$choice" == "8" || "$choice" == "10" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" || "$choice" == "20" ]]; then
+   if (( HERMES_LAUNCH == 1 )); then
+-    echo "Options 8, 10, and 14-19 do not use hermeslocal profiles; run them from the interactive menu or with --direct." >&2
++    echo "Options 8, 10, and 14-20 do not use hermeslocal profiles; run them from the interactive menu or with --direct." >&2
+     exit 2
+   fi
+   # Keep the reasoning-only profile direct; MTP option 10 is supervised by the
+   # watchdog unless the caller explicitly requests --direct.
+-  if [[ "$choice" == "8" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" ]]; then
++  if [[ "$choice" == "8" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" || "$choice" == "20" ]]; then
+     DIRECT_LAUNCH=1
+   fi
+ fi
+@@ -1557,7 +1585,10 @@
+       2>&1 | tee -a "$splash_qwen_log"
+     ;;
+ 
+-  14|16|18|19)
++  14|16|18|19|20)
++    splash_reasoning_effort=none
++    splash_temperature=0.7
++    splash_top_p=0.80
+     splash_model_args=()
+     splash_vision_args=(--language-only)
+     if [[ "$choice" == "16" ]]; then
+@@ -1597,16 +1628,50 @@
+       SPLASH_BONSAI_PREFILL_CHUNK_TOKENS=512
+       SPLASH_BONSAI_MAX_ACTIVE_REQUESTS=1
+       splash_model_args=(--expert-memory auto --max-memory 8G)
++    elif [[ "$choice" == "20" ]]; then
++      SPLASH_BONSAI_MODEL_ID="$SPLASH_FLASH_NEXT_MODEL_ID"
++      SPLASH_BONSAI_ALIAS="qwen3.8-flash-next-iq3-xxs-splash"
++      SPLASH_BONSAI_DISPLAY_NAME="Qwen3.8 Flash-Next GSQ-RCO IQ3_XXS via Splash SSD streaming"
++      SPLASH_BONSAI_MAX_CONTEXT="$SPLASH_FLASH_NEXT_MAX_CONTEXT"
++      SPLASH_BONSAI_OPENCODE_CONTEXT="$SPLASH_FLASH_NEXT_OPENCODE_CONTEXT"
++      SPLASH_BONSAI_MAX_TOKENS="$SPLASH_FLASH_NEXT_MAX_TOKENS"
++      splash_bonsai_default_output="$splash_flash_next_default_output"
++      SPLASH_BONSAI_MAX_CACHE_DISK="$SPLASH_FLASH_NEXT_MAX_CACHE_DISK"
++      SPLASH_BONSAI_PERSISTENT_CACHE="$SPLASH_FLASH_NEXT_PERSISTENT_CACHE"
++      SPLASH_BONSAI_CACHE_DIR="$SPLASH_FLASH_NEXT_CACHE_DIR"
++      SPLASH_BONSAI_STATE_FORMAT=bf16
++      SPLASH_BONSAI_PREFILL_CHUNK_TOKENS=1024
++      SPLASH_BONSAI_MAX_ACTIVE_REQUESTS=1
++      case "$SPLASH_FLASH_NEXT_MAX_MEMORY" in
++        8G|9G|10G|11G) ;;
++        *) echo "SPLASH_FLASH_NEXT_MAX_MEMORY must be 8G, 9G, 10G or 11G." >&2; exit 1 ;;
++      esac
++      case "$SPLASH_FLASH_NEXT_REASONING_EFFORT" in
++        none|low|medium|xhigh) ;;
++        *) echo "SPLASH_FLASH_NEXT_REASONING_EFFORT must be none, low, medium or xhigh." >&2; exit 1 ;;
++      esac
++      if [[ "$SPLASH_FLASH_NEXT_HF_HUB_CACHE" != /* ]]; then
++        echo "SPLASH_FLASH_NEXT_HF_HUB_CACHE must be an absolute path on the intended model drive." >&2
++        exit 1
++      fi
++      export HF_HUB_CACHE="$SPLASH_FLASH_NEXT_HF_HUB_CACHE"
++      splash_reasoning_effort="$SPLASH_FLASH_NEXT_REASONING_EFFORT"
++      if [[ "$splash_reasoning_effort" != "none" ]]; then
++        splash_temperature=1.0
++        splash_top_p=0.95
++      fi
++      splash_model_args=(--expert-memory auto --ple-memory 64M --max-memory "$SPLASH_FLASH_NEXT_MAX_MEMORY")
+     fi
+     if [[ "$choice" == "19" ]]; then
+       splash_vision_args=(--max-image-pixels 1048576)
+     fi
+     splash_context_max=24576
+     [[ "$choice" != "19" ]] || splash_context_max=32768
++    [[ "$choice" != "20" ]] || splash_context_max=32761
+     splash_client_context_max="$((splash_context_max - 2048))"
+     if ! splash_context_limit="$(splash_context_tokens "$SPLASH_BONSAI_MAX_CONTEXT")" ||
+        (( splash_context_limit < 4096 || splash_context_limit > splash_context_max )); then
+-      echo "Splash context must be 4096-${splash_context_max} tokens for option $choice (option 18: SPLASH_QWEN36_MAX_CONTEXT; option 19: SPLASH_QWEN36_IQ3_MAX_CONTEXT; options 14/16: SPLASH_BONSAI_MAX_CONTEXT)." >&2
++      echo "Splash context must be 4096-${splash_context_max} tokens for option $choice (option 18: SPLASH_QWEN36_MAX_CONTEXT; option 19: SPLASH_QWEN36_IQ3_MAX_CONTEXT; option 20: SPLASH_FLASH_NEXT_MAX_CONTEXT; options 14/16: SPLASH_BONSAI_MAX_CONTEXT)." >&2
+       exit 1
+     fi
+     # Leave room for whole KV extents in the 70-80K option-19 profiles.
+@@ -1618,7 +1683,7 @@
+     fi
+     if ! splash_uint_in_range "$SPLASH_BONSAI_OPENCODE_CONTEXT" 2 "$splash_client_context_max" ||
+        (( SPLASH_BONSAI_OPENCODE_CONTEXT >= splash_context_limit )); then
+-      echo "Splash OpenCode context must be auto or 2-${splash_client_context_max} tokens for option $choice, smaller than the server context (option 18: SPLASH_QWEN36_OPENCODE_CONTEXT; option 19: SPLASH_QWEN36_IQ3_OPENCODE_CONTEXT; options 14/16: SPLASH_BONSAI_OPENCODE_CONTEXT)." >&2
++      echo "Splash OpenCode context must be auto or 2-${splash_client_context_max} tokens for option $choice, smaller than the server context (option 18: SPLASH_QWEN36_OPENCODE_CONTEXT; option 19: SPLASH_QWEN36_IQ3_OPENCODE_CONTEXT; option 20: SPLASH_FLASH_NEXT_OPENCODE_CONTEXT; options 14/16: SPLASH_BONSAI_OPENCODE_CONTEXT)." >&2
+       exit 1
+     fi
+     # Preserve small-context launches while giving the normal profile
+@@ -1627,7 +1692,7 @@
+       SPLASH_BONSAI_MAX_TOKENS="$((SPLASH_BONSAI_OPENCODE_CONTEXT / 2))"
+     fi
+     if ! splash_uint_in_range "$SPLASH_BONSAI_MAX_TOKENS" 1 "$((SPLASH_BONSAI_OPENCODE_CONTEXT - 1))"; then
+-      echo "Splash output must be positive and smaller than its OpenCode context (option 18: SPLASH_QWEN36_MAX_TOKENS; option 19: SPLASH_QWEN36_IQ3_MAX_TOKENS; options 14/16: SPLASH_BONSAI_MAX_TOKENS)." >&2
++      echo "Splash output must be positive and smaller than its OpenCode context (option 18: SPLASH_QWEN36_MAX_TOKENS; option 19: SPLASH_QWEN36_IQ3_MAX_TOKENS; option 20: SPLASH_FLASH_NEXT_MAX_TOKENS; options 14/16: SPLASH_BONSAI_MAX_TOKENS)." >&2
+       exit 1
+     fi
+     if ! splash_uint_in_range "$SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT" 1 4294967295; then
+@@ -1686,11 +1751,15 @@
+     if [[ "$choice" == "18" || "$choice" == "19" ]]; then
+       printf 'SSD expert streaming: RAM expert cache within an 8 GiB Metal budget; missing routed experts read from the model file.\n' | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+     fi
++    if [[ "$choice" == "20" ]]; then
++      printf 'Flash-Next: text only; expert and PLE streaming within a %s Metal cap; reasoning %s; download cache %s.\n' \
++        "$SPLASH_FLASH_NEXT_MAX_MEMORY" "$splash_reasoning_effort" "$HF_HUB_CACHE" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
++    fi
+     printf 'Native inference concurrency: %s (FIFO queue across clients; no worker tool-call budget)\n' "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+     printf 'Memory safety: run ONE OpenCode job at a time; multiple chats create queue waits and memory replay. Close unused memory-heavy apps before long jobs.\n' | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+-    printf 'Launcher: model=%s alias=%s binary=%s server_context=%s client_context=%s output=%s reasoning=none kv=int8 state=%s prefill_chunk=%s cache_disk=%s cache_mode=%s resource_wait=%ss host=%s port=%s\n' \
++    printf 'Launcher: model=%s alias=%s binary=%s server_context=%s client_context=%s output=%s reasoning=%s kv=int8 state=%s prefill_chunk=%s cache_disk=%s cache_mode=%s resource_wait=%ss host=%s port=%s\n' \
+       "$SPLASH_BONSAI_MODEL_ID" "$SPLASH_BONSAI_ALIAS" "$SPLASH_BIN" "$SPLASH_BONSAI_MAX_CONTEXT" \
+-      "$SPLASH_BONSAI_OPENCODE_CONTEXT" "$SPLASH_BONSAI_MAX_TOKENS" "$SPLASH_BONSAI_STATE_FORMAT" "$SPLASH_BONSAI_PREFILL_CHUNK_TOKENS" "$SPLASH_BONSAI_MAX_CACHE_DISK" "$splash_cache_mode" "$SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT" "$HOST" "$PORT" |
++      "$SPLASH_BONSAI_OPENCODE_CONTEXT" "$SPLASH_BONSAI_MAX_TOKENS" "$splash_reasoning_effort" "$SPLASH_BONSAI_STATE_FORMAT" "$SPLASH_BONSAI_PREFILL_CHUNK_TOKENS" "$SPLASH_BONSAI_MAX_CACHE_DISK" "$splash_cache_mode" "$SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT" "$HOST" "$PORT" |
+       timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+     if [[ "$splash_cache_mode" == "persistent" ]]; then
+       printf 'Prefix cache kept across restarts: %s\n' "$SPLASH_BONSAI_CACHE_DIR" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+@@ -1721,7 +1790,7 @@
+         --host "$HOST" \
+         --port "$PORT" \
+         "${splash_vision_args[@]}" \
+-        --default-reasoning-effort none \
++        --default-reasoning-effort "$splash_reasoning_effort" \
+         --kv-format int8 \
+         --state-format "$SPLASH_BONSAI_STATE_FORMAT" \
+         --prefill-chunk-tokens "$SPLASH_BONSAI_PREFILL_CHUNK_TOKENS" \
+@@ -1749,7 +1818,7 @@
+         exit "$splash_status"
+       fi
+       if (( splash_startup_retries >= SPLASH_BONSAI_STARTUP_MAX_RETRIES )); then
+-        echo "Splash startup stopped after ${splash_startup_retries} retries. Close memory-heavy apps or lower the context (option 18: SPLASH_QWEN36_MAX_CONTEXT; option 19: SPLASH_QWEN36_IQ3_MAX_CONTEXT; options 14/16: SPLASH_BONSAI_MAX_CONTEXT), then launch option $choice again." |
++        echo "Splash startup stopped after ${splash_startup_retries} retries. Close memory-heavy apps or lower the context (option 18: SPLASH_QWEN36_MAX_CONTEXT; option 19: SPLASH_QWEN36_IQ3_MAX_CONTEXT; option 20: SPLASH_FLASH_NEXT_MAX_CONTEXT; options 14/16: SPLASH_BONSAI_MAX_CONTEXT), then launch option $choice again." |
+           timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+         exit "$splash_status"
+       fi

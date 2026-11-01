@@ -68,9 +68,9 @@ void addStreamCapture(metal::CommandGraph &graph, const QwenTargetGeometry &geom
 
 Qwen4ExpTarget::Qwen4ExpTarget(const Qwen4ExpWeights &weights, const QwenTargetGeometry &geometry,
                                metal::MetalBackend &backend, const ops::ExecutionPlans &operators,
-                               uint32_t prefillChunks)
+                               uint32_t prefillChunks, uint32_t prefillRows)
     : QwenTarget(weights, geometry, backend, operators), weights_(weights),
-      steps_(weights, geometry_, backend, prefillChunks) {
+      steps_(weights, geometry_, backend, prefillChunks, prefillRows) {
   requireLayers(std::span<const Qwen4ExpLayerWeights>(weights.layers));
 }
 
@@ -444,13 +444,13 @@ void includeFamilyProjections(QwenTargetGeometry &geometry, const Qwen4ExpWeight
 
 std::unique_ptr<QwenTarget> makeQwenTarget(const Qwen4ExpWeights &weights, const QwenTargetGeometry &geometry,
                                            metal::MetalBackend &backend, const ops::ExecutionPlans &operators,
-                                           uint32_t prefillChunks) {
-  return std::make_unique<Qwen4ExpTarget>(weights, geometry, backend, operators, prefillChunks);
+                                           uint32_t prefillChunks, uint32_t prefillRows) {
+  return std::make_unique<Qwen4ExpTarget>(weights, geometry, backend, operators, prefillChunks, prefillRows);
 }
 
 QwenTargetScratchBytes qwenTargetScratchBytes(const Qwen4ExpWeights &, const QwenTargetGeometry &geometry,
-                                              uint32_t prefillChunks, uint64_t tableRowBytes) {
-  return Qwen4Steps::scratchBytes(geometry, tableRowBytes, prefillChunks);
+                                              uint32_t prefillChunks, uint64_t tableRowBytes, uint32_t prefillRows) {
+  return Qwen4Steps::scratchBytes(geometry, tableRowBytes, prefillChunks, prefillRows);
 }
 
 // A stage takes a prefill chunk's table rows, pleHeads() for each of its
@@ -459,7 +459,7 @@ QwenTargetScratchBytes qwenTargetScratchBytes(const Qwen4ExpWeights &, const Qwe
 // queued or in flight beside a chunk's more.
 SparseRowStoreOptions streamedTableRows(const Qwen4ExpLayout &layout) {
   const uint32_t stageRows = ExecutionLimits::prefillTokenBudget * layout.pleHeads();
-  return {.prefetchRows = (kPrefillGroupChunks + 1) * stageRows, .stageRows = stageRows};
+  return {.prefetchRows = (kFullRowPrefillGroupChunks + 1) * stageRows, .stageRows = stageRows};
 }
 
 } // namespace splash::model

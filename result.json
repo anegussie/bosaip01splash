@@ -1,0 +1,16 @@
+{
+  "root": "/Users/mymac/splash/slash/tmp/opencode/iq3-live-helper-recovery-20261030-SL6ePu",
+  "code": 0,
+  "count": 4,
+  "workerCalls": 3,
+  "actualCalls": 1,
+  "checkerCode": 1,
+  "checkerOutput": "node:internal/assert/utils:146\n  throw error;\n  ^\n\nAssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ undefined\n- true\n\n    at /Users/mymac/splash/slash/tmp/opencode/iq3-live-helper-recovery-20261030-SL6ePu/project/check.cjs:1:252\n    at Array.forEach (<anonymous>)\n    at Object.<anonymous> (/Users/mymac/splash/slash/tmp/opencode/iq3-live-helper-recovery-20261030-SL6ePu/project/check.cjs:1:138)\n    at Module._compile (node:internal/modules/cjs/loader:1968:14)\n    at Object..js (node:internal/modules/cjs/loader:2108:10)\n    at Module.load (node:internal/modules/cjs/loader:1690:32)\n    at Module._load (node:internal/modules/cjs/loader:1480:12)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)\n    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:33:47 {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: undefined,\n  expected: true,\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v26.12.1\n",
+  "responses": [
+    {
+      "request": 4,
+      "status": 200,
+      "bytes": 1689
+    }
+  ]
+}

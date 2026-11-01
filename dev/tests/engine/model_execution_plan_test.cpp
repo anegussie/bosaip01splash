@@ -365,7 +365,8 @@ void checkSpilledKvGeometry() {
   const auto spilled = model::RuntimeGeometry::from(flash, kv::Format::Int8, ops::GdnStateFormat::Float32,
                                                     model::StreamedParts::loaded(flash, true));
   require(resident.prefillChunks == 1 && !resident.spilledKv &&
-              spilled.prefillChunks == model::kPrefillGroupChunks && spilled.spilledKv == test::sparseKvShape(),
+              spilled.prefillChunks == model::kFullRowPrefillGroupChunks &&
+              spilled.spilledKv == test::sparseKvShape(),
           "a runtime's prefill groups do not follow whether its K/V spills");
   require(!decodeBytes(resident, model::DecodeTensor::Locations) &&
               decodeBytes(spilled, model::DecodeTensor::Locations) == uint64_t{8} * (512 + 1) * sizeof(uint32_t),
