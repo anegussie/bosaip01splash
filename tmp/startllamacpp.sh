@@ -40,12 +40,13 @@ SPLASH_QWEN36_IQ3_MAX_CACHE_DISK="${SPLASH_QWEN36_IQ3_MAX_CACHE_DISK:-2G}"
 SPLASH_QWEN36_IQ3_PERSISTENT_CACHE="${SPLASH_QWEN36_IQ3_PERSISTENT_CACHE:-1}"
 SPLASH_QWEN36_IQ3_CACHE_DIR="${SPLASH_QWEN36_IQ3_CACHE_DIR:-$HOME/Library/Caches/Splash/qwen36-option19-iq3-xxs}"
 SPLASH_FLASH_NEXT_MODEL_ID="ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS"
+SPLASH_FLASH_NEXT_DRAFT_MODEL_ID="incoai/Qwen3.8-Flash-Next-DFlash2"
 SPLASH_FLASH_NEXT_MAX_CONTEXT="${SPLASH_FLASH_NEXT_MAX_CONTEXT:-131072}"
 SPLASH_FLASH_NEXT_OPENCODE_CONTEXT="${SPLASH_FLASH_NEXT_OPENCODE_CONTEXT:-auto}"
 splash_flash_next_default_output=0
 [[ -n "${SPLASH_FLASH_NEXT_MAX_TOKENS:-}" ]] || splash_flash_next_default_output=1
 SPLASH_FLASH_NEXT_MAX_TOKENS="${SPLASH_FLASH_NEXT_MAX_TOKENS:-1024}"
-SPLASH_FLASH_NEXT_MAX_MEMORY="${SPLASH_FLASH_NEXT_MAX_MEMORY:-8G}"
+SPLASH_FLASH_NEXT_MAX_MEMORY="${SPLASH_FLASH_NEXT_MAX_MEMORY:-10G}"
 SPLASH_FLASH_NEXT_REASONING_EFFORT="${SPLASH_FLASH_NEXT_REASONING_EFFORT:-medium}"
 SPLASH_FLASH_NEXT_MAX_CACHE_DISK="${SPLASH_FLASH_NEXT_MAX_CACHE_DISK:-0}"
 SPLASH_FLASH_NEXT_PERSISTENT_CACHE="${SPLASH_FLASH_NEXT_PERSISTENT_CACHE:-1}"
@@ -244,7 +245,7 @@ print_models() {
   echo "20) Qwen3.8 Flash-Next GSQ-RCO IQ3_XXS - Splash SSD streaming (downloads on first run)${splash_status}"
   echo "   ${SPLASH_FLASH_NEXT_MAX_CONTEXT} server context | ${SPLASH_FLASH_NEXT_MAX_TOKENS} output tokens | ${SPLASH_FLASH_NEXT_MAX_MEMORY} Metal cap | reasoning ${SPLASH_FLASH_NEXT_REASONING_EFFORT}"
   echo "   INT8 KV | BF16 state | text only | one active request | automatic expert and PLE caches | DFlash2"
-  echo "   Source: ${SPLASH_FLASH_NEXT_MODEL_ID} | about 75.8 GB plus draft on first launch"
+  echo "   Source: ${SPLASH_FLASH_NEXT_MODEL_ID} | about 75.8 GB main model; ${SPLASH_FLASH_NEXT_DRAFT_MODEL_ID} draft on first launch"
   echo "   Download cache: ${SPLASH_FLASH_NEXT_HF_HUB_CACHE}"
   echo "   Separate option-20 prefix cache: ${SPLASH_FLASH_NEXT_MAX_CACHE_DISK} | persistent: ${SPLASH_FLASH_NEXT_PERSISTENT_CACHE}"
 
@@ -1661,6 +1662,11 @@ case "$choice" in
         splash_top_p=0.95
       fi
       splash_model_args=(--expert-memory auto --ple-memory 64M --max-memory "$SPLASH_FLASH_NEXT_MAX_MEMORY")
+      # Resolve the DFlash2 draft model from the HuggingFace cache.
+      splash_draft_model_path="$(find_hf_snapshot "$SPLASH_FLASH_NEXT_DRAFT_MODEL_ID" || true)"
+      if [[ -n "$splash_draft_model_path" ]]; then
+        splash_model_args+=(--draft-model "$splash_draft_model_path")
+      fi
     fi
     if [[ "$choice" == "19" ]]; then
       splash_vision_args=(--max-image-pixels 1048576)
