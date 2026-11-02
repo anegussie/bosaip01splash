@@ -55,3 +55,5 @@ The 32K context fits within the memory planner limit reported at 8 GiB. Filled-3
 The 32K allocation reserves seven speculative rows, leaving a maximum context of 32,761 tokens under the 8 GiB plan. The launcher uses that exact integer to avoid startup rejection.
 
 The latest scratch-sizing revision and 1,024-token default are documented in [the scratch and chunk report](qwen38-option20-scratch-20261101.md). It passed a 28,589-token live request under the same 8 GiB cap.
+
+The 131,072-token instance was measured live on 2026-11-02 in [the 131k live report](qwen38-option20-live-131k-20261102.md). Long prefill there is about 10 percent slower than the same chunk profile at 32,761 context (161.02 against 179.65 tok/s at 28,589 prompt tokens, TTFT 177.55 s against 159.17 s) while decode is unchanged at 11.9 tok/s, so the 1,024-token chunk default deserves a re-sweep at the larger served context. DFlash2 acceptance measured 99 to 100 percent on structured output and 72.3 percent on reasoning-on agent output, and a 65,451-token request prefilled at 156.09 tok/s with no capacity or Metal failure.
