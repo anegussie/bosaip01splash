@@ -97,13 +97,29 @@ E1 is first because it is the only change that frees memory without taking it fr
 
 Do not raise `SPLASH_FLASH_NEXT_MAX_MEMORY` to 11G while `host_headroom_bytes` is near zero. It is not a headroom source on this machine: 621 reservations were already denied at the 10 GiB cap, and peak Metal was 8.149 GiB against a 11.8 GiB device recommendation with 704.38 MiB of swap in use.
 
+## Instance restarted at 12:58 on 2026-11-02
+
+The measured instance (`94560cf93818e51935196bfb`, 76,300 s of uptime) was stopped deliberately at 12:58:11 (`Stopping · releasing engine resources` in `qwen3.8-flash-next-iq3-xxs-splash-20261101-151139.log`, together with terminated `startllamacpp.sh` and `monitorsplash.sh` watchdog sleeps) and relaunched with the same profile. The replacement is instance `bb9e88d3516b034f8fc66632`, pid 59456, 131,072 served context, 1,024 prefill chunks, `--ple-memory 64M`, `--expert-memory auto`, `--verify-rows auto`, 10 GiB cap, reasoning default medium, SSD cache off. Its counters restart at zero, so the live report's numbers describe the previous instance and remain valid for this configuration.
+
+Three things the relaunch log answers directly:
+
+- Weight restore is cheap. `Weights loaded in 2.41 s.` then `Weights loaded again in 2.02 s.` An idle release therefore costs about two seconds on the next request against the 5,665,555,216 bytes it frees. Keep `--idle-release 600s`.
+- The expert store boots at its floor and gives nothing back: `512 slots for 24576 experts (2%) in 1262 MiB, a store of 1992 MiB in 1 chunks, all that --expert-memory auto leaves it beside the floors and the KV kept resident; it gives none back, its floor, 1992 MiB, 85% of its slots, being all of it`. E2 (a 4 GiB floor) is the only way to move this number, and it is confirmed to be the smallest part of the budget relative to its workload.
+- Memory headroom is worse than it was. The new instance charged 9,170,584,476 bytes and reached 9,279,112,092 bytes within minutes, against `growth_allowed: false` and 30 denied reservations. Host available memory was 2,571,927,552 with `host_spare_bytes` 1,955,856,384 below the 2,147,483,648 reserve and `host_headroom_bytes` at 0. E1 (serve 32,761 instead of 131,072) is the recommended first run, and raising the cap is now excluded on evidence rather than on caution.
+
+Baseline capture for the new instance is in `build/validation/option20-tuning-20261102/baseline-131k-20261102-1258/` (`status-live.json`, `key-metrics.json`).
+
+## Measurement caveat: /status sections go null while a request is in flight
+
+Polling `http://127.0.0.1:1235/status` during an active request returned `streamed_experts`, `cache` and `memory_governor` subfields as null, while the same fields came back populated seconds later with the engine idle. A null is not a zero, and a contention check that reads a null as absent work would pass silently. `build/validation/option20-live-20261102/perf_lib.py` now retries `status()` up to six times before accepting a partial snapshot, and `python3 -m py_compile` plus a live call confirm it returns populated `metrics`, `memory_actual`, `scheduler`, `requests` and `active_requests`.
+
 ## Not to change
 
 - The DFlash2 draft. Acceptance is 100 percent on structured output and 99.88 percent across 1,895 emitted tokens, at 7.4 to 8.3 tokens per cycle. A draft-off A/B is still worth recording, but there is no evidence against it.
 - INT8 KV pages and BF16 lane state.
 - `--verify-rows auto` for interactive traffic; `all` is a reproducibility tool, not a speed tool on a 512-expert MoE target.
-- `--idle-release` at 600 seconds until a weight restore is measured. It fired twice (`weights.restores` 2) with no failures, and freeing 5.67 GiB of target weights while idle is valuable under this pressure.
+- `--idle-release` at 600 seconds. A restore costs 2.02 to 2.41 s of weight loading (measured on the 12:58 relaunch) and frees 5,665,555,216 bytes while idle, which is a good trade at 0 bytes of host headroom.
 
 ## Still unmeasured
 
-Draft on against draft off, `--verify-rows all` against `auto`, E1 through E7, and the cost of a weight restore after an idle release. All of them need a restart, which ends whatever session is using the instance, so they are scheduled as deliberate runs rather than folded into a live benchmark.
+Draft on against draft off, `--verify-rows all` against `auto`, and E1 through E7. All of them need a restart, which ends whatever session is using the instance, so they are scheduled as deliberate runs rather than folded into a live benchmark. The idle-release restore cost is no longer open: it is 2.02 to 2.41 s.
