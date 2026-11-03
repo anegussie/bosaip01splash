@@ -10,12 +10,12 @@ Interactive menu selection `20` starts the same profile. Like the other direct S
 
 | Setting | Default |
 |---|---|
-| Server context | 32,761 tokens (32K allocation minus 7 speculative tokens) |
-| OpenCode context | 30,713 tokens |
+| Server context | 131,072 tokens (the 128K allocation, accepted by the 10 GiB plan) |
+| OpenCode context | 129,024 tokens |
 | OpenCode output reserve | 1,024 tokens |
-| Reasoning effort | medium |
-| Metal memory cap | 8 GiB |
-| Expert and PLE stores | shared expert arena; 64 MiB PLE cache |
+| Reasoning effort | low |
+| Metal memory cap | 10 GiB |
+| Expert and PLE stores | shared expert arena at its 1,992 MiB floor under `--expert-memory auto`; 64 MiB PLE cache |
 | KV / recurrent state | INT8 / BF16 |
 | Requested prefill chunk | 1,024 tokens, one Flash-Next chunk at a time |
 | Active requests | 1 |
@@ -26,7 +26,7 @@ Reasoning requests use temperature 1.0 and top-p 0.95 in the synchronized OpenCo
 
 Overrides are independent of the option-18 and option-19 variables:
 
-- `SPLASH_FLASH_NEXT_MAX_CONTEXT`: 4,096-32,761 tokens, default `32761`.
+- `SPLASH_FLASH_NEXT_MAX_CONTEXT`: 4,096-131,072 tokens, default `131072`.
 - `SPLASH_FLASH_NEXT_OPENCODE_CONTEXT`: `auto` (server minus 2,048) or a smaller integer context.
 - `SPLASH_FLASH_NEXT_MAX_TOKENS`: positive and smaller than the client context; default 1,024; output is reduced automatically for very small contexts.
 - `SPLASH_FLASH_NEXT_MAX_MEMORY`: `8G`, `9G`, `10G`, or `11G`.
@@ -46,13 +46,13 @@ Menu selection, direct selection, default and override arguments, reasoning/samp
 
 On 2026-10-31, all 25 launcher tests passed. Both real argument parsers accepted the captured option-20 command, and the selected GGUF headers at revision `ed59f92082b1e93c0e96d60a8b11aab089b52f09` passed format screening and native `model-check`. The two selected shards total 75,839,998,528 bytes. The production runtime was rebuilt with `make -j4 all`; the full model weights were not downloaded or loaded during launcher setup.
 
+The launcher defaults later moved to 131,072 context, a 10 GiB cap and `low` reasoning effort without the launcher tests being updated, which left 3 of the 25 option-20 checks failing in the tree. Those expectations now match the launcher again and all 25 pass.
+
 The reproducible launcher change is [startllamacpp-option20.patch](startllamacpp-option20.patch). Apply it only to the matching pre-option-20 launcher, after inspecting the diff.
 
-The 8 GiB configuration uses a smaller Flash-Next prefill arena and PLE cache alongside the shared expert arena. This lowers I/O reuse and may reduce prefill and decode speed. The live 4K run reached Ready with a 7.60 GiB planner minimum and returned the requested marker correctly. Full evidence is in `build/validation/option20-10g/8g-status.json` and the smoke response. This is an engine planner budget, not a total process RSS or no-swap guarantee.
+The 8 GiB configuration was the original option-20 plan. It used a smaller Flash-Next prefill arena and PLE cache alongside the shared expert arena, which lowers I/O reuse and reduces prefill and decode speed. The live 4K run reached Ready with a 7.60 GiB planner minimum and returned the requested marker correctly. Full evidence is in `build/validation/option20-10g/8g-status.json` and the smoke response. This is an engine planner budget, not a total process RSS or no-swap guarantee.
 
-The 32K context fits within the memory planner limit reported at 8 GiB. Filled-32K inference performance has not been measured.
-
-The 32K allocation reserves seven speculative rows, leaving a maximum context of 32,761 tokens under the 8 GiB plan. The launcher uses that exact integer to avoid startup rejection.
+Under that 8 GiB plan the 32K allocation reserved seven speculative rows, which is where the 32,761 ceiling came from, and the launcher used that exact integer to avoid startup rejection. The plan behind the current 10 GiB cap reports `memory_plan.maximum_context_tokens` 204,793 on this 16 GiB M5 against a model maximum of 262,144, so the launcher ceiling is now 131,072 and the 32,761 number is history. Filled-32K inference performance was measured on 2026-11-01 at 179.65 tok/s prefill and 11.9 tok/s decode, and remains the fastest context setting measured so far.
 
 The latest scratch-sizing revision and 1,024-token default are documented in [the scratch and chunk report](qwen38-option20-scratch-20261101.md). It passed a 28,589-token live request under the same 8 GiB cap.
 

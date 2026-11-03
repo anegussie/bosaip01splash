@@ -58,7 +58,7 @@ Same instance, same draft, three output styles:
 | code, reasoning low | 87.6 percent | 3.94 | 8.89 |
 | agent prose, reasoning medium | 72.3 percent | 2.39 | 6.33 |
 
-Draft acceptance falls as reasoning effort rises, and cycle count per emitted token rises with it. Mechanical work should not inherit an interactive reasoning default. The option 20 launcher default is `SPLASH_FLASH_NEXT_REASONING_EFFORT=medium` (`startllamacpp.sh:49`).
+Draft acceptance falls as reasoning effort rises, and cycle count per emitted token rises with it. Mechanical work should not inherit an interactive reasoning default. The option 20 launcher default is `SPLASH_FLASH_NEXT_REASONING_EFFORT=low` (`startllamacpp.sh:49`); it was `medium` when this section was first written and was lowered along with the 131,072 context and 10 GiB cap.
 
 ## Applied 2026-11-02, no restart
 
@@ -78,6 +78,21 @@ Rules adopted for delegation on this box, from the same evidence:
 - Keep a subagent context under roughly 30k tokens. A 100k-token child context costs about 11 minutes of prefill per turn on this lane.
 - Prefer `thinking` minimal or low for mechanical agents; the reasoning ladder above is a measured 2x effect.
 - Do not delegate while a timed benchmark is running on the same lane. The 17 contention-checked rows in the live report were measured inline for that reason.
+
+## Applied 2026-11-02 late evening: the timeout was never the binding constraint
+
+Four subagent jobs against this engine timed out in sequence, and the server log shows the mechanism. The 26-line scope job S1003 (`context_compressor`, 900,000 ms, maxTurns 4, tools `read, bash, grep, find, ls`) settled as `timed out after 900000ms` with only 2.8k input tokens and 72 output tokens accounted, and its 15-minute window in `qwen3.8-flash-next-iq3-xxs-splash-20261102-164913.log` contains no child request at all. Every `Started` and `Done` line in that window belongs to the parent session, at 31,421 to 43,128 input tokens with `native_wall` between 150.9 s and 595.9 s. The one cancellation the log does record is the clearest shape of the failure: `23:40:08 Error · request_cancelled · request=152 · frontend_queue=393.267s`, a request that waited 6.6 minutes in the frontend queue and was then abandoned by its client, and `transport.max_active_requests` is 1.
+
+The follow-up job S1004 (`code_refactoring`, 900,000 ms, maxTurns 12) was dispatched as the last action of a turn, with the parent generating nothing until the result arrived, and still timed out at the ceiling. Its edits landed and were verified inline: the option 20 expectations in `dev/benchmarks/test_bonsai_launcher.py` now match the launcher and all 25 tests pass in 12.0 s. So a child can complete work on this lane while a parent waits, but not fast enough to finish inside 15 minutes.
+
+What this changes about delegation on this machine:
+
+- Subagents are usable for short work only. A child request now waits behind a parent turn that costs 2 to 10 minutes, so the practical rule is one bounded edit or one focused check per job, not a multi-file ingest.
+- `subagent_job` action `continue` is the correct recovery for a timeout, because the partial work persists in the child session. A `retry` re-pays the entire prefill from zero.
+- The real fix is a second lane, which is experiment E7 (`--max-active-requests 2`, about 163 MB of lane state each), not a larger `timeoutMs`. Option 20 pins `SPLASH_BONSAI_MAX_ACTIVE_REQUESTS=1` (`startllamacpp.sh:1712`), so fairness has nowhere to act, and a 393 s `frontend_queue` with no size or age fairness is a scheduling defect worth its own ticket.
+- Parent hygiene is part of the problem. This session's own context grew from 31k to 43k tokens in one evening, and each turn then held the lane for 150 to 600 s. `/compact` changes delegation reliability more than any agent override does.
+
+The current overrides are `context_compressor` 900000 ms and maxTurns 6, `syntax_validation` 600000 ms, and the other three unchanged, with `bash` added to the compressor's tool list so that a `VERIFICATION:` command in its task can actually run.
 
 ## Restart-gated experiments
 
