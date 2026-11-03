@@ -15,12 +15,18 @@ Interactive menu selection `20` starts the same profile. Like the other direct S
 | OpenCode output reserve | 1,024 tokens |
 | Reasoning effort | low |
 | Metal memory cap | 10 GiB (the engine's own ceiling on a 16 GB Mac is about 10.8 GiB) |
-| Expert and PLE stores | shared expert arena at its 1,992 MiB floor under `--expert-memory auto`; 64 MiB PLE cache |
+| Expert and PLE stores | shared expert arena at its 2,089 MiB floor under `--expert-memory auto`; 64 MiB PLE cache |
 | KV / recurrent state | INT8 / BF16 |
 | Requested prefill chunk | 1,024 tokens, one Flash-Next chunk at a time |
 | Active requests | 1 (option 20 accepts 2 on a machine with room for a second lane) |
 | Prefix cache | 8 GiB disk quota, persistent, in its own option-20 directory |
 | Input | text only |
+
+Measured on 2026-11-03 with the 8 GiB quota live
+(`qwen38-option20-v1-20261103.md`): a 28,589-token prompt costs 185-192 seconds
+cold and 1.2 seconds when its KV is read back from the disk tier, and cold
+prefill and decode are unchanged. The spill freed about 1 GiB of Metal memory and
+lifted host spare above the 2.15 GiB the memory governor reserves for macOS.
 
 Reasoning requests use temperature 1.0 and top-p 0.95 in the synchronized OpenCode profile. Selecting `none` uses temperature 0.7 and top-p 0.80. Existing explicit worker temperatures are preserved. The compaction variant requests no reasoning and at most 2,048 output tokens.
 

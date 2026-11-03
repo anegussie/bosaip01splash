@@ -58,7 +58,7 @@ dequantizing the stream.
 
 | # | Change | Command | Accept when |
 |---|---|---|---|
-| V1 | verify the new 8G prefix cache default at 131k | `bash startllamacpp.sh --direct 20` | prefill TTFT drops, `cache.kv_disk_hit_tokens` grows, `memory_pressure` stays at or below `warning`, expert `cap_bytes` no smaller than 1,992 MiB |
+| V1 | verify the new 8G prefix cache default at 131k | `bash startllamacpp.sh --direct 20` | **done 2026-11-03.** `dev/benchmarks/qwen38-option20-v1-20261103.md`: a repeated 28,589-token prompt starts in 1,204 ms instead of 192,000 ms once its KV has been demoted to disk (893 blocks, 442.5 MB restored), cold prefill and decode unchanged, governor charged fell 9.45 to 8.58 GiB and host spare rose 1.77 to 2.52 GiB |
 | V2 | raise the expert store, funded by the disk tier | `SPLASH_FLASH_NEXT_MAX_MEMORY=11G SPLASH_FLASH_NEXT_EXPERT_MEMORY=3G bash startllamacpp.sh --direct 20` | `streamed_experts.cap_bytes` rises near 3 GiB, `resident` climbs well past 38, decode tok/s rises, swap stays under ~2 GiB |
 | V3 | re-sweep prefill chunks at 131k | `SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS=2048 ...` | 2048 beats 1024 at 28,672 and 65,451 without raising peak bytes by more than ~1 GiB |
 | V4 | two lanes where the machine allows it | `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2` on a 24 GB or larger Mac | subagent children run while the parent works; wall time per delegated task drops |
@@ -67,15 +67,26 @@ dequantizing the stream.
 Verification for every row: `/status` before and after (`streamed_experts`
 `cap_bytes`/`resident`/`hit_rate`, `memory_governor.denied_reservations`,
 `memory_pressure`, `thermal_state`), then the `option20-live-20261102-evening`
-script set with 10 s cooldowns, unique salts, and contaminated rows dropped.
+script set with 10 s cooldowns and contaminated rows dropped. Salt rule: a fresh
+`cache_salt` makes a row cold on purpose, because the salt is part of the cache
+key. Hold the salt fixed when measuring reuse, change it when a cold row is
+wanted. The 2026-11-02 claim that prefix reuse failed on a repeated prompt was
+this salt, not the cache.
 
 ## What a larger memory cap can and cannot do on this 16 GB Mac
 
-The cap is not the binding constraint today. `/status` shows the governor with a
+The cap is still not the binding constraint. Before V1 the governor showed a
 10 GiB limit, 8.85 GiB charged, 1.89 GiB of cap headroom, and
-`growth_allowed: false` because `host_spare_bytes` 1.90 GiB is below the
+`growth_allowed: false` because `host_spare_bytes` 1.90 GiB was below the
 `host_spare_reserve_bytes` 2.15 GiB it keeps for macOS (7% of memory, clamped to
-2-7 GiB). All 574 denied reservations come from that gate, not from the cap.
+2-7 GiB). Every denied reservation came from that gate, not from the cap.
+
+After V1 the disk tier changed that picture: charged fell to 8.58 GiB, cap
+headroom rose to 2.16 GiB, host spare rose to 2.52 GiB and host headroom over the
+reserve went from 0 to 0.37 GiB. The host gate is now open, yet the expert store
+is still at its 2,089 MiB floor with 512 of 24,576 slots, 34 resident and
+`hit_rate` 0.00, because `--expert-memory auto` sized the store at plan time and
+`regrows` stays 0. Headroom is not spent on experts by itself.
 
 - The engine clamps any cap to its automatic ceiling: the recommended working set
   (11.84 GiB here) minus a 1 GiB margin, i.e. about **10.84 GiB**. So `11G` is the
