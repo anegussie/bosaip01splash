@@ -292,6 +292,7 @@ each row shows the uniform-routing floor and the moderate-skew expectation.
 
 | machine | expert store | slots (coverage) | decode tok/s at h = coverage (uniform) | decode tok/s at moderate skew | PP tok/s at moderate skew | aggregate decode with 2 lanes |
 |---|---|---|---|---|---|---|
+| M5 Air 16 GB | 2 to 3 GiB, at 32,761 context | 526 to 790 (2.1 to 3.2%) | 13 to 14 | 14 to 15 | 170 to 185 | 27 to 30 (32k context only) |
 | M5 Air 32 GB | 4 to 6 GiB | 1,053 to 1,579 (4.3 to 6.4%) | 13 to 14 | 14 to 17 | 165 to 200 | 28 to 34 (only at 32k context) |
 | M5 Max 36 GB | 8 to 12 GiB | 2,106 to 3,159 (8.6 to 12.9%) | 16 to 17 | 18 to 22 | 230 to 290 | 36 to 44 |
 | M5 Pro 48 GB | 12 to 16 GiB | 3,159 to 4,212 (12.9 to 17.1%) | 17 to 18 | 20 to 25 | 250 to 320 | 40 to 50 |
@@ -330,3 +331,66 @@ uniform, residency is decorative, and the only lever left is storage bandwidth,
 at which point a 48 GB M5 Pro is about 1.35x this machine and a 64 GB Mac mini
 is about the same, and the purchase is justified by context capacity and lane
 count rather than by speed.
+
+## 9. Side by side: prompt processing and decode throughput
+
+Machines as columns, so the comparison is a single glance. Anchor is the measured
+M5 Air 16 GB: PP 145.9 at 936 prompt tokens, 146 to 161 at 28.5k to 65k, TPS
+12.98, 452 streamed MB per emitted token at 5.89 GB/s against an SSD that
+supplies 3.64 to 6.28 GB/s.
+
+### Today's exact option 20 flags
+
+10 GiB cap, `--expert-memory auto` (store pinned at the 1,992 MiB floor), 64 MiB
+PLE cache, 1,024-token chunks, `--verify-rows auto`, one active request, disk
+prefix cache off.
+
+| metric | M5 Air 16 GB (measured) | M5 Air 32 GB | M5 Pro 48 GB (MacBook Pro) | M5 Max 36 GB | Mac mini M5 Pro 64 GB |
+|---|---|---|---|---|---|
+| assumed SSD read bandwidth | 5.3 to 5.9 GB/s | 5.3 to 6.0 | 6.5 to 8.0 | 7.0 to 8.5 | 6.5 to 8.0 |
+| **PP**, 939 to 4,019 token prompt | **142 to 150** | **145 to 155** | **175 to 215** | **185 to 235** | **180 to 220** |
+| **PP**, 28,589 to 65,367 token prompt | **146 to 161** | **155 to 170** | **175 to 215** | **185 to 230** | **180 to 225** |
+| **TPS**, reasoning off | **11.5 to 13.0** | **11.5 to 13.0** | **14 to 18** | **15 to 19** | **14 to 18** |
+| **TPS**, reasoning low (launcher default) | **5.5 to 7.0** | **5.5 to 7.0** | **7 to 9** | **7.5 to 9.5** | **7 to 9** |
+| TTFT at 28,589 prompt tokens | 190 s | 170 to 185 s | 135 to 165 s | 125 to 155 s | 130 to 160 s |
+| TTFT at 65,367 prompt tokens | 420 to 446 s | 385 to 420 s | 305 to 375 s | 285 to 355 s | 295 to 365 s |
+| PP multiplier vs this Air | 1.00x | 1.06x | 1.27x | 1.35x | 1.32x |
+| TPS multiplier vs this Air | 1.00x | 1.00x | 1.31x | 1.39x | 1.31x |
+
+Each column is bandwidth divided by the same two measured constants, 36.1 MB per
+prompt token and 452 MB per emitted token. RAM moves nothing here because
+`--expert-memory auto` never spends spare RAM on the expert store.
+
+### With the expert store sized to the machine
+
+`--expert-memory` raised to the practical value for that RAM, `--ple-memory 512M`,
+`SPLASH_FLASH_NEXT_MAX_CACHE_DISK=8G`, 2,048-token chunks,
+`--max-active-requests 2`, 131,072 context.
+
+| metric | M5 Air 16 GB (measured) | M5 Air 32 GB | M5 Max 36 GB | M5 Pro 48 GB | Mac mini M5 Pro 64 GB |
+|---|---|---|---|---|---|
+| expert store | 2 to 3 GiB | 4 to 6 GiB | 8 to 12 GiB | 12 to 16 GiB | 24 to 32 GiB |
+| slots, coverage of 24,576 | 526 to 790, 2.1 to 3.2% | 1,053 to 1,579, 4.3 to 6.4% | 2,106 to 3,159, 8.6 to 12.9% | 3,159 to 4,212, 12.9 to 17.1% | 6,317 to 8,423, 25.7 to 34.3% |
+| **TPS**, uniform routing floor | **13 to 14** | **13 to 14** | **16 to 17** | **17 to 18** | **20 to 23** |
+| **TPS**, moderate routing skew | **14 to 15** | **14 to 17** | **18 to 22** | **20 to 25** | **24 to 34** |
+| **PP**, moderate routing skew | **170 to 185** | **165 to 200** | **230 to 290** | **250 to 320** | **280 to 380** |
+| **TPS**, aggregate across 2 lanes | 27 to 30, 32k context only | 28 to 34, 32k context only | 36 to 44 | 40 to 50 | 48 to 68 |
+| TTFT at 28,589 prompt tokens | 155 to 168 s | 145 to 175 s | 100 to 125 s | 90 to 115 s | 75 to 102 s |
+| TTFT at 65,367 prompt tokens | 355 to 385 s | 325 to 395 s | 225 to 285 s | 205 to 260 s | 172 to 235 s |
+| PP multiplier vs this Air | 1.16x | 1.19x | 1.69x | 1.86x | 2.15x |
+| TPS multiplier vs this Air | 1.18x | 1.27x | 1.63x | 1.84x | 2.37x |
+
+The first column is this machine, and its tuned configuration is constrained in a
+way the others are not. Its working set is 11.8 GiB against 8.8 GiB of fixed
+resident cost, so a 2 to 3 GiB expert store only fits by giving context back:
+the realistic tuned 16 GB profile is 32,761 served context with `--expert-memory
+3G`, which is also experiment E1 and the only 16 GB configuration that measured
+faster prefill (179.65 tok/s at 28,589 tokens on 2026-11-01, against 149.47 to
+161.02 at 131,072). Two lanes on 16 GB are likewise a 32k-context option, not a
+131k option, because the second lane's INT8 KV reservation does not fit beside a
+larger store.
+
+The distance between the two tables is the routing-skew assumption alone. If the
+top-k router is effectively uniform, the tuned columns collapse onto the default
+columns and a 64 GB Mac mini is worth about 1.3x rather than 2.4x. Section 8 is
+the two-minute measurement that decides which world the purchase lives in.
