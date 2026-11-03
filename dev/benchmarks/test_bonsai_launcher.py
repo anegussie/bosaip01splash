@@ -363,11 +363,12 @@ print('Ready test server',flush=True)
             "--prefill-chunk-tokens": "1024",
             "--max-active-requests": "1",
             "--default-reasoning-effort": "low",
-            "--max-cache-disk": "0",
+            "--max-cache-disk": "8589934592",
         }.items():
             self.assertEqual(args[args.index(flag) + 1], value, flag)
         self.assertIn("--language-only", args)
-        self.assertNotIn("--persistent-cache", args)
+        self.assertIn("--persistent-cache", args)
+        self.assertIn("--cache-dir", args)
         environment = json.loads((self.root / "environment.json").read_text())
         self.assertEqual(
             environment["HF_HUB_CACHE"],
@@ -460,10 +461,13 @@ print('Ready test server',flush=True)
             "SPLASH_FLASH_NEXT_MAX_CONTEXT": ["132097", "0", "999999999999999K"],
             "SPLASH_FLASH_NEXT_OPENCODE_CONTEXT": ["131072", "016384"],
             "SPLASH_FLASH_NEXT_MAX_TOKENS": ["129024", "0"],
-            "SPLASH_FLASH_NEXT_MAX_MEMORY": ["7G", "12G", "auto"],
+            "SPLASH_FLASH_NEXT_MAX_MEMORY": ["7G", "auto", "57G", "10g"],
             "SPLASH_FLASH_NEXT_REASONING_EFFORT": ["invalid", "HIGH"],
             "SPLASH_FLASH_NEXT_MAX_CACHE_DISK": ["9G", "-1"],
             "SPLASH_FLASH_NEXT_PERSISTENT_CACHE": ["2"],
+            "SPLASH_FLASH_NEXT_EXPERT_MEMORY": ["invalid", "256M", "9G"],
+            "SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS": ["100", "3072", "auto"],
+            "SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS": ["0", "3"],
             "SPLASH_FLASH_NEXT_HF_HUB_CACHE": ["relative/cache"],
         }.items():
             for value in values:
@@ -472,6 +476,113 @@ print('Ready test server',flush=True)
                     self.assertNotEqual(r.returncode, 0)
                     self.assertEqual(self.config.read_bytes(), before)
                     self.assertFalse((self.root / "attempts").exists())
+
+    def test_option20_second_active_request_needs_memory_for_its_lane(self):
+        # 16 GB cannot carry a second lane at 131,072 context tokens.
+        before = self.config.read_bytes()
+        r = self.run_launcher(
+            "20",
+            SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="2",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
+        )
+        self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("second active request", r.stdout + r.stderr)
+        self.assertEqual(self.config.read_bytes(), before)
+        self.assertFalse((self.root / "attempts").exists())
+
+        # Sub-16 GB machines stay single-lane even below 65,536 context.
+        before = self.config.read_bytes()
+        r = self.run_launcher(
+            "20",
+            SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="2",
+            SPLASH_FLASH_NEXT_MAX_CONTEXT="32768",
+            SPLASH_HOST_MEM_BYTES=str(12884901888),
+        )
+        self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.config.read_bytes(), before)
+
+        # 16 GB is enough for a second lane at 65,536 context tokens.
+        r = self.run_launcher(
+            "20",
+            SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="2",
+            SPLASH_FLASH_NEXT_MAX_CONTEXT="65536",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--max-active-requests") + 1], "2")
+        self.assertEqual(args[args.index("--max-context") + 1], "65536")
+
+        # 24 GB admits the second lane at the full 131,072 context.
+        r = self.run_launcher(
+            "20",
+            SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="2",
+            SPLASH_HOST_MEM_BYTES=str(25769803776),
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--max-active-requests") + 1], "2")
+
+    def test_option20_expert_memory_and_chunk_overrides_reach_the_engine(self):
+        r = self.run_launcher(
+            "20",
+            SPLASH_FLASH_NEXT_EXPERT_MEMORY="3G",
+            SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS="2048",
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--expert-memory") + 1], "3G")
+        self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "2048")
+
+    def test_option20_memory_cap_is_bounded_by_the_hosts_own_needs(self):
+        before = self.config.read_bytes()
+        # 16 GB cannot promise 16G of Metal memory and still keep its cushion.
+        r = self.run_launcher(
+            "20",
+            SPLASH_FLASH_NEXT_MAX_MEMORY="16G",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
+        )
+        self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("it keeps for macOS", r.stdout + r.stderr)
+        self.assertEqual(self.config.read_bytes(), before)
+        self.assertFalse((self.root / "attempts").exists())
+
+        # A 12G cap on a 16 GB Mac is admitted but names the automatic ceiling.
+        r = self.run_launcher(
+            "20",
+            SPLASH_FLASH_NEXT_MAX_MEMORY="12G",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("automatic Metal ceiling", r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--max-memory") + 1], "12G")
+
+        # A 32 GB Mac takes a 20G cap without the ceiling note.
+        r = self.run_launcher(
+            "20",
+            SPLASH_FLASH_NEXT_MAX_MEMORY="20G",
+            SPLASH_HOST_MEM_BYTES=str(34359738368),
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("automatic Metal ceiling", r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--max-memory") + 1], "20G")
+
+    def test_option20_cache_quota_larger_than_free_disk_is_rejected(self):
+        before = self.config.read_bytes()
+        df = self.root / "bin" / "df"
+        df.write_text(
+            "#!/bin/sh\n"
+            "echo 'Filesystem 1024-blocks Used Available Capacity Mounted on'\n"
+            "echo '/dev/disk9s1 1048576 1 1048576 0% /private/tmp'\n"
+        )
+        df.chmod(0o755)
+        r = self.run_launcher("20")
+        self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("SSD cache quota", r.stdout + r.stderr)
+        self.assertEqual(self.config.read_bytes(), before)
+        self.assertFalse((self.root / "attempts").exists())
 
     def test_option20_occupied_port_preserves_config(self):
         (self.root / "bin/lsof").write_text("#!/bin/sh\nexit 0\n")

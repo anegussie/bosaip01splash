@@ -14,12 +14,12 @@ Interactive menu selection `20` starts the same profile. Like the other direct S
 | OpenCode context | 129,024 tokens |
 | OpenCode output reserve | 1,024 tokens |
 | Reasoning effort | low |
-| Metal memory cap | 10 GiB |
+| Metal memory cap | 10 GiB (the engine's own ceiling on a 16 GB Mac is about 10.8 GiB) |
 | Expert and PLE stores | shared expert arena at its 1,992 MiB floor under `--expert-memory auto`; 64 MiB PLE cache |
 | KV / recurrent state | INT8 / BF16 |
 | Requested prefill chunk | 1,024 tokens, one Flash-Next chunk at a time |
-| Active requests | 1 |
-| Prefix cache | disabled by default |
+| Active requests | 1 (option 20 accepts 2 on a machine with room for a second lane) |
+| Prefix cache | 8 GiB disk quota, persistent, in its own option-20 directory |
 | Input | text only |
 
 Reasoning requests use temperature 1.0 and top-p 0.95 in the synchronized OpenCode profile. Selecting `none` uses temperature 0.7 and top-p 0.80. Existing explicit worker temperatures are preserved. The compaction variant requests no reasoning and at most 2,048 output tokens.
@@ -29,9 +29,12 @@ Overrides are independent of the option-18 and option-19 variables:
 - `SPLASH_FLASH_NEXT_MAX_CONTEXT`: 4,096-131,072 tokens, default `131072`.
 - `SPLASH_FLASH_NEXT_OPENCODE_CONTEXT`: `auto` (server minus 2,048) or a smaller integer context.
 - `SPLASH_FLASH_NEXT_MAX_TOKENS`: positive and smaller than the client context; default 1,024; output is reduced automatically for very small contexts.
-- `SPLASH_FLASH_NEXT_MAX_MEMORY`: `8G`, `9G`, `10G`, or `11G`.
+- `SPLASH_FLASH_NEXT_MAX_MEMORY`: `8G`, `9G`, `10G`, `11G`, `12G`, `16G`, `20G`, `24G`, `32G`, `40G`, `48G`, or `56G`, default `10G`. The launcher refuses a cap that would leave the Mac less than the 2-7 GiB cushion macOS keeps for itself (7% of unified memory), and prints the automatic ceiling when the cap is larger than the engine's own budget, which on a 16 GB Mac is about 10.8 GiB.
+- `SPLASH_FLASH_NEXT_EXPERT_MEMORY`: `auto` (default) or a size from `512M` to `8G` for the routed experts' store floor.
+- `SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS`: 128-2048 in steps of 128, default `1024`.
+- `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS`: `1` (default) or `2`. A second active request is admitted only when the machine can carry a second lane: 24 GB or more of unified memory above 65,536 context tokens, 16 GB or more at 65,536 or below.
+- `SPLASH_FLASH_NEXT_MAX_CACHE_DISK`: `0` through `8G`, default `8G`. The launcher refuses a quota larger than the free space on the volume that holds the cache.
 - `SPLASH_FLASH_NEXT_REASONING_EFFORT`: `none`, `low`, `medium`, or `xhigh`.
-- `SPLASH_FLASH_NEXT_MAX_CACHE_DISK`: `0` through `8G`, default `0`.
 - `SPLASH_FLASH_NEXT_PERSISTENT_CACHE`: `0` or `1`, default `1`.
 - `SPLASH_FLASH_NEXT_CACHE_DIR`: default `~/Library/Caches/Splash/flash-next-option20-iq3-xxs`.
 - `SPLASH_FLASH_NEXT_HF_HUB_CACHE`: absolute download-cache path; default `~/.cache/huggingface/hub`, overriding a different inherited `HF_HUB_CACHE` for this profile.
@@ -41,6 +44,17 @@ For a smaller first-run context:
 ```sh
 SPLASH_FLASH_NEXT_MAX_CONTEXT=8K bash /Users/mymac/startllamacpp.sh --direct 20
 ```
+
+For a bigger expert store on a machine that has the memory for it:
+
+```sh
+SPLASH_FLASH_NEXT_MAX_MEMORY=16G SPLASH_FLASH_NEXT_EXPERT_MEMORY=4G \
+  bash /Users/mymac/startllamacpp.sh --direct 20
+```
+
+The ranked performance plan, its restart-gated experiments, and the measured
+reason a larger memory cap alone does not help a 16 GB Mac are in
+`qwen38-option20-todo-20261103.md`.
 
 Menu selection, direct selection, default and override arguments, reasoning/sampling synchronization, output reservation, validation failures, occupied-port handling, and existing Splash profiles are covered by `dev/benchmarks/test_bonsai_launcher.py`. These checks use mock servers and isolated temporary configuration. Runtime memory fit and inference throughput require a separate real-model run; the defaults are not a no-swap guarantee.
 

@@ -47,9 +47,12 @@ splash_flash_next_default_output=0
 SPLASH_FLASH_NEXT_MAX_TOKENS="${SPLASH_FLASH_NEXT_MAX_TOKENS:-1024}"
 SPLASH_FLASH_NEXT_MAX_MEMORY="${SPLASH_FLASH_NEXT_MAX_MEMORY:-10G}"
 SPLASH_FLASH_NEXT_REASONING_EFFORT="${SPLASH_FLASH_NEXT_REASONING_EFFORT:-low}"
-SPLASH_FLASH_NEXT_MAX_CACHE_DISK="${SPLASH_FLASH_NEXT_MAX_CACHE_DISK:-0}"
+SPLASH_FLASH_NEXT_MAX_CACHE_DISK="${SPLASH_FLASH_NEXT_MAX_CACHE_DISK:-8G}"
 SPLASH_FLASH_NEXT_PERSISTENT_CACHE="${SPLASH_FLASH_NEXT_PERSISTENT_CACHE:-1}"
 SPLASH_FLASH_NEXT_CACHE_DIR="${SPLASH_FLASH_NEXT_CACHE_DIR:-$HOME/Library/Caches/Splash/flash-next-option20-iq3-xxs}"
+SPLASH_FLASH_NEXT_EXPERT_MEMORY="${SPLASH_FLASH_NEXT_EXPERT_MEMORY:-auto}"
+SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS="${SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS:-1024}"
+SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="${SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS:-1}"
 SPLASH_FLASH_NEXT_HF_HUB_CACHE="${SPLASH_FLASH_NEXT_HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}"
 SPLASH_BONSAI_MAX_CONTEXT="${SPLASH_BONSAI_MAX_CONTEXT:-24K}"
 SPLASH_BONSAI_OPENCODE_CONTEXT="${SPLASH_BONSAI_OPENCODE_CONTEXT:-auto}"
@@ -243,7 +246,7 @@ print_models() {
   echo "   Separate option-19 prefix cache: ${SPLASH_QWEN36_IQ3_MAX_CACHE_DISK} | persistent: ${SPLASH_QWEN36_IQ3_PERSISTENT_CACHE}"
   echo "20) Qwen3.8 Flash-Next GSQ-RCO IQ3_XXS - Splash SSD streaming (downloads on first run)${splash_status}"
   echo "   ${SPLASH_FLASH_NEXT_MAX_CONTEXT} server context | ${SPLASH_FLASH_NEXT_MAX_TOKENS} output tokens | ${SPLASH_FLASH_NEXT_MAX_MEMORY} Metal cap | reasoning ${SPLASH_FLASH_NEXT_REASONING_EFFORT}"
-  echo "   INT8 KV | BF16 state | text only | one active request | automatic expert and PLE caches | DFlash2"
+  echo "   INT8 KV | BF16 state | text only | ${SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS} active request | expert memory ${SPLASH_FLASH_NEXT_EXPERT_MEMORY} | ${SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS}-token prefill chunks | DFlash2"
   echo "   Source: ${SPLASH_FLASH_NEXT_MODEL_ID} | about 75.8 GB plus draft on first launch"
   echo "   Download cache: ${SPLASH_FLASH_NEXT_HF_HUB_CACHE}"
   echo "   Separate option-20 prefix cache: ${SPLASH_FLASH_NEXT_MAX_CACHE_DISK} | persistent: ${SPLASH_FLASH_NEXT_PERSISTENT_CACHE}"
@@ -279,6 +282,23 @@ splash_cache_disk_bytes() {
   esac
   splash_uint_in_range "$number" 0 "$((8589934592 / multiplier))" || return 1
   echo "$((number * multiplier))"
+}
+
+# Unified memory size, with an override so launcher tests stay deterministic.
+splash_host_memory_bytes() {
+  if [[ "${SPLASH_HOST_MEM_BYTES:-}" =~ ^[0-9]+$ ]]; then
+    echo "$SPLASH_HOST_MEM_BYTES"
+    return 0
+  fi
+  sysctl -n hw.memsize 2>/dev/null || echo 0
+}
+
+# Available bytes on the volume that will hold a path, walking up to the first
+# existing ancestor so a cache directory can be validated before it is created.
+splash_volume_free_bytes() {
+  local probe="$1"
+  while [[ ! -e "$probe" && "$probe" != "/" ]]; do probe="$(dirname "$probe")"; done
+  df -kP "$probe" 2>/dev/null | awk 'NR == 2 {print $4 * 1024}'
 }
 
 splash_stop_monitor() {
@@ -1640,12 +1660,31 @@ case "$choice" in
       SPLASH_BONSAI_PERSISTENT_CACHE="$SPLASH_FLASH_NEXT_PERSISTENT_CACHE"
       SPLASH_BONSAI_CACHE_DIR="$SPLASH_FLASH_NEXT_CACHE_DIR"
       SPLASH_BONSAI_STATE_FORMAT=bf16
-      SPLASH_BONSAI_PREFILL_CHUNK_TOKENS=1024
-      SPLASH_BONSAI_MAX_ACTIVE_REQUESTS=1
+      SPLASH_BONSAI_PREFILL_CHUNK_TOKENS="$SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS"
+      SPLASH_BONSAI_MAX_ACTIVE_REQUESTS="$SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS"
       case "$SPLASH_FLASH_NEXT_MAX_MEMORY" in
-        8G|9G|10G|11G) ;;
-        *) echo "SPLASH_FLASH_NEXT_MAX_MEMORY must be 8G, 9G, 10G or 11G." >&2; exit 1 ;;
+        8G|9G|10G|11G|12G|16G|20G|24G|32G|40G|48G|56G) ;;
+        *) echo "SPLASH_FLASH_NEXT_MAX_MEMORY must be 8G, 9G, 10G, 11G, 12G, 16G, 20G, 24G, 32G, 40G, 48G or 56G." >&2; exit 1 ;;
       esac
+      # The engine clamps its own budget to the Mac's recommended working set
+      # minus a margin, and the governor keeps 7% of unified memory (2-7 GiB)
+      # for macOS. Refuse a cap that would eat that cushion, and say so when a
+      # larger cap is only a ceiling the engine clamps.
+      splash_host_memory="$(splash_host_memory_bytes)"
+      if [[ "$splash_host_memory" =~ ^[0-9]+$ ]] && (( splash_host_memory > 0 )); then
+        splash_memory_cap_bytes="$(( ${SPLASH_FLASH_NEXT_MAX_MEMORY%G} * 1073741824 ))"
+        splash_host_reserve="$(( splash_host_memory / 100 * 7 ))"
+        (( splash_host_reserve < 2147483648 )) && splash_host_reserve=2147483648
+        (( splash_host_reserve > 7516192768 )) && splash_host_reserve=7516192768
+        if (( splash_memory_cap_bytes + splash_host_reserve > splash_host_memory )); then
+          echo "SPLASH_FLASH_NEXT_MAX_MEMORY ${SPLASH_FLASH_NEXT_MAX_MEMORY} leaves this Mac less than the $(( splash_host_reserve / 1073741824 )) GiB it keeps for macOS; use a smaller cap." >&2
+          exit 1
+        fi
+        splash_memory_ceiling="$(( splash_host_memory * 3 / 4 - 1073741824 ))"
+        if (( splash_memory_cap_bytes > splash_memory_ceiling )); then
+          echo "Note: this Mac's automatic Metal ceiling is about $(( splash_memory_ceiling / 1073741824 )) GiB, so a ${SPLASH_FLASH_NEXT_MAX_MEMORY} cap is a ceiling the engine clamps, not extra memory."
+        fi
+      fi
       case "$SPLASH_FLASH_NEXT_REASONING_EFFORT" in
         none|low|medium|xhigh) ;;
         *) echo "SPLASH_FLASH_NEXT_REASONING_EFFORT must be none, low, medium or xhigh." >&2; exit 1 ;;
@@ -1660,7 +1699,17 @@ case "$choice" in
         splash_temperature=1.0
         splash_top_p=0.95
       fi
-      splash_model_args=(--expert-memory auto --ple-memory 64M --max-memory "$SPLASH_FLASH_NEXT_MAX_MEMORY")
+      splash_model_args=(--expert-memory "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" --ple-memory 64M --max-memory "$SPLASH_FLASH_NEXT_MAX_MEMORY")
+      if [[ "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" != "auto" ]] &&
+         { ! splash_expert_memory_bytes="$(splash_cache_disk_bytes "$SPLASH_FLASH_NEXT_EXPERT_MEMORY")" ||
+           (( splash_expert_memory_bytes < 536870912 )); }; then
+        echo "SPLASH_FLASH_NEXT_EXPERT_MEMORY must be auto or a size from 512M to 8G." >&2
+        exit 1
+      fi
+      case "$SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS" in
+        1|2) ;;
+        *) echo "SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS must be 1 or 2." >&2; exit 1 ;;
+      esac
     fi
     if [[ "$choice" == "19" ]]; then
       splash_vision_args=(--max-image-pixels 1048576)
@@ -1709,8 +1758,17 @@ case "$choice" in
       exit 1
     fi
     if [[ "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" != "1" ]]; then
-      echo "This 16 GB safety profile requires SPLASH_BONSAI_MAX_ACTIVE_REQUESTS=1. Run one OpenCode job at a time." >&2
-      exit 1
+      # A second lane doubles the KV and lane-state reservation, so it is only
+      # admitted when the machine can carry it. Options 14, 16, 18 and 19 stay
+      # single-lane.
+      splash_host_memory="$(splash_host_memory_bytes)"
+      if [[ "$choice" != "20" ]] ||
+         [[ "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" != "2" ]] ||
+         (( splash_host_memory < 17179869184 )) ||
+         (( splash_context_limit > 65536 && splash_host_memory < 25769803776 )); then
+        echo "Only option 20 accepts a second active request, and it needs 24 GB of unified memory above 65,536 context tokens (16 GB is enough at 65,536 or below)." >&2
+        exit 1
+      fi
     fi
     if ! splash_uint_in_range "$SPLASH_BONSAI_STARTUP_RETRY_DELAY" 1 120 ||
        ! splash_uint_in_range "$SPLASH_BONSAI_STARTUP_MAX_RETRIES" 0 3; then
@@ -1725,6 +1783,12 @@ case "$choice" in
     splash_cache_args=()
     splash_cache_mode="off"
     if (( splash_cache_disk_limit > 0 )); then
+      splash_cache_free="$(splash_volume_free_bytes "$SPLASH_BONSAI_CACHE_DIR")"
+      if ! [[ "$splash_cache_free" =~ ^[0-9]+$ ]] ||
+         (( splash_cache_free < splash_cache_disk_limit )); then
+        echo "The volume holding $SPLASH_BONSAI_CACHE_DIR has ${splash_cache_free:-0} bytes free, less than the ${SPLASH_BONSAI_MAX_CACHE_DISK} SSD cache quota. Lower the cache quota or free disk space." >&2
+        exit 1
+      fi
       splash_cache_mode="temporary"
       if [[ "$SPLASH_BONSAI_PERSISTENT_CACHE" == "1" ]]; then
         splash_cache_mode="persistent"
@@ -1737,7 +1801,7 @@ case "$choice" in
       echo "Invalid Splash pressure monitor settings; headroom 1-16G bytes, interval 1-60, and samples 1-12." >&2
       exit 1
     fi
-    for splash_dependency in jq curl lsof pkill; do
+    for splash_dependency in jq curl lsof pkill df; do
       command -v "$splash_dependency" >/dev/null 2>&1 || {
         echo "Option $choice requires $splash_dependency." >&2
         exit 1
