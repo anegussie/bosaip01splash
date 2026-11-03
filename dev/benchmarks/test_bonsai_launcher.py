@@ -354,15 +354,15 @@ print('Ready test server',flush=True)
         for flag, value in {
             "--model": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS",
             "--served-model-name": "qwen3.8-flash-next-iq3-xxs-splash",
-            "--max-context": "32761",
-            "--max-memory": "8G",
+            "--max-context": "131072",
+            "--max-memory": "10G",
             "--expert-memory": "auto",
             "--ple-memory": "64M",
             "--kv-format": "int8",
             "--state-format": "bf16",
             "--prefill-chunk-tokens": "1024",
             "--max-active-requests": "1",
-            "--default-reasoning-effort": "medium",
+            "--default-reasoning-effort": "low",
             "--max-cache-disk": "0",
         }.items():
             self.assertEqual(args[args.index(flag) + 1], value, flag)
@@ -377,18 +377,18 @@ print('Ready test server',flush=True)
         alias = "qwen3.8-flash-next-iq3-xxs-splash"
         self.assertEqual(config["model"], "local-llama/" + alias)
         model = config["provider"]["local-llama"]["models"][alias]
-        self.assertEqual(model["limit"], {"context": 30713, "output": 1024})
+        self.assertEqual(model["limit"], {"context": 129024, "output": 1024})
         self.assertEqual(model["modalities"], {"input": ["text"], "output": ["text"]})
         self.assertTrue(model["reasoning"])
         self.assertEqual(
             model["variants"]["bounded-compaction"]["reasoning_effort"], "none"
         )
-        self.assertEqual(config["agent"]["general"]["reasoningEffort"], "medium")
+        self.assertEqual(config["agent"]["general"]["reasoningEffort"], "low")
         self.assertEqual(config["agent"]["general"]["temperature"], 1.0)
         self.assertEqual(config["agent"]["general"]["top_p"], 0.95)
         self.assertEqual(config["agent"]["context_worker"]["temperature"], 0.4)
         self.assertEqual(config["compaction"]["buffer"], 1024)
-        self.assertIn("reasoning=medium", r.stdout)
+        self.assertIn("reasoning=low", r.stdout)
         self.assertTrue((self.root / f"logs/{alias}-latest.log").is_symlink())
 
     def test_option20_interactive_and_help(self):
@@ -403,7 +403,7 @@ print('Ready test server',flush=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("20) Qwen3.8 Flash-Next GSQ-RCO IQ3_XXS", r.stdout)
         args = json.loads((self.root / "argv.json").read_text())
-        self.assertEqual(args[args.index("--max-memory") + 1], "8G")
+        self.assertEqual(args[args.index("--max-memory") + 1], "10G")
         for flag in ("--list", "--help"):
             r = subprocess.run(
                 ["bash", LAUNCHER, flag],
@@ -457,9 +457,9 @@ print('Ready test server',flush=True)
     def test_option20_invalid_settings_preserve_config(self):
         before = self.config.read_bytes()
         for name, values in {
-            "SPLASH_FLASH_NEXT_MAX_CONTEXT": ["33K", "0", "999999999999999K"],
-            "SPLASH_FLASH_NEXT_OPENCODE_CONTEXT": ["32768", "016384"],
-            "SPLASH_FLASH_NEXT_MAX_TOKENS": ["30720", "0"],
+            "SPLASH_FLASH_NEXT_MAX_CONTEXT": ["132097", "0", "999999999999999K"],
+            "SPLASH_FLASH_NEXT_OPENCODE_CONTEXT": ["131072", "016384"],
+            "SPLASH_FLASH_NEXT_MAX_TOKENS": ["129024", "0"],
             "SPLASH_FLASH_NEXT_MAX_MEMORY": ["7G", "12G", "auto"],
             "SPLASH_FLASH_NEXT_REASONING_EFFORT": ["invalid", "HIGH"],
             "SPLASH_FLASH_NEXT_MAX_CACHE_DISK": ["9G", "-1"],

@@ -1667,7 +1667,7 @@ case "$choice" in
     fi
     splash_context_max=24576
     [[ "$choice" != "19" ]] || splash_context_max=81920
-    [[ "$choice" != "20" ]] || splash_context_max=32761
+    [[ "$choice" != "20" ]] || splash_context_max=131072
     splash_client_context_max="$((splash_context_max - 2048))"
     if ! splash_context_limit="$(splash_context_tokens "$SPLASH_BONSAI_MAX_CONTEXT")" ||
        (( splash_context_limit < 4096 || splash_context_limit > splash_context_max )); then
