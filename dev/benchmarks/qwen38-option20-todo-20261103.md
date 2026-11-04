@@ -62,8 +62,9 @@ dequantizing the stream.
 | V2 | raise the expert store, funded by the disk tier | `SPLASH_FLASH_NEXT_MAX_MEMORY=11G SPLASH_FLASH_NEXT_EXPERT_MEMORY=3G bash startllamacpp.sh --direct 20` | **done 2026-11-03 as a null result** (`qwen38-option20-v2-20261103.md`). `2G` was accepted and became the store's floor: cap = floor = 2,089 MiB, 512 slots, `regrows 0`, `hit_rate` 0.00, decode 11.1-11.9 tok/s and 28k prefill 155 tok/s, identical to V1 |
 | V3 | take memory back from the resident KV pool, and give the disk tier room | `SPLASH_FLASH_NEXT_MAX_MEMORY=11G SPLASH_FLASH_NEXT_EXPERT_MEMORY=4G SPLASH_FLASH_NEXT_MAX_CACHE_DISK=16G bash startllamacpp.sh --direct 20` | **done 2026-11-03, split result** (`qwen38-option20-v3-20261103.md`). The expert store did not move: cap = floor = 2,089 MiB, 512 slots, `regrows` 0, `hit_rate` 0.00, decode 11.5-11.7 tok/s, 28k cold 189.8 s at 150.7 tok/s. The 16 GiB quota did pay: startup restored 83 restore points over 5,314 KV blocks (7,076 MiB), the cache grew to 11.57 GiB, and 65,451-token cold prefill ran 436.4 s / 150.0 tok/s against 445.7 s / 146.7 at the 8 GiB quota |
 | V3b | re-sweep prefill chunks at 131k | `SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS=2048 ...` | 2048 beats 1024 at 28,672 and 65,451 without raising peak bytes by more than ~1 GiB |
-| V4 | lower the served context, the one reservation this profile controls | `SPLASH_FLASH_NEXT_MAX_CONTEXT=32761 SPLASH_FLASH_NEXT_MAX_MEMORY=11G bash startllamacpp.sh --direct 20` (`--expert-memory` back to `auto`) | startup log shows `cap_bytes` above `floor_bytes`, more than 512 slots, `regrows` above 0, `hit_rate` above 0.01 and decode above 13 tok/s. If the store still sits at 512 slots at 32,761 context, the expert-store line is closed on 16 GB and only a smaller expert quantization can raise decode |
-| V5 | two lanes where the machine allows it | `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2` on a 24 GB or larger Mac, or at 65,536 context on 16 GB | subagent children run while the parent works; wall time per delegated task drops |
+| V4 | lower the served context, the one reservation this profile controls, and open a second lane in the same restart | `SPLASH_FLASH_NEXT_MAX_CONTEXT=65536 SPLASH_FLASH_NEXT_MAX_MEMORY=11G SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2 bash startllamacpp.sh --direct 20` (`--expert-memory` back to `auto`) | expert side: startup log shows `cap_bytes` above `floor_bytes`, more than 512 slots, `regrows` above 0 and `hit_rate` above 0.01, decode above 13 tok/s. Lane side: the `parent-child` probe shows `max_active_requests` 2 with the child queued for well under the parent's wall time, against the 393 s queue a child waited on 2026-11-02. Script: `build/validation/option20-v4-20261103/run_v4.py`, which refuses to measure a server whose context is not the one the rows are about |
+| V4b | the same question at a smaller context, if 65,536 shows no expert gain | `SPLASH_FLASH_NEXT_MAX_CONTEXT=32761 SPLASH_FLASH_NEXT_MAX_MEMORY=11G bash startllamacpp.sh --direct 20` | same expert criteria. Note the cost: this profile serves the agent's own model, so 32,761 context leaves the session about 31,737 tokens of window |
+| V5 | two lanes where the machine allows it | folded into V4 at 65,536 context; otherwise `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2` on a 24 GB or larger Mac | subagent children run while the parent works; wall time per delegated task drops |
 | V6 | expert quantization reduction | smaller quant of the same GSQ-RCO build | gated on correctness first (ORCHID, count-to-30, DFlash2 acceptance), then speed |
 
 Verification for every row: `/status` before and after (`streamed_experts`
@@ -116,9 +117,16 @@ is still at its 2,089 MiB floor with 512 of 24,576 slots, 34 resident and
   10,703 denied reservations, because `host_headroom_bytes` was 0 against the
   2.15 GiB it keeps for macOS. On 16 GB the room under the Metal cap and the room
   the operating system has are different budgets.
-- Under `auto` the store can hold elastic chunks above its own floor and give them
-  back down to it, which is the shape worth having on a 16 GB Mac: the floor stays
-  safe and the elastic part grows when a request does not need the KV pages.
+- Under `auto` the store can hold elastic chunks above its own floor and give them back down to
+  it, but V2 and V3 showed the elasticity is decided at plan time and never at request time:
+  `regrows` stayed 0 and `shrinks` stayed 0 through every row, so the shape to aim for is a plan
+  that leaves the experts more at startup, not a store that grows while a request runs.
+- The direction of that trade is already asserted by the engine's own plan tests.
+  `dev/tests/engine/engine_memory_plan_test.cpp` (`testDenseExplicitContextKeepsMainsExperts`,
+  `testDenseExplicitContextStreamsExperts`) shows a dense target loading every expert whole up to
+  the context its KV allowance leaves, and streaming them from one token past that point: the
+  context reservation and expert residency are the same budget seen from opposite ends. That is why
+  V4 changes the served context rather than the expert flag.
 - The gain is still bounded by reuse. Cached service costs 13.5 microseconds per
   expert on this GPU against 343 microseconds of SSD streaming, so a tile must be
   used about 25 times to pay for its slot. Decode is bandwidth-bound at 452 MB
