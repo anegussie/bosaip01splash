@@ -237,7 +237,7 @@ print('Ready test server',flush=True)
             {"SPLASH_QWEN36_MAX_CONTEXT": "25K"},
             {"SPLASH_QWEN36_OPENCODE_CONTEXT": "24576"},
             {"SPLASH_QWEN36_MAX_TOKENS": "22528"},
-            {"SPLASH_QWEN36_MAX_CACHE_DISK": "9G"},
+            {"SPLASH_QWEN36_MAX_CACHE_DISK": "65G"},
             {"SPLASH_QWEN36_PERSISTENT_CACHE": "2"},
         ):
             with self.subTest(overrides=overrides):
@@ -324,7 +324,7 @@ print('Ready test server',flush=True)
             {"SPLASH_QWEN36_IQ3_MAX_CONTEXT": "81K"},
             {"SPLASH_QWEN36_IQ3_OPENCODE_CONTEXT": "81920"},
             {"SPLASH_QWEN36_IQ3_MAX_TOKENS": "79872"},
-            {"SPLASH_QWEN36_IQ3_MAX_CACHE_DISK": "9G"},
+            {"SPLASH_QWEN36_IQ3_MAX_CACHE_DISK": "65G"},
             {"SPLASH_QWEN36_IQ3_PERSISTENT_CACHE": "2"},
         ):
             with self.subTest(overrides=overrides):
@@ -463,9 +463,9 @@ print('Ready test server',flush=True)
             "SPLASH_FLASH_NEXT_MAX_TOKENS": ["129024", "0"],
             "SPLASH_FLASH_NEXT_MAX_MEMORY": ["7G", "auto", "57G", "10g"],
             "SPLASH_FLASH_NEXT_REASONING_EFFORT": ["invalid", "HIGH"],
-            "SPLASH_FLASH_NEXT_MAX_CACHE_DISK": ["9G", "-1"],
+            "SPLASH_FLASH_NEXT_MAX_CACHE_DISK": ["65G", "-1"],
             "SPLASH_FLASH_NEXT_PERSISTENT_CACHE": ["2"],
-            "SPLASH_FLASH_NEXT_EXPERT_MEMORY": ["invalid", "256M", "9G"],
+            "SPLASH_FLASH_NEXT_EXPERT_MEMORY": ["invalid", "256M", "33G", "9G"],
             "SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS": ["100", "3072", "auto"],
             "SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS": ["0", "3"],
             "SPLASH_FLASH_NEXT_HF_HUB_CACHE": ["relative/cache"],
@@ -533,6 +533,48 @@ print('Ready test server',flush=True)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertEqual(args[args.index("--expert-memory") + 1], "3G")
         self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "2048")
+
+    def test_option20_larger_expert_store_and_cache_quota_reach_the_engine(self):
+        df = self.root / "bin" / "df"
+        df.write_text(
+            "#!/bin/sh\n"
+            "echo 'Filesystem 1024-blocks Used Available Capacity Mounted on'\n"
+            "echo '/dev/disk9s1 1048576 1 41943040 0% /private/tmp'\n"
+        )
+        df.chmod(0o755)
+        r = self.run_launcher(
+            "20",
+            SPLASH_FLASH_NEXT_MAX_MEMORY="11G",
+            SPLASH_FLASH_NEXT_EXPERT_MEMORY="4G",
+            SPLASH_FLASH_NEXT_MAX_CACHE_DISK="16G",
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("over half the 11G cap", r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--max-memory") + 1], "11G")
+        self.assertEqual(args[args.index("--expert-memory") + 1], "4G")
+        self.assertEqual(args[args.index("--max-cache-disk") + 1], "17179869184")
+
+        # A store over half the cap is allowed, and says what it costs the KV pool.
+        r = self.run_launcher(
+            "20",
+            SPLASH_FLASH_NEXT_MAX_MEMORY="11G",
+            SPLASH_FLASH_NEXT_EXPERT_MEMORY="6G",
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("over half the 11G cap", r.stdout + r.stderr)
+
+    def test_option20_expert_memory_leaving_too_little_of_the_cap_is_rejected(self):
+        before = self.config.read_bytes()
+        r = self.run_launcher(
+            "20",
+            SPLASH_FLASH_NEXT_MAX_MEMORY="10G",
+            SPLASH_FLASH_NEXT_EXPERT_MEMORY="9G",
+        )
+        self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("leaves less than 2G of the 10G Metal cap", r.stdout + r.stderr)
+        self.assertEqual(self.config.read_bytes(), before)
+        self.assertFalse((self.root / "attempts").exists())
 
     def test_option20_memory_cap_is_bounded_by_the_hosts_own_needs(self):
         before = self.config.read_bytes()
@@ -661,7 +703,7 @@ print('Ready test server',flush=True)
             "SPLASH_BONSAI_STATE_FORMAT": ["fp16", "BF16", "auto"],
             "SPLASH_BONSAI_STARTUP_MAX_RETRIES": ["4", "-1"],
             "SPLASH_BONSAI_PERSISTENT_CACHE": ["2"],
-            "SPLASH_BONSAI_MAX_CACHE_DISK": ["9G", "-1", "8GB"],
+            "SPLASH_BONSAI_MAX_CACHE_DISK": ["65G", "-1", "8GB"],
         }.items():
             for value in values:
                 with self.subTest(name=name, value=value):

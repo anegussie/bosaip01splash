@@ -36,10 +36,10 @@ Overrides are independent of the option-18 and option-19 variables:
 - `SPLASH_FLASH_NEXT_OPENCODE_CONTEXT`: `auto` (server minus 2,048) or a smaller integer context.
 - `SPLASH_FLASH_NEXT_MAX_TOKENS`: positive and smaller than the client context; default 1,024; output is reduced automatically for very small contexts.
 - `SPLASH_FLASH_NEXT_MAX_MEMORY`: `8G`, `9G`, `10G`, `11G`, `12G`, `16G`, `20G`, `24G`, `32G`, `40G`, `48G`, or `56G`, default `10G`. The launcher refuses a cap that would leave the Mac less than the 2-7 GiB cushion macOS keeps for itself (7% of unified memory), and prints the automatic ceiling when the cap is larger than the engine's own budget, which on a 16 GB Mac is about 10.8 GiB.
-- `SPLASH_FLASH_NEXT_EXPERT_MEMORY`: `auto` (default) or a size from `512M` to `8G` for the routed experts' store floor.
+- `SPLASH_FLASH_NEXT_EXPERT_MEMORY`: `auto` (default) or a size from `512M` to `32G`. The engine treats it as the **least** RAM for the routed experts, so only `auto` lets the store grow past what the memory plan leaves it. The launcher rejects a size that leaves less than 2G of the Metal cap for weights, KV and state, and says so when the store is over half the cap.
 - `SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS`: 128-2048 in steps of 128, default `1024`.
 - `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS`: `1` (default) or `2`. A second active request is admitted only when the machine can carry a second lane: 24 GB or more of unified memory above 65,536 context tokens, 16 GB or more at 65,536 or below.
-- `SPLASH_FLASH_NEXT_MAX_CACHE_DISK`: `0` through `8G`, default `8G`. The launcher refuses a quota larger than the free space on the volume that holds the cache.
+- `SPLASH_FLASH_NEXT_MAX_CACHE_DISK`: `0` through `64G`, default `8G`. The launcher refuses a quota larger than the free space on the volume that holds the cache. A few long benchmark prompts filled the 8G quota (`used_bytes` 8,547,762,176 of 8,589,934,592), so a repeated long-context workflow wants 16G or more.
 - `SPLASH_FLASH_NEXT_REASONING_EFFORT`: `none`, `low`, `medium`, or `xhigh`.
 - `SPLASH_FLASH_NEXT_PERSISTENT_CACHE`: `0` or `1`, default `1`.
 - `SPLASH_FLASH_NEXT_CACHE_DIR`: default `~/Library/Caches/Splash/flash-next-option20-iq3-xxs`.

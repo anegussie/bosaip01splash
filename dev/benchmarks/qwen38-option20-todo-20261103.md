@@ -59,7 +59,8 @@ dequantizing the stream.
 | # | Change | Command | Accept when |
 |---|---|---|---|
 | V1 | verify the new 8G prefix cache default at 131k | `bash startllamacpp.sh --direct 20` | **done 2026-11-03.** `dev/benchmarks/qwen38-option20-v1-20261103.md`: a repeated 28,589-token prompt starts in 1,204 ms instead of 192,000 ms once its KV has been demoted to disk (893 blocks, 442.5 MB restored), cold prefill and decode unchanged, governor charged fell 9.45 to 8.58 GiB and host spare rose 1.77 to 2.52 GiB |
-| V2 | raise the expert store, funded by the disk tier | `SPLASH_FLASH_NEXT_MAX_MEMORY=11G SPLASH_FLASH_NEXT_EXPERT_MEMORY=3G bash startllamacpp.sh --direct 20` | `streamed_experts.cap_bytes` rises near 3 GiB, `resident` climbs well past 38, decode tok/s rises, swap stays under ~2 GiB |
+| V2 | raise the expert store, funded by the disk tier | `SPLASH_FLASH_NEXT_MAX_MEMORY=11G SPLASH_FLASH_NEXT_EXPERT_MEMORY=3G bash startllamacpp.sh --direct 20` | **done 2026-11-03 as a null result** (`qwen38-option20-v2-20261103.md`). `2G` was accepted and became the store's floor: cap = floor = 2,089 MiB, 512 slots, `regrows 0`, `hit_rate` 0.00, decode 11.1-11.9 tok/s and 28k prefill 155 tok/s, identical to V1 |
+| V3 | take memory back from the resident KV pool, and give the disk tier room | `SPLASH_FLASH_NEXT_MAX_MEMORY=11G SPLASH_FLASH_NEXT_EXPERT_MEMORY=4G SPLASH_FLASH_NEXT_MAX_CACHE_DISK=16G bash startllamacpp.sh --direct 20` | startup log shows a store whose cap is above its floor with more than 512 slots, `regrows` above 0, `hit_rate` above 0.01, decode above 13 tok/s, and cold 28k prefill no worse than about 200 s |
 | V3 | re-sweep prefill chunks at 131k | `SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS=2048 ...` | 2048 beats 1024 at 28,672 and 65,451 without raising peak bytes by more than ~1 GiB |
 | V4 | two lanes where the machine allows it | `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2` on a 24 GB or larger Mac | subagent children run while the parent works; wall time per delegated task drops |
 | V5 | expert quantization reduction | smaller quant of the same GSQ-RCO build | gated on correctness first (ORCHID, count-to-30, DFlash2 acceptance), then speed |
@@ -94,10 +95,19 @@ is still at its 2,089 MiB floor with 512 of 24,576 slots, 34 resident and
 - Raising the cap alone therefore frees about 0.84 GiB of budget the governor
   will not spend while host spare stays under 2.15 GiB. Expect no measurable gain
   by itself.
-- Raising the cap *with* the 8G disk prefix cache (V1 then V2) is the sequence
-  that can pay: the disk tier gives KV and state somewhere to live, host spare
-  rises, and the expert store can move from 512 slots (2.1% of 24,576) toward
-  roughly 1,500 slots. Every 263 slots is one GiB of store.
+- Raising the cap *with* the 8G disk prefix cache is the sequence that can pay,
+  and V1 confirmed the first half: KV spilled to disk, host spare rose above the
+  reserve. The second half needs the opposite lever. `/status`
+  `memory_plan.budget` gives 3.46 GiB of `dynamic_budget_bytes` after
+  `fixed_runtime_bytes` (7.38 GiB of weights, stores and reserves), and the
+  resident KV pool alone claims 3.23 GiB of it (`kv_capacity_pages` 8,192,
+  `kv_capacity_tokens` 262,144). An explicit `--expert-memory` is only a floor
+  (`MemoryPlan.cpp:246`), so it does not win that contest; a floor above the
+  leftover is what moves memory out of KV and into the store. That is V3 at 4 GiB,
+  the size where whole slots and chunks reach 1,024 slots instead of 512.
+- Under `auto` the store can hold elastic chunks above its own floor and give them
+  back down to it, which is the shape worth having on a 16 GB Mac: the floor stays
+  safe and the elastic part grows when a request does not need the KV pages.
 - The gain is still bounded by reuse. Cached service costs 13.5 microseconds per
   expert on this GPU against 343 microseconds of SSD streaming, so a tile must be
   used about 25 times to pay for its slot. Decode is bandwidth-bound at 452 MB

@@ -274,13 +274,13 @@ splash_context_tokens() {
 }
 
 splash_cache_disk_bytes() {
-  local value="$1" multiplier=1 number="$1"
+  local value="$1" maximum="${2:-68719476736}" multiplier=1 number="$1"
   case "$value" in
     *[Gg]) multiplier=1073741824; number="${value%[Gg]}" ;;
     *[Mm]) multiplier=1048576; number="${value%[Mm]}" ;;
     *[Kk]) multiplier=1024; number="${value%[Kk]}" ;;
   esac
-  splash_uint_in_range "$number" 0 "$((8589934592 / multiplier))" || return 1
+  splash_uint_in_range "$number" 0 "$((maximum / multiplier))" || return 1
   echo "$((number * multiplier))"
 }
 
@@ -1700,11 +1700,21 @@ case "$choice" in
         splash_top_p=0.95
       fi
       splash_model_args=(--expert-memory "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" --ple-memory 64M --max-memory "$SPLASH_FLASH_NEXT_MAX_MEMORY")
-      if [[ "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" != "auto" ]] &&
-         { ! splash_expert_memory_bytes="$(splash_cache_disk_bytes "$SPLASH_FLASH_NEXT_EXPERT_MEMORY")" ||
-           (( splash_expert_memory_bytes < 536870912 )); }; then
-        echo "SPLASH_FLASH_NEXT_EXPERT_MEMORY must be auto or a size from 512M to 8G." >&2
-        exit 1
+      if [[ "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" != "auto" ]]; then
+        if { ! splash_expert_memory_bytes="$(splash_cache_disk_bytes \
+             "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" 34359738368)"; } ||
+           (( splash_expert_memory_bytes < 536870912 )); then
+          echo "SPLASH_FLASH_NEXT_EXPERT_MEMORY must be auto or a size from 512M to 32G." >&2
+          exit 1
+        fi
+        splash_memory_cap_bytes="$(splash_cache_disk_bytes "$SPLASH_FLASH_NEXT_MAX_MEMORY")"
+        if (( splash_expert_memory_bytes + 2147483648 > splash_memory_cap_bytes )); then
+          echo "SPLASH_FLASH_NEXT_EXPERT_MEMORY ${SPLASH_FLASH_NEXT_EXPERT_MEMORY} leaves less than 2G of the ${SPLASH_FLASH_NEXT_MAX_MEMORY} Metal cap for weights, KV and state." >&2
+          exit 1
+        fi
+        if (( splash_expert_memory_bytes * 2 > splash_memory_cap_bytes )); then
+          echo "   Expert memory ${SPLASH_FLASH_NEXT_EXPERT_MEMORY} is over half the ${SPLASH_FLASH_NEXT_MAX_MEMORY} cap: the resident KV pool shrinks and the SSD cache carries the rest."
+        fi
       fi
       case "$SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS" in
         1|2) ;;
@@ -1777,7 +1787,7 @@ case "$choice" in
     fi
     if ! splash_uint_in_range "$SPLASH_BONSAI_PERSISTENT_CACHE" 0 1 ||
        ! splash_cache_disk_limit="$(splash_cache_disk_bytes "$SPLASH_BONSAI_MAX_CACHE_DISK")"; then
-      echo "Splash persistent cache must be 0 or 1, and SSD cache quota 0-8G (e.g. 4G or 512M)." >&2
+      echo "Splash persistent cache must be 0 or 1, and SSD cache quota 0-64G (e.g. 4G or 512M)." >&2
       exit 1
     fi
     splash_cache_args=()
