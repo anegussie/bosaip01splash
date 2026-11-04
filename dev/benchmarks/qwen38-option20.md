@@ -19,7 +19,7 @@ Interactive menu selection `20` starts the same profile. Like the other direct S
 | KV / recurrent state | INT8 / BF16 |
 | Requested prefill chunk | 1,024 tokens, one Flash-Next chunk at a time |
 | Active requests | 1 (option 20 accepts 2 on a machine with room for a second lane) |
-| Prefix cache | 8 GiB disk quota, persistent, in its own option-20 directory |
+| Prefix cache | 16 GiB disk quota, persistent, in its own option-20 directory |
 | Input | text only |
 
 Measured on 2026-11-03 with the 8 GiB quota live
@@ -64,6 +64,39 @@ the plan sizes the resident KV allowance against the model's 262,144-token windo
 1,992 MiB floor of 512 slots, with `growth_allowed` false at runtime because the host has no spare
 against its 2.15 GiB reserve. The flag raises a floor, not a ceiling. Measurements in
 `qwen38-option20-v2-20261103.md` and `qwen38-option20-v3-20261103.md`.
+
+## Chosen configuration on this 16 GB M5 (2026-11-04)
+
+After the V1 to V5c series, the profile to run on this Mac is the launcher default with the two
+second-lane overrides:
+
+```sh
+SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2 SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE=1 \
+  bash /Users/mymac/startllamacpp.sh --direct 20
+```
+
+That is 131,072 context, a 10 GiB Metal cap, a 16 GiB persistent prefix cache, `--expert-memory auto`,
+a 1,024-token prefill chunk, BF16 state, `--verify-rows auto`, and two active requests. Expect a
+28,589-token cold prompt in about 172 s (166 tok/s), the same prompt in about 1.1 s once its KV is in
+the cache, 11.7 to 11.9 tok/s of decode at 7.4 to 7.5 tokens per draft cycle, and a delegated child
+admitted about 10 s into a running parent when the host has 3.15 GiB spare, which on this machine means
+Chrome and LM Studio stay closed. With a browser open the second request is admitted and held, which
+changes nothing about the parent's speed.
+
+Rejected on measurement, all at 131,072 context on this Mac:
+
+| Setting | Measured result |
+|---|---|
+| `MAX_MEMORY=11G` | slowest cold prefill (150.7-161.0 tok/s), host spare 1.83 GiB, headroom peak 0.26 GiB |
+| `MAX_MEMORY=9G` | fastest cold prefill (174.6-183.0 tok/s) but resident KV 114,681 tokens, below the served 131,072, and headroom peak 0.52 GiB - worse than 10G, because the spill floors cost 669 MiB plus a 409 MiB hot block cache plus 145 MiB of staging |
+| `EXPERT_MEMORY=2G` or `4G` | no change: the store stays at its 1,992 MiB floor of 512 slots |
+| `MAX_CACHE_DISK=8G` | fills during long-context work; 16G pays for itself in restored cache (`qwen38-option20-v3-20261103.md`) |
+| one active request | a delegated child queues 165-186 s behind the parent, which is what ended three subagent runs on timeout |
+
+Still open, in order of expected value: a 2,048-token chunk re-sweep at 28,672 and 65,451 tokens
+(V3b), quantization reduction to cut streamed bytes per emitted token (V6, the only remaining lever on
+16 GB for decode speed), and more RAM - 24 GB opens two lanes without conditions, and 48 GB is where
+the expert store starts earning its slots.
 
 The ranked performance plan, its restart-gated experiments, and the measured
 reason a larger memory cap alone does not help a 16 GB Mac are in
