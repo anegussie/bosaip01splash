@@ -1789,7 +1789,7 @@ case "$choice" in
         splash_lane_reserve="$(( splash_host_memory / 100 * 7 ))"
         (( splash_lane_reserve < 2147483648 )) && splash_lane_reserve=2147483648
         (( splash_lane_reserve > 7516192768 )) && splash_lane_reserve=7516192768
-        echo "   Second active request admitted below the memory gate on a $(( splash_host_memory / 1073741824 )) GB Mac at $splash_context_limit context tokens: the plan already charges the KV pool for ${SPLASH_FLASH_NEXT_MAX_MEMORY} total, macOS keeps $(( splash_lane_reserve / 1073741824 )) GB, and a swap-heavy run is the sign to drop back to 1."
+        echo "   Second active request admitted below the memory gate on a $(( splash_host_memory / 1073741824 )) GB Mac at $splash_context_limit context tokens: the plan already charges the KV pool for ${SPLASH_FLASH_NEXT_MAX_MEMORY} total, macOS keeps $(( splash_lane_reserve / 1073741824 )) GB, and a second request then needs 1 GB of headroom above that reserve before the engine will run it. /status showing two active requests with memory_governor.growth_allowed false, or a swap-heavy run, is the sign to drop back to 1."
       fi
       if [[ "$splash_lane_second" != "1" ]] &&
          { [[ "$choice" != "20" ]] ||

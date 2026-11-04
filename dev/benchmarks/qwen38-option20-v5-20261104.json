@@ -1,0 +1,202 @@
+{
+  "description": "Option 20 V5: two active request lanes at the 10G default cap, 131,072 context, 16 GB M5",
+  "date": "2026-11-04",
+  "model": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS",
+  "draft": "incoai/Qwen3.8-Flash-Next-DFlash2",
+  "git_head": "89679a4e2dae262f851e709c1b9e844edc71e685",
+  "server": {
+    "maximum_context_tokens": 131072,
+    "prefill_chunk_tokens": 1024,
+    "max_active_requests": 2,
+    "transport_max_active_requests": 2,
+    "expert_memory": "auto",
+    "max_memory": "10G",
+    "max_cache_quota": "16G",
+    "persistent_cache": true
+  },
+  "rows": {
+    "decode-512": {
+      "clean": false,
+      "correct": null,
+      "prompt_tokens": 435,
+      "prefill_tokens": 435,
+      "prefill_tok_s": 73.97,
+      "ttft_ms": 5880.9,
+      "decode_tokens": 113,
+      "decode_tok_s": 11.74,
+      "cached_tokens": 0,
+      "acceptance_rate": 0.9703,
+      "tokens_per_cycle": 7.533,
+      "expert_decode_MB": 57319.8,
+      "expert_MB_per_decode_token": 507.3,
+      "expert_prefill_MB": 30770.4,
+      "expert_prefill_MB_per_token": 70.7,
+      "expert_hit_rate_after": 0,
+      "expert_resident_after": 431,
+      "kv_hit_tokens": 62816,
+      "kv_disk_hit_tokens": 62816,
+      "kv_demotions": 0,
+      "disk_read_MB": 898.3,
+      "memory_pressure_after": "warning",
+      "kv_capacity_tokens_after": 196608
+    },
+    "28k-cold": {
+      "clean": false,
+      "correct": true,
+      "prompt_tokens": 28589,
+      "prefill_tokens": 28589,
+      "prefill_tok_s": 154.27,
+      "ttft_ms": 185314.2,
+      "decode_tokens": 95,
+      "decode_tok_s": 10.34,
+      "cached_tokens": 0,
+      "acceptance_rate": 1.0,
+      "tokens_per_cycle": 7.385,
+      "expert_decode_MB": 236439.7,
+      "expert_MB_per_decode_token": 2488.8,
+      "expert_prefill_MB": 897215.1,
+      "expert_prefill_MB_per_token": 31.4,
+      "expert_hit_rate_after": 0,
+      "expert_resident_after": 32,
+      "kv_hit_tokens": 0,
+      "kv_disk_hit_tokens": 0,
+      "kv_demotions": 0,
+      "disk_read_MB": 0.0,
+      "memory_pressure_after": "warning",
+      "kv_capacity_tokens_after": 196608
+    },
+    "28k-hit": {
+      "clean": true,
+      "correct": true,
+      "prompt_tokens": 28589,
+      "prefill_tokens": 13,
+      "prefill_tok_s": 11.6,
+      "ttft_ms": 1126.1,
+      "decode_tokens": 95,
+      "decode_tok_s": 10.24,
+      "cached_tokens": 28576,
+      "acceptance_rate": 1.0,
+      "tokens_per_cycle": 7.385,
+      "expert_decode_MB": 48896.4,
+      "expert_MB_per_decode_token": 514.7,
+      "expert_prefill_MB": 4707.6,
+      "expert_prefill_MB_per_token": 362.1,
+      "expert_hit_rate_after": 0,
+      "expert_resident_after": 33,
+      "kv_hit_tokens": 28576,
+      "kv_disk_hit_tokens": 0,
+      "kv_demotions": 0,
+      "disk_read_MB": 0.0,
+      "memory_pressure_after": "warning",
+      "kv_capacity_tokens_after": 196608
+    }
+  },
+  "lane_probe": {
+    "submitted": 3,
+    "total_wall_seconds": 5.902,
+    "summed_wall_seconds": 5.887,
+    "overlap_ratio": 0.997,
+    "rows": [
+      {
+        "prompt_tokens": 20,
+        "prompt_ms": 1584.915,
+        "predicted_tokens": 3,
+        "predicted_ms": 331.357,
+        "cache_tokens": 0
+      },
+      {
+        "prompt_tokens": 20,
+        "prompt_ms": 1792.376,
+        "predicted_tokens": 3,
+        "predicted_ms": 339.311,
+        "cache_tokens": 0
+      },
+      {
+        "prompt_tokens": 20,
+        "prompt_ms": 1513.234,
+        "predicted_tokens": 3,
+        "predicted_ms": 326.218,
+        "cache_tokens": 0
+      }
+    ]
+  },
+  "parent_child": {
+    "parent_prompt_tokens": 28589,
+    "parent_wall_seconds": 183.732,
+    "child_prompt_tokens": 20,
+    "child_prompt_ms": 1762.322,
+    "child_predicted_ms": 527.986,
+    "child_wall_seconds": 182.721,
+    "child_queue_ms": 180430.9,
+    "max_active_requests": 2,
+    "max_waiting": 1,
+    "max_concurrent_decoding": 1,
+    "max_concurrent_prefilling": 1
+  },
+  "scheduler": {
+    "decode_batches_start": 2854,
+    "decode_batches_end": 3012,
+    "decode_b1": 3012,
+    "decode_b2": 0,
+    "decode_b3": 0,
+    "decode_b4": 0
+  },
+  "governor": {
+    "start": {
+      "governor_limit_bytes": 10737418240,
+      "governor_charged_bytes": 9016050588,
+      "governor_headroom_bytes": 1721367652,
+      "host_spare_bytes": 2357673984,
+      "host_headroom_bytes": 210190336,
+      "growth_allowed": false,
+      "denied_reservations": 3116
+    },
+    "end": {
+      "governor_limit_bytes": 10737418240,
+      "governor_charged_bytes": 9016050588,
+      "governor_headroom_bytes": 1721367652,
+      "host_spare_bytes": 2304376832,
+      "host_headroom_bytes": 156893184,
+      "growth_allowed": false,
+      "denied_reservations": 4188
+    }
+  },
+  "governor_idle_samples": [
+    {
+      "host_spare_bytes": 2306867200,
+      "host_headroom_bytes": 158343168,
+      "growth_allowed": false
+    },
+    {
+      "host_spare_bytes": 2436694016,
+      "host_headroom_bytes": 289210368,
+      "growth_allowed": false
+    },
+    {
+      "host_spare_bytes": 2424872960,
+      "host_headroom_bytes": 277389312,
+      "growth_allowed": false
+    }
+  ],
+  "governor_during_prefill_sample": {
+    "host_spare_bytes": 2948825088,
+    "host_headroom_bytes": 801341440,
+    "charged_bytes": 8364884892,
+    "growth_allowed": false
+  },
+  "rule": {
+    "source": "runtime/engine/MemoryGovernor.cpp:301 and MemoryGovernor.hpp:85-86",
+    "growth_allowed_requires": "system_pressure Normal, no growth hold, host_headroom_bytes >= kHostWarningMarginBytes 1 GiB",
+    "host_spare_reserve_bytes": 2147483648,
+    "host_spare_needed_for_growth": 3221225472,
+    "host_spare_needed_to_reopen_after_pressure": 4294967296,
+    "measured_host_spare_at_10G_cap": 2306867200
+  },
+  "memory_pressure": "warning",
+  "verdict": {
+    "admission": "max_active_requests 2 reached the server (transport.max_active_requests 2), two requests active, waiting_concurrency 0",
+    "execution": "still serialized: max concurrent decoding 1, max concurrent prefilling 1, decode_batches_by_width b1 only, lane-probe overlap 0.997",
+    "child_wait_ms": 180430.9,
+    "cause": "host headroom 0.20-0.27 GiB at idle against the 1 GiB warning margin the governor requires; the cap is not the binding limit, the host's own free memory is"
+  }
+}
