@@ -1,0 +1,220 @@
+{
+  "description": "Option 20 V5c: a 9G cap with two lanes at 131,072 context on a 16 GB M5",
+  "date": "2026-11-04",
+  "model": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS",
+  "draft": "incoai/Qwen3.8-Flash-Next-DFlash2",
+  "git_head": "ca0d9476e11faf09c7b3a3836cb1948203eb6acd",
+  "server": {
+    "maximum_context_tokens": 131072,
+    "prefill_chunk_tokens": 1024,
+    "max_active_requests": 2,
+    "max_memory": "9G",
+    "max_cache_quota": "16G",
+    "resident_kv_tokens": 114681,
+    "kv_capacity_tokens": 114688,
+    "kv_capacity_bytes": 1519386624,
+    "dynamic_budget_bytes": 1741540452,
+    "spill_floor_bytes": 669278208,
+    "hot_floor_bytes": 408944640,
+    "staging_bytes": 144834560
+  },
+  "rows": {
+    "decode-512": {
+      "clean": false,
+      "correct": null,
+      "prompt_tokens": 435,
+      "prefill_tokens": 435,
+      "prefill_tok_s": 79.53,
+      "ttft_ms": 5469.5,
+      "decode_tokens": 113,
+      "decode_tok_s": 9.08,
+      "cached_tokens": 0,
+      "acceptance_rate": 0.9899,
+      "tokens_per_cycle": 7.533,
+      "expert_decode_MB": 53854.4,
+      "expert_MB_per_decode_token": 476.6,
+      "expert_prefill_MB": 36545.3,
+      "expert_prefill_MB_per_token": 84.0,
+      "expert_hit_rate_after": 0,
+      "expert_resident_after": 398,
+      "kv_hit_tokens": 77856,
+      "kv_disk_hit_tokens": 77856,
+      "kv_demotions": 13,
+      "disk_read_MB": 1098.5,
+      "memory_pressure_after": "warning",
+      "kv_capacity_tokens_after": 114688
+    },
+    "28k-cold": {
+      "clean": false,
+      "correct": true,
+      "prompt_tokens": 28589,
+      "prefill_tokens": 28589,
+      "prefill_tok_s": 174.59,
+      "ttft_ms": 163751.8,
+      "decode_tokens": 95,
+      "decode_tok_s": 10.59,
+      "cached_tokens": 0,
+      "acceptance_rate": 1.0,
+      "tokens_per_cycle": 7.385,
+      "expert_decode_MB": 732274.8,
+      "expert_MB_per_decode_token": 7708.2,
+      "expert_prefill_MB": 880765.6,
+      "expert_prefill_MB_per_token": 30.8,
+      "expert_hit_rate_after": 0,
+      "expert_resident_after": 30,
+      "kv_hit_tokens": 0,
+      "kv_disk_hit_tokens": 0,
+      "kv_demotions": 0,
+      "disk_read_MB": 0.0,
+      "memory_pressure_after": "warning",
+      "kv_capacity_tokens_after": 114688
+    },
+    "28k-hit": {
+      "clean": true,
+      "correct": true,
+      "prompt_tokens": 28589,
+      "prefill_tokens": 13,
+      "prefill_tok_s": 11.13,
+      "ttft_ms": 1175.9,
+      "decode_tokens": 95,
+      "decode_tok_s": 11.76,
+      "cached_tokens": 28576,
+      "acceptance_rate": 0.9432,
+      "tokens_per_cycle": 7.385,
+      "expert_decode_MB": 50023.6,
+      "expert_MB_per_decode_token": 526.6,
+      "expert_prefill_MB": 4707.6,
+      "expert_prefill_MB_per_token": 362.1,
+      "expert_hit_rate_after": 0,
+      "expert_resident_after": 29,
+      "kv_hit_tokens": 28576,
+      "kv_disk_hit_tokens": 0,
+      "kv_demotions": 0,
+      "disk_read_MB": 0.0,
+      "memory_pressure_after": "warning",
+      "kv_capacity_tokens_after": 114688
+    }
+  },
+  "parent_child": {
+    "parent_prompt_tokens": 28589,
+    "parent_wall_seconds": 168.309,
+    "child_prompt_tokens": 20,
+    "child_prompt_ms": 1515.974,
+    "child_predicted_ms": 520.125,
+    "child_wall_seconds": 167.304,
+    "child_queue_ms": 165267.9,
+    "max_active_requests": 2,
+    "max_waiting": 1,
+    "max_concurrent_decoding": 1,
+    "max_concurrent_prefilling": 1
+  },
+  "lane_probe": {
+    "submitted": 3,
+    "total_wall_seconds": 6.149,
+    "summed_wall_seconds": 6.133,
+    "overlap_ratio": 0.997
+  },
+  "governor": {
+    "start": {
+      "governor_limit_bytes": 9663676416,
+      "governor_charged_bytes": 9233105820,
+      "governor_headroom_bytes": 430570596,
+      "host_spare_bytes": 1864597504,
+      "host_headroom_bytes": 0,
+      "growth_allowed": false,
+      "denied_reservations": 652,
+      "expert_cap_bytes": 2089468688,
+      "expert_slots": 512,
+      "expert_resident": 30,
+      "decode_batches": 619,
+      "decode_b1": 619,
+      "decode_b2": 0,
+      "decode_b3": 0,
+      "disk_used_bytes": 17176166400,
+      "memory_pressure": "warning",
+      "thermal_state": "fair"
+    },
+    "end": {
+      "governor_limit_bytes": 9663676416,
+      "governor_charged_bytes": 9233105820,
+      "governor_headroom_bytes": 430570596,
+      "host_spare_bytes": 1918320640,
+      "host_headroom_bytes": 0,
+      "growth_allowed": false,
+      "denied_reservations": 1876,
+      "expert_cap_bytes": 2089468688,
+      "expert_slots": 512,
+      "expert_resident": 333,
+      "decode_batches": 989,
+      "decode_b1": 989,
+      "decode_b2": 0,
+      "decode_b3": 0,
+      "disk_used_bytes": 17167646720,
+      "memory_pressure": "warning",
+      "thermal_state": "fair"
+    }
+  },
+  "governor_mid_run_samples": [
+    {
+      "host_spare_bytes": 2703392768,
+      "host_headroom_bytes": 555745280,
+      "charged_bytes": 8303665152,
+      "cap_headroom_bytes": 1363144704,
+      "growth_allowed": false,
+      "denied_reservations": 1632
+    }
+  ],
+  "cap_comparison": [
+    {
+      "max_memory": "11G",
+      "resident_kv_tokens": 262137,
+      "host_spare_idle_gib": 1.83,
+      "host_headroom_peak_gib": 0.26,
+      "growth_allowed": false,
+      "cold_28k_prefill_tok_s": [
+        150.7,
+        161.0
+      ],
+      "decode_tok_s": [
+        11.5,
+        11.8
+      ]
+    },
+    {
+      "max_memory": "10G",
+      "resident_kv_tokens": 196601,
+      "host_spare_idle_gib": 2.26,
+      "host_headroom_peak_gib": 0.8,
+      "growth_allowed": false,
+      "cold_28k_prefill_tok_s": [
+        154.3,
+        166.4
+      ],
+      "decode_tok_s": [
+        11.7,
+        11.9
+      ]
+    },
+    {
+      "max_memory": "9G",
+      "resident_kv_tokens": 114681,
+      "host_spare_idle_gib": 1.83,
+      "host_headroom_peak_gib": 0.52,
+      "growth_allowed": false,
+      "cold_28k_prefill_tok_s": [
+        174.6,
+        183.0
+      ],
+      "decode_tok_s": [
+        10.6,
+        11.7
+      ]
+    }
+  ],
+  "verdict": {
+    "lane": "still serialized: child queued 165.3 s of 167.3 s, max concurrent decoding and prefilling 1, decode_batches_by_width b1 989 with b2/b3/b4 0, lane-probe overlap 0.997",
+    "growth": "host_headroom peaked at 0.52 GiB against the 1 GiB margin, lower than the 0.80 GiB peak at the 10G cap, because the spill floors (669 MiB of floors, 409 MiB hot block cache, 145 MiB staging) are charged instead of resident KV",
+    "prefill": "faster than every other setting: 156.24 s for 28,589 tokens, 183.0 tok/s, decode 11.7 tok/s",
+    "structural_cost": "kv_capacity_tokens 114,688 and resident 114,681 are below the served 131,072 context, so a single full-length request spills 16,391 tokens by plan, and two lanes need 262,144"
+  }
+}

@@ -69,8 +69,8 @@ dequantizing the stream.
 | V3b | re-sweep prefill chunks at 131k | `SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS=2048 ...` | 2048 beats 1024 at 28,672 and 65,451 without raising peak bytes by more than ~1 GiB |
 | V4 | two lanes at the full 131,072 context, which is the context this profile keeps | `SPLASH_FLASH_NEXT_MAX_MEMORY=11G SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2 SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE=1 bash startllamacpp.sh --direct 20` (`--expert-memory` stays `auto`) | **done 2026-11-04, the gate opened and the lane still did not run** (`qwen38-option20-v4-20261103.md`). Two requests were active in 327 of 371 samples with `waiting_concurrency` 0, yet max concurrent decoding and prefilling were both 1, `decode_batches_by_width` recorded b1 3,237 with b2/b3/b4 0, and a 20-token child queued 186.5 of its 188.5 s. The blocker is `host_headroom_bytes` 0: 1.83 GiB spare against the 2.15 GiB macOS reserve at an 11 GiB cap, so `growth_allowed` is false and every held request is refused (`denied_reservations` 2,052 to 4,608, log `Memory: growth paused; waiting=1; suspended=0; held=1`). Single-request speed matched V3 |
 | V5 | two lanes funded by a smaller cap instead of more memory | `SPLASH_FLASH_NEXT_MAX_MEMORY=10G SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2 SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE=1 bash startllamacpp.sh --direct 20` | **done 2026-11-04, still serialized** (`qwen38-option20-v5-20261104.md`). `transport.max_active_requests` 2 and two active requests with `waiting_concurrency` 0, but max concurrent decoding and prefilling were 1, `decode_batches_by_width` stayed b1-only, and the child queued 180.4 of its 182.7 s. The rule is stricter than V4 assumed: growth resumes only at `host_headroom_bytes` >= `kHostWarningMarginBytes` 1 GiB (`MemoryGovernor.cpp:301`, `MemoryGovernor.hpp:85`), so the host needs 3.147 GiB spare (4.147 GiB to reopen after pressure) and measured 2.20-2.27 GiB idle, 2.95 GiB mid-prefill. Cold speed was the best of the series: 28,589-token prefill 171.8 s / 166.4 tok/s, decode 11.9 tok/s, repeat 1,126 ms |
-| V5b | free host memory instead of lowering the cap - no restart | quit Chrome (1.42 GiB), LM Studio (0.39), Activity Monitor (0.29), opencode (0.26), then re-run `build/validation/option20-v5-20261104/run_v5.py` | `host_headroom_bytes` reads 1 GiB or more and `growth_allowed` true while idle; the `parent-child` child is queued for seconds rather than 180 s; `decode_batches_by_width` shows b2 above 0 or two requests decode at once |
-| V5c | if V5b is not enough, take the last gigabyte from the cap | `SPLASH_FLASH_NEXT_MAX_MEMORY=9G SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2 SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE=1 bash startllamacpp.sh --direct 20` | `growth_allowed` true and the child admitted, while 28,589-token cold prefill stays within 10% of V5's 166.4 tok/s - the resident KV allowance is what this row risks |
+| V5b | free host memory instead of lowering the cap - no restart | quit Chrome (1.42 GiB), LM Studio (0.39), Activity Monitor (0.29), opencode (0.26), then re-run `build/validation/option20-v5-20261104/run_v5.py` | `host_headroom_bytes` reads 1 GiB or more and `growth_allowed` true while idle; the `parent-child` child is queued for seconds rather than 180 s; `decode_batches_by_width` shows b2 above 0 or two requests decode at once. This is the last untried lever: at the 10G cap the peak headroom was 0.80 GiB, 0.2 GiB short of the margin |
+| V5c | if V5b is not enough, take the last gigabyte from the cap | `SPLASH_FLASH_NEXT_MAX_MEMORY=9G SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2 SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE=1 bash startllamacpp.sh --direct 20` | **done 2026-11-04, faster and structurally worse** (`qwen38-option20-v5c-20261104.md`). Prefill hit the series best - 28,589 tokens in 156.24 s at 183.0 tok/s, decode 11.7 tok/s - but the lane still serialized (child queued 165.3 of 167.3 s, b2 0, overlap 0.997), `host_headroom_bytes` peaked at 0.52 GiB (below V5's 0.80, because the spill floors cost 669 MiB + 409 MiB hot cache + 145 MiB staging), and `kv_capacity_tokens` fell to 114,688 with resident 114,681, under the served 131,072 context |
 | V5d | if the lane only works by squeezing the host, revert and record the gate as correct | `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=1 bash startllamacpp.sh --direct 20` | one lane again, and the delegation stall is then a machine limit rather than a knob: it needs 24 GB or more, not a smaller context |
 | V6 | expert quantization reduction | smaller quant of the same GSQ-RCO build | gated on correctness first (ORCHID, count-to-30, DFlash2 acceptance), then speed |
 
@@ -155,19 +155,21 @@ is still at its 2,089 MiB floor with 512 of 24,576 slots, 34 resident and
   window takes the whole dynamic budget.
 - **ANE.** `ane_ffn.state` is `off`: the target's FFN layers are not all dense,
   and the routed experts are exactly what the ANE would need.
-- **Two lanes are not out of reach, and the earlier estimate of their cost was
-  wrong.** A second lane does not add 1.9 GiB of lane state and KV reservation.
-  Lane state is reserved for all four batch positions the engine can run
-  (`ExecutionLimits::maximumBatchWidth` is 4, `lane_state_bytes` 163,250,176 charged
-  once in `fixed_runtime_bytes`), and `kv_capacity_bytes` 3,472,883,712 covers
-  262,144 tokens, which is exactly two requests at the served 131,072 context. So
-  the cap the plan charges already carries a second full-length request; what a
-  second lane can exceed is the host's own memory. V4 measured it: at an 11 GiB
-  cap the child was admitted (`waiting_concurrency` 0) and then held for the
-  parent's whole 189 s because `host_headroom_bytes` is 0 - 1.83 GiB spare
-  against the 2.15 GiB macOS reserve - with swap 2.10 GiB deep. So the lane is
-  reachable on this machine only by lowering the cap until the host keeps its
-  reserve, which is V5.
+- **Two lanes at the 131,072 context this profile serves are out of reach on 16 GB,
+  and the reason is two budgets that cannot both be satisfied.** A second lane does
+  not add 1.9 GiB of lane state: lane state is reserved for all four batch positions
+  anyway (`ExecutionLimits::maximumBatchWidth` 4, `lane_state_bytes` 163,250,176 in
+  `fixed_runtime_bytes`). What it needs is residency and headroom at the same time.
+  Residency for two 131,072-token requests needs `kv_capacity_bytes` 3,472,883,712,
+  which the plan only charges at an ~11 GiB cap (resident 262,137 tokens at 11G,
+  196,601 at 10G, 114,681 at 9G - about 77,000 tokens per GiB). Headroom needs the
+  opposite: `growth_allowed` requires `host_headroom_bytes` >= 1 GiB above the 2.147
+  GiB macOS reserve, and measured peaks were 0.26, 0.80 and 0.52 GiB at 11G, 10G and
+  9G with 1.4-2.9 GiB of swap in use. Every measurement (V4, V5, V5c) admitted the
+  child with `waiting_concurrency` 0 and then held it for the parent's entire run.
+  The only untried lever is the host's own tenants (V5b); the profile's own answer
+  for delegation throughput is 24 GB or more, which is what the launcher's gate
+  already encodes.
 
 ## Machine watchlist
 
