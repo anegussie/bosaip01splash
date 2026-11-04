@@ -45,11 +45,16 @@ dequantizing the stream.
    macOS keeps for itself, and prints the automatic ceiling when a cap is bigger
    than the engine would choose anyway. Default stays `10G`.
 5. **Second active request for option 20**: `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS`
-   accepts `1` or `2`. `2` is admitted only when the machine can carry a second
-   lane: 24 GB or more at 131,072 context, 16 GB or more at 65,536 or below.
-   Options 14, 16, 18 and 19 stay single-lane.
-6. **Cache quota preflight**: the launcher now refuses a quota larger than the
-   free space on the volume that will hold the cache.
+   accepts `1` or `2`. `2` is admitted when the machine can carry a second lane by
+   the launcher's rule: 24 GB or more at 131,072 context, 16 GB or more at 65,536 or
+   below. `SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE=1` admits it on a 16 GB Mac at any
+   context the profile allows, prints what is at stake, and never lowers the 16 GB
+   floor. Options 14, 16, 18 and 19 stay single-lane.
+6. **Cache quota preflight and a bigger default**: the launcher refuses a quota larger
+   than the free space on the volume that will hold the cache, and the option 20 default
+   went from `8G` to `16G` after both were measured full on this Mac (8,547,762,176 of
+   8,589,934,592, then 17,165,451,264 of 17,179,869,184 with 13.42 GiB taken back over
+   12,553 KV blocks, against 67 GB free).
 7. **Tests**: `dev/benchmarks/test_bonsai_launcher.py` covers the new defaults,
    the new knobs, the second-lane admission rule, the host memory ceiling, and
    the disk quota preflight.
@@ -62,9 +67,8 @@ dequantizing the stream.
 | V2 | raise the expert store, funded by the disk tier | `SPLASH_FLASH_NEXT_MAX_MEMORY=11G SPLASH_FLASH_NEXT_EXPERT_MEMORY=3G bash startllamacpp.sh --direct 20` | **done 2026-11-03 as a null result** (`qwen38-option20-v2-20261103.md`). `2G` was accepted and became the store's floor: cap = floor = 2,089 MiB, 512 slots, `regrows 0`, `hit_rate` 0.00, decode 11.1-11.9 tok/s and 28k prefill 155 tok/s, identical to V1 |
 | V3 | take memory back from the resident KV pool, and give the disk tier room | `SPLASH_FLASH_NEXT_MAX_MEMORY=11G SPLASH_FLASH_NEXT_EXPERT_MEMORY=4G SPLASH_FLASH_NEXT_MAX_CACHE_DISK=16G bash startllamacpp.sh --direct 20` | **done 2026-11-03, split result** (`qwen38-option20-v3-20261103.md`). The expert store did not move: cap = floor = 2,089 MiB, 512 slots, `regrows` 0, `hit_rate` 0.00, decode 11.5-11.7 tok/s, 28k cold 189.8 s at 150.7 tok/s. The 16 GiB quota did pay: startup restored 83 restore points over 5,314 KV blocks (7,076 MiB), the cache grew to 11.57 GiB, and 65,451-token cold prefill ran 436.4 s / 150.0 tok/s against 445.7 s / 146.7 at the 8 GiB quota |
 | V3b | re-sweep prefill chunks at 131k | `SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS=2048 ...` | 2048 beats 1024 at 28,672 and 65,451 without raising peak bytes by more than ~1 GiB |
-| V4 | lower the served context, the one reservation this profile controls, and open a second lane in the same restart | `SPLASH_FLASH_NEXT_MAX_CONTEXT=65536 SPLASH_FLASH_NEXT_MAX_MEMORY=11G SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2 bash startllamacpp.sh --direct 20` (`--expert-memory` back to `auto`) | expert side: startup log shows `cap_bytes` above `floor_bytes`, more than 512 slots, `regrows` above 0 and `hit_rate` above 0.01, decode above 13 tok/s. Lane side: the `parent-child` probe shows `max_active_requests` 2 with the child queued for well under the parent's wall time, against the 393 s queue a child waited on 2026-11-02. Script: `build/validation/option20-v4-20261103/run_v4.py`, which refuses to measure a server whose context is not the one the rows are about |
-| V4b | the same question at a smaller context, if 65,536 shows no expert gain | `SPLASH_FLASH_NEXT_MAX_CONTEXT=32761 SPLASH_FLASH_NEXT_MAX_MEMORY=11G bash startllamacpp.sh --direct 20` | same expert criteria. Note the cost: this profile serves the agent's own model, so 32,761 context leaves the session about 31,737 tokens of window |
-| V5 | two lanes where the machine allows it | folded into V4 at 65,536 context; otherwise `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2` on a 24 GB or larger Mac | subagent children run while the parent works; wall time per delegated task drops |
+| V4 | two lanes at the full 131,072 context, which is the context this profile keeps | `SPLASH_FLASH_NEXT_MAX_MEMORY=11G SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2 SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE=1 bash startllamacpp.sh --direct 20` (`--expert-memory` stays `auto`) | the `parent-child` probe shows `max_active_requests` 2 with the child queued for well under the parent's wall time, against the 393 s queue a child waited on 2026-11-02; each request still decodes above 10 tok/s; swap stays under ~2 GiB and `memory_pressure` never reaches `red`. Script: `build/validation/option20-v4-20261103/run_v4.py`, which refuses to measure a server whose context is not the one its rows are about (pass `--expect-context 131072`) |
+| V4b | if V4 thrashes, revert and record the gate as correct | `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=1 bash startllamacpp.sh --direct 20` | one lane again, and the delegation stall is then a machine limit rather than a knob: it needs 24 GB or more, not a smaller context |
 | V6 | expert quantization reduction | smaller quant of the same GSQ-RCO build | gated on correctness first (ORCHID, count-to-30, DFlash2 acceptance), then speed |
 
 Verification for every row: `/status` before and after (`streamed_experts`
@@ -140,17 +144,24 @@ is still at its 2,089 MiB floor with 512 of 24,576 slots, 34 resident and
 
 ## Out of reach on 16 GB at 131,072 tokens
 
-- **Two lanes.** A second lane adds about 1.9 GiB of lane state and KV
-  reservation. That is why the launcher requires 24 GB for `2` active requests at
-  this context. It is the fix for the delegation stall (a child request waits
-  393 seconds behind a parent turn), and it needs a bigger machine or a smaller
-  context.
 - **A large expert store.** The routed experts need about 44 GiB as tiles and
   about 93 GiB as store slots. No Mac under 128 GB can hold them; 24-64 GB
   changes the fraction from 2% to 25-60%, which is where the big decode numbers
-  in the scaling report come from.
+  in the scaling report come from. At 131,072 context on this Mac the store cannot
+  even reach 3 GiB, because the resident KV allowance for the model's 262,144-token
+  window takes the whole dynamic budget.
 - **ANE.** `ane_ffn.state` is `off`: the target's FFN layers are not all dense,
   and the routed experts are exactly what the ANE would need.
+- **Two lanes are not out of reach, and the earlier estimate of their cost was
+  wrong.** A second lane does not add 1.9 GiB of lane state and KV reservation.
+  Lane state is reserved for all four batch positions the engine can run
+  (`ExecutionLimits::maximumBatchWidth` is 4, `lane_state_bytes` 163,250,176 charged
+  once in `fixed_runtime_bytes`), and `kv_capacity_bytes` 3,472,883,712 covers
+  262,144 tokens, which is exactly two requests at the served 131,072 context. So
+  the cap the plan charges already carries a second full-length request; what a
+  second lane can exceed is the host's own memory, where `host_headroom_bytes` is
+  already 0 and swap is 1.4 GiB deep. That is the question V4 measures rather than
+  assumes.
 
 ## Machine watchlist
 

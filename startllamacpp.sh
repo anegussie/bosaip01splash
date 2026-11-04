@@ -47,12 +47,13 @@ splash_flash_next_default_output=0
 SPLASH_FLASH_NEXT_MAX_TOKENS="${SPLASH_FLASH_NEXT_MAX_TOKENS:-1024}"
 SPLASH_FLASH_NEXT_MAX_MEMORY="${SPLASH_FLASH_NEXT_MAX_MEMORY:-10G}"
 SPLASH_FLASH_NEXT_REASONING_EFFORT="${SPLASH_FLASH_NEXT_REASONING_EFFORT:-low}"
-SPLASH_FLASH_NEXT_MAX_CACHE_DISK="${SPLASH_FLASH_NEXT_MAX_CACHE_DISK:-8G}"
+SPLASH_FLASH_NEXT_MAX_CACHE_DISK="${SPLASH_FLASH_NEXT_MAX_CACHE_DISK:-16G}"
 SPLASH_FLASH_NEXT_PERSISTENT_CACHE="${SPLASH_FLASH_NEXT_PERSISTENT_CACHE:-1}"
 SPLASH_FLASH_NEXT_CACHE_DIR="${SPLASH_FLASH_NEXT_CACHE_DIR:-$HOME/Library/Caches/Splash/flash-next-option20-iq3-xxs}"
 SPLASH_FLASH_NEXT_EXPERT_MEMORY="${SPLASH_FLASH_NEXT_EXPERT_MEMORY:-auto}"
 SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS="${SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS:-1024}"
 SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="${SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS:-1}"
+SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE="${SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE:-0}"
 SPLASH_FLASH_NEXT_HF_HUB_CACHE="${SPLASH_FLASH_NEXT_HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}"
 SPLASH_BONSAI_MAX_CONTEXT="${SPLASH_BONSAI_MAX_CONTEXT:-24K}"
 SPLASH_BONSAI_OPENCODE_CONTEXT="${SPLASH_BONSAI_OPENCODE_CONTEXT:-auto}"
@@ -1720,6 +1721,10 @@ case "$choice" in
         1|2) ;;
         *) echo "SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS must be 1 or 2." >&2; exit 1 ;;
       esac
+      case "$SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE" in
+        0|1) ;;
+        *) echo "SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE must be 0 or 1." >&2; exit 1 ;;
+      esac
     fi
     if [[ "$choice" == "19" ]]; then
       splash_vision_args=(--max-image-pixels 1048576)
@@ -1768,15 +1773,30 @@ case "$choice" in
       exit 1
     fi
     if [[ "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" != "1" ]]; then
-      # A second lane doubles the KV and lane-state reservation, so it is only
-      # admitted when the machine can carry it. Options 14, 16, 18 and 19 stay
+      # A second lane needs a second request's worth of KV pages, so it is only
+      # admitted when the machine can carry it. The profile already reserves one
+      # pool sized to the model's 262,144-token window, so two requests of this
+      # profile fit in the cap the plan charges once; what the gate guards is the
+      # host's own memory beside that cap. Options 14, 16, 18 and 19 stay
       # single-lane.
       splash_host_memory="$(splash_host_memory_bytes)"
-      if [[ "$choice" != "20" ]] ||
-         [[ "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" != "2" ]] ||
-         (( splash_host_memory < 17179869184 )) ||
-         (( splash_context_limit > 65536 && splash_host_memory < 25769803776 )); then
-        echo "Only option 20 accepts a second active request, and it needs 24 GB of unified memory above 65,536 context tokens (16 GB is enough at 65,536 or below)." >&2
+      splash_lane_second=0
+      if [[ "$choice" == "20" && "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" == "2" ]] &&
+         (( splash_host_memory >= 17179869184 )) &&
+         [[ "$SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE" == "1" ]]; then
+        splash_lane_second=1
+        splash_lane_cap_bytes="$(splash_cache_disk_bytes "$SPLASH_FLASH_NEXT_MAX_MEMORY")"
+        splash_lane_reserve="$(( splash_host_memory / 100 * 7 ))"
+        (( splash_lane_reserve < 2147483648 )) && splash_lane_reserve=2147483648
+        (( splash_lane_reserve > 7516192768 )) && splash_lane_reserve=7516192768
+        echo "   Second active request admitted below the memory gate on a $(( splash_host_memory / 1073741824 )) GB Mac at $splash_context_limit context tokens: the plan already charges the KV pool for ${SPLASH_FLASH_NEXT_MAX_MEMORY} total, macOS keeps $(( splash_lane_reserve / 1073741824 )) GB, and a swap-heavy run is the sign to drop back to 1."
+      fi
+      if [[ "$splash_lane_second" != "1" ]] &&
+         { [[ "$choice" != "20" ]] ||
+           [[ "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" != "2" ]] ||
+           (( splash_host_memory < 17179869184 )) ||
+           (( splash_context_limit > 65536 && splash_host_memory < 25769803776 )); }; then
+        echo "Only option 20 accepts a second active request, and it needs 24 GB of unified memory above 65,536 context tokens (16 GB is enough at 65,536 or below). Set SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE=1 to take that risk deliberately on a 16 GB Mac." >&2
         exit 1
       fi
     fi

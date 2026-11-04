@@ -363,7 +363,7 @@ print('Ready test server',flush=True)
             "--prefill-chunk-tokens": "1024",
             "--max-active-requests": "1",
             "--default-reasoning-effort": "low",
-            "--max-cache-disk": "8589934592",
+            "--max-cache-disk": "17179869184",
         }.items():
             self.assertEqual(args[args.index(flag) + 1], value, flag)
         self.assertIn("--language-only", args)
@@ -468,6 +468,7 @@ print('Ready test server',flush=True)
             "SPLASH_FLASH_NEXT_EXPERT_MEMORY": ["invalid", "256M", "33G", "9G"],
             "SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS": ["100", "3072", "auto"],
             "SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS": ["0", "3"],
+            "SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE": ["invalid", "2"],
             "SPLASH_FLASH_NEXT_HF_HUB_CACHE": ["relative/cache"],
         }.items():
             for value in values:
@@ -522,6 +523,48 @@ print('Ready test server',flush=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertEqual(args[args.index("--max-active-requests") + 1], "2")
+
+    def test_option20_second_lane_below_the_gate_is_opt_in(self):
+        # The 24 GB gate stands unless the operator takes the risk on record: the
+        # plan charges the KV pool once for the model's window, so two requests of
+        # this profile fit the cap, and what is at stake is the host's own memory.
+        r = self.run_launcher(
+            "20",
+            SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="2",
+            SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE="1",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("below the memory gate", r.stdout)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--max-active-requests") + 1], "2")
+        self.assertEqual(args[args.index("--max-context") + 1], "131072")
+
+        # The override never lowers the 16 GB floor.
+        before = self.config.read_bytes()
+        r = self.run_launcher(
+            "20",
+            SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="2",
+            SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE="1",
+            SPLASH_FLASH_NEXT_MAX_CONTEXT="32768",
+            SPLASH_HOST_MEM_BYTES=str(12884901888),
+        )
+        self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("second active request", r.stdout + r.stderr)
+        self.assertEqual(self.config.read_bytes(), before)
+
+        # A bad override value is rejected before the engine is reached.
+        r = self.run_launcher(
+            "20",
+            SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE="2",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
+        )
+        self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn(
+            "SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE must be 0 or 1",
+            r.stdout + r.stderr,
+        )
+        self.assertEqual(self.config.read_bytes(), before)
 
     def test_option20_expert_memory_and_chunk_overrides_reach_the_engine(self):
         r = self.run_launcher(
