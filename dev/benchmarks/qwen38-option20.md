@@ -58,6 +58,13 @@ SPLASH_FLASH_NEXT_MAX_MEMORY=16G SPLASH_FLASH_NEXT_EXPERT_MEMORY=4G \
   bash /Users/mymac/startllamacpp.sh --direct 20
 ```
 
+On this 16 GB Mac that command buys nothing at 131,072 context, and `2G` and `4G` behave the same:
+the plan sizes the resident KV allowance against the model's 262,144-token window (startup line
+`resident 262137`, 3.47 GiB of `kv_capacity_bytes`), and the store is then rounded down to its
+1,992 MiB floor of 512 slots, with `growth_allowed` false at runtime because the host has no spare
+against its 2.15 GiB reserve. The flag raises a floor, not a ceiling. Measurements in
+`qwen38-option20-v2-20261103.md` and `qwen38-option20-v3-20261103.md`.
+
 The ranked performance plan, its restart-gated experiments, and the measured
 reason a larger memory cap alone does not help a 16 GB Mac are in
 `qwen38-option20-todo-20261103.md`.

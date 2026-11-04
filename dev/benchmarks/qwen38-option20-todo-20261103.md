@@ -60,10 +60,11 @@ dequantizing the stream.
 |---|---|---|---|
 | V1 | verify the new 8G prefix cache default at 131k | `bash startllamacpp.sh --direct 20` | **done 2026-11-03.** `dev/benchmarks/qwen38-option20-v1-20261103.md`: a repeated 28,589-token prompt starts in 1,204 ms instead of 192,000 ms once its KV has been demoted to disk (893 blocks, 442.5 MB restored), cold prefill and decode unchanged, governor charged fell 9.45 to 8.58 GiB and host spare rose 1.77 to 2.52 GiB |
 | V2 | raise the expert store, funded by the disk tier | `SPLASH_FLASH_NEXT_MAX_MEMORY=11G SPLASH_FLASH_NEXT_EXPERT_MEMORY=3G bash startllamacpp.sh --direct 20` | **done 2026-11-03 as a null result** (`qwen38-option20-v2-20261103.md`). `2G` was accepted and became the store's floor: cap = floor = 2,089 MiB, 512 slots, `regrows 0`, `hit_rate` 0.00, decode 11.1-11.9 tok/s and 28k prefill 155 tok/s, identical to V1 |
-| V3 | take memory back from the resident KV pool, and give the disk tier room | `SPLASH_FLASH_NEXT_MAX_MEMORY=11G SPLASH_FLASH_NEXT_EXPERT_MEMORY=4G SPLASH_FLASH_NEXT_MAX_CACHE_DISK=16G bash startllamacpp.sh --direct 20` | startup log shows a store whose cap is above its floor with more than 512 slots, `regrows` above 0, `hit_rate` above 0.01, decode above 13 tok/s, and cold 28k prefill no worse than about 200 s |
-| V3 | re-sweep prefill chunks at 131k | `SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS=2048 ...` | 2048 beats 1024 at 28,672 and 65,451 without raising peak bytes by more than ~1 GiB |
-| V4 | two lanes where the machine allows it | `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2` on a 24 GB or larger Mac | subagent children run while the parent works; wall time per delegated task drops |
-| V5 | expert quantization reduction | smaller quant of the same GSQ-RCO build | gated on correctness first (ORCHID, count-to-30, DFlash2 acceptance), then speed |
+| V3 | take memory back from the resident KV pool, and give the disk tier room | `SPLASH_FLASH_NEXT_MAX_MEMORY=11G SPLASH_FLASH_NEXT_EXPERT_MEMORY=4G SPLASH_FLASH_NEXT_MAX_CACHE_DISK=16G bash startllamacpp.sh --direct 20` | **done 2026-11-03, split result** (`qwen38-option20-v3-20261103.md`). The expert store did not move: cap = floor = 2,089 MiB, 512 slots, `regrows` 0, `hit_rate` 0.00, decode 11.5-11.7 tok/s, 28k cold 189.8 s at 150.7 tok/s. The 16 GiB quota did pay: startup restored 83 restore points over 5,314 KV blocks (7,076 MiB), the cache grew to 11.57 GiB, and 65,451-token cold prefill ran 436.4 s / 150.0 tok/s against 445.7 s / 146.7 at the 8 GiB quota |
+| V3b | re-sweep prefill chunks at 131k | `SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS=2048 ...` | 2048 beats 1024 at 28,672 and 65,451 without raising peak bytes by more than ~1 GiB |
+| V4 | lower the served context, the one reservation this profile controls | `SPLASH_FLASH_NEXT_MAX_CONTEXT=32761 SPLASH_FLASH_NEXT_MAX_MEMORY=11G bash startllamacpp.sh --direct 20` (`--expert-memory` back to `auto`) | startup log shows `cap_bytes` above `floor_bytes`, more than 512 slots, `regrows` above 0, `hit_rate` above 0.01 and decode above 13 tok/s. If the store still sits at 512 slots at 32,761 context, the expert-store line is closed on 16 GB and only a smaller expert quantization can raise decode |
+| V5 | two lanes where the machine allows it | `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2` on a 24 GB or larger Mac, or at 65,536 context on 16 GB | subagent children run while the parent works; wall time per delegated task drops |
+| V6 | expert quantization reduction | smaller quant of the same GSQ-RCO build | gated on correctness first (ORCHID, count-to-30, DFlash2 acceptance), then speed |
 
 Verification for every row: `/status` before and after (`streamed_experts`
 `cap_bytes`/`resident`/`hit_rate`, `memory_governor.denied_reservations`,
@@ -95,16 +96,26 @@ is still at its 2,089 MiB floor with 512 of 24,576 slots, 34 resident and
 - Raising the cap alone therefore frees about 0.84 GiB of budget the governor
   will not spend while host spare stays under 2.15 GiB. Expect no measurable gain
   by itself.
-- Raising the cap *with* the 8G disk prefix cache is the sequence that can pay,
-  and V1 confirmed the first half: KV spilled to disk, host spare rose above the
-  reserve. The second half needs the opposite lever. `/status`
-  `memory_plan.budget` gives 3.46 GiB of `dynamic_budget_bytes` after
-  `fixed_runtime_bytes` (7.38 GiB of weights, stores and reserves), and the
-  resident KV pool alone claims 3.23 GiB of it (`kv_capacity_pages` 8,192,
-  `kv_capacity_tokens` 262,144). An explicit `--expert-memory` is only a floor
-  (`MemoryPlan.cpp:246`), so it does not win that contest; a floor above the
-  leftover is what moves memory out of KV and into the store. That is V3 at 4 GiB,
-  the size where whole slots and chunks reach 1,024 slots instead of 512.
+- Raising the cap *with* the disk prefix cache is the sequence that paid, and V1
+  and V3 confirmed both halves of it for the KV side: KV spills to disk, host
+  spare rises above the reserve, and a 16 GiB quota holds what an 8 GiB one
+  cannot (5,314 KV blocks, 7,076 MiB restored at startup).
+- What V2 and V3 falsified is the other half. `/status` `memory_plan.budget`
+  gives 3.46 GiB of `dynamic_budget_bytes` after `fixed_runtime_bytes` (7.38 GiB
+  of weights, stores and reserves), and the resident KV pool claims 3.23 GiB of
+  it (`kv_capacity_pages` 8,192, `kv_capacity_tokens` 262,144, and the startup
+  line `resident 262137` shows the allowance is sized against the model's
+  262,144-token window, not the 131,072 tokens this profile serves). An explicit
+  `--expert-memory` is only a floor (`MemoryPlan.cpp:247`), and a floor above the
+  leftover is rounded **down** to the whole slots and chunks the plan leaves, so
+  it does not win that contest at all. `planSpill()` (`MemoryPlan.cpp:115-172`)
+  binary-searches the longest context whose spill floors fit, the whole window
+  fits on this Mac, and the experts keep their 2 GiB minimum and nothing more.
+- Runtime growth cannot finish the job either. After the 65k row the governor
+  held 2.51 GiB under its 11.64 GiB limit with `growth_allowed: false` and
+  10,703 denied reservations, because `host_headroom_bytes` was 0 against the
+  2.15 GiB it keeps for macOS. On 16 GB the room under the Metal cap and the room
+  the operating system has are different budgets.
 - Under `auto` the store can hold elastic chunks above its own floor and give them
   back down to it, which is the shape worth having on a 16 GB Mac: the floor stays
   safe and the elastic part grows when a request does not need the KV pages.
@@ -112,7 +123,8 @@ is still at its 2,089 MiB floor with 512 of 24,576 slots, 34 resident and
   expert on this GPU against 343 microseconds of SSD streaming, so a tile must be
   used about 25 times to pay for its slot. Decode is bandwidth-bound at 452 MB
   per token, so cutting expert streaming by 30% is worth roughly 30% of decode
-  time, and that is the number to watch after V2.
+  time, and that is the number the V3 rows measured: 452 MB per token at the 8 GiB
+  quota, 510-546 MB per token at 11 GiB with the 4 GiB floor, and no change in tok/s.
 - Watch the downside: extra residency on a 16 GB Mac means swap. The evening run
   was 6-7% slower in prefill than the morning run on the same instance, which is
   the cost of memory pressure. If `memory_pressure` reaches `red` or swap passes

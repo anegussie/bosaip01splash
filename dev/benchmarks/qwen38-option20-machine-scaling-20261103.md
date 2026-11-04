@@ -332,6 +332,18 @@ at which point a 48 GB M5 Pro is about 1.35x this machine and a 64 GB Mac mini
 is about the same, and the purchase is justified by context capacity and lane
 count rather than by speed.
 
+Measured on 2026-11-03, this machine already failed step 1 for a reason the
+estimate did not anticipate (`qwen38-option20-v2-20261103.md`,
+`qwen38-option20-v3-20261103.md`): at 16 GB and 131,072 context, `--expert-memory
+2G` and `--expert-memory 4G` both produce the same 1,992 MiB, 512-slot store as
+`auto`, because the plan first reserves the resident KV allowance for the model's
+whole 262,144-token window and the flag only sets a floor that the plan rounds
+back down to what is left. Bytes per emitted token went the wrong way, 452 to
+510-546. The tuned columns of section 7 still stand for the larger machines,
+where the KV window floors are satisfied many gigabytes early and a requested
+floor lands inside the leftover instead of above it, but they now depend on a
+measurement that has to be made on such a machine.
+
 ## 9. Side by side: prompt processing and decode throughput
 
 Machines as columns, so the comparison is a single glance. Anchor is the measured
