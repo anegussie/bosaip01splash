@@ -52,8 +52,23 @@ SPLASH_FLASH_NEXT_PERSISTENT_CACHE="${SPLASH_FLASH_NEXT_PERSISTENT_CACHE:-1}"
 SPLASH_FLASH_NEXT_CACHE_DIR="${SPLASH_FLASH_NEXT_CACHE_DIR:-$HOME/Library/Caches/Splash/flash-next-option20-iq3-xxs}"
 SPLASH_FLASH_NEXT_EXPERT_MEMORY="${SPLASH_FLASH_NEXT_EXPERT_MEMORY:-auto}"
 SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS="${SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS:-1024}"
-SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="${SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS:-1}"
-SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE="${SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE:-0}"
+SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS_DEFAULTED=0
+[[ -n "${SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS:-}" ]] ||
+  SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS_DEFAULTED=1
+# Two active requests let delegated children run when host headroom permits.
+# V5b measured an 11 s child queue at the 9G cap with browser-class apps closed;
+# V5 measured the chosen 10G cap's residency and single-request speed. Their
+# combination has no separate measured row. Overlapping decodes share SSD
+# bandwidth and each run at about half speed. Set this to 1 for a single lane.
+SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="${SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS:-2}"
+# 1 admits a second request on a 16 GB Mac even at the large contexts; 0 insists on
+# the 24 GB gate.
+SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE="${SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE:-1}"
+if [[ "$SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS" == "1" ]]; then
+  SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE="one active request"
+else
+  SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE="two active requests"
+fi
 SPLASH_FLASH_NEXT_HF_HUB_CACHE="${SPLASH_FLASH_NEXT_HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}"
 SPLASH_BONSAI_MAX_CONTEXT="${SPLASH_BONSAI_MAX_CONTEXT:-24K}"
 SPLASH_BONSAI_OPENCODE_CONTEXT="${SPLASH_BONSAI_OPENCODE_CONTEXT:-auto}"
@@ -247,7 +262,7 @@ print_models() {
   echo "   Separate option-19 prefix cache: ${SPLASH_QWEN36_IQ3_MAX_CACHE_DISK} | persistent: ${SPLASH_QWEN36_IQ3_PERSISTENT_CACHE}"
   echo "20) Qwen3.8 Flash-Next GSQ-RCO IQ3_XXS - Splash SSD streaming (downloads on first run)${splash_status}"
   echo "   ${SPLASH_FLASH_NEXT_MAX_CONTEXT} server context | ${SPLASH_FLASH_NEXT_MAX_TOKENS} output tokens | ${SPLASH_FLASH_NEXT_MAX_MEMORY} Metal cap | reasoning ${SPLASH_FLASH_NEXT_REASONING_EFFORT}"
-  echo "   INT8 KV | BF16 state | text only | ${SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS} active request | expert memory ${SPLASH_FLASH_NEXT_EXPERT_MEMORY} | ${SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS}-token prefill chunks | DFlash2"
+  echo "   INT8 KV | BF16 state | text only | ${SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE} | expert memory ${SPLASH_FLASH_NEXT_EXPERT_MEMORY} | ${SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS}-token prefill chunks | DFlash2"
   echo "   Source: ${SPLASH_FLASH_NEXT_MODEL_ID} | about 75.8 GB plus draft on first launch"
   echo "   Download cache: ${SPLASH_FLASH_NEXT_HF_HUB_CACHE}"
   echo "   Separate option-20 prefix cache: ${SPLASH_FLASH_NEXT_MAX_CACHE_DISK} | persistent: ${SPLASH_FLASH_NEXT_PERSISTENT_CACHE}"
@@ -1773,31 +1788,34 @@ case "$choice" in
       exit 1
     fi
     if [[ "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" != "1" ]]; then
-      # A second lane needs a second request's worth of KV pages, so it is only
-      # admitted when the machine can carry it. The profile already reserves one
-      # pool sized to the model's 262,144-token window, so two requests of this
-      # profile fit in the cap the plan charges once; what the gate guards is the
-      # host's own memory beside that cap. Options 14, 16, 18 and 19 stay
-      # single-lane.
+      # The plan charges a shared KV pool and lane state for all four batch
+      # positions. A held request still needs host headroom before it can run:
+      # memory_governor.growth_allowed requires 1 GiB above the macOS reserve
+      # (about 2.15 GiB on this 16 GB M5), or 2 GiB after pressure. Options 14,
+      # 16, 18 and 19 stay single-lane.
       splash_host_memory="$(splash_host_memory_bytes)"
-      splash_lane_second=0
-      if [[ "$choice" == "20" && "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" == "2" ]] &&
-         (( splash_host_memory >= 17179869184 )) &&
-         [[ "$SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE" == "1" ]]; then
-        splash_lane_second=1
-        splash_lane_cap_bytes="$(splash_cache_disk_bytes "$SPLASH_FLASH_NEXT_MAX_MEMORY")"
-        splash_lane_reserve="$(( splash_host_memory / 100 * 7 ))"
-        (( splash_lane_reserve < 2147483648 )) && splash_lane_reserve=2147483648
-        (( splash_lane_reserve > 7516192768 )) && splash_lane_reserve=7516192768
-        echo "   Second active request admitted below the memory gate on a $(( splash_host_memory / 1073741824 )) GB Mac at $splash_context_limit context tokens: the plan already charges the KV pool for ${SPLASH_FLASH_NEXT_MAX_MEMORY} total, macOS keeps $(( splash_lane_reserve / 1073741824 )) GB, and a second request then needs 1 GB of headroom above that reserve before the engine will run it. /status showing two active requests with memory_governor.growth_allowed false, or a swap-heavy run, is the sign to drop back to 1."
+      if [[ "$choice" == "20" && "$SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS_DEFAULTED" == "1" ]] &&
+         [[ "$splash_host_memory" =~ ^[0-9]+$ ]] && (( splash_host_memory > 0 )) &&
+         (( splash_host_memory < 17179869184 )); then
+        SPLASH_BONSAI_MAX_ACTIVE_REQUESTS=1
+        SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE="one active request"
+        echo "   One active request on a $(( splash_host_memory / 1073741824 )) GB Mac: option 20 wants 16 GB before it runs two."
       fi
-      if [[ "$splash_lane_second" != "1" ]] &&
-         { [[ "$choice" != "20" ]] ||
-           [[ "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" != "2" ]] ||
-           (( splash_host_memory < 17179869184 )) ||
-           (( splash_context_limit > 65536 && splash_host_memory < 25769803776 )); }; then
-        echo "Only option 20 accepts a second active request, and it needs 24 GB of unified memory above 65,536 context tokens (16 GB is enough at 65,536 or below). Set SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE=1 to take that risk deliberately on a 16 GB Mac." >&2
-        exit 1
+      if [[ "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" != "1" ]]; then
+        splash_lane_second=0
+        if [[ "$choice" == "20" ]] && (( splash_host_memory >= 17179869184 )) &&
+           { (( splash_context_limit <= 65536 )) ||
+             (( splash_host_memory >= 25769803776 )) ||
+             [[ "$SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE" == "1" ]]; }; then
+          splash_lane_second=1
+          if (( splash_host_memory < 25769803776 && splash_context_limit > 65536 )); then
+            echo "   Second active request admitted below the 24 GB gate on a $(( splash_host_memory / 1073741824 )) GB Mac at $splash_context_limit context tokens. Execution needs memory_governor.growth_allowed: at least 1 GiB of host headroom above the macOS reserve, or 2 GiB to recover after pressure. Keep browser-class apps closed on 16 GB; overlapping decodes each run at about half speed. Set SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=1 for one lane, or SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE=0 to restore the 24 GB gate above 65,536 tokens."
+          fi
+        fi
+        if [[ "$splash_lane_second" != "1" ]]; then
+          echo "Only option 20 accepts a second active request, with at least 16 GB of unified memory. Above 65,536 context tokens, 16 to 23 GB also needs SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE=1 (the default); set it to 0 to restore the 24 GB gate at those contexts. Execution still depends on host headroom. Set SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=1 for one lane." >&2
+          exit 1
+        fi
       fi
     fi
     if ! splash_uint_in_range "$SPLASH_BONSAI_STARTUP_RETRY_DELAY" 1 120 ||

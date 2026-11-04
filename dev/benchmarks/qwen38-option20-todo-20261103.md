@@ -45,11 +45,12 @@ dequantizing the stream.
    macOS keeps for itself, and prints the automatic ceiling when a cap is bigger
    than the engine would choose anyway. Default stays `10G`.
 5. **Second active request for option 20**: `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS`
-   accepts `1` or `2`. `2` is admitted when the machine can carry a second lane by
-   the launcher's rule: 24 GB or more at 131,072 context, 16 GB or more at 65,536 or
-   below. `SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE=1` admits it on a 16 GB Mac at any
-   context the profile allows, prints what is at stake, and never lowers the 16 GB
-   floor. Options 14, 16, 18 and 19 stay single-lane.
+   accepts `1` or `2`, now defaulting to `2` with
+   `SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE=1`. At least 16 GB is required; an
+   unset active-request override falls back to `1` below that floor, while an
+   explicit `2` is rejected. Setting the below-gate override to `0` restores the
+   24 GB admission gate above 65,536 tokens. Execution still needs host headroom.
+   Options 14, 16, 18 and 19 stay single-lane.
 6. **Cache quota preflight and a bigger default**: the launcher refuses a quota larger
    than the free space on the volume that will hold the cache, and the option 20 default
    went from `8G` to `16G` after both were measured full on this Mac (8,547,762,176 of
@@ -75,7 +76,7 @@ dequantizing the stream.
 | V6 | expert quantization reduction | smaller quant of the same GSQ-RCO build | gated on correctness first (ORCHID, count-to-30, DFlash2 acceptance), then speed |
 
 The series is closed as of 2026-11-04. Nothing further is measured on this Mac without a new reason:
-the config to run is the default cap with the two second-lane overrides, the remaining open rows are
+the config to run is now the launcher default, including the two second-lane settings; remaining possibilities are
 V6 (quantization, the only untried lever on decode speed) and more RAM.
 
 Verification for every row: `/status` before and after (`streamed_experts`

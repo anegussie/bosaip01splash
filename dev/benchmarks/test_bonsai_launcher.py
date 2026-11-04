@@ -347,6 +347,7 @@ print('Ready test server',flush=True)
             SPLASH_BONSAI_MAX_CONTEXT="invalid",
             SPLASH_BONSAI_STATE_FORMAT="fp32",
             SPLASH_BONSAI_MAX_ACTIVE_REQUESTS="3",
+            SPLASH_HOST_MEM_BYTES=str(25769803776),
             HF_HUB_CACHE="/Volumes/Untitled/unwanted-inherited-cache",
         )
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
@@ -361,7 +362,7 @@ print('Ready test server',flush=True)
             "--kv-format": "int8",
             "--state-format": "bf16",
             "--prefill-chunk-tokens": "1024",
-            "--max-active-requests": "1",
+            "--max-active-requests": "2",
             "--default-reasoning-effort": "low",
             "--max-cache-disk": "17179869184",
         }.items():
@@ -479,19 +480,20 @@ print('Ready test server',flush=True)
                     self.assertFalse((self.root / "attempts").exists())
 
     def test_option20_second_active_request_needs_memory_for_its_lane(self):
-        # 16 GB cannot carry a second lane at 131,072 context tokens.
-        before = self.config.read_bytes()
+        # Option 20 defaults to two active requests and falls back to one below
+        # 16 GB of unified memory instead of refusing to start.
         r = self.run_launcher(
             "20",
-            SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="2",
-            SPLASH_HOST_MEM_BYTES=str(17179869184),
+            SPLASH_FLASH_NEXT_MAX_MEMORY="10G",
+            SPLASH_HOST_MEM_BYTES=str(12884901888),
         )
-        self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("second active request", r.stdout + r.stderr)
-        self.assertEqual(self.config.read_bytes(), before)
-        self.assertFalse((self.root / "attempts").exists())
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("One active request on a 12 GB Mac", r.stdout)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--max-active-requests") + 1], "1")
 
-        # Sub-16 GB machines stay single-lane even below 65,536 context.
+        # Asking for a second lane below 16 GB is refused.
+        (self.root / "attempts").unlink(missing_ok=True)
         before = self.config.read_bytes()
         r = self.run_launcher(
             "20",
@@ -500,9 +502,11 @@ print('Ready test server',flush=True)
             SPLASH_HOST_MEM_BYTES=str(12884901888),
         )
         self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("second active request", r.stdout + r.stderr)
         self.assertEqual(self.config.read_bytes(), before)
+        self.assertFalse((self.root / "attempts").exists())
 
-        # 16 GB is enough for a second lane at 65,536 context tokens.
+        # 16 GB is enough for a second lane at 65,536 context tokens, and needs no note.
         r = self.run_launcher(
             "20",
             SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="2",
@@ -510,37 +514,61 @@ print('Ready test server',flush=True)
             SPLASH_HOST_MEM_BYTES=str(17179869184),
         )
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("below the 24 GB gate", r.stdout)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertEqual(args[args.index("--max-active-requests") + 1], "2")
         self.assertEqual(args[args.index("--max-context") + 1], "65536")
 
-        # 24 GB admits the second lane at the full 131,072 context.
+        # 24 GB admits the second lane at the full 131,072 context, with no note.
         r = self.run_launcher(
             "20",
             SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="2",
             SPLASH_HOST_MEM_BYTES=str(25769803776),
         )
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("below the 24 GB gate", r.stdout)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertEqual(args[args.index("--max-active-requests") + 1], "2")
 
-    def test_option20_second_lane_below_the_gate_is_opt_in(self):
-        # The 24 GB gate stands unless the operator takes the risk on record: the
-        # plan charges the KV pool once for the model's window, so two requests of
-        # this profile fit the cap, and what is at stake is the host's own memory.
-        r = self.run_launcher(
-            "20",
-            SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="2",
-            SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE="1",
-            SPLASH_HOST_MEM_BYTES=str(17179869184),
-        )
+    def test_option20_second_lane_below_the_gate_is_the_default(self):
+        # The plan charges the KV pool once for the model's window, so two requests
+        # of this profile fit the cap; what is at stake is the host's own memory, and
+        # 16 GB is admitted by default at the large contexts with that said out loud.
+        r = self.run_launcher("20", SPLASH_HOST_MEM_BYTES=str(17179869184))
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("below the memory gate", r.stdout)
+        self.assertIn("below the 24 GB gate", r.stdout)
+        self.assertIn("memory_governor.growth_allowed", r.stdout)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertEqual(args[args.index("--max-active-requests") + 1], "2")
         self.assertEqual(args[args.index("--max-context") + 1], "131072")
 
-        # The override never lowers the 16 GB floor.
+        # An explicit single-lane override preserves the chosen cap and context.
+        r = self.run_launcher(
+            "20",
+            SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="1",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("below the 24 GB gate", r.stdout)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--max-active-requests") + 1], "1")
+        self.assertEqual(args[args.index("--max-context") + 1], "131072")
+        self.assertEqual(args[args.index("--max-memory") + 1], "10G")
+
+        # Setting the gate back to 0 restores the 24 GB rule.
+        (self.root / "attempts").unlink(missing_ok=True)
+        before = self.config.read_bytes()
+        r = self.run_launcher(
+            "20",
+            SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE="0",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
+        )
+        self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("second active request", r.stdout + r.stderr)
+        self.assertEqual(self.config.read_bytes(), before)
+        self.assertFalse((self.root / "attempts").exists())
+
+        # The 16 GB floor never moves.
         before = self.config.read_bytes()
         r = self.run_launcher(
             "20",

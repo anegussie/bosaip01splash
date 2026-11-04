@@ -18,7 +18,7 @@ Interactive menu selection `20` starts the same profile. Like the other direct S
 | Expert and PLE stores | shared expert arena at its 2,089 MiB floor under `--expert-memory auto`; 64 MiB PLE cache |
 | KV / recurrent state | INT8 / BF16 |
 | Requested prefill chunk | 1,024 tokens, one Flash-Next chunk at a time |
-| Active requests | 1 (option 20 accepts 2 on a machine with room for a second lane) |
+| Active requests | 2 on Macs with at least 16 GB; 1 below 16 GB. Execution of the second request depends on host headroom |
 | Prefix cache | 16 GiB disk quota, persistent, in its own option-20 directory |
 | Input | text only |
 
@@ -38,7 +38,8 @@ Overrides are independent of the option-18 and option-19 variables:
 - `SPLASH_FLASH_NEXT_MAX_MEMORY`: `8G`, `9G`, `10G`, `11G`, `12G`, `16G`, `20G`, `24G`, `32G`, `40G`, `48G`, or `56G`, default `10G`. The launcher refuses a cap that would leave the Mac less than the 2-7 GiB cushion macOS keeps for itself (7% of unified memory), and prints the automatic ceiling when the cap is larger than the engine's own budget, which on a 16 GB Mac is about 10.8 GiB. Resident KV scales with the cap at about 2,407 pages, about 77,000 tokens, per GiB on this Mac: 262,137 tokens resident at 11G, 196,601 at 10G, 114,681 at 9G (`qwen38-option20-v5c-20261104.md`). Under roughly 10G the plan stops keeping the served 131,072 tokens in memory and a full-length request spills by design.
 - `SPLASH_FLASH_NEXT_EXPERT_MEMORY`: `auto` (default) or a size from `512M` to `32G`. The engine treats it as the **least** RAM for the routed experts, so only `auto` lets the store grow past what the memory plan leaves it. The launcher rejects a size that leaves less than 2G of the Metal cap for weights, KV and state, and says so when the store is over half the cap.
 - `SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS`: 128-2048 in steps of 128, default `1024`.
-- `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS`: `1` (default) or `2`. A second active request is admitted when the machine can carry a second lane: 24 GB or more of unified memory above 65,536 context tokens, 16 GB or more at 65,536 or below. `SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE=1` admits a second request on a 16 GB Mac at any context the profile allows, after printing the trade: the plan already charges the KV pool for the model's whole window (262,144 tokens, two requests at 131,072) and lane state for all four batch positions, so a second request fits the Metal cap and what it can overrun is the host's own memory. Measured 2026-11-04 with an 11G cap at 131,072 context (`qwen38-option20-v4-20261103.md`): the second request was admitted, then held for the parent's whole 189 s because `memory_governor.growth_allowed` was false, the host having 1.83 GiB spare against the 2.15 GiB reserve the governor keeps for macOS. A second lane needs the cap to leave the host above that reserve, not more KV room. `memory_governor.growth_allowed` reopens only at 1 GiB of headroom above the reserve (`kHostWarningMarginBytes`), so on 16 GB the host needs about 3.15 GiB spare; measured 2.20-2.27 GiB at the 10G default cap and 1.83 GiB at 11G (`qwen38-option20-v5-20261104.md`). The override was measured at all three caps a 16 GB Mac can carry (11G, 10G, 9G) and a second request never ran at 131,072 context: residency for two such requests needs the ~11 GiB cap, whose host spare is then 1.83 GiB. Treat the override as measured but conditional: at 11G and 10G the host spare was too small to ever admit the second request, and at 9G it ran only after Chrome and LM Studio were quit (`qwen38-option20-v5b-20261104.md`, child queued 11 s instead of 180 s, first `b2` decode batches, `lane-probe` overlap 1.16). On 16 GB a second lane at this context therefore needs browser-class apps to stay closed, and two requests that decode at the same time each run at about half speed (5.17 tok/s against 11.4-11.9). Keeping a browser, an agent session and a delegated child resident at once is a 24 GB job.
+- `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS`: `1` or `2`, default `2`. When unset, the launcher falls back to `1` below 16 GB; explicitly requesting `2` below that floor is rejected. Options 14, 16, 18 and 19 remain single-lane.
+- `SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE`: `0` or `1`, default `1`. This admits a second request on a Mac with at least 16 GB at any context the profile allows, with a host-memory notice above 65,536 tokens on 16-23 GB machines. Setting it to `0` restores the 24 GB admission gate above 65,536 tokens; 16 GB remains enough at smaller contexts. Admission does not guarantee execution: the engine still requires `memory_governor.growth_allowed`. On this 16 GB M5, growth needs about 3.15 GiB host spare (1 GiB above the macOS reserve), or about 4.15 GiB to reopen after pressure. V4, V5 and V5c admitted two requests but serialized their work with browser-class apps open. V5b at the 9G cap proved overlap after Chrome and LM Studio were quit: the child queued 11 s instead of 165-186 s, and the first `b2` decode batches appeared (`qwen38-option20-v5b-20261104.md`). Two requests decoding together each ran at about half speed (5.17 tok/s against 11.4-11.9 alone). The chosen 10G cap with browser-class apps closed combines V5's resident KV allowance with V5b's host-headroom finding; that combination was chosen without a separate measured V5e row.
 - `SPLASH_FLASH_NEXT_MAX_CACHE_DISK`: `0` through `64G`, default `16G`. The launcher refuses a quota larger than the free space on the volume that holds the cache, with a message that says to lower the quota or free disk space. The default was 8G until 2026-11-03: a few long benchmark prompts filled that quota (`used_bytes` 8,547,762,176 of 8,589,934,592) and 16G then filled too (`used_bytes` 17,165,451,264 of 17,179,869,184 with 13.42 GiB of cache taken back over 12,553 KV blocks) against 67 GB free on this Mac, so a long-context workflow wants the 16G default and a heavier one wants more.
 - `SPLASH_FLASH_NEXT_REASONING_EFFORT`: `none`, `low`, `medium`, or `xhigh`.
 - `SPLASH_FLASH_NEXT_PERSISTENT_CACHE`: `0` or `1`, default `1`.
@@ -67,21 +68,21 @@ against its 2.15 GiB reserve. The flag raises a floor, not a ceiling. Measuremen
 
 ## Chosen configuration on this 16 GB M5 (2026-11-04)
 
-After the V1 to V5c series, the profile to run on this Mac is the launcher default with the two
-second-lane overrides:
+After the V1 to V5c series, the profile to run on this Mac is now the launcher default:
 
 ```sh
-SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2 SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE=1 \
-  bash /Users/mymac/startllamacpp.sh --direct 20
+bash /Users/mymac/startllamacpp.sh --direct 20
 ```
 
 That is 131,072 context, a 10 GiB Metal cap, a 16 GiB persistent prefix cache, `--expert-memory auto`,
 a 1,024-token prefill chunk, BF16 state, `--verify-rows auto`, and two active requests. Expect a
 28,589-token cold prompt in about 172 s (166 tok/s), the same prompt in about 1.1 s once its KV is in
-the cache, 11.7 to 11.9 tok/s of decode at 7.4 to 7.5 tokens per draft cycle, and a delegated child
-admitted about 10 s into a running parent when the host has 3.15 GiB spare, which on this machine means
-Chrome and LM Studio stay closed. With a browser open the second request is admitted and held, which
-changes nothing about the parent's speed.
+the cache, and 11.7 to 11.9 tok/s of decode at 7.4 to 7.5 tokens per draft cycle, based on V5.
+V5b measured a delegated child starting about 10 s into a running parent at the 9G cap after Chrome
+and LM Studio were closed. Prompt child execution at the chosen 10G cap remains conditional on host
+headroom and has no separate measured row. Keep those apps closed when using delegation; a held
+second request still waits when host memory is too tight. Set
+`SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=1` to return to one lane.
 
 Rejected on measurement, all at 131,072 context on this Mac:
 
@@ -93,10 +94,9 @@ Rejected on measurement, all at 131,072 context on this Mac:
 | `MAX_CACHE_DISK=8G` | fills during long-context work; 16G pays for itself in restored cache (`qwen38-option20-v3-20261103.md`) |
 | one active request | a delegated child queues 165-186 s behind the parent, which is what ended three subagent runs on timeout |
 
-Still open, in order of expected value: a 2,048-token chunk re-sweep at 28,672 and 65,451 tokens
-(V3b), quantization reduction to cut streamed bytes per emitted token (V6, the only remaining lever on
-16 GB for decode speed), and more RAM - 24 GB opens two lanes without conditions, and 48 GB is where
-the expert store starts earning its slots.
+The series is closed. V3b was not run; the 1,024-token chunk stays. V6 quantization reduction remains
+an untried lever for decode speed and needs a new experiment reason and correctness checks before
+speed testing. More RAM can ease the host-memory constraint and permit a larger expert store.
 
 The ranked performance plan, its restart-gated experiments, and the measured
 reason a larger memory cap alone does not help a 16 GB Mac are in
