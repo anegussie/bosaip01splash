@@ -7,6 +7,10 @@ inference requests, live server queries, restarts, or builds were performed for
 this review. Only existing logs, saved status snapshots, published results,
 launcher settings, and source were inspected.
 
+For the Q2_0 versus IQ3_XXS file sizes and quality scores, including the
+requested Unsloth 27B quant and its missing exact-quant results, see the
+[size and quality comparison](qwen38-quant-size-quality-20261104.md).
+
 ## Measured basis
 
 Source: [chosen-configuration report](qwen38-option20-live-chosen-20261104.md)
