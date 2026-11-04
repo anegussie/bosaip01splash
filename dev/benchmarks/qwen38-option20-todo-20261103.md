@@ -67,8 +67,9 @@ dequantizing the stream.
 | V2 | raise the expert store, funded by the disk tier | `SPLASH_FLASH_NEXT_MAX_MEMORY=11G SPLASH_FLASH_NEXT_EXPERT_MEMORY=3G bash startllamacpp.sh --direct 20` | **done 2026-11-03 as a null result** (`qwen38-option20-v2-20261103.md`). `2G` was accepted and became the store's floor: cap = floor = 2,089 MiB, 512 slots, `regrows 0`, `hit_rate` 0.00, decode 11.1-11.9 tok/s and 28k prefill 155 tok/s, identical to V1 |
 | V3 | take memory back from the resident KV pool, and give the disk tier room | `SPLASH_FLASH_NEXT_MAX_MEMORY=11G SPLASH_FLASH_NEXT_EXPERT_MEMORY=4G SPLASH_FLASH_NEXT_MAX_CACHE_DISK=16G bash startllamacpp.sh --direct 20` | **done 2026-11-03, split result** (`qwen38-option20-v3-20261103.md`). The expert store did not move: cap = floor = 2,089 MiB, 512 slots, `regrows` 0, `hit_rate` 0.00, decode 11.5-11.7 tok/s, 28k cold 189.8 s at 150.7 tok/s. The 16 GiB quota did pay: startup restored 83 restore points over 5,314 KV blocks (7,076 MiB), the cache grew to 11.57 GiB, and 65,451-token cold prefill ran 436.4 s / 150.0 tok/s against 445.7 s / 146.7 at the 8 GiB quota |
 | V3b | re-sweep prefill chunks at 131k | `SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS=2048 ...` | 2048 beats 1024 at 28,672 and 65,451 without raising peak bytes by more than ~1 GiB |
-| V4 | two lanes at the full 131,072 context, which is the context this profile keeps | `SPLASH_FLASH_NEXT_MAX_MEMORY=11G SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2 SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE=1 bash startllamacpp.sh --direct 20` (`--expert-memory` stays `auto`) | the `parent-child` probe shows `max_active_requests` 2 with the child queued for well under the parent's wall time, against the 393 s queue a child waited on 2026-11-02; each request still decodes above 10 tok/s; swap stays under ~2 GiB and `memory_pressure` never reaches `red`. Script: `build/validation/option20-v4-20261103/run_v4.py`, which refuses to measure a server whose context is not the one its rows are about (pass `--expect-context 131072`) |
-| V4b | if V4 thrashes, revert and record the gate as correct | `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=1 bash startllamacpp.sh --direct 20` | one lane again, and the delegation stall is then a machine limit rather than a knob: it needs 24 GB or more, not a smaller context |
+| V4 | two lanes at the full 131,072 context, which is the context this profile keeps | `SPLASH_FLASH_NEXT_MAX_MEMORY=11G SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2 SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE=1 bash startllamacpp.sh --direct 20` (`--expert-memory` stays `auto`) | **done 2026-11-04, the gate opened and the lane still did not run** (`qwen38-option20-v4-20261103.md`). Two requests were active in 327 of 371 samples with `waiting_concurrency` 0, yet max concurrent decoding and prefilling were both 1, `decode_batches_by_width` recorded b1 3,237 with b2/b3/b4 0, and a 20-token child queued 186.5 of its 188.5 s. The blocker is `host_headroom_bytes` 0: 1.83 GiB spare against the 2.15 GiB macOS reserve at an 11 GiB cap, so `growth_allowed` is false and every held request is refused (`denied_reservations` 2,052 to 4,608, log `Memory: growth paused; waiting=1; suspended=0; held=1`). Single-request speed matched V3 |
+| V5 | two lanes funded by a smaller cap instead of more memory | `SPLASH_FLASH_NEXT_MAX_MEMORY=10G SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2 SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE=1 bash startllamacpp.sh --direct 20` | `growth_allowed` reads true and `host_headroom_bytes` is above 0 (V1 measured 2.52 GiB host spare, 0.37 GiB of headroom, at this cap); the `parent-child` child is queued for seconds rather than 186 s; `decode_batches_by_width` shows b2 above 0 or the sampler shows two requests decoding at once; neither request loses more than a tenth of its throughput. Reuse `build/validation/option20-v4-20261103/run_v4.py` |
+| V5b | if V5 thrashes, revert and record the gate as correct | `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=1 bash startllamacpp.sh --direct 20` | one lane again, and the delegation stall is then a machine limit rather than a knob: it needs 24 GB or more, not a smaller context |
 | V6 | expert quantization reduction | smaller quant of the same GSQ-RCO build | gated on correctness first (ORCHID, count-to-30, DFlash2 acceptance), then speed |
 
 Verification for every row: `/status` before and after (`streamed_experts`
@@ -159,9 +160,12 @@ is still at its 2,089 MiB floor with 512 of 24,576 slots, 34 resident and
   once in `fixed_runtime_bytes`), and `kv_capacity_bytes` 3,472,883,712 covers
   262,144 tokens, which is exactly two requests at the served 131,072 context. So
   the cap the plan charges already carries a second full-length request; what a
-  second lane can exceed is the host's own memory, where `host_headroom_bytes` is
-  already 0 and swap is 1.4 GiB deep. That is the question V4 measures rather than
-  assumes.
+  second lane can exceed is the host's own memory. V4 measured it: at an 11 GiB
+  cap the child was admitted (`waiting_concurrency` 0) and then held for the
+  parent's whole 189 s because `host_headroom_bytes` is 0 - 1.83 GiB spare
+  against the 2.15 GiB macOS reserve - with swap 2.10 GiB deep. So the lane is
+  reachable on this machine only by lowering the cap until the host keeps its
+  reserve, which is V5.
 
 ## Machine watchlist
 

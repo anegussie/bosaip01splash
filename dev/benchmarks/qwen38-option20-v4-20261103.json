@@ -1,0 +1,182 @@
+{
+  "description": "Option 20 V4: two active request lanes at 131,072 context on a 16 GB M5",
+  "date": "2026-11-04",
+  "model": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS",
+  "draft": "incoai/Qwen3.8-Flash-Next-DFlash2",
+  "git_head": "5769a93ac39fbc64737651c95ff4073aeb4a4616",
+  "server": {
+    "maximum_context_tokens": 131072,
+    "prefill_chunk_tokens": 1024,
+    "max_active_requests": 2,
+    "expert_memory": "auto",
+    "max_memory": "11G",
+    "max_cache_quota": "16G",
+    "persistent_cache": true
+  },
+  "rows": {
+    "decode-512": {
+      "clean": false,
+      "correct": null,
+      "prompt_tokens": 435,
+      "prefill_tokens": 435,
+      "prefill_tok_s": 77.99,
+      "ttft_ms": 5578.1,
+      "decode_tokens": 113,
+      "decode_tok_s": 10.38,
+      "cached_tokens": 0,
+      "acceptance_rate": 0.98,
+      "tokens_per_cycle": 7.533,
+      "expert_decode_MB": 57382.9,
+      "expert_MB_per_decode_token": 507.8,
+      "expert_prefill_MB": 44759.9,
+      "expert_prefill_MB_per_token": 102.9,
+      "expert_hit_rate_after": 0,
+      "expert_resident_after": 435,
+      "kv_hit_tokens": 81760,
+      "kv_disk_hit_tokens": 81760,
+      "kv_demotions": 13,
+      "disk_read_MB": 1150.5,
+      "memory_pressure_after": "warning",
+      "kv_capacity_tokens_after": 262144
+    },
+    "28k-cold": {
+      "clean": false,
+      "correct": true,
+      "prompt_tokens": 28589,
+      "prefill_tokens": 28589,
+      "prefill_tok_s": 144.08,
+      "ttft_ms": 198426.3,
+      "decode_tokens": 95,
+      "decode_tok_s": 11.37,
+      "cached_tokens": 0,
+      "acceptance_rate": 1.0,
+      "tokens_per_cycle": 7.385,
+      "expert_decode_MB": 240615.8,
+      "expert_MB_per_decode_token": 2532.8,
+      "expert_prefill_MB": 915849.7,
+      "expert_prefill_MB_per_token": 32.0,
+      "expert_hit_rate_after": 0,
+      "expert_resident_after": 512,
+      "kv_hit_tokens": 82272,
+      "kv_disk_hit_tokens": 82272,
+      "kv_demotions": 2,
+      "disk_read_MB": 1157.3,
+      "memory_pressure_after": "warning",
+      "kv_capacity_tokens_after": 262144
+    },
+    "28k-hit": {
+      "clean": false,
+      "correct": true,
+      "prompt_tokens": 28589,
+      "prefill_tokens": 13,
+      "prefill_tok_s": 11.71,
+      "ttft_ms": 1177.3,
+      "decode_tokens": 95,
+      "decode_tok_s": 10.56,
+      "cached_tokens": 28576,
+      "acceptance_rate": 1.0,
+      "tokens_per_cycle": 7.385,
+      "expert_decode_MB": 2715100.0,
+      "expert_MB_per_decode_token": 28580.0,
+      "expert_prefill_MB": 256543.6,
+      "expert_prefill_MB_per_token": 19734.1,
+      "expert_hit_rate_after": 0,
+      "expert_resident_after": 30,
+      "kv_hit_tokens": 369280,
+      "kv_disk_hit_tokens": 28576,
+      "kv_demotions": 0,
+      "disk_read_MB": 442.5,
+      "memory_pressure_after": "warning",
+      "kv_capacity_tokens_after": 262144
+    }
+  },
+  "lane_probe": {
+    "submitted": 3,
+    "total_wall_seconds": 6.637,
+    "summed_wall_seconds": 6.613,
+    "overlap_ratio": 0.996,
+    "rows": [
+      {
+        "prompt_tokens": 20,
+        "prompt_ms": 1674.77,
+        "predicted_tokens": 3,
+        "predicted_ms": 496.941,
+        "cache_tokens": 0
+      },
+      {
+        "prompt_tokens": 20,
+        "prompt_ms": 1813.141,
+        "predicted_tokens": 3,
+        "predicted_ms": 529.185,
+        "cache_tokens": 0
+      },
+      {
+        "prompt_tokens": 20,
+        "prompt_ms": 1608.432,
+        "predicted_tokens": 3,
+        "predicted_ms": 490.721,
+        "cache_tokens": 0
+      }
+    ]
+  },
+  "parent_child": {
+    "parent_prompt_tokens": 28589,
+    "parent_wall_seconds": 189.499,
+    "child_prompt_tokens": 20,
+    "child_prompt_ms": 1524.031,
+    "child_predicted_ms": 496.056,
+    "child_wall_seconds": 188.489,
+    "child_queue_ms": 186469.3,
+    "max_active_requests": 2,
+    "max_waiting": 1,
+    "max_concurrent_decoding": 1,
+    "max_concurrent_prefilling": 1
+  },
+  "scheduler": {
+    "decode_batches_start": 1836,
+    "decode_batches_end": 3237,
+    "decode_b1": 3237,
+    "decode_b2": 0,
+    "decode_b3": 0,
+    "decode_b4": 0,
+    "prefill_batches_end": 88
+  },
+  "experts": {
+    "expert_cap_bytes": 2089468688,
+    "expert_floor_bytes": 2089468688,
+    "expert_slots": 512,
+    "expert_resident": 416,
+    "expert_chunks": 1,
+    "expert_cap_chunks": 1,
+    "expert_shrinks": 0,
+    "expert_regrows": 0
+  },
+  "governor": {
+    "start": {
+      "governor_limit_bytes": 11639373824,
+      "governor_charged_bytes": 9341633436,
+      "governor_headroom_bytes": 2297740388,
+      "host_spare_bytes": 1815707648,
+      "host_headroom_bytes": 0,
+      "growth_allowed": false,
+      "denied_reservations": 2052
+    },
+    "end": {
+      "governor_limit_bytes": 11639373824,
+      "governor_charged_bytes": 9279505308,
+      "governor_headroom_bytes": 2359868516,
+      "host_spare_bytes": 1826029568,
+      "host_headroom_bytes": 0,
+      "growth_allowed": false,
+      "denied_reservations": 4608
+    }
+  },
+  "memory_pressure": "warning",
+  "thermal_state": "fair",
+  "verdict": {
+    "admission": "two requests active at once in 327 of 371 samples, frontend_queue 0, waiting_concurrency 0",
+    "execution": "one request ran at a time: max concurrent decoding 1, max concurrent prefilling 1, decode_batches_by_width b1 3237 with b2/b3/b4 0",
+    "child_wait_ms": 186469.3,
+    "cause": "memory_governor.growth_allowed is false because host_spare 1.83 GiB is under the 2.15 GiB macOS reserve, so the engine refused the held request's reservation (denied_reservations 2052 to 4608, log lines 'Memory: growth paused; waiting=1; suspended=0; held=1')"
+  }
+}
