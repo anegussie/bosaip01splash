@@ -1,0 +1,885 @@
+{
+  "source": "build/validation/option20-live-20261104-chosen",
+  "live_build": "src-6a06f0d6c0d0ed50806c8908cc3c19b1629f79495f59de3a349c4fb0937b951d",
+  "baseline_gpu_cores": 8,
+  "workload": "GSQ-RCO IQ3_XXS + DFlash2; int8 KV; bf16 state; 131072 served context; 1024-token prefill chunks",
+  "method": "Read-only analysis of existing artifacts; no inference, tests, server queries, restart, or build",
+  "rows": [
+    {
+      "name": "4096-cold-1",
+      "prompt_tokens": 4019,
+      "cached_tokens": 0,
+      "prefill_tokens": 4019,
+      "prefill_tok_s": 204.24,
+      "decode_tokens": 113,
+      "decode_tok_s": 12.6,
+      "tokens_per_cycle": 7.533,
+      "acceptance_rate": 0.9703,
+      "reasoning_tokens": 0,
+      "finish_reason": "stop",
+      "sse_ttft_seconds": 19.69,
+      "prefill_traffic": {
+        "read_bytes": 112547807232,
+        "decimal_MB_per_token": 28.00393312565315,
+        "implied_decimal_GB_per_s": 5.72356065549725,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 55896358912,
+        "decimal_MB_per_token": 494.65804346902655,
+        "implied_decimal_GB_per_s": 6.237519333510388,
+        "routed_expert_hit_fraction": 0.0
+      }
+    },
+    {
+      "name": "4096-reuse-1",
+      "prompt_tokens": 4019,
+      "cached_tokens": 4000,
+      "prefill_tokens": 19,
+      "prefill_tok_s": 12.07,
+      "decode_tokens": 113,
+      "decode_tok_s": 12.54,
+      "tokens_per_cycle": 7.533,
+      "acceptance_rate": 0.9703,
+      "reasoning_tokens": 0,
+      "finish_reason": "stop",
+      "sse_ttft_seconds": 1.58,
+      "prefill_traffic": {
+        "read_bytes": 6234308608,
+        "decimal_MB_per_token": 328.12150568421055,
+        "implied_decimal_GB_per_s": 3.9650071465493393,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 56120180736,
+        "decimal_MB_per_token": 496.63876757522127,
+        "implied_decimal_GB_per_s": 6.232239685622677,
+        "routed_expert_hit_fraction": 0.0
+      }
+    },
+    {
+      "name": "4096-cold-2",
+      "prompt_tokens": 4019,
+      "cached_tokens": 0,
+      "prefill_tokens": 4019,
+      "prefill_tok_s": 203.89,
+      "decode_tokens": 113,
+      "decode_tok_s": 12.6,
+      "tokens_per_cycle": 7.533,
+      "acceptance_rate": 0.9703,
+      "reasoning_tokens": 0,
+      "finish_reason": "stop",
+      "sse_ttft_seconds": 19.715,
+      "prefill_traffic": {
+        "read_bytes": 112601284608,
+        "decimal_MB_per_token": 28.01723926548893,
+        "implied_decimal_GB_per_s": 5.717511496135475,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 55913234432,
+        "decimal_MB_per_token": 494.8073843539823,
+        "implied_decimal_GB_per_s": 6.239934181709573,
+        "routed_expert_hit_fraction": 0.0
+      }
+    },
+    {
+      "name": "4096-reuse-2",
+      "prompt_tokens": 4019,
+      "cached_tokens": 4000,
+      "prefill_tokens": 19,
+      "prefill_tok_s": 12.52,
+      "decode_tokens": 113,
+      "decode_tok_s": 12.55,
+      "tokens_per_cycle": 7.533,
+      "acceptance_rate": 0.9703,
+      "reasoning_tokens": 0,
+      "finish_reason": "stop",
+      "sse_ttft_seconds": 1.524,
+      "prefill_traffic": {
+        "read_bytes": 6234308608,
+        "decimal_MB_per_token": 328.12150568421055,
+        "implied_decimal_GB_per_s": 4.111222767349567,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 56126013440,
+        "decimal_MB_per_token": 496.69038442477876,
+        "implied_decimal_GB_per_s": 6.2418804752196095,
+        "routed_expert_hit_fraction": 0.0
+      }
+    },
+    {
+      "name": "4096-cold-3",
+      "prompt_tokens": 4019,
+      "cached_tokens": 0,
+      "prefill_tokens": 4019,
+      "prefill_tok_s": 203.67,
+      "decode_tokens": 113,
+      "decode_tok_s": 12.53,
+      "tokens_per_cycle": 7.533,
+      "acceptance_rate": 0.9703,
+      "reasoning_tokens": 0,
+      "finish_reason": "stop",
+      "sse_ttft_seconds": 19.735,
+      "prefill_traffic": {
+        "read_bytes": 112698654720,
+        "decimal_MB_per_token": 28.041466713112715,
+        "implied_decimal_GB_per_s": 5.715330661047788,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 56008392704,
+        "decimal_MB_per_token": 495.6494929557522,
+        "implied_decimal_GB_per_s": 6.218841660345527,
+        "routed_expert_hit_fraction": 0.0
+      }
+    },
+    {
+      "name": "4096-reuse-3",
+      "prompt_tokens": 4019,
+      "cached_tokens": 4000,
+      "prefill_tokens": 19,
+      "prefill_tok_s": 12.7,
+      "decode_tokens": 113,
+      "decode_tok_s": 12.5,
+      "tokens_per_cycle": 7.533,
+      "acceptance_rate": 0.9703,
+      "reasoning_tokens": 0,
+      "finish_reason": "stop",
+      "sse_ttft_seconds": 1.501,
+      "prefill_traffic": {
+        "read_bytes": 6234308608,
+        "decimal_MB_per_token": 328.12150568421055,
+        "implied_decimal_GB_per_s": 4.168939765179401,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 56154259456,
+        "decimal_MB_per_token": 496.9403491681416,
+        "implied_decimal_GB_per_s": 6.216720148619958,
+        "routed_expert_hit_fraction": 0.0
+      }
+    },
+    {
+      "name": "28672-cold-1",
+      "prompt_tokens": 28589,
+      "cached_tokens": 0,
+      "prefill_tokens": 28589,
+      "prefill_tok_s": 174.28,
+      "decode_tokens": 113,
+      "decode_tok_s": 11.92,
+      "tokens_per_cycle": 7.533,
+      "acceptance_rate": 0.9899,
+      "reasoning_tokens": 0,
+      "finish_reason": "stop",
+      "sse_ttft_seconds": 164.094,
+      "prefill_traffic": {
+        "read_bytes": 862964563968,
+        "decimal_MB_per_token": 30.185195843436286,
+        "implied_decimal_GB_per_s": 5.264561698742352,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 57364054016,
+        "decimal_MB_per_token": 507.6464957168142,
+        "implied_decimal_GB_per_s": 6.06478551168383,
+        "routed_expert_hit_fraction": 0.0
+      }
+    },
+    {
+      "name": "28672-reuse-1",
+      "prompt_tokens": 28589,
+      "cached_tokens": 28576,
+      "prefill_tokens": 13,
+      "prefill_tok_s": 11.54,
+      "decode_tokens": 113,
+      "decode_tok_s": 11.84,
+      "tokens_per_cycle": 7.533,
+      "acceptance_rate": 0.9899,
+      "reasoning_tokens": 0,
+      "finish_reason": "stop",
+      "sse_ttft_seconds": 1.131,
+      "prefill_traffic": {
+        "read_bytes": 4708352000,
+        "decimal_MB_per_token": 362.1809230769231,
+        "implied_decimal_GB_per_s": 4.184531136920982,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 57938411520,
+        "decimal_MB_per_token": 512.7293054867257,
+        "implied_decimal_GB_per_s": 6.081352578260954,
+        "routed_expert_hit_fraction": 0.0
+      }
+    },
+    {
+      "name": "28672-cold-2",
+      "prompt_tokens": 28589,
+      "cached_tokens": 0,
+      "prefill_tokens": 28589,
+      "prefill_tok_s": 167.3,
+      "decode_tokens": 113,
+      "decode_tok_s": 11.8,
+      "tokens_per_cycle": 7.533,
+      "acceptance_rate": 0.9899,
+      "reasoning_tokens": 0,
+      "finish_reason": "stop",
+      "sse_ttft_seconds": 170.89,
+      "prefill_traffic": {
+        "read_bytes": 880635232256,
+        "decimal_MB_per_token": 30.803289106159713,
+        "implied_decimal_GB_per_s": 5.157716812029278,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 57487704064,
+        "decimal_MB_per_token": 508.7407439292035,
+        "implied_decimal_GB_per_s": 6.019990022208909,
+        "routed_expert_hit_fraction": 0.0
+      }
+    },
+    {
+      "name": "28672-reuse-2",
+      "prompt_tokens": 28589,
+      "cached_tokens": 28576,
+      "prefill_tokens": 13,
+      "prefill_tok_s": 11.31,
+      "decode_tokens": 113,
+      "decode_tok_s": 11.67,
+      "tokens_per_cycle": 7.533,
+      "acceptance_rate": 0.9899,
+      "reasoning_tokens": 0,
+      "finish_reason": "stop",
+      "sse_ttft_seconds": 1.159,
+      "prefill_traffic": {
+        "read_bytes": 4708352000,
+        "decimal_MB_per_token": 362.1809230769231,
+        "implied_decimal_GB_per_s": 4.099726667590151,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 58374160384,
+        "decimal_MB_per_token": 516.5854901238938,
+        "implied_decimal_GB_per_s": 6.038214194628111,
+        "routed_expert_hit_fraction": 0.0
+      }
+    },
+    {
+      "name": "28672-cold-3",
+      "prompt_tokens": 28589,
+      "cached_tokens": 0,
+      "prefill_tokens": 28589,
+      "prefill_tok_s": 164.48,
+      "decode_tokens": 113,
+      "decode_tok_s": 11.79,
+      "tokens_per_cycle": 7.533,
+      "acceptance_rate": 0.9899,
+      "reasoning_tokens": 0,
+      "finish_reason": "stop",
+      "sse_ttft_seconds": 173.819,
+      "prefill_traffic": {
+        "read_bytes": 885795143680,
+        "decimal_MB_per_token": 30.98377500717059,
+        "implied_decimal_GB_per_s": 5.100739974934971,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 57610305536,
+        "decimal_MB_per_token": 509.8257127079646,
+        "implied_decimal_GB_per_s": 6.024761537783311,
+        "routed_expert_hit_fraction": 0.0
+      }
+    },
+    {
+      "name": "28672-reuse-3",
+      "prompt_tokens": 28589,
+      "cached_tokens": 28576,
+      "prefill_tokens": 13,
+      "prefill_tok_s": 11.34,
+      "decode_tokens": 113,
+      "decode_tok_s": 11.58,
+      "tokens_per_cycle": 7.533,
+      "acceptance_rate": 0.9899,
+      "reasoning_tokens": 0,
+      "finish_reason": "stop",
+      "sse_ttft_seconds": 1.155,
+      "prefill_traffic": {
+        "read_bytes": 4708352000,
+        "decimal_MB_per_token": 362.1809230769231,
+        "implied_decimal_GB_per_s": 4.11270628161062,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 58504724480,
+        "decimal_MB_per_token": 517.7409246017698,
+        "implied_decimal_GB_per_s": 6.006877358176343,
+        "routed_expert_hit_fraction": 0.0
+      }
+    },
+    {
+      "name": "65451-cold-1",
+      "prompt_tokens": 65367,
+      "cached_tokens": 0,
+      "prefill_tokens": 65367,
+      "prefill_tok_s": 149.4,
+      "decode_tokens": 113,
+      "decode_tok_s": 11.18,
+      "tokens_per_cycle": 7.533,
+      "acceptance_rate": 1.0,
+      "reasoning_tokens": 0,
+      "finish_reason": "stop",
+      "sse_ttft_seconds": 437.618,
+      "prefill_traffic": {
+        "read_bytes": 2047034949632,
+        "decimal_MB_per_token": 31.31603025428733,
+        "implied_decimal_GB_per_s": 4.682426807786926,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 57286066176,
+        "decimal_MB_per_token": 506.956337840708,
+        "implied_decimal_GB_per_s": 5.679716019682703,
+        "routed_expert_hit_fraction": 0.0
+      }
+    },
+    {
+      "name": "65451-reuse-1",
+      "prompt_tokens": 65367,
+      "cached_tokens": 65344,
+      "prefill_tokens": 23,
+      "prefill_tok_s": 10.97,
+      "decode_tokens": 113,
+      "decode_tok_s": 10.24,
+      "tokens_per_cycle": 7.533,
+      "acceptance_rate": 1.0,
+      "reasoning_tokens": 0,
+      "finish_reason": "stop",
+      "sse_ttft_seconds": 2.11,
+      "prefill_traffic": {
+        "read_bytes": 7162150912,
+        "decimal_MB_per_token": 311.39786573913045,
+        "implied_decimal_GB_per_s": 3.4172099855622067,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 58151419904,
+        "decimal_MB_per_token": 514.6143354336283,
+        "implied_decimal_GB_per_s": 5.278293082180207,
+        "routed_expert_hit_fraction": 0.0
+      }
+    },
+    {
+      "name": "style-primes",
+      "prompt_tokens": 25,
+      "cached_tokens": 0,
+      "prefill_tokens": 25,
+      "prefill_tok_s": 13.1,
+      "decode_tokens": 54,
+      "decode_tok_s": 12.37,
+      "tokens_per_cycle": 7.714,
+      "acceptance_rate": 1.0,
+      "reasoning_tokens": 0,
+      "finish_reason": "stop",
+      "sse_ttft_seconds": 1.912,
+      "prefill_traffic": {
+        "read_bytes": 7939309568,
+        "decimal_MB_per_token": 317.57238272,
+        "implied_decimal_GB_per_s": 4.171961543150572,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 26533543936,
+        "decimal_MB_per_token": 491.36192474074073,
+        "implied_decimal_GB_per_s": 6.08675980268135,
+        "routed_expert_hit_fraction": 0.0
+      }
+    },
+    {
+      "name": "style-arithmetic",
+      "prompt_tokens": 52,
+      "cached_tokens": 0,
+      "prefill_tokens": 52,
+      "prefill_tok_s": 21.61,
+      "decode_tokens": 15,
+      "decode_tok_s": 9.35,
+      "tokens_per_cycle": 3.75,
+      "acceptance_rate": 1.0,
+      "reasoning_tokens": 0,
+      "finish_reason": "stop",
+      "sse_ttft_seconds": 2.41,
+      "prefill_traffic": {
+        "read_bytes": 10602168320,
+        "decimal_MB_per_token": 203.88785230769233,
+        "implied_decimal_GB_per_s": 4.427138285953915,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 9635217408,
+        "decimal_MB_per_token": 642.3478272,
+        "implied_decimal_GB_per_s": 6.015105914354496,
+        "routed_expert_hit_fraction": 0.0
+      }
+    },
+    {
+      "name": "style-code-low",
+      "prompt_tokens": 61,
+      "cached_tokens": 0,
+      "prefill_tokens": 61,
+      "prefill_tok_s": 20.41,
+      "decode_tokens": 255,
+      "decode_tok_s": 8.76,
+      "tokens_per_cycle": 3.672,
+      "acceptance_rate": 0.8861,
+      "reasoning_tokens": 128,
+      "finish_reason": "length",
+      "sse_ttft_seconds": 19.076,
+      "prefill_traffic": {
+        "read_bytes": 14236909568,
+        "decimal_MB_per_token": 233.39196013114753,
+        "implied_decimal_GB_per_s": 4.784005844205791,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 173097975808,
+        "decimal_MB_per_token": 678.8155914039215,
+        "implied_decimal_GB_per_s": 5.9604559379953015,
+        "routed_expert_hit_fraction": 0.0
+      }
+    },
+    {
+      "name": "style-prose-none",
+      "prompt_tokens": 26,
+      "cached_tokens": 0,
+      "prefill_tokens": 26,
+      "prefill_tok_s": 13.53,
+      "decode_tokens": 98,
+      "decode_tok_s": 6.87,
+      "tokens_per_cycle": 2.205,
+      "acceptance_rate": 0.7015,
+      "reasoning_tokens": 0,
+      "finish_reason": "stop",
+      "sse_ttft_seconds": 1.924,
+      "prefill_traffic": {
+        "read_bytes": 8391081984,
+        "decimal_MB_per_token": 322.7339224615385,
+        "implied_decimal_GB_per_s": 4.379776281271704,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 80567533568,
+        "decimal_MB_per_token": 822.1176894693878,
+        "implied_decimal_GB_per_s": 5.677237362286752,
+        "routed_expert_hit_fraction": 0.0
+      }
+    },
+    {
+      "name": "style-agent-medium",
+      "prompt_tokens": 39,
+      "cached_tokens": 0,
+      "prefill_tokens": 39,
+      "prefill_tok_s": 15.56,
+      "decode_tokens": 255,
+      "decode_tok_s": 7.11,
+      "tokens_per_cycle": 2.648,
+      "acceptance_rate": 0.7353,
+      "reasoning_tokens": 256,
+      "finish_reason": "length",
+      "sse_ttft_seconds": null,
+      "prefill_traffic": {
+        "read_bytes": 11437654016,
+        "decimal_MB_per_token": 293.2731798974359,
+        "implied_decimal_GB_per_s": 4.584977996811516,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 204633997312,
+        "decimal_MB_per_token": 802.4862639686274,
+        "implied_decimal_GB_per_s": 5.732877166032647,
+        "routed_expert_hit_fraction": 0.0
+      }
+    },
+    {
+      "name": "style-agent-medium-check",
+      "prompt_tokens": 39,
+      "cached_tokens": 0,
+      "prefill_tokens": 39,
+      "prefill_tok_s": 15.36,
+      "decode_tokens": 255,
+      "decode_tok_s": 7.73,
+      "tokens_per_cycle": 2.703,
+      "acceptance_rate": 0.7488,
+      "reasoning_tokens": 256,
+      "finish_reason": "length",
+      "sse_ttft_seconds": null,
+      "prefill_traffic": {
+        "read_bytes": 11437654016,
+        "decimal_MB_per_token": 293.2731798974359,
+        "implied_decimal_GB_per_s": 4.518461549644548,
+        "routed_expert_hit_fraction": 0.0
+      },
+      "decode_traffic": {
+        "read_bytes": 197833408512,
+        "decimal_MB_per_token": 775.8172882823529,
+        "implied_decimal_GB_per_s": 6.006651857213944,
+        "routed_expert_hit_fraction": 0.0
+      }
+    }
+  ],
+  "decode_scenarios": [
+    {
+      "hardware": "M5 Air 32GB",
+      "assumed_expert_store_GiB": [
+        8,
+        12
+      ],
+      "assumed_fraction_decode_reads_avoided": [
+        0.1,
+        0.2
+      ],
+      "calibration": "hypothetical, not a measured cache hit rate",
+      "decode_only_ideal_scenarios": {
+        "structured_at_28589": [
+          13.15,
+          14.8
+        ],
+        "short_code_low": [
+          9.73,
+          10.95
+        ],
+        "short_agent_medium_1": [
+          7.9,
+          8.89
+        ],
+        "short_agent_medium_2": [
+          8.59,
+          9.66
+        ]
+      }
+    },
+    {
+      "hardware": "M6 mini 32GB",
+      "assumed_expert_store_GiB": [
+        8,
+        12
+      ],
+      "assumed_fraction_decode_reads_avoided": [
+        0.1,
+        0.2
+      ],
+      "calibration": "hypothetical, not a measured cache hit rate",
+      "decode_only_ideal_scenarios": {
+        "structured_at_28589": [
+          13.15,
+          14.8
+        ],
+        "short_code_low": [
+          9.73,
+          10.95
+        ],
+        "short_agent_medium_1": [
+          7.9,
+          8.89
+        ],
+        "short_agent_medium_2": [
+          8.59,
+          9.66
+        ]
+      }
+    },
+    {
+      "hardware": "M5 Pro mini 48GB 16GPU",
+      "assumed_expert_store_GiB": [
+        16,
+        20
+      ],
+      "assumed_fraction_decode_reads_avoided": [
+        0.2,
+        0.35
+      ],
+      "calibration": "hypothetical, not a measured cache hit rate",
+      "decode_only_ideal_scenarios": {
+        "structured_at_28589": [
+          14.8,
+          18.21
+        ],
+        "short_code_low": [
+          10.95,
+          13.48
+        ],
+        "short_agent_medium_1": [
+          8.89,
+          10.94
+        ],
+        "short_agent_medium_2": [
+          9.66,
+          11.89
+        ]
+      }
+    },
+    {
+      "hardware": "M5 Pro mini 64GB 16GPU",
+      "assumed_expert_store_GiB": [
+        24,
+        32
+      ],
+      "assumed_fraction_decode_reads_avoided": [
+        0.3,
+        0.45
+      ],
+      "calibration": "hypothetical, not a measured cache hit rate",
+      "decode_only_ideal_scenarios": {
+        "structured_at_28589": [
+          16.91,
+          21.52
+        ],
+        "short_code_low": [
+          12.51,
+          15.93
+        ],
+        "short_agent_medium_1": [
+          10.16,
+          12.93
+        ],
+        "short_agent_medium_2": [
+          11.04,
+          14.05
+        ]
+      }
+    }
+  ],
+  "limitations": [
+    "All measured expert-cache hit rates are zero; no larger-cache fit is available.",
+    "Read-byte divided by model wall-time is an implied effective bandwidth, not an independent SSD benchmark.",
+    "Ideal throughput scales by 1/(1-h); residual compute, staging, PLE, and KV costs reduce this benefit.",
+    "Do not apply decode hit fractions directly to prefill; batch routing amortizes expert reads differently.",
+    "Short style probes do not establish long-context coding throughput or completed answer latency.",
+    "65K has one clean cold trial; filled 131K unmeasured.",
+    "Baseline memory pressure normal/warning, thermal nominal/fair, swap about 436 MiB.",
+    "Expert-store staging is a fixed component, not a constant per-slot multiple."
+  ],
+  "source_measurement_package": {
+    "path": "dev/benchmarks/qwen38-option20-live-chosen-20261104.json",
+    "sha256": "3a01382016bc1cebf28239809f958f4514dacc077401138096f1318c9de2e7f4"
+  },
+  "prefill_estimate_method": "Separate depth-specific planning judgments; not calibrated and not computed from decode hit fractions.",
+  "comparison": {
+    "column_order": [
+      "M5 Air 16GB measured",
+      "M5 Air 32GB estimated",
+      "M6 mini 32GB estimated",
+      "M5 Pro mini 48GB 16GPU estimated",
+      "M5 Pro mini 64GB 16GPU estimated"
+    ],
+    "expert_store_GiB": [
+      [
+        1.946,
+        1.946
+      ],
+      [
+        8,
+        12
+      ],
+      [
+        8,
+        12
+      ],
+      [
+        16,
+        20
+      ],
+      [
+        24,
+        32
+      ]
+    ],
+    "prefill_28589_tok_s": [
+      [
+        168.68666666666667,
+        168.68666666666667
+      ],
+      [
+        175,
+        210
+      ],
+      [
+        175,
+        220
+      ],
+      [
+        190,
+        240
+      ],
+      [
+        210,
+        280
+      ]
+    ],
+    "prefill_65367_tok_s": [
+      [
+        149.4,
+        149.4
+      ],
+      [
+        155,
+        185
+      ],
+      [
+        155,
+        195
+      ],
+      [
+        165,
+        215
+      ],
+      [
+        180,
+        245
+      ]
+    ],
+    "short_code_low_decode_tok_s": [
+      [
+        8.76,
+        8.76
+      ],
+      [
+        10,
+        11
+      ],
+      [
+        10,
+        11
+      ],
+      [
+        11,
+        14
+      ],
+      [
+        13,
+        16
+      ]
+    ],
+    "short_agent_medium_decode_tok_s": [
+      [
+        7.11,
+        7.73
+      ],
+      [
+        8,
+        10
+      ],
+      [
+        8,
+        10
+      ],
+      [
+        9,
+        12
+      ],
+      [
+        10,
+        14
+      ]
+    ],
+    "structured_28589_decode_tok_s": [
+      [
+        11.836666666666666,
+        11.836666666666666
+      ],
+      [
+        13,
+        15
+      ],
+      [
+        13,
+        15
+      ],
+      [
+        15,
+        18
+      ],
+      [
+        17,
+        22
+      ]
+    ],
+    "first_token_28589_minutes": [
+      [
+        2.8266833333333334,
+        2.8266833333333334
+      ],
+      [
+        2.3,
+        2.7
+      ],
+      [
+        2.2,
+        2.7
+      ],
+      [
+        2,
+        2.5
+      ],
+      [
+        1.7,
+        2.3
+      ]
+    ],
+    "first_token_65367_minutes": [
+      [
+        7.293633333333333,
+        7.293633333333333
+      ],
+      [
+        5.9,
+        7
+      ],
+      [
+        5.6,
+        7
+      ],
+      [
+        5.1,
+        6.6
+      ],
+      [
+        4.4,
+        6.1
+      ]
+    ],
+    "confidence": "Upgrade columns are hypothetical low-confidence planning ranges, not measured bounds."
+  },
+  "sensitivity": [
+    {
+      "avoided_fraction": 0,
+      "ideal_speedup": 1.0,
+      "baseline_tok_s": 12,
+      "ideal_tok_s": 12.0
+    },
+    {
+      "avoided_fraction": 0.2,
+      "ideal_speedup": 1.25,
+      "baseline_tok_s": 12,
+      "ideal_tok_s": 15.0
+    },
+    {
+      "avoided_fraction": 0.4,
+      "ideal_speedup": 1.6666666666666667,
+      "baseline_tok_s": 12,
+      "ideal_tok_s": 20.0
+    },
+    {
+      "avoided_fraction": 0.5,
+      "ideal_speedup": 2.0,
+      "baseline_tok_s": 12,
+      "ideal_tok_s": 24.0
+    },
+    {
+      "avoided_fraction": 0.75,
+      "ideal_speedup": 4.0,
+      "baseline_tok_s": 12,
+      "ideal_tok_s": 48.0
+    }
+  ],
+  "validation_scope": "Static JSON, source-value agreement, arithmetic, and relative Markdown link checks only; no tests, benchmark, inference, live query, build, or restart."
+}

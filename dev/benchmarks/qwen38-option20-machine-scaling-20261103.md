@@ -1,5 +1,12 @@
 # Option 20 cross-machine throughput estimates (2026-11-03)
 
+Historical estimates: superseded by the
+[November 4 log review and conditional expert-cache scenarios](qwen38-option20-cache-estimates-20261104.md).
+The larger-cache hit rates, linear store-cost scaling, launcher constraints,
+and two-lane aggregate-throughput assumptions below must not be treated as
+current measurements or validated predictions. This report is retained as the
+original dated analysis.
+
 Estimates for five machines, derived from measurements taken on this 16 GB
 M5 MacBook Air against the live 131k option 20 server (build `src-6a06f0d6c0d0`,
 git `3c693864`). Companion reports: [the live 131k benchmark](qwen38-option20-live-131k-20261102.md),
