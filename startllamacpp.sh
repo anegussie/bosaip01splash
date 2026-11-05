@@ -51,18 +51,20 @@ SPLASH_FLASH_NEXT_MAX_CACHE_DISK="${SPLASH_FLASH_NEXT_MAX_CACHE_DISK:-16G}"
 SPLASH_FLASH_NEXT_PERSISTENT_CACHE="${SPLASH_FLASH_NEXT_PERSISTENT_CACHE:-1}"
 SPLASH_FLASH_NEXT_CACHE_DIR="${SPLASH_FLASH_NEXT_CACHE_DIR:-$HOME/Library/Caches/Splash/flash-next-option20-iq3-xxs}"
 SPLASH_FLASH_NEXT_EXPERT_MEMORY="${SPLASH_FLASH_NEXT_EXPERT_MEMORY:-auto}"
+SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS_DEFAULTED=0
+if [[ -z "${SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS:-}" ]]; then
+  SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS_DEFAULTED=1
+fi
 SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS="${SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS:-1024}"
 SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS_DEFAULTED=0
 [[ -n "${SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS:-}" ]] ||
   SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS_DEFAULTED=1
-# Two active requests let delegated children run when host headroom permits.
-# V5b measured an 11 s child queue at the 9G cap with browser-class apps closed;
-# V5 measured the chosen 10G cap's residency and single-request speed. Their
-# combination has no separate measured row. Overlapping decodes share SSD
-# bandwidth and each run at about half speed. Set this to 1 for a single lane.
+# Host defaults below keep Macs under 24 GiB single-request: the measured
+# 16 GiB Air admitted two requests but serialized them under memory pressure.
+# An explicit value of 2 retains the opt-in second lane where it is supported.
 SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="${SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS:-2}"
-# 1 admits a second request on a 16 GB Mac even at the large contexts; 0 insists on
-# the 24 GB gate.
+# For an explicit second-lane request, 1 permits 16 GiB even at large contexts;
+# 0 insists on the 24 GiB gate above 65,536 tokens.
 SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE="${SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE:-1}"
 if [[ "$SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS" == "1" ]]; then
   SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE="one active request"
@@ -307,6 +309,37 @@ splash_host_memory_bytes() {
     return 0
   fi
   sysctl -n hw.memsize 2>/dev/null || echo 0
+}
+
+# Resolve once before either the menu or launch path uses the profile. A caller's
+# explicit concurrency choice wins; a small host keeps the measured 10G/131K
+# settings and persistent prefix cache without admitting competing requests.
+splash_flash_next_host_defaults() {
+  local host_memory
+  host_memory="$(splash_host_memory_bytes)"
+  if [[ "$SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS_DEFAULTED" == "1" &&
+        "$host_memory" =~ ^[0-9]+$ ]] &&
+     (( host_memory > 0 && host_memory < 25769803776 )); then
+    SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=1
+  fi
+  # The measured 16 GiB/10G profile uses larger chunks for cold prefill.
+  # Keep explicit choices and other memory/storage/concurrency profiles unchanged.
+  # Its full 131K context remains available through the existing SSD KV tier.
+  if [[ "$SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS_DEFAULTED" == "1" &&
+        "$host_memory" == "17179869184" &&
+        "$SPLASH_FLASH_NEXT_MAX_MEMORY" == "10G" &&
+        "$SPLASH_FLASH_NEXT_MAX_CONTEXT" == "131072" &&
+        "$SPLASH_FLASH_NEXT_MAX_CACHE_DISK" == "16G" &&
+        "$SPLASH_FLASH_NEXT_PERSISTENT_CACHE" == "1" &&
+        "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" == "auto" &&
+        "$SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS" == "1" ]]; then
+    SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS=2048
+  fi
+  if [[ "$SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS" == "1" ]]; then
+    SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE="one active request"
+  else
+    SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE="two active requests"
+  fi
 }
 
 # Available bytes on the volume that will hold a path, walking up to the first
@@ -925,6 +958,8 @@ Nothing is installed as a background or login service. Interactive watched
 mode remains attached to the Terminal and stops cleanly with Ctrl-C.
 EOF
 }
+
+splash_flash_next_host_defaults
 
 case "${1:-}" in
   --help|-h)
@@ -1700,6 +1735,10 @@ case "$choice" in
         if (( splash_memory_cap_bytes > splash_memory_ceiling )); then
           echo "Note: this Mac's automatic Metal ceiling is about $(( splash_memory_ceiling / 1073741824 )) GiB, so a ${SPLASH_FLASH_NEXT_MAX_MEMORY} cap is a ceiling the engine clamps, not extra memory."
         fi
+        if [[ "$SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS_DEFAULTED" == "1" &&
+              "$SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS" == "1" ]]; then
+          echo "   One active request on a $(( splash_host_memory / 1073741824 )) GB Mac: the default below 24 GB avoids competing expert SSD reads. Set SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2 to opt in to a second lane."
+        fi
       fi
       case "$SPLASH_FLASH_NEXT_REASONING_EFFORT" in
         none|low|medium|xhigh) ;;
@@ -1791,16 +1830,9 @@ case "$choice" in
       # The plan charges a shared KV pool and lane state for all four batch
       # positions. A held request still needs host headroom before it can run:
       # memory_governor.growth_allowed requires 1 GiB above the macOS reserve
-      # (about 2.15 GiB on this 16 GB M5), or 2 GiB after pressure. Options 14,
+      # (2 GiB on this 16 GB M5), or 2 GiB after pressure. Options 14,
       # 16, 18 and 19 stay single-lane.
       splash_host_memory="$(splash_host_memory_bytes)"
-      if [[ "$choice" == "20" && "$SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS_DEFAULTED" == "1" ]] &&
-         [[ "$splash_host_memory" =~ ^[0-9]+$ ]] && (( splash_host_memory > 0 )) &&
-         (( splash_host_memory < 17179869184 )); then
-        SPLASH_BONSAI_MAX_ACTIVE_REQUESTS=1
-        SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE="one active request"
-        echo "   One active request on a $(( splash_host_memory / 1073741824 )) GB Mac: option 20 wants 16 GB before it runs two."
-      fi
       if [[ "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" != "1" ]]; then
         splash_lane_second=0
         if [[ "$choice" == "20" ]] && (( splash_host_memory >= 17179869184 )) &&

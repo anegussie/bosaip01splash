@@ -479,9 +479,63 @@ print('Ready test server',flush=True)
                     self.assertEqual(self.config.read_bytes(), before)
                     self.assertFalse((self.root / "attempts").exists())
 
+    def test_option20_air_defaults_to_one_request_and_keeps_prefix_cache(self):
+        r = self.run_launcher("20", SPLASH_HOST_MEM_BYTES=str(17179869184))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--max-active-requests") + 1], "1")
+        self.assertEqual(args[args.index("--max-context") + 1], "131072")
+        self.assertEqual(args[args.index("--max-memory") + 1], "10G")
+        self.assertEqual(args[args.index("--ple-memory") + 1], "64M")
+        self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "2048")
+        self.assertEqual(args[args.index("--max-cache-disk") + 1], "17179869184")
+        self.assertIn("--persistent-cache", args)
+        self.assertIn("--cache-dir", args)
+        listed = subprocess.run(
+            ["bash", LAUNCHER, "--list"],
+            env={**self.env, "SPLASH_HOST_MEM_BYTES": str(17179869184)},
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        self.assertEqual(listed.returncode, 0, listed.stdout + listed.stderr)
+        option20 = listed.stdout.split("20) Qwen3.8 Flash-Next", 1)[1]
+        self.assertIn("one active request", option20)
+        self.assertNotIn("two active requests", option20)
+
+
+    def test_option20_air_preserves_explicit_smaller_prefill_chunk(self):
+        r = self.run_launcher(
+            "20", SPLASH_HOST_MEM_BYTES=str(17179869184),
+            SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS="1024",
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "1024")
+
+    def test_option20_air_lower_memory_cap_keeps_smaller_prefill_chunk(self):
+        r = self.run_launcher(
+            "20", SPLASH_HOST_MEM_BYTES=str(17179869184),
+            SPLASH_FLASH_NEXT_MAX_MEMORY="8G",
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "1024")
+
+
+    def test_option20_air_cache_disabled_keeps_smaller_prefill_chunk(self):
+        r = self.run_launcher(
+            "20", SPLASH_HOST_MEM_BYTES=str(17179869184),
+            SPLASH_FLASH_NEXT_MAX_CACHE_DISK="0",
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "1024")
+        self.assertNotIn("--persistent-cache", args)
+
     def test_option20_second_active_request_needs_memory_for_its_lane(self):
-        # Option 20 defaults to two active requests and falls back to one below
-        # 16 GB of unified memory instead of refusing to start.
+        # Macs below 24 GB default to one request instead of competing for
+        # expert SSD reads. Explicit two-lane requests still require 16 GB.
         r = self.run_launcher(
             "20",
             SPLASH_FLASH_NEXT_MAX_MEMORY="10G",
@@ -530,11 +584,14 @@ print('Ready test server',flush=True)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertEqual(args[args.index("--max-active-requests") + 1], "2")
 
-    def test_option20_second_lane_below_the_gate_is_the_default(self):
-        # The plan charges the KV pool once for the model's window, so two requests
-        # of this profile fit the cap; what is at stake is the host's own memory, and
-        # 16 GB is admitted by default at the large contexts with that said out loud.
-        r = self.run_launcher("20", SPLASH_HOST_MEM_BYTES=str(17179869184))
+    def test_option20_second_lane_below_the_gate_is_an_explicit_override(self):
+        # A second lane on 16 GB remains available explicitly, with its
+        # host-headroom requirement announced at the large context.
+        r = self.run_launcher(
+            "20",
+            SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="2",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
+        )
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("below the 24 GB gate", r.stdout)
         self.assertIn("memory_governor.growth_allowed", r.stdout)
@@ -560,6 +617,7 @@ print('Ready test server',flush=True)
         before = self.config.read_bytes()
         r = self.run_launcher(
             "20",
+            SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="2",
             SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE="0",
             SPLASH_HOST_MEM_BYTES=str(17179869184),
         )

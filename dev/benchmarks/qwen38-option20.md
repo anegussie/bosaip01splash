@@ -15,10 +15,10 @@ Interactive menu selection `20` starts the same profile. Like the other direct S
 | OpenCode output reserve | 1,024 tokens |
 | Reasoning effort | low |
 | Metal memory cap | 10 GiB (the engine's own ceiling on a 16 GB Mac is about 10.8 GiB) |
-| Expert and PLE stores | shared expert arena at its 2,089 MiB floor under `--expert-memory auto`; 64 MiB PLE cache |
+| Expert and PLE stores | automatic expert memory (the measured Air store is 1.946 GiB including staging); 64 MiB PLE row cache with the table on SSD |
 | KV / recurrent state | INT8 / BF16 |
-| Requested prefill chunk | 1,024 tokens, one Flash-Next chunk at a time |
-| Active requests | 2 on Macs with at least 16 GB; 1 below 16 GB. Execution of the second request depends on host headroom |
+| Requested prefill chunk | 2,048 for the validated 16 GiB preset; 1,024 for other presets; explicit overrides win |
+| Active requests | 1 below 24 GB; 2 on larger Macs. Explicit two-request overrides remain available on 16 GB, subject to headroom |
 | Prefix cache | 16 GiB disk quota, persistent, in its own option-20 directory |
 | Input | text only |
 
@@ -36,10 +36,10 @@ Overrides are independent of the option-18 and option-19 variables:
 - `SPLASH_FLASH_NEXT_OPENCODE_CONTEXT`: `auto` (server minus 2,048) or a smaller integer context.
 - `SPLASH_FLASH_NEXT_MAX_TOKENS`: positive and smaller than the client context; default 1,024; output is reduced automatically for very small contexts.
 - `SPLASH_FLASH_NEXT_MAX_MEMORY`: `8G`, `9G`, `10G`, `11G`, `12G`, `16G`, `20G`, `24G`, `32G`, `40G`, `48G`, or `56G`, default `10G`. The launcher refuses a cap that would leave the Mac less than the 2-7 GiB cushion macOS keeps for itself (7% of unified memory), and prints the automatic ceiling when the cap is larger than the engine's own budget, which on a 16 GB Mac is about 10.8 GiB. Resident KV scales with the cap at about 2,407 pages, about 77,000 tokens, per GiB on this Mac: 262,137 tokens resident at 11G, 196,601 at 10G, 114,681 at 9G (`qwen38-option20-v5c-20261104.md`). Under roughly 10G the plan stops keeping the served 131,072 tokens in memory and a full-length request spills by design.
-- `SPLASH_FLASH_NEXT_EXPERT_MEMORY`: `auto` (default) or a size from `512M` to `32G`. The engine treats it as the **least** RAM for the routed experts, so only `auto` lets the store grow past what the memory plan leaves it. The launcher rejects a size that leaves less than 2G of the Metal cap for weights, KV and state, and says so when the store is over half the cap.
-- `SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS`: 128-2048 in steps of 128, default `1024`.
-- `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS`: `1` or `2`, default `2`. When unset, the launcher falls back to `1` below 16 GB; explicitly requesting `2` below that floor is rejected. Options 14, 16, 18 and 19 remain single-lane.
-- `SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE`: `0` or `1`, default `1`. This admits a second request on a Mac with at least 16 GB at any context the profile allows, with a host-memory notice above 65,536 tokens on 16-23 GB machines. Setting it to `0` restores the 24 GB admission gate above 65,536 tokens; 16 GB remains enough at smaller contexts. Admission does not guarantee execution: the engine still requires `memory_governor.growth_allowed`. On this 16 GB M5, growth needs about 3.15 GiB host spare (1 GiB above the macOS reserve), or about 4.15 GiB to reopen after pressure. V4, V5 and V5c admitted two requests but serialized their work with browser-class apps open. V5b at the 9G cap proved overlap after Chrome and LM Studio were quit: the child queued 11 s instead of 165-186 s, and the first `b2` decode batches appeared (`qwen38-option20-v5b-20261104.md`). Two requests decoding together each ran at about half speed (5.17 tok/s against 11.4-11.9 alone). The chosen 10G cap with browser-class apps closed combines V5's resident KV allowance with V5b's host-headroom finding; that combination was chosen without a separate measured V5e row.
+- `SPLASH_FLASH_NEXT_EXPERT_MEMORY`: `auto` (default) or a size from `512M` to `32G`. The size sets the **least** RAM for streamed routed experts. Both `auto` and an explicit size let the cap take what the memory plan leaves; the size fixes the floor the store can shrink to. The launcher rejects a size that leaves less than 2G of the Metal cap for weights, KV and state, and says so when the store is over half the cap.
+- `SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS`: 128-2048 in steps of 128. Automatic default `2048` for the validated 16 GiB/10G/131K/automatic-expert/single-request/16G-persistent-cache preset; `1024` otherwise. Explicit values are preserved.
+- `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS`: `1` or `2`; when unset, defaults to `1` below 24 GB and `2` on larger Macs. Explicit `2` is allowed from 16 GB where the context gate permits it, and is rejected below 16 GB. The menu and direct launch resolve the same host default. Options 14, 16, 18 and 19 remain single-lane.
+- `SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE`: `0` or `1`, default `1`. For an explicit `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2` override, this admits a second request on a Mac with at least 16 GB at any context the profile allows, with a host-memory notice above 65,536 tokens on 16-23 GB machines. Setting it to `0` restores the 24 GB admission gate above 65,536 tokens; 16 GB remains enough at smaller contexts. Admission does not guarantee execution: the engine still requires `memory_governor.growth_allowed`. On this 16 GB M5, growth needs 3.00 GiB host spare (1 GiB above the 2.00 GiB macOS reserve), or 4.00 GiB to reopen after pressure. V4, V5 and V5c admitted two requests but serialized their work with browser-class apps open. V5b at the 9G cap proved overlap after Chrome and LM Studio were quit: the child queued 11 s instead of 165-186 s, and the first `b2` decode batches appeared (`qwen38-option20-v5b-20261104.md`). Two requests decoding together each ran at about half speed (5.17 tok/s against 11.4-11.9 alone). The chosen 10G cap with browser-class apps closed combines V5's resident KV allowance with V5b's host-headroom finding; that combination was chosen without a separate measured V5e row.
 - `SPLASH_FLASH_NEXT_MAX_CACHE_DISK`: `0` through `64G`, default `16G`. The launcher refuses a quota larger than the free space on the volume that holds the cache, with a message that says to lower the quota or free disk space. The default was 8G until 2026-11-03: a few long benchmark prompts filled that quota (`used_bytes` 8,547,762,176 of 8,589,934,592) and 16G then filled too (`used_bytes` 17,165,451,264 of 17,179,869,184 with 13.42 GiB of cache taken back over 12,553 KV blocks) against 67 GB free on this Mac, so a long-context workflow wants the 16G default and a heavier one wants more.
 - `SPLASH_FLASH_NEXT_REASONING_EFFORT`: `none`, `low`, `medium`, or `xhigh`.
 - `SPLASH_FLASH_NEXT_PERSISTENT_CACHE`: `0` or `1`, default `1`.
@@ -66,12 +66,28 @@ the plan sizes the resident KV allowance against the model's 262,144-token windo
 against its 2.15 GiB reserve. The flag raises a floor, not a ceiling. Measurements in
 `qwen38-option20-v2-20261103.md` and `qwen38-option20-v3-20261103.md`.
 
-## Chosen configuration on this 16 GB M5 (2026-11-04)
+## Current 16 GB Air defaults (2026-11-04 follow-up)
 
-After the V1 to V5c series, the profile to run on this Mac is now the launcher default:
+Option 20 now admits **one active request by default on hosts below 24 GB**. That single-request implementation retained 131,072-token server context, 129,024-token OpenCode context, a 10 GiB cap, 16 GiB persistent prefix-cache quota, automatic expert memory, 1,024-token prefill chunks, INT8 KV, BF16 state, low reasoning and the 64 MiB PLE row cache. The later prefill tuning below raises the chunk size only for its validated preset. The full n-gram table remains on SSD. `verify-rows auto` remains the engine default.
+
+This prevents an additional client from becoming a competing active request on a memory-constrained host. It does not establish faster isolated generation, and it deliberately queues delegated requests behind the current request. An explicit `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2` retains the prior opt-in behavior; 24 GB and larger hosts retain their two-request default.
+
+The smaller-context recommendation remains an explicit workload choice, preserving the validated 131K default. To try 64K when the workload fits:
 
 ```sh
-bash /Users/mymac/startllamacpp.sh --direct 20
+SPLASH_FLASH_NEXT_MAX_CONTEXT=65536 bash /Users/mymac/startllamacpp.sh --direct 20
+```
+
+This override synchronizes the OpenCode context to 63,488 tokens. It is not a measured speedup. The persistent cache stays enabled; keeping the system/tools and other long prompt prefixes stable across turns lets it reuse their KV and recurrent state. Prefix reuse improves prompt latency, not the SSD-bound decode rate. No n-gram-cache increase, larger prefill chunk or expert-memory floor is selected without matching evidence.
+
+The [November 5 single-request performance run](qwen38-option20-air-performance-20261105.md) measures three cold/reuse pairs at 4K and 28.6K, one pair at 65.4K, and repeated short coding/reasoning probes. It preserves full raw evidence and does not establish a controlled speedup from the request-admission change.
+
+## Historical two-request configuration on this 16 GB M5 (2026-11-04)
+
+The V1 to V5c series previously selected a two-request configuration. Its measurements below are historical; reproduce that configuration explicitly with:
+
+```sh
+SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2 bash /Users/mymac/startllamacpp.sh --direct 20
 ```
 
 That is 131,072 context, a 10 GiB Metal cap, a 16 GiB persistent prefix cache, `--expert-memory auto`,
@@ -123,3 +139,19 @@ The follow-up work is ordered in [the tuning plan](qwen38-option20-tuning-plan-2
 The same configuration was measured a second time on 2026-11-02 evening, on the running instance, in [the evening rerun report](qwen38-option20-live-131k-evening-20261102.md). Long prefill fell a further 6 to 7 percent against the morning run on the same build (149.47 against 161.02 tok/s at 28,589 tokens, 146.66 against 156.09 at 65,367) with decode unchanged at 10.8 to 11.6 tok/s, the governor again refused growth (168 denied reservations, 29.5 MB of host spare), and the cold-then-repeat prefix probe reused nothing this time (0 cached tokens, TTFT 6.14 s against 5.70 s) because the instance keeps one state entry, has no disk cache and evicted 84 states. These results support E1 (serve 32,761 instead of 131,072) and E5 (turn the SSD prefix cache on) as the next two runs.
 
 Machine scaling, 2026-11-03: [qwen38-option20-machine-scaling-20261103.md](qwen38-option20-machine-scaling-20261103.md) measures why this profile is fast and slow on this box, 36.1 streamed expert megabytes per prompt token and 452 per emitted token against an SSD supplying 3.6 to 6.3 GB/s, so both phases run at the storage ceiling rather than a compute ceiling. From those two constants it derives throughput for the M5 Air at 16 and 32 GB, M5 Pro 48 GB, M5 Max 36 GB, and Mac mini M5 Pro 64 GB, at today's flags and with a tuned expert store, and shows the cache arithmetic that decides whether extra RAM buys 1.4x or 3x: 263 expert slots per GiB of store at 3.89 MiB per slot, full residency needing about 93 GiB, and 25 to 51 reuses for one cached tile to break even against a 5.89 GB/s stream.
+
+## Expert-retention experiment, November 5, 2026
+
+Two retention prototypes passed bitwise Metal correctness and real-serving cache checks, but neither established a speedup. The revised coding probes averaged 8.37 tok/s on the baseline and 7.98 tok/s on the candidate, with substantial variability. Candidate expert hits reached 3.82%, while SSD reads per decode token rose from 690.29 to 707.03 MB. The active binary/profile were preserved and the experimental runtime changes removed.
+
+[All 50 serving rows, memory accounting and limitations](qwen38-option20-expert-retention-20261105.md) and the [tested prototype patch](qwen38-option20-expert-retention-20261105.patch) are saved for review. These results do not justify increasing other-device estimates.
+
+## Prefill and read-ahead tuning, November 5, 2026
+
+The validated 16 GiB preset uses 2,048-token prefill chunks. Matched cold-prefill means improved from 202.88 to 400.28 tok/s at 4,019 tokens and from 170.16 to 241.00 tok/s at 28,589 tokens. These are repeated-filler workloads; decode is not claimed to improve. Four decode read-ahead workers and 512 KiB pieces are retained because two workers and 256 KiB pieces were slower in their comparisons.
+
+Shared prefill scratch rises from 0.572 to 1.571 GiB, while the expert-store cap remains 1.946 GiB including staging. The engine cap remains 10 GiB and the served context remains 131,072. Requests above the approximately 114K resident-KV bound use the existing SSD KV tier. A 130,733-token initial-code recall request passed cold, immediate-reuse and persisted-restart checks. Explicit chunk overrides, lower caps, cache-disabled modes and other presets retain their previous defaults.
+
+[All tuning results and memory tables](qwen38-option20-io-tuning-20261105.md) and [packaged raw metrics](qwen38-option20-io-tuning-20261105.json).
+
+The [complete Mac estimate snapshot](qwen38-option20-mac-estimates-20261105.md) preserves the saved cross-machine tables and subsequent Air measurements.

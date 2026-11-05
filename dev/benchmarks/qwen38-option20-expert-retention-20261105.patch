@@ -1,0 +1,464 @@
+diff --git a/dev/tests/engine/expert_store_test.mm b/dev/tests/engine/expert_store_test.mm
+index 0803e159..9b11f106 100644
+--- a/dev/tests/engine/expert_store_test.mm
++++ b/dev/tests/engine/expert_store_test.mm
+@@ -592,6 +592,22 @@ int sharedFormatArena(MetalBackend &backend, const MoeShape &shape, const std::f
+     require(streamed[block].stream != nullptr, "shared format was treated as resident");
+   }
+   const MoePlan chunk = prefillPlan(shape, kMaximumRows), decode = MoE::decodePlan(shape, 1, MoeConfig{});
++  // Sparse decode must keep experts whose bytes a different format need not
++  // overwrite. This is the low-memory format-switching path used by IQ3.
++  if (shape.experts >= 256) {
++    Buffers b;
++    freshRows(backend, b, shape);
++    for (const uint32_t block : {0U, 2U}) {
++      const Model &m = block == 2 ? head : trunk;
++      require(runWeights(backend, streamed[block], b, decode) == runWeights(backend, m.weights, b, decode),
++              "sparse shared format differs from resident output");
++    }
++    const uint64_t before = store.stats().uses[static_cast<size_t>(MoePhase::Decode)].read;
++    require(runWeights(backend, streamed[0], b, decode) == runWeights(backend, trunk.weights, b, decode),
++            "retained shared experts differ from resident output");
++    require(store.stats().uses[static_cast<size_t>(MoePhase::Decode)].read == before,
++            "a format switch discarded sparse experts that fit together");
++  }
+   for (unsigned pass = 0; pass < 2; ++pass) {
+     for (const uint32_t block : {0U, 2U, 1U, 2U, 2U, 0U}) {
+       const Model &m = block == 2 ? head : trunk;
+diff --git a/dev/tests/engine/slot_recycler_test.cpp b/dev/tests/engine/slot_recycler_test.cpp
+index 710930cf..6c0d3d87 100644
+--- a/dev/tests/engine/slot_recycler_test.cpp
++++ b/dev/tests/engine/slot_recycler_test.cpp
+@@ -19,6 +19,7 @@
+ // recently used block would.
+ #include "TestChecks.hpp"
+ #include "model/SlotRecycler.hpp"
++#include "model/SharedExpertArena.hpp"
+ 
+ #include <algorithm>
+ #include <cstdint>
+@@ -52,6 +53,67 @@ using splash::test::require;
+ 
+ namespace {
+ 
++// Compare the masks against byte ranges, including partial words, alignment
++// padding and absent planes. False positives discard useful experts; false
++// negatives let a slot table name overwritten weights.
++void sharedArenaConflicts() {
++  using splash::model::ExpertSlotPlanes;
++  using splash::model::SharedExpertArena;
++  using splash::model::alignWeightOffset;
++  constexpr uint32_t slots = 65;
++  const std::array<ExpertSlotPlanes, 3> layouts{{
++      {{{73, 3, 1}, {45, 0, 7}, {9, 11, 2}}},
++      {{{121, 0, 2}, {71, 3, 1}, {15, 0, 8}}},
++      {{{1, 9, 0}, {83, 1, 4}, {137, 3, 2}}}}};
++  SharedExpertArena arena(layouts, slots);
++  require(arena.enabled(), "a small shared arena has no conflict masks");
++  require(!SharedExpertArena::metadataBytes(UINT64_MAX, UINT32_MAX) &&
++              !SharedExpertArena::metadataBytes(48, 512) && !SharedExpertArena::metadataBytes(1, slots),
++          "shared arena metadata exceeds its bound");
++  using Range = std::pair<uint64_t, uint64_t>;
++  const auto ranges = [&](uint32_t layout, uint32_t slot) {
++    std::vector<Range> result;
++    uint64_t base = 0;
++    for (const auto &projection : layouts[layout])
++      for (const uint64_t bytes : projection) {
++        if (bytes) result.emplace_back(base + slot * bytes, base + (slot + 1) * bytes);
++        base += alignWeightOffset(slots * bytes);
++      }
++    return result;
++  };
++  for (uint32_t layout = 0; layout < layouts.size(); ++layout)
++    for (uint32_t slot = 0; slot < slots; ++slot) {
++      for (uint32_t other = 0; other < layouts.size(); ++other)
++        for (uint32_t victim = 0; victim < slots; ++victim) arena.resident(other, victim, true);
++      std::set<std::pair<uint32_t, uint32_t>> actual, expected;
++      arena.overwrite(layout, slot, [&](uint32_t other, uint32_t victim) { actual.emplace(other, victim); });
++      for (uint32_t other = 0; other < layouts.size(); ++other) {
++        if (other == layout) continue;
++        for (uint32_t victim = 0; victim < slots; ++victim) {
++          bool overlaps = false;
++          for (const auto &[begin, end] : ranges(layout, slot))
++            for (const auto &[from, to] : ranges(other, victim)) overlaps |= begin < to && from < end;
++          if (overlaps) expected.emplace(other, victim);
++        }
++      }
++      require(actual == expected, "a shared arena conflict differs from byte overlap");
++    }
++  arena.clear();
++  arena.overwrite(0, 0, [&](uint32_t, uint32_t) { throw std::runtime_error("cleared arena holds an expert"); });
++  const std::array<uint32_t, 2> free{1, 64};
++  require(arena.prefer(0, free) == 64, "free slot order changed without conflicts");
++  const std::array<ExpertSlotPlanes, 2> same{layouts[0], layouts[0]};
++  SharedExpertArena hot(same, slots);
++  hot.resident(1, 1, true);
++  hot.resident(1, 64, true);
++  hot.reuse(1, 64);
++  require(hot.prefer(0, free) == 1, "a reused expert lost to a cold one of the same size");
++  hot.cool();
++  require(hot.prefer(0, free) == 64, "an old reuse preference never aged");
++  hot.discardOthers(0, [&](uint32_t other, uint32_t slot) { hot.resident(other, slot, false); });
++  hot.overwrite(0, 1, [&](uint32_t, uint32_t) { throw std::runtime_error("prefill left another format held"); });
++}
++
+ // The slots of a store's experts, as the store keeps them: a load routes
+ // experts, those resident are touched, the others claim slots.
+ struct Arena final {
+@@ -131,6 +193,12 @@ void freeSlotsFirst() {
+   std::set<uint32_t> taken;
+   for (uint64_t expert = 0; expert < 4; ++expert) taken.insert(slots.claim(expert, 6, false));
+   require(taken.size() == 4, "a reset left a slot held");
++  slots.reset();
++  require(slots.freeSlots().size() == 4 && slots.claim(7, 7, false, 3) == 3,
++          "a preferred free slot was not taken");
++  rejects([&] { static_cast<void>(slots.claim(8, 8, false, 3)); }, "not free",
++          "a preferred occupied slot was taken");
++  require(slots.find(7) == 3 && slots.freeSlots().size() == 3, "a rejected preference changed ownership");
+ }
+ 
+ void findsWhatItHolds() {
+@@ -522,6 +590,7 @@ int main(int argc, char **argv) {
+   try {
+     if (argc != 2) throw std::invalid_argument("usage: slot_recycler_test SELECTION_TRACES");
+     neverTakesTheLoadsOwn();
++    sharedArenaConflicts();
+     freeSlotsFirst();
+     findsWhatItHolds();
+     resizes();
+diff --git a/runtime/model/ExpertStore.cpp b/runtime/model/ExpertStore.cpp
+index 605bf0a3..2a768cc9 100644
+--- a/runtime/model/ExpertStore.cpp
++++ b/runtime/model/ExpertStore.cpp
+@@ -8,6 +8,7 @@
+ #include "model/GgufPreparation.hpp"
+ #include "model/Model.hpp"
+ #include "model/SlotRecycler.hpp"
++#include "model/SharedExpertArena.hpp"
+ #include "model/WeightImages.hpp"
+ #include "model/WeightLayout.hpp"
+ #include "model/WeightSource.hpp"
+@@ -168,7 +169,8 @@ uint64_t fixedBytesOf(const Geometry &g, uint32_t blocks, ops::MoeShape shape) {
+   const uint64_t prediction =
+       uint64_t{kCycleRows} * (shape.routerWidth() + 2ULL * shape.routesPerToken()) * sizeof(float);
+   return stagingOf(g, shape).bytes() + uint64_t{blocks} * shape.experts * sizeof(uint32_t) +
+-         uint64_t{shape.experts} * (sizeof(uint32_t) + 3 * sizeof(uint64_t)) + 4 * sizeof(uint32_t) + prediction;
++         uint64_t{shape.experts} * (sizeof(uint32_t) + 3 * sizeof(uint64_t)) + 4 * sizeof(uint32_t) + prediction +
++         SharedExpertArena::metadataBytes(g.layouts.size(), shape.experts);
+ }
+ 
+ // The smallest store (ExpertStore::minimumBytes): its fixed bytes and the
+@@ -366,6 +368,7 @@ struct ExpertStore::Impl {
+   metal::MetalBuffer tables, staging, jobs, sources, grid;
+   // Low-memory stores reuse one arena across formats, only between completed layers.
+   metal::MetalBuffer sharedArena;
++  SharedExpertArena sharedSlots;
+   uint32_t activeSize = kNoSlot;
+   // A decode step's prediction of the next block's routes (addLoad): its
+   // router's fp32 scores of this block's input, then each row's experts and
+@@ -439,6 +442,7 @@ void ExpertStore::Impl::evict(Size &size, uint32_t slot) {
+   // which a load set, so it is never used.
+   static_cast<uint32_t *>(tables.contents())[uint64_t{owner} * shape.experts + expert] = 0;
+   size.ownerBlock[slot] = size.ownerExpert[slot] = kNoSlot;
++  sharedSlots.resident(blocks[owner].size, slot, false);
+   --counters.resident;
+ }
+ 
+@@ -451,6 +455,8 @@ void ExpertStore::Impl::route(uint32_t index, std::span<const std::span<const Mo
+   Size &size = sizes[block.size];
+   const bool chunk = longChunk(phase, rows);
+   ++serial;
++  // Let a changed working set compete again after roughly 32 decode cycles.
++  if (phase == ops::MoePhase::Decode && serial % (uint64_t{blocks.size()} * 32) == 0) sharedSlots.cool();
+   pendingBlock = index;
+   for (std::span<const MoeTileDescriptor> tiles : parts)
+     for (const MoeTileDescriptor &tile : tiles) {
+@@ -461,6 +467,7 @@ void ExpertStore::Impl::route(uint32_t index, std::span<const std::span<const Mo
+       ++use.routed;
+       if (const uint32_t slot = block.slot[expert]; slot != kNoSlot) {
+         size.recycling.touch(slot, serial, chunk);
++        if (phase == ops::MoePhase::Decode) sharedSlots.reuse(block.size, slot);
+         continue;
+       }
+       pending.push_back({expert, kNoSlot});
+@@ -469,11 +476,19 @@ void ExpertStore::Impl::route(uint32_t index, std::span<const std::span<const Mo
+   std::ranges::sort(pending);
+   uint32_t *table = static_cast<uint32_t *>(tables.contents()) + uint64_t{index} * shape.experts;
+   for (auto &[expert, slot] : pending) {
+-    slot = size.recycling.claim(uint64_t{index} << 32 | expert, serial, chunk);
++    const auto preferred = sharedSlots.enabled() && !chunk
++        ? sharedSlots.prefer(block.size, size.recycling.freeSlots()) : std::optional<uint32_t>{};
++    slot = size.recycling.claim(uint64_t{index} << 32 | expert, serial, chunk, preferred);
+     evict(size, slot);
++    if (sharedSlots.enabled() && !chunk)
++      sharedSlots.overwrite(block.size, slot, [&](uint32_t other, uint32_t victim) {
++        evict(sizes[other], victim);
++        sizes[other].recycling.free(victim);
++      });
+     size.ownerBlock[slot] = index;
+     size.ownerExpert[slot] = expert;
+     block.slot[expert] = slot;
++    sharedSlots.resident(block.size, slot, true);
+     table[expert] = slot;
+     waiting[expert] = 1;
+     ++counters.resident;
+@@ -739,6 +754,7 @@ void ExpertStore::Impl::abandon() {
+       block.slot[expert] = kNoSlot;
+       table[expert] = 0;
+       size.ownerBlock[slot] = size.ownerExpert[slot] = kNoSlot;
++      sharedSlots.resident(block.size, slot, false);
+       size.recycling.free(slot);
+       --counters.resident;
+     }
+@@ -966,7 +982,12 @@ void ExpertStore::Impl::load(uint32_t index, ops::MoePhase phase, uint32_t rows,
+       // routes frees none of the last load's (abandon).
+       abandon();
+       const uint32_t nextSize = blocks[index].size;
+-      if (sharedArena.sizeBytes() && activeSize != nextSize) {
++      if (sharedSlots.enabled() && longChunk(phase, rows))
++        sharedSlots.discardOthers(nextSize, [&](uint32_t other, uint32_t victim) {
++          evict(sizes[other], victim);
++          sizes[other].recycling.free(victim);
++        });
++      if (sharedArena.sizeBytes() && !sharedSlots.enabled() && activeSize != nextSize) {
+         if (activeSize != kNoSlot) {
+           Size &previous = sizes[activeSize];
+           for (uint32_t slot = 0; slot < previous.slots; ++slot) evict(previous, slot);
+@@ -1068,8 +1089,13 @@ ExpertStore::ExpertStore(metal::MetalBackend &backend, StreamedBlocks streamed,
+     if (minimum - fixed > largest)
+       throw std::invalid_argument("shared expert arena is more than the device's largest buffer");
+     impl.sharedArena = backend.allocateBuffer(minimum - fixed, metal::BufferStorage::Shared, "experts/shared-arena");
+-    logLine("Expert formats share one ", (minimum - fixed) >> 20,
+-            " MiB arena; changing formats evicts the previous format's cached experts.");
++    std::vector<ExpertSlotPlanes> layouts;
++    for (const ExpertLayout &layout : geometry.layouts)
++      layouts.push_back({layout[0].planes, layout[1].planes, layout[2].planes});
++    impl.sharedSlots = SharedExpertArena(layouts, shape.experts);
++    logLine("Expert formats share one ", (minimum - fixed) >> 20, " MiB arena; ",
++            impl.sharedSlots.enabled() ? "cached experts survive non-overlapping format writes."
++                                       : "changing formats evicts the previous format's cached experts.");
+   }
+   for (uint32_t layout = 0; layout < geometry.layouts.size(); ++layout)
+     impl.sizes.push_back(
+@@ -1321,6 +1347,7 @@ void ExpertStore::release() {
+   // The chunks past the live ones were given back already.
+   if (impl.sharedArena.sizeBytes()) impl.backend.releaseMemory(impl.sharedArena);
+   impl.activeSize = kNoSlot;
++  impl.sharedSlots.clear();
+   for (Impl::Size &size : impl.sizes) {
+     if (!impl.sharedArena.sizeBytes())
+       for (uint32_t chunk = 0; chunk < size.chunks.liveChunks(); ++chunk) impl.backend.releaseMemory(size.buffers[chunk]);
+diff --git a/runtime/model/ExpertStore.hpp b/runtime/model/ExpertStore.hpp
+index a420d533..883c6631 100644
+--- a/runtime/model/ExpertStore.hpp
++++ b/runtime/model/ExpertStore.hpp
+@@ -29,10 +29,15 @@
+ //
+ // If the memory budget cannot hold one layer of every format, the store
+ // instead shares one arena large enough for the largest layer. Every format
+-// streams, including single-layer formats. Switching formats evicts the old
+-// format only after its GPU work completes; repeated layers of the same format
+-// may reuse their cached slots. This mode has no elastic chunks and counts
++// streams, including single-layer formats. New slots prefer free space that
++// preserves other formats' experts, evicting only those whose bytes overlap
++// after the previous layer's GPU work completes. Conflict masks reserve at
++// most 4 MiB within the fixed budget; more layouts fall back to clearing the
++// previous format on a switch. This mode has no elastic chunks and counts
+ // the shared allocation once through release and restore.
++// Large prefill chunks scan a layer and clear other formats once, avoiding
++// per-slot overlap searches. Decode gives reused experts a soft preference
++// across formats, aged every roughly 32 cycles as its working set changes.
+ //
+ // A streamed block's load runs after its steps' grouping (ops::
+ // MoeExpertStream), in rounds: each a host step of the command, which claims
+diff --git a/runtime/model/SlotRecycler.cpp b/runtime/model/SlotRecycler.cpp
+index e8617ed8..4bbe68ae 100644
+--- a/runtime/model/SlotRecycler.cpp
++++ b/runtime/model/SlotRecycler.cpp
+@@ -189,7 +189,12 @@ void SlotRecycler::touch(uint32_t slot, uint64_t load, bool chunk) {
+   append(slot, Frequent);
+ }
+ 
+-uint32_t SlotRecycler::claim(uint64_t key, uint64_t load, bool chunk) {
++uint32_t SlotRecycler::claim(uint64_t key, uint64_t load, bool chunk, std::optional<uint32_t> preferred) {
++  if (preferred) {
++    const auto at = std::ranges::find(free_, *preferred);
++    if (at == free_.end()) throw std::invalid_argument("a preferred slot is not free");
++    std::iter_swap(at, free_.end() - 1);
++  }
+   const uint64_t slots = size();
+   const uint32_t ghost = ghostOf_.find(key);
+   const List gaveUp = ghost == KeyIndex::kAbsent ? Free : List(ghostList_[ghost]);
+diff --git a/runtime/model/SlotRecycler.hpp b/runtime/model/SlotRecycler.hpp
+index f665d0e6..fce74b93 100644
+--- a/runtime/model/SlotRecycler.hpp
++++ b/runtime/model/SlotRecycler.hpp
+@@ -33,6 +33,7 @@
+ #include <cstdint>
+ #include <functional>
+ #include <optional>
++#include <span>
+ #include <vector>
+ 
+ namespace splash::model {
+@@ -53,7 +54,11 @@ public:
+   // free, or the one whose key to evict; then it holds `key` and is the
+   // load's. Throws std::runtime_error when every slot holds a key the load
+   // uses.
+-  [[nodiscard]] uint32_t claim(uint64_t key, uint64_t load, bool chunk);
++  // An arena shared across formats may prefer one of the free slots to
++  // avoid overwriting another format's cached bytes. Replacement stays ARC.
++  [[nodiscard]] uint32_t claim(uint64_t key, uint64_t load, bool chunk,
++                               std::optional<uint32_t> preferred = {});
++  [[nodiscard]] std::span<const uint32_t> freeSlots() const noexcept { return free_; }
+   // `slot` holds no key (a failed load claimed it): the first claimed.
+   void free(uint32_t slot);
+   // Every slot free, and no ghost.
+diff --git a/runtime/model/SharedExpertArena.hpp b/runtime/model/SharedExpertArena.hpp
+new file mode 100644
+index 00000000..bd2b824a
+--- /dev/null
++++ b/runtime/model/SharedExpertArena.hpp
+@@ -0,0 +1,142 @@
++#pragma once
++
++// Byte-exact conflicts between the plane-contiguous slots of formats that
++// alias one expert arena. A slot remains cached until another format writes
++// bytes it owns. Masks make choosing a free slot independent of expert size;
++// their bounded reservation is part of ExpertStore's fixed memory budget.
++
++#include "model/ExpertChunkLayout.hpp"
++
++#include <bit>
++#include <optional>
++#include <span>
++#include <vector>
++
++namespace splash::model {
++
++class SharedExpertArena final {
++public:
++  static constexpr uint64_t kMaximumMetadataBytes = 4ULL << 20;
++
++  // Zero selects the original format-at-a-time policy for unusually many
++  // layouts. Check products against the bound before multiplying them.
++  [[nodiscard]] static uint64_t metadataBytes(uint64_t layouts, uint32_t slots) noexcept {
++    if (layouts < 2 || !slots) return 0;
++    const uint64_t words = (uint64_t{slots} + 63) / 64;
++    const uint64_t limit = kMaximumMetadataBytes / sizeof(uint64_t);
++    if (layouts > limit / words) return 0;
++    const uint64_t row = layouts * words;
++    if (limit / row < 2 || layouts > (limit / row - 2) / slots) return 0;
++    return (layouts * slots + 2) * row * sizeof(uint64_t);
++  }
++
++  SharedExpertArena() = default;
++  SharedExpertArena(std::span<const ExpertSlotPlanes> layouts, uint32_t slots)
++      : slots_(slots), words_((uint64_t{slots} + 63) / 64) {
++    if (!metadataBytes(layouts.size(), slots)) return;
++    live_.assign(layouts.size() * words_, 0);
++    reused_.assign(live_.size(), 0);
++    conflicts_.assign(layouts.size() * slots * live_.size(), 0);
++    for (size_t from = 0; from < layouts.size(); ++from) {
++      uint64_t fromBase = 0;
++      for (const auto &projection : layouts[from])
++        for (const uint64_t bytes : projection) {
++          if (bytes)
++            for (size_t to = 0; to < layouts.size(); ++to) {
++              if (from == to) continue;
++              uint64_t toBase = 0;
++              for (const auto &target : layouts[to])
++                for (const uint64_t targetBytes : target) {
++                  if (targetBytes)
++                    for (uint32_t slot = 0; slot < slots; ++slot) {
++                      const uint64_t begin = std::max(fromBase + slot * bytes, toBase);
++                      const uint64_t end = std::min(fromBase + (slot + 1) * bytes, toBase + slots * targetBytes);
++                      if (begin >= end) continue;
++                      for (uint64_t victim = (begin - toBase) / targetBytes;
++                           victim <= (end - 1 - toBase) / targetBytes; ++victim)
++                        conflicts_[(from * slots + slot) * live_.size() + to * words_ + victim / 64] |=
++                            uint64_t{1} << (victim % 64);
++                    }
++                  toBase += alignWeightOffset(slots * targetBytes);
++                }
++            }
++          fromBase += alignWeightOffset(slots * bytes);
++        }
++    }
++  }
++
++  [[nodiscard]] bool enabled() const noexcept { return !live_.empty(); }
++  void cool() noexcept { std::ranges::fill(reused_, uint64_t{0}); }
++  void clear() noexcept {
++    std::ranges::fill(live_, uint64_t{0});
++    cool();
++  }
++  void reuse(uint32_t layout, uint32_t slot) noexcept {
++    if (enabled()) reused_[layout * words_ + slot / 64] |= uint64_t{1} << (slot % 64);
++  }
++  void resident(uint32_t layout, uint32_t slot, bool held) noexcept {
++    if (!enabled()) return;
++    uint64_t &word = live_[layout * words_ + slot / 64];
++    const uint64_t bit = uint64_t{1} << (slot % 64);
++    if (held) word |= bit;
++    else {
++      word &= ~bit;
++      reused_[layout * words_ + slot / 64] &= ~bit;
++    }
++  }
++
++  // Prefer the free slot that evicts fewest experts of other formats. ARC
++  // still chooses which expert of this format to recycle when none is free.
++  // Reused experts cost four cold ones, a soft preference that can adapt
++  // when routes change, rather than pinning an old working set forever.
++  [[nodiscard]] std::optional<uint32_t> prefer(uint32_t layout, std::span<const uint32_t> free) const noexcept {
++    std::optional<uint32_t> best;
++    uint64_t fewest = UINT64_MAX;
++    for (auto at = free.rbegin(); at != free.rend(); ++at) {
++      const uint64_t *mask = conflicts_.data() + (uint64_t{layout} * slots_ + *at) * live_.size();
++      uint64_t victims = 0;
++      for (size_t word = 0; word < live_.size(); ++word)
++        victims += std::popcount(mask[word] & live_[word]) + 3 * std::popcount(mask[word] & reused_[word]);
++      if (victims < fewest) {
++        best = *at;
++        fewest = victims;
++        if (!victims) break;
++      }
++    }
++    return best;
++  }
++
++  // A large prefill scans almost a whole layer. Discard other formats once
++  // rather than finding the same conflicts for each of its hundreds of
++  // misses. Decode resumes byte-exact retention on its next load.
++  template <typename Evict> void discardOthers(uint32_t layout, Evict evict) {
++    for (size_t word = 0; word < live_.size(); ++word) {
++      if (word / words_ == layout) continue;
++      uint64_t victims = live_[word];
++      while (victims) {
++        evict(static_cast<uint32_t>(word / words_),
++              static_cast<uint32_t>((word % words_) * 64 + std::countr_zero(victims)));
++        victims &= victims - 1;
++      }
++    }
++  }
++
++  template <typename Evict> void overwrite(uint32_t layout, uint32_t slot, Evict evict) {
++    const uint64_t *mask = conflicts_.data() + (uint64_t{layout} * slots_ + slot) * live_.size();
++    for (size_t word = 0; word < live_.size(); ++word) {
++      uint64_t victims = mask[word] & live_[word];
++      while (victims) {
++        const uint32_t victim = static_cast<uint32_t>((word % words_) * 64 + std::countr_zero(victims));
++        evict(static_cast<uint32_t>(word / words_), victim);
++        victims &= victims - 1;
++      }
++    }
++  }
++
++private:
++  uint32_t slots_ = 0;
++  uint64_t words_ = 0;
++  std::vector<uint64_t> live_, reused_, conflicts_;
++};
++
++} // namespace splash::model
