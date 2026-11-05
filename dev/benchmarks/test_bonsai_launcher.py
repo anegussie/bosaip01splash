@@ -397,7 +397,7 @@ print('Ready test server',flush=True)
         r = subprocess.run(
             ["bash", LAUNCHER],
             input="20\n",
-            env=self.env,
+            env={**self.env, "SPLASH_HOST_MEM_BYTES": str(17179869184)},
             capture_output=True,
             text=True,
             timeout=15,
@@ -405,7 +405,7 @@ print('Ready test server',flush=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("20) Qwen3.8 Flash-Next GSQ-RCO IQ3_XXS", r.stdout)
         args = json.loads((self.root / "argv.json").read_text())
-        self.assertEqual(args[args.index("--max-memory") + 1], "10G")
+        self.assertEqual(args[args.index("--max-memory") + 1], "10.8G")
         for flag in ("--list", "--help"):
             r = subprocess.run(
                 ["bash", LAUNCHER, flag],
@@ -485,7 +485,7 @@ print('Ready test server',flush=True)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertEqual(args[args.index("--max-active-requests") + 1], "1")
         self.assertEqual(args[args.index("--max-context") + 1], "131072")
-        self.assertEqual(args[args.index("--max-memory") + 1], "10G")
+        self.assertEqual(args[args.index("--max-memory") + 1], "10.8G")
         self.assertEqual(args[args.index("--ple-memory") + 1], "64M")
         self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "2048")
         self.assertEqual(args[args.index("--max-cache-disk") + 1], "17179869184")
@@ -503,29 +503,53 @@ print('Ready test server',flush=True)
         self.assertIn("one active request", option20)
         self.assertNotIn("two active requests", option20)
 
-
     def test_option20_air_preserves_explicit_smaller_prefill_chunk(self):
         r = self.run_launcher(
-            "20", SPLASH_HOST_MEM_BYTES=str(17179869184),
+            "20",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
             SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS="1024",
         )
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "1024")
 
+    def test_option20_air_preserves_explicit_10g_cap(self):
+        for cap in ("10G", "10.5G"):
+            with self.subTest(cap=cap):
+                r = self.run_launcher(
+                    "20",
+                    SPLASH_HOST_MEM_BYTES=str(17179869184),
+                    SPLASH_FLASH_NEXT_MAX_MEMORY=cap,
+                )
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                args = json.loads((self.root / "argv.json").read_text())
+                self.assertEqual(args[args.index("--max-memory") + 1], cap)
+                self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "2048")
+
+    def test_option20_fractional_cap_validates_explicit_expert_budget(self):
+        r = self.run_launcher(
+            "20",
+            SPLASH_FLASH_NEXT_MAX_MEMORY="10.8G",
+            SPLASH_FLASH_NEXT_EXPERT_MEMORY="3G",
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--max-memory") + 1], "10.8G")
+
     def test_option20_air_lower_memory_cap_keeps_smaller_prefill_chunk(self):
         r = self.run_launcher(
-            "20", SPLASH_HOST_MEM_BYTES=str(17179869184),
+            "20",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
             SPLASH_FLASH_NEXT_MAX_MEMORY="8G",
         )
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "1024")
 
-
     def test_option20_air_cache_disabled_keeps_smaller_prefill_chunk(self):
         r = self.run_launcher(
-            "20", SPLASH_HOST_MEM_BYTES=str(17179869184),
+            "20",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
             SPLASH_FLASH_NEXT_MAX_CACHE_DISK="0",
         )
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
@@ -599,7 +623,7 @@ print('Ready test server',flush=True)
         self.assertEqual(args[args.index("--max-active-requests") + 1], "2")
         self.assertEqual(args[args.index("--max-context") + 1], "131072")
 
-        # An explicit single-lane override preserves the chosen cap and context.
+        # An explicit single lane uses the Air's new default cap and context.
         r = self.run_launcher(
             "20",
             SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="1",
@@ -610,7 +634,7 @@ print('Ready test server',flush=True)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertEqual(args[args.index("--max-active-requests") + 1], "1")
         self.assertEqual(args[args.index("--max-context") + 1], "131072")
-        self.assertEqual(args[args.index("--max-memory") + 1], "10G")
+        self.assertEqual(args[args.index("--max-memory") + 1], "10.8G")
 
         # Setting the gate back to 0 restores the 24 GB rule.
         (self.root / "attempts").unlink(missing_ok=True)

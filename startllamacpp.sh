@@ -45,6 +45,10 @@ SPLASH_FLASH_NEXT_OPENCODE_CONTEXT="${SPLASH_FLASH_NEXT_OPENCODE_CONTEXT:-auto}"
 splash_flash_next_default_output=0
 [[ -n "${SPLASH_FLASH_NEXT_MAX_TOKENS:-}" ]] || splash_flash_next_default_output=1
 SPLASH_FLASH_NEXT_MAX_TOKENS="${SPLASH_FLASH_NEXT_MAX_TOKENS:-1024}"
+SPLASH_FLASH_NEXT_MAX_MEMORY_DEFAULTED=0
+if [[ -z "${SPLASH_FLASH_NEXT_MAX_MEMORY:-}" ]]; then
+  SPLASH_FLASH_NEXT_MAX_MEMORY_DEFAULTED=1
+fi
 SPLASH_FLASH_NEXT_MAX_MEMORY="${SPLASH_FLASH_NEXT_MAX_MEMORY:-10G}"
 SPLASH_FLASH_NEXT_REASONING_EFFORT="${SPLASH_FLASH_NEXT_REASONING_EFFORT:-low}"
 SPLASH_FLASH_NEXT_MAX_CACHE_DISK="${SPLASH_FLASH_NEXT_MAX_CACHE_DISK:-16G}"
@@ -312,7 +316,7 @@ splash_host_memory_bytes() {
 }
 
 # Resolve once before either the menu or launch path uses the profile. A caller's
-# explicit concurrency choice wins; a small host keeps the measured 10G/131K
+# explicit concurrency choice wins; a small host keeps the 131K context
 # settings and persistent prefix cache without admitting competing requests.
 splash_flash_next_host_defaults() {
   local host_memory
@@ -322,18 +326,22 @@ splash_flash_next_host_defaults() {
      (( host_memory > 0 && host_memory < 25769803776 )); then
     SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=1
   fi
-  # The measured 16 GiB/10G profile uses larger chunks for cold prefill.
-  # Keep explicit choices and other memory/storage/concurrency profiles unchanged.
-  # Its full 131K context remains available through the existing SSD KV tier.
-  if [[ "$SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS_DEFAULTED" == "1" &&
-        "$host_memory" == "17179869184" &&
-        "$SPLASH_FLASH_NEXT_MAX_MEMORY" == "10G" &&
+  # Give the 16 GiB preset room for 131K resident admission with 2,048-token
+  # prefill. Host pressure can still force spill. Explicit settings win.
+  if [[ "$host_memory" == "17179869184" &&
         "$SPLASH_FLASH_NEXT_MAX_CONTEXT" == "131072" &&
         "$SPLASH_FLASH_NEXT_MAX_CACHE_DISK" == "16G" &&
         "$SPLASH_FLASH_NEXT_PERSISTENT_CACHE" == "1" &&
         "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" == "auto" &&
         "$SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS" == "1" ]]; then
-    SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS=2048
+    if [[ "$SPLASH_FLASH_NEXT_MAX_MEMORY_DEFAULTED" == "1" ]]; then
+      SPLASH_FLASH_NEXT_MAX_MEMORY=10.8G
+    fi
+    if [[ "$SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS_DEFAULTED" == "1" &&
+          ( "$SPLASH_FLASH_NEXT_MAX_MEMORY" == "10G" || "$SPLASH_FLASH_NEXT_MAX_MEMORY" == "10.5G" ||
+            "$SPLASH_FLASH_NEXT_MAX_MEMORY" == "10.8G" ) ]]; then
+      SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS=2048
+    fi
   fi
   if [[ "$SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS" == "1" ]]; then
     SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE="one active request"
@@ -1714,8 +1722,13 @@ case "$choice" in
       SPLASH_BONSAI_PREFILL_CHUNK_TOKENS="$SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS"
       SPLASH_BONSAI_MAX_ACTIVE_REQUESTS="$SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS"
       case "$SPLASH_FLASH_NEXT_MAX_MEMORY" in
-        8G|9G|10G|11G|12G|16G|20G|24G|32G|40G|48G|56G) ;;
-        *) echo "SPLASH_FLASH_NEXT_MAX_MEMORY must be 8G, 9G, 10G, 11G, 12G, 16G, 20G, 24G, 32G, 40G, 48G or 56G." >&2; exit 1 ;;
+        8G|9G|10G|10.5G|10.8G|11G|12G|16G|20G|24G|32G|40G|48G|56G) ;;
+        *) echo "SPLASH_FLASH_NEXT_MAX_MEMORY must be 8G, 9G, 10G, 10.5G, 10.8G, 11G, 12G, 16G, 20G, 24G, 32G, 40G, 48G or 56G." >&2; exit 1 ;;
+      esac
+      case "$SPLASH_FLASH_NEXT_MAX_MEMORY" in
+        10.5G) splash_memory_cap_bytes=11274289152 ;;
+        10.8G) splash_memory_cap_bytes=11596411699 ;;
+        *) splash_memory_cap_bytes="$(splash_cache_disk_bytes "$SPLASH_FLASH_NEXT_MAX_MEMORY")" ;;
       esac
       # The engine clamps its own budget to the Mac's recommended working set
       # minus a margin, and the governor keeps 7% of unified memory (2-7 GiB)
@@ -1723,7 +1736,6 @@ case "$choice" in
       # larger cap is only a ceiling the engine clamps.
       splash_host_memory="$(splash_host_memory_bytes)"
       if [[ "$splash_host_memory" =~ ^[0-9]+$ ]] && (( splash_host_memory > 0 )); then
-        splash_memory_cap_bytes="$(( ${SPLASH_FLASH_NEXT_MAX_MEMORY%G} * 1073741824 ))"
         splash_host_reserve="$(( splash_host_memory / 100 * 7 ))"
         (( splash_host_reserve < 2147483648 )) && splash_host_reserve=2147483648
         (( splash_host_reserve > 7516192768 )) && splash_host_reserve=7516192768
@@ -1762,7 +1774,6 @@ case "$choice" in
           echo "SPLASH_FLASH_NEXT_EXPERT_MEMORY must be auto or a size from 512M to 32G." >&2
           exit 1
         fi
-        splash_memory_cap_bytes="$(splash_cache_disk_bytes "$SPLASH_FLASH_NEXT_MAX_MEMORY")"
         if (( splash_expert_memory_bytes + 2147483648 > splash_memory_cap_bytes )); then
           echo "SPLASH_FLASH_NEXT_EXPERT_MEMORY ${SPLASH_FLASH_NEXT_EXPERT_MEMORY} leaves less than 2G of the ${SPLASH_FLASH_NEXT_MAX_MEMORY} Metal cap for weights, KV and state." >&2
           exit 1

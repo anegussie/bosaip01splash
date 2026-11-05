@@ -10,11 +10,11 @@ Interactive menu selection `20` starts the same profile. Like the other direct S
 
 | Setting | Default |
 |---|---|
-| Server context | 131,072 tokens (the 128K allocation, accepted by the 10 GiB plan) |
+| Server context | 131,072 tokens |
 | OpenCode context | 129,024 tokens |
 | OpenCode output reserve | 1,024 tokens |
 | Reasoning effort | low |
-| Metal memory cap | 10 GiB (the engine's own ceiling on a 16 GB Mac is about 10.8 GiB) |
+| Metal memory cap | 10.8 GiB for the validated 16 GiB preset; 10 GiB for other presets (the engine's ceiling on this 16 GB Mac is about 10.8 GiB) |
 | Expert and PLE stores | automatic expert memory (the measured Air store is 1.946 GiB including staging); 64 MiB PLE row cache with the table on SSD |
 | KV / recurrent state | INT8 / BF16 |
 | Requested prefill chunk | 2,048 for the validated 16 GiB preset; 1,024 for other presets; explicit overrides win |
@@ -35,9 +35,9 @@ Overrides are independent of the option-18 and option-19 variables:
 - `SPLASH_FLASH_NEXT_MAX_CONTEXT`: 4,096-131,072 tokens, default `131072`.
 - `SPLASH_FLASH_NEXT_OPENCODE_CONTEXT`: `auto` (server minus 2,048) or a smaller integer context.
 - `SPLASH_FLASH_NEXT_MAX_TOKENS`: positive and smaller than the client context; default 1,024; output is reduced automatically for very small contexts.
-- `SPLASH_FLASH_NEXT_MAX_MEMORY`: `8G`, `9G`, `10G`, `11G`, `12G`, `16G`, `20G`, `24G`, `32G`, `40G`, `48G`, or `56G`, default `10G`. The launcher refuses a cap that would leave the Mac less than the 2-7 GiB cushion macOS keeps for itself (7% of unified memory), and prints the automatic ceiling when the cap is larger than the engine's own budget, which on a 16 GB Mac is about 10.8 GiB. Resident KV scales with the cap at about 2,407 pages, about 77,000 tokens, per GiB on this Mac: 262,137 tokens resident at 11G, 196,601 at 10G, 114,681 at 9G (`qwen38-option20-v5c-20261104.md`). Under roughly 10G the plan stops keeping the served 131,072 tokens in memory and a full-length request spills by design.
+- `SPLASH_FLASH_NEXT_MAX_MEMORY`: `8G`, `9G`, `10G`, `10.5G`, `10.8G`, `11G`, `12G`, `16G`, `20G`, `24G`, `32G`, `40G`, `48G`, or `56G`. Default `10.8G` for the 16 GiB/131K/automatic-expert/single-request/16G-persistent-cache preset; `10G` otherwise. Explicit caps are preserved. `10.8G` is 11,596,411,699 whole bytes. The launcher refuses a cap that would leave the Mac less than the 2-7 GiB cushion macOS keeps for itself (7% of unified memory), and prints the automatic ceiling when the cap is larger than the engine's own budget, about 10.8 GiB on this 16 GB Mac. With 2,048-token prefill, the allocation bound is 180,217 at 10.8G, 155,641 at 10.5G and 114,681 at 10G. These allocation bounds exclude the SSD tier's admission reserves. At 10.5G, actual resident admission held about 128,416 tokens before output projection, and a 130,733-token request still selected spill. The earlier 1,024-chunk measurements in `qwen38-option20-v5c-20261104.md` use less scratch and have different resident limits.
 - `SPLASH_FLASH_NEXT_EXPERT_MEMORY`: `auto` (default) or a size from `512M` to `32G`. The size sets the **least** RAM for streamed routed experts. Both `auto` and an explicit size let the cap take what the memory plan leaves; the size fixes the floor the store can shrink to. The launcher rejects a size that leaves less than 2G of the Metal cap for weights, KV and state, and says so when the store is over half the cap.
-- `SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS`: 128-2048 in steps of 128. Automatic default `2048` for the validated 16 GiB/10G/131K/automatic-expert/single-request/16G-persistent-cache preset; `1024` otherwise. Explicit values are preserved.
+- `SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS`: 128-2048 in steps of 128. Automatic default `2048` for the validated 16 GiB/10G-or-10.5G-or-10.8G/131K/automatic-expert/single-request/16G-persistent-cache preset; `1024` otherwise. Explicit values are preserved.
 - `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS`: `1` or `2`; when unset, defaults to `1` below 24 GB and `2` on larger Macs. Explicit `2` is allowed from 16 GB where the context gate permits it, and is rejected below 16 GB. The menu and direct launch resolve the same host default. Options 14, 16, 18 and 19 remain single-lane.
 - `SPLASH_FLASH_NEXT_SECOND_LANE_BELOW_GATE`: `0` or `1`, default `1`. For an explicit `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2` override, this admits a second request on a Mac with at least 16 GB at any context the profile allows, with a host-memory notice above 65,536 tokens on 16-23 GB machines. Setting it to `0` restores the 24 GB admission gate above 65,536 tokens; 16 GB remains enough at smaller contexts. Admission does not guarantee execution: the engine still requires `memory_governor.growth_allowed`. On this 16 GB M5, growth needs 3.00 GiB host spare (1 GiB above the 2.00 GiB macOS reserve), or 4.00 GiB to reopen after pressure. V4, V5 and V5c admitted two requests but serialized their work with browser-class apps open. V5b at the 9G cap proved overlap after Chrome and LM Studio were quit: the child queued 11 s instead of 165-186 s, and the first `b2` decode batches appeared (`qwen38-option20-v5b-20261104.md`). Two requests decoding together each ran at about half speed (5.17 tok/s against 11.4-11.9 alone). The chosen 10G cap with browser-class apps closed combines V5's resident KV allowance with V5b's host-headroom finding; that combination was chosen without a separate measured V5e row.
 - `SPLASH_FLASH_NEXT_MAX_CACHE_DISK`: `0` through `64G`, default `16G`. The launcher refuses a quota larger than the free space on the volume that holds the cache, with a message that says to lower the quota or free disk space. The default was 8G until 2026-11-03: a few long benchmark prompts filled that quota (`used_bytes` 8,547,762,176 of 8,589,934,592) and 16G then filled too (`used_bytes` 17,165,451,264 of 17,179,869,184 with 13.42 GiB of cache taken back over 12,553 KV blocks) against 67 GB free on this Mac, so a long-context workflow wants the 16G default and a heavier one wants more.
@@ -150,8 +150,24 @@ Two retention prototypes passed bitwise Metal correctness and real-serving cache
 
 The validated 16 GiB preset uses 2,048-token prefill chunks. Matched cold-prefill means improved from 202.88 to 400.28 tok/s at 4,019 tokens and from 170.16 to 241.00 tok/s at 28,589 tokens. These are repeated-filler workloads; decode is not claimed to improve. Four decode read-ahead workers and 512 KiB pieces are retained because two workers and 256 KiB pieces were slower in their comparisons.
 
-Shared prefill scratch rises from 0.572 to 1.571 GiB, while the expert-store cap remains 1.946 GiB including staging. The engine cap remains 10 GiB and the served context remains 131,072. Requests above the approximately 114K resident-KV bound use the existing SSD KV tier. A 130,733-token initial-code recall request passed cold, immediate-reuse and persisted-restart checks. Explicit chunk overrides, lower caps, cache-disabled modes and other presets retain their previous defaults.
+In this tuning experiment, shared prefill scratch rose from 0.572 to 1.571 GiB, while the expert-store cap remained 1.946 GiB including staging. The tested engine cap was 10 GiB and the served context was 131,072. Requests above its approximately 114K resident-KV bound used the existing SSD KV tier. A 130,733-token initial-code recall request passed cold, immediate-reuse and persisted-restart checks. The subsequent budget increases below raise the current default to 10.8 GiB. Explicit chunk overrides, lower caps, cache-disabled modes and other presets retain their previous defaults.
 
 [All tuning results and memory tables](qwen38-option20-io-tuning-20261105.md) and [packaged raw metrics](qwen38-option20-io-tuning-20261105.json).
 
 The [complete Mac estimate snapshot](qwen38-option20-mac-estimates-20261105.md) preserves the saved cross-machine tables and subsequent Air measurements.
+
+## Exact 10.5 GiB Air budget, November 5, 2026
+
+At this stage, the 16 GiB/131K/automatic-expert/single-request/16G-persistent-cache preset defaulted to `--max-memory 10.5G`, exactly 11,274,289,152 bytes. It keeps 2,048-token prefill, the 1.946 GiB expert store including staging and the SSD-backed n-gram table with its approximately 64 MiB row cache. Explicit memory caps remain authoritative, including an explicit `10G`; other presets retain their previous defaults. All 38 launcher checks passed.
+
+This increase raises allocation capacity but does not eliminate near-131K spill. The live 130,733-token request selected spill. With SSD-tier admission reserves included, the resident budget at 10.5 GiB holds about 128,416 tokens before output projection. The reported 155,641-token allocation bound excludes those reserves. The earlier estimate based on allocation capacity alone overstated spill-free context. Host memory pressure can also force conversion from resident to spill.
+
+[Budget, memory accounting and live validation](qwen38-option20-budget105-20261105.md) and [packaged results](qwen38-option20-budget105-20261105.json). That report records the previous 10.5 GiB cap; the later 10.8 GiB change is described below.
+
+## 10.8 GiB Air budget, November 5, 2026
+
+The current Air preset defaults to `10.8G`, parsed as 11,596,411,699 whole bytes. Both launchers match and the live service applies the budget without clamping. Prefill stays at 2,048 tokens, context at 131,072, the expert store at 1.946 GiB including staging, and the SSD-backed n-gram row cache at approximately 64 MiB. Explicit caps and other presets are preserved. All 38 launcher tests passed.
+
+Resident admission now has 2,023,571,351 bytes, about 152,736 tokens before output projection. A 130,733-token persisted replay reused 130,720 tokens and passed correctness while remaining resident, with zero spill admissions or conversions. This validates the cached replay path; cold near-131K residency and absence of OS swap are not established. Host pressure can still force spill. Prefix restoration, n-gram and expert streaming continue to use SSD.
+
+[All serving checks and memory table](qwen38-option20-budget108-20261105.md) and [packaged results](qwen38-option20-budget108-20261105.json).
