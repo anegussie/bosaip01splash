@@ -260,8 +260,8 @@ print('Ready test server',flush=True)
             "--model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
             "--served-model-name": "qwen3.6-35b-a3b-iq3-xxs-splash",
             "--max-context": "80K",
-            "--expert-memory": "1900M",
-            "--max-memory": "8G",
+            "--expert-memory": "auto",
+            "--max-memory": "10G",
             "--kv-format": "int8",
             "--state-format": "bf16",
             "--max-active-requests": "1",
@@ -288,6 +288,21 @@ print('Ready test server',flush=True)
         self.assertTrue(
             (self.root / "logs/qwen3.6-35b-a3b-iq3-xxs-splash-latest.log").is_symlink()
         )
+
+    def test_option19_legacy_memory_and_larger_chunk_override(self):
+        r = self.run_launcher(
+            "19",
+            SPLASH_QWEN36_IQ3_MAX_MEMORY="8G",
+            SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS="2048",
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        for flag, value in {
+            "--max-memory": "8G",
+            "--expert-memory": "1900M",
+            "--prefill-chunk-tokens": "2048",
+        }.items():
+            self.assertEqual(args[args.index(flag) + 1], value, flag)
 
     def test_option19_interactive_selection_and_overrides(self):
         r = subprocess.run(
@@ -326,6 +341,8 @@ print('Ready test server',flush=True)
             {"SPLASH_QWEN36_IQ3_MAX_TOKENS": "79872"},
             {"SPLASH_QWEN36_IQ3_MAX_CACHE_DISK": "65G"},
             {"SPLASH_QWEN36_IQ3_PERSISTENT_CACHE": "2"},
+            {"SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS": "513"},
+            {"SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS": "4096"},
         ):
             with self.subTest(overrides=overrides):
                 r = self.run_launcher("19", **overrides)

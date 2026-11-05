@@ -32,6 +32,8 @@ SPLASH_QWEN36_PERSISTENT_CACHE="${SPLASH_QWEN36_PERSISTENT_CACHE:-1}"
 SPLASH_QWEN36_CACHE_DIR="${SPLASH_QWEN36_CACHE_DIR:-$HOME/Library/Caches/Splash/qwen36-option18}"
 SPLASH_QWEN36_IQ3_MODEL_ID="unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS"
 SPLASH_QWEN36_IQ3_MAX_CONTEXT="${SPLASH_QWEN36_IQ3_MAX_CONTEXT:-80K}"
+SPLASH_QWEN36_IQ3_MAX_MEMORY="${SPLASH_QWEN36_IQ3_MAX_MEMORY:-10G}"
+SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS="${SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS:-512}"
 SPLASH_QWEN36_IQ3_OPENCODE_CONTEXT="${SPLASH_QWEN36_IQ3_OPENCODE_CONTEXT:-auto}"
 splash_qwen36_iq3_default_output=0
 [[ -n "${SPLASH_QWEN36_IQ3_MAX_TOKENS:-}" ]] || splash_qwen36_iq3_default_output=1
@@ -261,8 +263,8 @@ print_models() {
   echo "   Source: ${SPLASH_QWEN36_MODEL_ID}"
   echo "   Separate option-18 prefix cache: ${SPLASH_QWEN36_MAX_CACHE_DISK} | persistent: ${SPLASH_QWEN36_PERSISTENT_CACHE}"
   echo "19) Qwen3.6 35B A3B UD-IQ3_XXS - Splash SSD expert streaming (downloads on first run)${splash_status}"
-  echo "   ${SPLASH_QWEN36_IQ3_MAX_CONTEXT} server context | up to ${SPLASH_QWEN36_IQ3_MAX_TOKENS} worker output tokens (parent up to 2048) | 8 GiB Metal budget | expert RAM cache / SSD reads"
-  echo "   INT8 KV | BF16 state | 512-token prefill chunks | one active request | reasoning off | DFlash2"
+  echo "   ${SPLASH_QWEN36_IQ3_MAX_CONTEXT} server context | up to ${SPLASH_QWEN36_IQ3_MAX_TOKENS} worker output tokens (parent up to 2048) | ${SPLASH_QWEN36_IQ3_MAX_MEMORY} Metal cap | expert RAM cache / SSD reads"
+  echo "   INT8 KV | BF16 state | ${SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS}-token prefill chunks | one active request | reasoning off | DFlash2"
   echo "   Vision: at most 1,048,576 resized pixels per image (4096 patches; about 1024x1024)"
   echo "   Source: ${SPLASH_QWEN36_IQ3_MODEL_ID}"
   echo "   Separate option-19 prefix cache: ${SPLASH_QWEN36_IQ3_MAX_CACHE_DISK} | persistent: ${SPLASH_QWEN36_IQ3_PERSISTENT_CACHE}"
@@ -1707,6 +1709,15 @@ case "$choice" in
       SPLASH_BONSAI_PREFILL_CHUNK_TOKENS=512
       SPLASH_BONSAI_MAX_ACTIVE_REQUESTS=1
       splash_model_args=(--expert-memory auto --max-memory 8G)
+      if [[ "$choice" == "19" ]]; then
+        SPLASH_BONSAI_PREFILL_CHUNK_TOKENS="$SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS"
+        if ! splash_uint_in_range "$SPLASH_BONSAI_PREFILL_CHUNK_TOKENS" 128 2048 ||
+           (( SPLASH_BONSAI_PREFILL_CHUNK_TOKENS % 128 != 0 )); then
+          echo "SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS must be a multiple of 128 from 128 to 2048." >&2
+          exit 1
+        fi
+        splash_model_args=(--expert-memory auto --max-memory "$SPLASH_QWEN36_IQ3_MAX_MEMORY")
+      fi
     elif [[ "$choice" == "20" ]]; then
       SPLASH_BONSAI_MODEL_ID="$SPLASH_FLASH_NEXT_MODEL_ID"
       SPLASH_BONSAI_ALIAS="qwen3.8-flash-next-iq3-xxs-splash"
@@ -1803,8 +1814,8 @@ case "$choice" in
       echo "Splash context must be 4096-${splash_context_max} tokens for option $choice (option 18: SPLASH_QWEN36_MAX_CONTEXT; option 19: SPLASH_QWEN36_IQ3_MAX_CONTEXT; option 20: SPLASH_FLASH_NEXT_MAX_CONTEXT; options 14/16: SPLASH_BONSAI_MAX_CONTEXT)." >&2
       exit 1
     fi
-    # Leave room for whole KV extents in the 70-80K option-19 profiles.
-    if [[ "$choice" == "19" ]] && (( splash_context_limit >= 70 * 1024 )); then
+    # At the legacy 8G cap, leave room for whole KV extents at 70-80K.
+    if [[ "$choice" == "19" && "$SPLASH_QWEN36_IQ3_MAX_MEMORY" == "8G" ]] && (( splash_context_limit >= 70 * 1024 )); then
       splash_model_args=(--expert-memory 1900M --max-memory 8G)
     fi
     if [[ "$SPLASH_BONSAI_OPENCODE_CONTEXT" == "auto" ]]; then
@@ -1904,7 +1915,10 @@ case "$choice" in
       printf 'Vision enabled: up to 1048576 resized pixels / 4096 patches per image (about 1024x1024).\n' | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
     fi
     if [[ "$choice" == "18" || "$choice" == "19" ]]; then
-      printf 'SSD expert streaming: RAM expert cache within an 8 GiB Metal budget; missing routed experts read from the model file.\n' | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+      splash_streaming_memory=8G
+      [[ "$choice" != "19" ]] || splash_streaming_memory="$SPLASH_QWEN36_IQ3_MAX_MEMORY"
+      printf 'SSD expert streaming: RAM expert cache within a %s Metal cap; missing routed experts read from the model file.\n' \
+        "$splash_streaming_memory" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
     fi
     if [[ "$choice" == "20" ]]; then
       printf 'Flash-Next: text only; expert and PLE streaming within a %s Metal cap; reasoning %s; download cache %s.\n' \

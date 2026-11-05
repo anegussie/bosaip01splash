@@ -1,0 +1,2630 @@
+{
+  "complete": true,
+  "error": null,
+  "started_utc": "2026-11-05T21:46:08Z",
+  "finished_utc": "2026-11-05T22:51:21Z",
+  "model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+  "build": {
+    "build_id": "src-6a06f0d6c0d0ed50806c8908cc3c19b1629f79495f59de3a349c4fb0937b951d",
+    "schema_version": 1,
+    "source_sha256": "6a06f0d6c0d0ed50806c8908cc3c19b1629f79495f59de3a349c4fb0937b951d"
+  },
+  "binary_sha256": "e355f85c8cb6a92f304e97c490f2c0bad113a5a1a8ef81b2c44432c734471691",
+  "source_commit": "d17e9b4565b0cb8303ca4b1cbc01b4746fde8125",
+  "hardware": "hw.memsize: 17179869184\nmachdep.cpu.brand_string: Apple M5\n",
+  "phases": [
+    {
+      "name": "phase1-8g-512",
+      "memory_gib": 8,
+      "requested_chunk": 512,
+      "complete": true,
+      "expert_slots": 1730,
+      "expert_cap_bytes": 2227832080,
+      "shared_prefill_bytes": 844251136,
+      "memory_plan": {
+        "valid": true,
+        "maximum_context_tokens": 90105,
+        "device": {
+          "device_name": "Apple M5",
+          "macos_version": "26.5.2",
+          "apple_gpu_family": 10,
+          "gpu_core_count": 8,
+          "physical_memory_bytes": 17179869184,
+          "recommended_max_working_set_bytes": 12713115648,
+          "max_buffer_length_bytes": 9534832640,
+          "max_threadgroup_memory_bytes": 32768,
+          "max_threadgroup_width": 1024,
+          "has_unified_memory": true
+        },
+        "model": {
+          "model_name": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+          "maximum_context_tokens": 262144,
+          "attention_layers": 10,
+          "kv_heads": 2,
+          "head_dimension": 256,
+          "kv_page_tokens": 32,
+          "kv_format": "int8",
+          "kv_elements_per_scale": 256,
+          "kv_page_bytes": 332800,
+          "state_format": "bf16",
+          "memory": {
+            "target_weights_bytes": 4341753104,
+            "draft_weights_bytes": 480165888,
+            "vision_weights_bytes": 901939200,
+            "lane_state_bytes": 118554624,
+            "shared_prefill_bytes": 844251136,
+            "shared_decode_bytes": 124678272,
+            "pipeline_reserve_bytes": 268435456,
+            "runtime_overhead_reserve_bytes": 536870912,
+            "streamed_table_bytes": 0,
+            "ane_ffn_bytes": 0,
+            "state_staging_bytes": 35291136
+          }
+        },
+        "budget": {
+          "physical_memory_bytes": 17179869184,
+          "recommended_working_set_bytes": 12713115648,
+          "configured_memory_limit_bytes": 8589934592,
+          "working_set_margin_bytes": 1073741824,
+          "hard_budget_bytes": 8589934592,
+          "target_weights_bytes": 4341753104,
+          "draft_weights_bytes": 480165888,
+          "vision_weights_bytes": 901939200,
+          "maximum_batch_width": 4,
+          "lane_state_bytes": 118554624,
+          "shared_prefill_bytes": 844251136,
+          "shared_decode_bytes": 124678272,
+          "pipeline_reserve_bytes": 268435456,
+          "runtime_overhead_reserve_bytes": 536870912,
+          "streamed_table_bytes": 0,
+          "ane_ffn_bytes": 0,
+          "state_staging_bytes": 35291136,
+          "fixed_runtime_bytes": 7533385104,
+          "dynamic_budget_bytes": 1056549488,
+          "kv_page_tokens": 32,
+          "kv_page_bytes": 332800,
+          "kv_extent_pages": 256,
+          "kv_extent_bytes": 85196800,
+          "kv_capacity_pages": 2816,
+          "kv_capacity_bytes": 937164800,
+          "kv_capacity_tokens": 90112,
+          "kv_index_page_bytes": 0,
+          "kv_spill": null,
+          "resident_kv_bytes": 0,
+          "context_bounds": {
+            "window": 262144,
+            "resident": 90105,
+            "spilled": 0,
+            "disk": 0,
+            "bound": "memory"
+          },
+          "minimum_dynamic_bytes": 203751424,
+          "minimum_required_bytes": 7737136528,
+          "deficit_bytes": 0
+        }
+      },
+      "startup_memory_actual": {
+        "allocated_bytes": 6931830160,
+        "current_bytes": 6940934144,
+        "peak_bytes": 7296598016
+      },
+      "smoke_checks": 6
+    },
+    {
+      "name": "phase2-10g-512",
+      "memory_gib": 10,
+      "requested_chunk": 512,
+      "complete": true,
+      "expert_slots": 3186,
+      "expert_cap_bytes": 4375610640,
+      "shared_prefill_bytes": 844251136,
+      "memory_plan": {
+        "valid": true,
+        "maximum_context_tokens": 90105,
+        "device": {
+          "device_name": "Apple M5",
+          "macos_version": "26.5.2",
+          "apple_gpu_family": 10,
+          "gpu_core_count": 8,
+          "physical_memory_bytes": 17179869184,
+          "recommended_max_working_set_bytes": 12713115648,
+          "max_buffer_length_bytes": 9534832640,
+          "max_threadgroup_memory_bytes": 32768,
+          "max_threadgroup_width": 1024,
+          "has_unified_memory": true
+        },
+        "model": {
+          "model_name": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+          "maximum_context_tokens": 262144,
+          "attention_layers": 10,
+          "kv_heads": 2,
+          "head_dimension": 256,
+          "kv_page_tokens": 32,
+          "kv_format": "int8",
+          "kv_elements_per_scale": 256,
+          "kv_page_bytes": 332800,
+          "state_format": "bf16",
+          "memory": {
+            "target_weights_bytes": 6489531664,
+            "draft_weights_bytes": 480165888,
+            "vision_weights_bytes": 901939200,
+            "lane_state_bytes": 118554624,
+            "shared_prefill_bytes": 844251136,
+            "shared_decode_bytes": 124678272,
+            "pipeline_reserve_bytes": 268435456,
+            "runtime_overhead_reserve_bytes": 536870912,
+            "streamed_table_bytes": 0,
+            "ane_ffn_bytes": 0,
+            "state_staging_bytes": 35291136
+          }
+        },
+        "budget": {
+          "physical_memory_bytes": 17179869184,
+          "recommended_working_set_bytes": 12713115648,
+          "configured_memory_limit_bytes": 10737418240,
+          "working_set_margin_bytes": 1073741824,
+          "hard_budget_bytes": 10737418240,
+          "target_weights_bytes": 6489531664,
+          "draft_weights_bytes": 480165888,
+          "vision_weights_bytes": 901939200,
+          "maximum_batch_width": 4,
+          "lane_state_bytes": 118554624,
+          "shared_prefill_bytes": 844251136,
+          "shared_decode_bytes": 124678272,
+          "pipeline_reserve_bytes": 268435456,
+          "runtime_overhead_reserve_bytes": 536870912,
+          "streamed_table_bytes": 0,
+          "ane_ffn_bytes": 0,
+          "state_staging_bytes": 35291136,
+          "fixed_runtime_bytes": 9681163664,
+          "dynamic_budget_bytes": 1056254576,
+          "kv_page_tokens": 32,
+          "kv_page_bytes": 332800,
+          "kv_extent_pages": 256,
+          "kv_extent_bytes": 85196800,
+          "kv_capacity_pages": 2816,
+          "kv_capacity_bytes": 937164800,
+          "kv_capacity_tokens": 90112,
+          "kv_index_page_bytes": 0,
+          "kv_spill": null,
+          "resident_kv_bytes": 0,
+          "context_bounds": {
+            "window": 262144,
+            "resident": 90105,
+            "spilled": 0,
+            "disk": 0,
+            "bound": "memory"
+          },
+          "minimum_dynamic_bytes": 203751424,
+          "minimum_required_bytes": 9884915088,
+          "deficit_bytes": 0
+        }
+      },
+      "startup_memory_actual": {
+        "allocated_bytes": 8494339472,
+        "current_bytes": 8503443456,
+        "peak_bytes": 9444376576
+      },
+      "smoke_checks": 6
+    },
+    {
+      "name": "phase3-10g-2048",
+      "memory_gib": 10,
+      "requested_chunk": 2048,
+      "complete": true,
+      "expert_slots": 3186,
+      "expert_cap_bytes": 4375610640,
+      "shared_prefill_bytes": 844251136,
+      "memory_plan": {
+        "valid": true,
+        "maximum_context_tokens": 90105,
+        "device": {
+          "device_name": "Apple M5",
+          "macos_version": "26.5.2",
+          "apple_gpu_family": 10,
+          "gpu_core_count": 8,
+          "physical_memory_bytes": 17179869184,
+          "recommended_max_working_set_bytes": 12713115648,
+          "max_buffer_length_bytes": 9534832640,
+          "max_threadgroup_memory_bytes": 32768,
+          "max_threadgroup_width": 1024,
+          "has_unified_memory": true
+        },
+        "model": {
+          "model_name": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+          "maximum_context_tokens": 262144,
+          "attention_layers": 10,
+          "kv_heads": 2,
+          "head_dimension": 256,
+          "kv_page_tokens": 32,
+          "kv_format": "int8",
+          "kv_elements_per_scale": 256,
+          "kv_page_bytes": 332800,
+          "state_format": "bf16",
+          "memory": {
+            "target_weights_bytes": 6489531664,
+            "draft_weights_bytes": 480165888,
+            "vision_weights_bytes": 901939200,
+            "lane_state_bytes": 118554624,
+            "shared_prefill_bytes": 844251136,
+            "shared_decode_bytes": 124678272,
+            "pipeline_reserve_bytes": 268435456,
+            "runtime_overhead_reserve_bytes": 536870912,
+            "streamed_table_bytes": 0,
+            "ane_ffn_bytes": 0,
+            "state_staging_bytes": 35291136
+          }
+        },
+        "budget": {
+          "physical_memory_bytes": 17179869184,
+          "recommended_working_set_bytes": 12713115648,
+          "configured_memory_limit_bytes": 10737418240,
+          "working_set_margin_bytes": 1073741824,
+          "hard_budget_bytes": 10737418240,
+          "target_weights_bytes": 6489531664,
+          "draft_weights_bytes": 480165888,
+          "vision_weights_bytes": 901939200,
+          "maximum_batch_width": 4,
+          "lane_state_bytes": 118554624,
+          "shared_prefill_bytes": 844251136,
+          "shared_decode_bytes": 124678272,
+          "pipeline_reserve_bytes": 268435456,
+          "runtime_overhead_reserve_bytes": 536870912,
+          "streamed_table_bytes": 0,
+          "ane_ffn_bytes": 0,
+          "state_staging_bytes": 35291136,
+          "fixed_runtime_bytes": 9681163664,
+          "dynamic_budget_bytes": 1056254576,
+          "kv_page_tokens": 32,
+          "kv_page_bytes": 332800,
+          "kv_extent_pages": 256,
+          "kv_extent_bytes": 85196800,
+          "kv_capacity_pages": 2816,
+          "kv_capacity_bytes": 937164800,
+          "kv_capacity_tokens": 90112,
+          "kv_index_page_bytes": 0,
+          "kv_spill": null,
+          "resident_kv_bytes": 0,
+          "context_bounds": {
+            "window": 262144,
+            "resident": 90105,
+            "spilled": 0,
+            "disk": 0,
+            "bound": "memory"
+          },
+          "minimum_dynamic_bytes": 203751424,
+          "minimum_required_bytes": 9884915088,
+          "deficit_bytes": 0
+        }
+      },
+      "startup_memory_actual": {
+        "allocated_bytes": 8494339472,
+        "current_bytes": 8503443456,
+        "peak_bytes": 9444376576
+      },
+      "smoke_checks": 6
+    },
+    {
+      "name": "phase4-10g-2048",
+      "memory_gib": 10,
+      "requested_chunk": 2048,
+      "complete": true,
+      "expert_slots": 3186,
+      "expert_cap_bytes": 4375610640,
+      "shared_prefill_bytes": 844251136,
+      "memory_plan": {
+        "valid": true,
+        "maximum_context_tokens": 90105,
+        "device": {
+          "device_name": "Apple M5",
+          "macos_version": "26.5.2",
+          "apple_gpu_family": 10,
+          "gpu_core_count": 8,
+          "physical_memory_bytes": 17179869184,
+          "recommended_max_working_set_bytes": 12713115648,
+          "max_buffer_length_bytes": 9534832640,
+          "max_threadgroup_memory_bytes": 32768,
+          "max_threadgroup_width": 1024,
+          "has_unified_memory": true
+        },
+        "model": {
+          "model_name": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+          "maximum_context_tokens": 262144,
+          "attention_layers": 10,
+          "kv_heads": 2,
+          "head_dimension": 256,
+          "kv_page_tokens": 32,
+          "kv_format": "int8",
+          "kv_elements_per_scale": 256,
+          "kv_page_bytes": 332800,
+          "state_format": "bf16",
+          "memory": {
+            "target_weights_bytes": 6489531664,
+            "draft_weights_bytes": 480165888,
+            "vision_weights_bytes": 901939200,
+            "lane_state_bytes": 118554624,
+            "shared_prefill_bytes": 844251136,
+            "shared_decode_bytes": 124678272,
+            "pipeline_reserve_bytes": 268435456,
+            "runtime_overhead_reserve_bytes": 536870912,
+            "streamed_table_bytes": 0,
+            "ane_ffn_bytes": 0,
+            "state_staging_bytes": 35291136
+          }
+        },
+        "budget": {
+          "physical_memory_bytes": 17179869184,
+          "recommended_working_set_bytes": 12713115648,
+          "configured_memory_limit_bytes": 10737418240,
+          "working_set_margin_bytes": 1073741824,
+          "hard_budget_bytes": 10737418240,
+          "target_weights_bytes": 6489531664,
+          "draft_weights_bytes": 480165888,
+          "vision_weights_bytes": 901939200,
+          "maximum_batch_width": 4,
+          "lane_state_bytes": 118554624,
+          "shared_prefill_bytes": 844251136,
+          "shared_decode_bytes": 124678272,
+          "pipeline_reserve_bytes": 268435456,
+          "runtime_overhead_reserve_bytes": 536870912,
+          "streamed_table_bytes": 0,
+          "ane_ffn_bytes": 0,
+          "state_staging_bytes": 35291136,
+          "fixed_runtime_bytes": 9681163664,
+          "dynamic_budget_bytes": 1056254576,
+          "kv_page_tokens": 32,
+          "kv_page_bytes": 332800,
+          "kv_extent_pages": 256,
+          "kv_extent_bytes": 85196800,
+          "kv_capacity_pages": 2816,
+          "kv_capacity_bytes": 937164800,
+          "kv_capacity_tokens": 90112,
+          "kv_index_page_bytes": 0,
+          "kv_spill": null,
+          "resident_kv_bytes": 0,
+          "context_bounds": {
+            "window": 262144,
+            "resident": 90105,
+            "spilled": 0,
+            "disk": 0,
+            "bound": "memory"
+          },
+          "minimum_dynamic_bytes": 203751424,
+          "minimum_required_bytes": 9884915088,
+          "deficit_bytes": 0
+        }
+      },
+      "startup_memory_actual": {
+        "allocated_bytes": 8494339472,
+        "current_bytes": 8503443456,
+        "peak_bytes": 9444376576
+      },
+      "smoke_checks": 6
+    },
+    {
+      "name": "phase5-10g-512",
+      "memory_gib": 10,
+      "requested_chunk": 512,
+      "complete": true,
+      "expert_slots": 3186,
+      "expert_cap_bytes": 4375610640,
+      "shared_prefill_bytes": 844251136,
+      "memory_plan": {
+        "valid": true,
+        "maximum_context_tokens": 90105,
+        "device": {
+          "device_name": "Apple M5",
+          "macos_version": "26.5.2",
+          "apple_gpu_family": 10,
+          "gpu_core_count": 8,
+          "physical_memory_bytes": 17179869184,
+          "recommended_max_working_set_bytes": 12713115648,
+          "max_buffer_length_bytes": 9534832640,
+          "max_threadgroup_memory_bytes": 32768,
+          "max_threadgroup_width": 1024,
+          "has_unified_memory": true
+        },
+        "model": {
+          "model_name": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+          "maximum_context_tokens": 262144,
+          "attention_layers": 10,
+          "kv_heads": 2,
+          "head_dimension": 256,
+          "kv_page_tokens": 32,
+          "kv_format": "int8",
+          "kv_elements_per_scale": 256,
+          "kv_page_bytes": 332800,
+          "state_format": "bf16",
+          "memory": {
+            "target_weights_bytes": 6489531664,
+            "draft_weights_bytes": 480165888,
+            "vision_weights_bytes": 901939200,
+            "lane_state_bytes": 118554624,
+            "shared_prefill_bytes": 844251136,
+            "shared_decode_bytes": 124678272,
+            "pipeline_reserve_bytes": 268435456,
+            "runtime_overhead_reserve_bytes": 536870912,
+            "streamed_table_bytes": 0,
+            "ane_ffn_bytes": 0,
+            "state_staging_bytes": 35291136
+          }
+        },
+        "budget": {
+          "physical_memory_bytes": 17179869184,
+          "recommended_working_set_bytes": 12713115648,
+          "configured_memory_limit_bytes": 10737418240,
+          "working_set_margin_bytes": 1073741824,
+          "hard_budget_bytes": 10737418240,
+          "target_weights_bytes": 6489531664,
+          "draft_weights_bytes": 480165888,
+          "vision_weights_bytes": 901939200,
+          "maximum_batch_width": 4,
+          "lane_state_bytes": 118554624,
+          "shared_prefill_bytes": 844251136,
+          "shared_decode_bytes": 124678272,
+          "pipeline_reserve_bytes": 268435456,
+          "runtime_overhead_reserve_bytes": 536870912,
+          "streamed_table_bytes": 0,
+          "ane_ffn_bytes": 0,
+          "state_staging_bytes": 35291136,
+          "fixed_runtime_bytes": 9681163664,
+          "dynamic_budget_bytes": 1056254576,
+          "kv_page_tokens": 32,
+          "kv_page_bytes": 332800,
+          "kv_extent_pages": 256,
+          "kv_extent_bytes": 85196800,
+          "kv_capacity_pages": 2816,
+          "kv_capacity_bytes": 937164800,
+          "kv_capacity_tokens": 90112,
+          "kv_index_page_bytes": 0,
+          "kv_spill": null,
+          "resident_kv_bytes": 0,
+          "context_bounds": {
+            "window": 262144,
+            "resident": 90105,
+            "spilled": 0,
+            "disk": 0,
+            "bound": "memory"
+          },
+          "minimum_dynamic_bytes": 203751424,
+          "minimum_required_bytes": 9884915088,
+          "deficit_bytes": 0
+        }
+      },
+      "startup_memory_actual": {
+        "allocated_bytes": 8494339472,
+        "current_bytes": 8503443456,
+        "peak_bytes": 9444376576
+      },
+      "smoke_checks": 6
+    },
+    {
+      "name": "phase6-8g-512",
+      "memory_gib": 8,
+      "requested_chunk": 512,
+      "complete": true,
+      "expert_slots": 1730,
+      "expert_cap_bytes": 2227832080,
+      "shared_prefill_bytes": 844251136,
+      "memory_plan": {
+        "valid": true,
+        "maximum_context_tokens": 90105,
+        "device": {
+          "device_name": "Apple M5",
+          "macos_version": "26.5.2",
+          "apple_gpu_family": 10,
+          "gpu_core_count": 8,
+          "physical_memory_bytes": 17179869184,
+          "recommended_max_working_set_bytes": 12713115648,
+          "max_buffer_length_bytes": 9534832640,
+          "max_threadgroup_memory_bytes": 32768,
+          "max_threadgroup_width": 1024,
+          "has_unified_memory": true
+        },
+        "model": {
+          "model_name": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+          "maximum_context_tokens": 262144,
+          "attention_layers": 10,
+          "kv_heads": 2,
+          "head_dimension": 256,
+          "kv_page_tokens": 32,
+          "kv_format": "int8",
+          "kv_elements_per_scale": 256,
+          "kv_page_bytes": 332800,
+          "state_format": "bf16",
+          "memory": {
+            "target_weights_bytes": 4341753104,
+            "draft_weights_bytes": 480165888,
+            "vision_weights_bytes": 901939200,
+            "lane_state_bytes": 118554624,
+            "shared_prefill_bytes": 844251136,
+            "shared_decode_bytes": 124678272,
+            "pipeline_reserve_bytes": 268435456,
+            "runtime_overhead_reserve_bytes": 536870912,
+            "streamed_table_bytes": 0,
+            "ane_ffn_bytes": 0,
+            "state_staging_bytes": 35291136
+          }
+        },
+        "budget": {
+          "physical_memory_bytes": 17179869184,
+          "recommended_working_set_bytes": 12713115648,
+          "configured_memory_limit_bytes": 8589934592,
+          "working_set_margin_bytes": 1073741824,
+          "hard_budget_bytes": 8589934592,
+          "target_weights_bytes": 4341753104,
+          "draft_weights_bytes": 480165888,
+          "vision_weights_bytes": 901939200,
+          "maximum_batch_width": 4,
+          "lane_state_bytes": 118554624,
+          "shared_prefill_bytes": 844251136,
+          "shared_decode_bytes": 124678272,
+          "pipeline_reserve_bytes": 268435456,
+          "runtime_overhead_reserve_bytes": 536870912,
+          "streamed_table_bytes": 0,
+          "ane_ffn_bytes": 0,
+          "state_staging_bytes": 35291136,
+          "fixed_runtime_bytes": 7533385104,
+          "dynamic_budget_bytes": 1056549488,
+          "kv_page_tokens": 32,
+          "kv_page_bytes": 332800,
+          "kv_extent_pages": 256,
+          "kv_extent_bytes": 85196800,
+          "kv_capacity_pages": 2816,
+          "kv_capacity_bytes": 937164800,
+          "kv_capacity_tokens": 90112,
+          "kv_index_page_bytes": 0,
+          "kv_spill": null,
+          "resident_kv_bytes": 0,
+          "context_bounds": {
+            "window": 262144,
+            "resident": 90105,
+            "spilled": 0,
+            "disk": 0,
+            "bound": "memory"
+          },
+          "minimum_dynamic_bytes": 203751424,
+          "minimum_required_bytes": 7737136528,
+          "deficit_bytes": 0
+        }
+      },
+      "startup_memory_actual": {
+        "allocated_bytes": 6931830160,
+        "current_bytes": 6940934144,
+        "peak_bytes": 7296598016
+      },
+      "smoke_checks": 6
+    },
+    {
+      "name": "phase1-10g-1024",
+      "memory_gib": 10,
+      "requested_chunk": 1024,
+      "complete": true,
+      "expert_slots": 3186,
+      "expert_cap_bytes": 4375610640,
+      "shared_prefill_bytes": 844251136,
+      "memory_plan": {
+        "valid": true,
+        "maximum_context_tokens": 90105,
+        "device": {
+          "device_name": "Apple M5",
+          "macos_version": "26.5.2",
+          "apple_gpu_family": 10,
+          "gpu_core_count": 8,
+          "physical_memory_bytes": 17179869184,
+          "recommended_max_working_set_bytes": 12713115648,
+          "max_buffer_length_bytes": 9534832640,
+          "max_threadgroup_memory_bytes": 32768,
+          "max_threadgroup_width": 1024,
+          "has_unified_memory": true
+        },
+        "model": {
+          "model_name": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+          "maximum_context_tokens": 262144,
+          "attention_layers": 10,
+          "kv_heads": 2,
+          "head_dimension": 256,
+          "kv_page_tokens": 32,
+          "kv_format": "int8",
+          "kv_elements_per_scale": 256,
+          "kv_page_bytes": 332800,
+          "state_format": "bf16",
+          "memory": {
+            "target_weights_bytes": 6489531664,
+            "draft_weights_bytes": 480165888,
+            "vision_weights_bytes": 901939200,
+            "lane_state_bytes": 118554624,
+            "shared_prefill_bytes": 844251136,
+            "shared_decode_bytes": 124678272,
+            "pipeline_reserve_bytes": 268435456,
+            "runtime_overhead_reserve_bytes": 536870912,
+            "streamed_table_bytes": 0,
+            "ane_ffn_bytes": 0,
+            "state_staging_bytes": 35291136
+          }
+        },
+        "budget": {
+          "physical_memory_bytes": 17179869184,
+          "recommended_working_set_bytes": 12713115648,
+          "configured_memory_limit_bytes": 10737418240,
+          "working_set_margin_bytes": 1073741824,
+          "hard_budget_bytes": 10737418240,
+          "target_weights_bytes": 6489531664,
+          "draft_weights_bytes": 480165888,
+          "vision_weights_bytes": 901939200,
+          "maximum_batch_width": 4,
+          "lane_state_bytes": 118554624,
+          "shared_prefill_bytes": 844251136,
+          "shared_decode_bytes": 124678272,
+          "pipeline_reserve_bytes": 268435456,
+          "runtime_overhead_reserve_bytes": 536870912,
+          "streamed_table_bytes": 0,
+          "ane_ffn_bytes": 0,
+          "state_staging_bytes": 35291136,
+          "fixed_runtime_bytes": 9681163664,
+          "dynamic_budget_bytes": 1056254576,
+          "kv_page_tokens": 32,
+          "kv_page_bytes": 332800,
+          "kv_extent_pages": 256,
+          "kv_extent_bytes": 85196800,
+          "kv_capacity_pages": 2816,
+          "kv_capacity_bytes": 937164800,
+          "kv_capacity_tokens": 90112,
+          "kv_index_page_bytes": 0,
+          "kv_spill": null,
+          "resident_kv_bytes": 0,
+          "context_bounds": {
+            "window": 262144,
+            "resident": 90105,
+            "spilled": 0,
+            "disk": 0,
+            "bound": "memory"
+          },
+          "minimum_dynamic_bytes": 203751424,
+          "minimum_required_bytes": 9884915088,
+          "deficit_bytes": 0
+        }
+      },
+      "startup_memory_actual": {
+        "allocated_bytes": 8494339472,
+        "current_bytes": 8503443456,
+        "peak_bytes": 9444376576
+      },
+      "smoke_checks": 6
+    },
+    {
+      "name": "phase2-10g-1024",
+      "memory_gib": 10,
+      "requested_chunk": 1024,
+      "complete": true,
+      "expert_slots": 3186,
+      "expert_cap_bytes": 4375610640,
+      "shared_prefill_bytes": 844251136,
+      "memory_plan": {
+        "valid": true,
+        "maximum_context_tokens": 90105,
+        "device": {
+          "device_name": "Apple M5",
+          "macos_version": "26.5.2",
+          "apple_gpu_family": 10,
+          "gpu_core_count": 8,
+          "physical_memory_bytes": 17179869184,
+          "recommended_max_working_set_bytes": 12713115648,
+          "max_buffer_length_bytes": 9534832640,
+          "max_threadgroup_memory_bytes": 32768,
+          "max_threadgroup_width": 1024,
+          "has_unified_memory": true
+        },
+        "model": {
+          "model_name": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+          "maximum_context_tokens": 262144,
+          "attention_layers": 10,
+          "kv_heads": 2,
+          "head_dimension": 256,
+          "kv_page_tokens": 32,
+          "kv_format": "int8",
+          "kv_elements_per_scale": 256,
+          "kv_page_bytes": 332800,
+          "state_format": "bf16",
+          "memory": {
+            "target_weights_bytes": 6489531664,
+            "draft_weights_bytes": 480165888,
+            "vision_weights_bytes": 901939200,
+            "lane_state_bytes": 118554624,
+            "shared_prefill_bytes": 844251136,
+            "shared_decode_bytes": 124678272,
+            "pipeline_reserve_bytes": 268435456,
+            "runtime_overhead_reserve_bytes": 536870912,
+            "streamed_table_bytes": 0,
+            "ane_ffn_bytes": 0,
+            "state_staging_bytes": 35291136
+          }
+        },
+        "budget": {
+          "physical_memory_bytes": 17179869184,
+          "recommended_working_set_bytes": 12713115648,
+          "configured_memory_limit_bytes": 10737418240,
+          "working_set_margin_bytes": 1073741824,
+          "hard_budget_bytes": 10737418240,
+          "target_weights_bytes": 6489531664,
+          "draft_weights_bytes": 480165888,
+          "vision_weights_bytes": 901939200,
+          "maximum_batch_width": 4,
+          "lane_state_bytes": 118554624,
+          "shared_prefill_bytes": 844251136,
+          "shared_decode_bytes": 124678272,
+          "pipeline_reserve_bytes": 268435456,
+          "runtime_overhead_reserve_bytes": 536870912,
+          "streamed_table_bytes": 0,
+          "ane_ffn_bytes": 0,
+          "state_staging_bytes": 35291136,
+          "fixed_runtime_bytes": 9681163664,
+          "dynamic_budget_bytes": 1056254576,
+          "kv_page_tokens": 32,
+          "kv_page_bytes": 332800,
+          "kv_extent_pages": 256,
+          "kv_extent_bytes": 85196800,
+          "kv_capacity_pages": 2816,
+          "kv_capacity_bytes": 937164800,
+          "kv_capacity_tokens": 90112,
+          "kv_index_page_bytes": 0,
+          "kv_spill": null,
+          "resident_kv_bytes": 0,
+          "context_bounds": {
+            "window": 262144,
+            "resident": 90105,
+            "spilled": 0,
+            "disk": 0,
+            "bound": "memory"
+          },
+          "minimum_dynamic_bytes": 203751424,
+          "minimum_required_bytes": 9884915088,
+          "deficit_bytes": 0
+        }
+      },
+      "startup_memory_actual": {
+        "allocated_bytes": 8494339472,
+        "current_bytes": 8503443456,
+        "peak_bytes": 9444376576
+      },
+      "smoke_checks": 6
+    },
+    {
+      "name": "phase1-10g-512",
+      "memory_gib": 10,
+      "requested_chunk": 512,
+      "complete": true,
+      "expert_slots": 3186,
+      "expert_cap_bytes": 4375610640,
+      "shared_prefill_bytes": 844251136,
+      "memory_plan": {
+        "valid": true,
+        "maximum_context_tokens": 90105,
+        "device": {
+          "device_name": "Apple M5",
+          "macos_version": "26.5.2",
+          "apple_gpu_family": 10,
+          "gpu_core_count": 8,
+          "physical_memory_bytes": 17179869184,
+          "recommended_max_working_set_bytes": 12713115648,
+          "max_buffer_length_bytes": 9534832640,
+          "max_threadgroup_memory_bytes": 32768,
+          "max_threadgroup_width": 1024,
+          "has_unified_memory": true
+        },
+        "model": {
+          "model_name": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+          "maximum_context_tokens": 262144,
+          "attention_layers": 10,
+          "kv_heads": 2,
+          "head_dimension": 256,
+          "kv_page_tokens": 32,
+          "kv_format": "int8",
+          "kv_elements_per_scale": 256,
+          "kv_page_bytes": 332800,
+          "state_format": "bf16",
+          "memory": {
+            "target_weights_bytes": 6489531664,
+            "draft_weights_bytes": 480165888,
+            "vision_weights_bytes": 901939200,
+            "lane_state_bytes": 118554624,
+            "shared_prefill_bytes": 844251136,
+            "shared_decode_bytes": 124678272,
+            "pipeline_reserve_bytes": 268435456,
+            "runtime_overhead_reserve_bytes": 536870912,
+            "streamed_table_bytes": 0,
+            "ane_ffn_bytes": 0,
+            "state_staging_bytes": 35291136
+          }
+        },
+        "budget": {
+          "physical_memory_bytes": 17179869184,
+          "recommended_working_set_bytes": 12713115648,
+          "configured_memory_limit_bytes": 10737418240,
+          "working_set_margin_bytes": 1073741824,
+          "hard_budget_bytes": 10737418240,
+          "target_weights_bytes": 6489531664,
+          "draft_weights_bytes": 480165888,
+          "vision_weights_bytes": 901939200,
+          "maximum_batch_width": 4,
+          "lane_state_bytes": 118554624,
+          "shared_prefill_bytes": 844251136,
+          "shared_decode_bytes": 124678272,
+          "pipeline_reserve_bytes": 268435456,
+          "runtime_overhead_reserve_bytes": 536870912,
+          "streamed_table_bytes": 0,
+          "ane_ffn_bytes": 0,
+          "state_staging_bytes": 35291136,
+          "fixed_runtime_bytes": 9681163664,
+          "dynamic_budget_bytes": 1056254576,
+          "kv_page_tokens": 32,
+          "kv_page_bytes": 332800,
+          "kv_extent_pages": 256,
+          "kv_extent_bytes": 85196800,
+          "kv_capacity_pages": 2816,
+          "kv_capacity_bytes": 937164800,
+          "kv_capacity_tokens": 90112,
+          "kv_index_page_bytes": 0,
+          "kv_spill": null,
+          "resident_kv_bytes": 0,
+          "context_bounds": {
+            "window": 262144,
+            "resident": 90105,
+            "spilled": 0,
+            "disk": 0,
+            "bound": "memory"
+          },
+          "minimum_dynamic_bytes": 203751424,
+          "minimum_required_bytes": 9884915088,
+          "deficit_bytes": 0
+        }
+      },
+      "startup_memory_actual": {
+        "allocated_bytes": 8494339472,
+        "current_bytes": 8503443456,
+        "peak_bytes": 9444376576
+      },
+      "smoke_checks": 6
+    }
+  ],
+  "measurements": [
+    {
+      "memory_gib": 8,
+      "requested_chunk": 512,
+      "depth": 4096,
+      "mode": "cached",
+      "trials": 2,
+      "prompt_tokens": 4013,
+      "pp_tokens_per_second": 38.24658182155055,
+      "decode_tokens_per_second": 46.99137716005947,
+      "ttft_seconds": 0.3432631880277768,
+      "pp_samples_tokens_per_second": [
+        38.285064701759346,
+        38.208098941341746
+      ],
+      "decode_samples_tokens_per_second": [
+        47.272486612795426,
+        46.710267707323524
+      ],
+      "ttft_samples_seconds": [
+        0.3428717090282589,
+        0.34365466702729464
+      ],
+      "elapsed_seconds": 1.7268833125126548,
+      "elapsed_min_seconds": 1.7182600409723818,
+      "elapsed_max_seconds": 1.7355065840529278,
+      "completion_tokens": [
+        66,
+        66
+      ],
+      "cache_tokens": [
+        4000,
+        4000
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "nominal",
+          "nominal"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "normal",
+          "normal"
+        ],
+        [
+          "normal",
+          "normal"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 6.7954864501953125,
+      "swap_before": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 935.00M  free = 1113.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 935.00M  free = 1113.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase1-8g-512-4096-cached",
+        "phase6-8g-512-4096-cached"
+      ]
+    },
+    {
+      "memory_gib": 8,
+      "requested_chunk": 512,
+      "depth": 4096,
+      "mode": "cold",
+      "trials": 2,
+      "prompt_tokens": 4013,
+      "pp_tokens_per_second": 1256.7606966517983,
+      "decode_tokens_per_second": 44.587614663162896,
+      "ttft_seconds": 3.1978239790187217,
+      "pp_samples_tokens_per_second": [
+        1254.301601242737,
+        1259.2197920608594
+      ],
+      "decode_samples_tokens_per_second": [
+        45.19723726672141,
+        43.97799205960439
+      ],
+      "ttft_samples_seconds": [
+        3.2040013750083745,
+        3.191646583029069
+      ],
+      "elapsed_seconds": 4.656243458506651,
+      "elapsed_min_seconds": 4.642478417023085,
+      "elapsed_max_seconds": 4.670008499990217,
+      "completion_tokens": [
+        66,
+        66
+      ],
+      "cache_tokens": [
+        0,
+        0
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "nominal",
+          "nominal"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "normal",
+          "normal"
+        ],
+        [
+          "normal",
+          "normal"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 6.7954864501953125,
+      "swap_before": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 935.00M  free = 1113.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 935.00M  free = 1113.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase1-8g-512-4096-cold",
+        "phase6-8g-512-4096-cold"
+      ]
+    },
+    {
+      "memory_gib": 8,
+      "requested_chunk": 512,
+      "depth": 32768,
+      "mode": "cached",
+      "trials": 2,
+      "prompt_tokens": 32689,
+      "pp_tokens_per_second": 37.804359924486334,
+      "decode_tokens_per_second": 35.473076977952395,
+      "ttft_seconds": 0.4549623124767095,
+      "pp_samples_tokens_per_second": [
+        39.01274798912233,
+        36.595971859850344
+      ],
+      "decode_samples_tokens_per_second": [
+        36.27567661855122,
+        34.67047733735357
+      ],
+      "ttft_samples_seconds": [
+        0.44045925000682473,
+        0.46946537494659424
+      ],
+      "elapsed_seconds": 1.9685993755119853,
+      "elapsed_min_seconds": 1.7366234590299428,
+      "elapsed_max_seconds": 2.200575291994028,
+      "completion_tokens": [
+        48,
+        61
+      ],
+      "cache_tokens": [
+        32672,
+        32672
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "fair",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 6.9073028564453125,
+      "swap_before": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 935.00M  free = 1113.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 935.00M  free = 1113.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase1-8g-512-32768-cached",
+        "phase6-8g-512-32768-cached"
+      ]
+    },
+    {
+      "memory_gib": 8,
+      "requested_chunk": 512,
+      "depth": 32768,
+      "mode": "cold",
+      "trials": 2,
+      "prompt_tokens": 32689,
+      "pp_tokens_per_second": 905.5133632292943,
+      "decode_tokens_per_second": 36.66154924032717,
+      "ttft_seconds": 36.13194447901333,
+      "pp_samples_tokens_per_second": [
+        914.0014372825685,
+        897.0252891760201
+      ],
+      "decode_samples_tokens_per_second": [
+        36.55715594660477,
+        36.765942534049564
+      ],
+      "ttft_samples_seconds": [
+        35.793726500007324,
+        36.47016245801933
+      ],
+      "elapsed_seconds": 37.41458627098473,
+      "elapsed_min_seconds": 37.080041124951094,
+      "elapsed_max_seconds": 37.74913141701836,
+      "completion_tokens": [
+        48,
+        48
+      ],
+      "cache_tokens": [
+        0,
+        0
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "nominal",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "normal",
+          "warning"
+        ],
+        [
+          "normal",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 6.9073028564453125,
+      "swap_before": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 935.00M  free = 1113.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 935.00M  free = 1113.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase1-8g-512-32768-cold",
+        "phase6-8g-512-32768-cold"
+      ]
+    },
+    {
+      "memory_gib": 8,
+      "requested_chunk": 512,
+      "depth": 57344,
+      "mode": "cached",
+      "trials": 2,
+      "prompt_tokens": 57259,
+      "pp_tokens_per_second": 33.71797514598127,
+      "decode_tokens_per_second": 34.30647792130398,
+      "ttft_seconds": 0.3322883539949544,
+      "pp_samples_tokens_per_second": [
+        35.36841022211362,
+        32.06754006984893
+      ],
+      "decode_samples_tokens_per_second": [
+        34.86239811464151,
+        33.75055772796645
+      ],
+      "ttft_samples_seconds": [
+        0.31628491601441056,
+        0.3482917919754982
+      ],
+      "elapsed_seconds": 1.7911391249508597,
+      "elapsed_min_seconds": 1.7514221658930182,
+      "elapsed_max_seconds": 1.8308560840087011,
+      "completion_tokens": [
+        51,
+        51
+      ],
+      "cache_tokens": [
+        57248,
+        57248
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "fair",
+          "fair"
+        ],
+        [
+          "fair",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 7.0626983642578125,
+      "swap_before": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 919.00M  free = 1129.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 919.00M  free = 1129.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase1-8g-512-57344-cached",
+        "phase6-8g-512-57344-cached"
+      ]
+    },
+    {
+      "memory_gib": 8,
+      "requested_chunk": 512,
+      "depth": 57344,
+      "mode": "cold",
+      "trials": 2,
+      "prompt_tokens": 57259,
+      "pp_tokens_per_second": 685.3392100903727,
+      "decode_tokens_per_second": 33.17121200380868,
+      "ttft_seconds": 83.60079875047086,
+      "pp_samples_tokens_per_second": [
+        684.7078006262042,
+        685.9706195545414
+      ],
+      "decode_samples_tokens_per_second": [
+        33.07983854223486,
+        33.26258546538249
+      ],
+      "ttft_samples_seconds": [
+        83.68058941699564,
+        83.52100808394607
+      ],
+      "elapsed_seconds": 85.01845589547884,
+      "elapsed_min_seconds": 84.93483604106586,
+      "elapsed_max_seconds": 85.10207574989181,
+      "completion_tokens": [
+        48,
+        48
+      ],
+      "cache_tokens": [
+        0,
+        0
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "nominal",
+          "fair"
+        ],
+        [
+          "nominal",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 7.0626983642578125,
+      "swap_before": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 935.00M  free = 1113.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 919.00M  free = 1129.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase1-8g-512-57344-cold",
+        "phase6-8g-512-57344-cold"
+      ]
+    },
+    {
+      "memory_gib": 10,
+      "requested_chunk": 512,
+      "depth": 4096,
+      "mode": "cached",
+      "trials": 3,
+      "prompt_tokens": 4013,
+      "pp_tokens_per_second": 48.64027429457967,
+      "decode_tokens_per_second": 69.04246379952971,
+      "ttft_seconds": 0.2694441806524992,
+      "pp_samples_tokens_per_second": [
+        48.65087384454175,
+        48.48195538914228,
+        48.78799365005498
+      ],
+      "decode_samples_tokens_per_second": [
+        68.86862620864439,
+        69.15371807624996,
+        69.10504711369481
+      ],
+      "ttft_samples_seconds": [
+        0.26953249995131046,
+        0.27034045895561576,
+        0.2684595830505714
+      ],
+      "elapsed_seconds": 1.2112793890216078,
+      "elapsed_min_seconds": 1.209399375016801,
+      "elapsed_max_seconds": 1.2136486250674352,
+      "completion_tokens": [
+        66,
+        66,
+        66
+      ],
+      "cache_tokens": [
+        4000,
+        4000,
+        4000
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "nominal",
+          "nominal"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 8.795761108398438,
+      "swap_before": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 943.00M  free = 1105.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 943.00M  free = 1105.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase2-10g-512-4096-cached",
+        "phase5-10g-512-4096-cached",
+        "phase1-10g-512-4096-cached"
+      ]
+    },
+    {
+      "memory_gib": 10,
+      "requested_chunk": 512,
+      "depth": 4096,
+      "mode": "cold",
+      "trials": 3,
+      "prompt_tokens": 4013,
+      "pp_tokens_per_second": 1283.5835854868906,
+      "decode_tokens_per_second": 58.96648428141859,
+      "ttft_seconds": 3.1311406250266978,
+      "pp_samples_tokens_per_second": [
+        1283.282029766515,
+        1285.4936225037304,
+        1281.9751041904262
+      ],
+      "decode_samples_tokens_per_second": [
+        58.96499203065454,
+        59.0188524374332,
+        58.91560837616801
+      ],
+      "ttft_samples_seconds": [
+        3.1318862080806866,
+        3.1264139169361442,
+        3.135121750063263
+      ],
+      "elapsed_seconds": 4.233817486364084,
+      "elapsed_min_seconds": 4.228096834034659,
+      "elapsed_max_seconds": 4.238789792056195,
+      "completion_tokens": [
+        66,
+        66,
+        66
+      ],
+      "cache_tokens": [
+        0,
+        0,
+        0
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "nominal",
+          "nominal"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 8.795761108398438,
+      "swap_before": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 943.00M  free = 1105.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 943.00M  free = 1105.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase2-10g-512-4096-cold",
+        "phase5-10g-512-4096-cold",
+        "phase1-10g-512-4096-cold"
+      ]
+    },
+    {
+      "memory_gib": 10,
+      "requested_chunk": 512,
+      "depth": 32768,
+      "mode": "cached",
+      "trials": 3,
+      "prompt_tokens": 32689,
+      "pp_tokens_per_second": 53.12166116079027,
+      "decode_tokens_per_second": 53.97126529450423,
+      "ttft_seconds": 0.32382919468606514,
+      "pp_samples_tokens_per_second": [
+        52.8888183704644,
+        53.28118046022403,
+        53.19498465168237
+      ],
+      "decode_samples_tokens_per_second": [
+        54.16362716524862,
+        53.85930574208956,
+        53.8908629761745
+      ],
+      "ttft_samples_seconds": [
+        0.3246864590328187,
+        0.3229069169610739,
+        0.3238942080643028
+      ],
+      "elapsed_seconds": 1.1950596386644368,
+      "elapsed_min_seconds": 1.1929009159794077,
+      "elapsed_max_seconds": 1.1963407919974998,
+      "completion_tokens": [
+        48,
+        48,
+        48
+      ],
+      "cache_tokens": [
+        32672,
+        32672,
+        32672
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "fair",
+          "fair"
+        ],
+        [
+          "fair",
+          "fair"
+        ],
+        [
+          "fair",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 8.795761108398438,
+      "swap_before": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 943.00M  free = 1105.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 943.00M  free = 1105.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase2-10g-512-32768-cached",
+        "phase5-10g-512-32768-cached",
+        "phase1-10g-512-32768-cached"
+      ]
+    },
+    {
+      "memory_gib": 10,
+      "requested_chunk": 512,
+      "depth": 32768,
+      "mode": "cold",
+      "trials": 3,
+      "prompt_tokens": 32689,
+      "pp_tokens_per_second": 907.8348708909376,
+      "decode_tokens_per_second": 54.72096666537724,
+      "ttft_seconds": 36.036899444685936,
+      "pp_samples_tokens_per_second": [
+        906.2823032362533,
+        906.3981243057274,
+        910.8241851308321
+      ],
+      "decode_samples_tokens_per_second": [
+        54.796564838326816,
+        54.53467419013108,
+        54.83166096767382
+      ],
+      "ttft_samples_seconds": [
+        36.09838837501593,
+        36.093408667016774,
+        35.91890129202511
+      ],
+      "elapsed_seconds": 36.89638204162475,
+      "elapsed_min_seconds": 36.77684274991043,
+      "elapsed_max_seconds": 36.95642725005746,
+      "completion_tokens": [
+        48,
+        48,
+        48
+      ],
+      "cache_tokens": [
+        0,
+        0,
+        0
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "nominal",
+          "fair"
+        ],
+        [
+          "nominal",
+          "fair"
+        ],
+        [
+          "nominal",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 8.795761108398438,
+      "swap_before": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 943.00M  free = 1105.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 943.00M  free = 1105.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase2-10g-512-32768-cold",
+        "phase5-10g-512-32768-cold",
+        "phase1-10g-512-32768-cold"
+      ]
+    },
+    {
+      "memory_gib": 10,
+      "requested_chunk": 512,
+      "depth": 57344,
+      "mode": "cached",
+      "trials": 3,
+      "prompt_tokens": 57259,
+      "pp_tokens_per_second": 43.13580304201076,
+      "decode_tokens_per_second": 43.72869433357293,
+      "ttft_seconds": 0.2628408746871476,
+      "pp_samples_tokens_per_second": [
+        46.45427210378729,
+        41.139489047546036,
+        41.81364797469894
+      ],
+      "decode_samples_tokens_per_second": [
+        47.83223302235597,
+        40.343451528201356,
+        43.010398450161475
+      ],
+      "ttft_samples_seconds": [
+        0.242114125052467,
+        0.2758467079838738,
+        0.27056179102510214
+      ],
+      "elapsed_seconds": 1.3443131943543751,
+      "elapsed_min_seconds": 1.2258400419959798,
+      "elapsed_max_seconds": 1.4426108750049025,
+      "completion_tokens": [
+        48,
+        48,
+        48
+      ],
+      "cache_tokens": [
+        57248,
+        57248,
+        57248
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "fair",
+          "fair"
+        ],
+        [
+          "fair",
+          "fair"
+        ],
+        [
+          "fair",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 8.795761108398438,
+      "swap_before": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 935.00M  free = 1113.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 935.00M  free = 1113.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase2-10g-512-57344-cached",
+        "phase5-10g-512-57344-cached",
+        "phase1-10g-512-57344-cached"
+      ]
+    },
+    {
+      "memory_gib": 10,
+      "requested_chunk": 512,
+      "depth": 57344,
+      "mode": "cold",
+      "trials": 3,
+      "prompt_tokens": 57259,
+      "pp_tokens_per_second": 685.357478604208,
+      "decode_tokens_per_second": 39.82891464015206,
+      "ttft_seconds": 83.62373654160183,
+      "pp_samples_tokens_per_second": [
+        699.6032413040065,
+        671.674715134447,
+        684.7944793741706
+      ],
+      "decode_samples_tokens_per_second": [
+        41.03190885678118,
+        41.027897224244526,
+        37.42693783943047
+      ],
+      "ttft_samples_seconds": [
+        81.90133895899635,
+        85.30122058291454,
+        83.6686500828946
+      ],
+      "elapsed_seconds": 84.80726252732954,
+      "elapsed_min_seconds": 83.04773341596592,
+      "elapsed_max_seconds": 86.44858279102482,
+      "completion_tokens": [
+        48,
+        48,
+        48
+      ],
+      "cache_tokens": [
+        0,
+        0,
+        0
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "nominal",
+          "fair"
+        ],
+        [
+          "nominal",
+          "fair"
+        ],
+        [
+          "nominal",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 8.795761108398438,
+      "swap_before": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 943.00M  free = 1105.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 935.00M  free = 1113.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase2-10g-512-57344-cold",
+        "phase5-10g-512-57344-cold",
+        "phase1-10g-512-57344-cold"
+      ]
+    },
+    {
+      "memory_gib": 10,
+      "requested_chunk": 1024,
+      "depth": 4096,
+      "mode": "cached",
+      "trials": 2,
+      "prompt_tokens": 4013,
+      "pp_tokens_per_second": 48.819858745218596,
+      "decode_tokens_per_second": 69.03366959684692,
+      "ttft_seconds": 0.2683876460068859,
+      "pp_samples_tokens_per_second": [
+        48.95094362357477,
+        48.68877386686242
+      ],
+      "decode_samples_tokens_per_second": [
+        69.33939821936426,
+        68.72794097432958
+      ],
+      "ttft_samples_seconds": [
+        0.26766250003129244,
+        0.2691127919824794
+      ],
+      "elapsed_seconds": 1.2103512290050276,
+      "elapsed_min_seconds": 1.20539020805154,
+      "elapsed_max_seconds": 1.2153122499585152,
+      "completion_tokens": [
+        66,
+        66
+      ],
+      "cache_tokens": [
+        4000,
+        4000
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "nominal",
+          "nominal"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 8.795761108398438,
+      "swap_before": [
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase1-10g-1024-4096-cached",
+        "phase2-10g-1024-4096-cached"
+      ]
+    },
+    {
+      "memory_gib": 10,
+      "requested_chunk": 1024,
+      "depth": 4096,
+      "mode": "cold",
+      "trials": 2,
+      "prompt_tokens": 4013,
+      "pp_tokens_per_second": 1285.5036550416587,
+      "decode_tokens_per_second": 58.85542146368478,
+      "ttft_seconds": 3.1264746244996786,
+      "pp_samples_tokens_per_second": [
+        1286.3531807189986,
+        1284.6541293643188
+      ],
+      "decode_samples_tokens_per_second": [
+        58.77108751828685,
+        58.939755409082714
+      ],
+      "ttft_samples_seconds": [
+        3.1243287910474464,
+        3.128620457951911
+      ],
+      "elapsed_seconds": 4.231158895534463,
+      "elapsed_min_seconds": 4.230587666039355,
+      "elapsed_max_seconds": 4.231730125029571,
+      "completion_tokens": [
+        66,
+        66
+      ],
+      "cache_tokens": [
+        0,
+        0
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "nominal",
+          "nominal"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 8.795761108398438,
+      "swap_before": [
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase1-10g-1024-4096-cold",
+        "phase2-10g-1024-4096-cold"
+      ]
+    },
+    {
+      "memory_gib": 10,
+      "requested_chunk": 1024,
+      "depth": 32768,
+      "mode": "cached",
+      "trials": 2,
+      "prompt_tokens": 32689,
+      "pp_tokens_per_second": 52.97022959306743,
+      "decode_tokens_per_second": 54.661559294813514,
+      "ttft_seconds": 0.32429945800686255,
+      "pp_samples_tokens_per_second": [
+        52.959996510870816,
+        52.98046267526405
+      ],
+      "decode_samples_tokens_per_second": [
+        55.75240239474361,
+        53.570716194883424
+      ],
+      "ttft_samples_seconds": [
+        0.3244821659754962,
+        0.32411675003822893
+      ],
+      "elapsed_seconds": 1.1849750835099258,
+      "elapsed_min_seconds": 1.1680087920976803,
+      "elapsed_max_seconds": 1.2019413749221712,
+      "completion_tokens": [
+        48,
+        48
+      ],
+      "cache_tokens": [
+        32672,
+        32672
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "fair",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 8.795761108398438,
+      "swap_before": [
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase1-10g-1024-32768-cached",
+        "phase2-10g-1024-32768-cached"
+      ]
+    },
+    {
+      "memory_gib": 10,
+      "requested_chunk": 1024,
+      "depth": 32768,
+      "mode": "cold",
+      "trials": 2,
+      "prompt_tokens": 32689,
+      "pp_tokens_per_second": 922.7818039657816,
+      "decode_tokens_per_second": 54.71790592750135,
+      "ttft_seconds": 35.46112456248375,
+      "pp_samples_tokens_per_second": [
+        936.305477617619,
+        909.2581303139441
+      ],
+      "decode_samples_tokens_per_second": [
+        54.71886147512736,
+        54.716950379875335
+      ],
+      "ttft_samples_seconds": [
+        34.941921624937095,
+        35.9803275000304
+      ],
+      "elapsed_seconds": 36.320568041468505,
+      "elapsed_min_seconds": 35.80138212500606,
+      "elapsed_max_seconds": 36.83975395793095,
+      "completion_tokens": [
+        48,
+        48
+      ],
+      "cache_tokens": [
+        0,
+        0
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "nominal",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 8.795761108398438,
+      "swap_before": [
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase1-10g-1024-32768-cold",
+        "phase2-10g-1024-32768-cold"
+      ]
+    },
+    {
+      "memory_gib": 10,
+      "requested_chunk": 1024,
+      "depth": 57344,
+      "mode": "cached",
+      "trials": 2,
+      "prompt_tokens": 57259,
+      "pp_tokens_per_second": 47.873502535429495,
+      "decode_tokens_per_second": 50.486053879920874,
+      "ttft_seconds": 0.23495418741367757,
+      "pp_samples_tokens_per_second": [
+        49.05611573675596,
+        46.690889334103026
+      ],
+      "decode_samples_tokens_per_second": [
+        53.578838410783256,
+        47.393269349058485
+      ],
+      "ttft_samples_seconds": [
+        0.22896979190409184,
+        0.2409385829232633
+      ],
+      "elapsed_seconds": 1.1703706044936553,
+      "elapsed_min_seconds": 1.1070531249279156,
+      "elapsed_max_seconds": 1.233688084059395,
+      "completion_tokens": [
+        48,
+        48
+      ],
+      "cache_tokens": [
+        57248,
+        57248
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "fair",
+          "fair"
+        ],
+        [
+          "fair",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 8.795761108398438,
+      "swap_before": [
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase1-10g-1024-57344-cached",
+        "phase2-10g-1024-57344-cached"
+      ]
+    },
+    {
+      "memory_gib": 10,
+      "requested_chunk": 1024,
+      "depth": 57344,
+      "mode": "cold",
+      "trials": 2,
+      "prompt_tokens": 57259,
+      "pp_tokens_per_second": 702.4913414452215,
+      "decode_tokens_per_second": 46.163941850274156,
+      "ttft_seconds": 81.55932293698424,
+      "pp_samples_tokens_per_second": [
+        700.9914525662103,
+        703.9912303242326
+      ],
+      "decode_samples_tokens_per_second": [
+        50.86211281216622,
+        41.46577088838209
+      ],
+      "ttft_samples_seconds": [
+        81.73361141595524,
+        81.38503445801325
+      ],
+      "elapsed_seconds": 82.58907879149774,
+      "elapsed_min_seconds": 82.51931841706391,
+      "elapsed_max_seconds": 82.65883916593157,
+      "completion_tokens": [
+        48,
+        48
+      ],
+      "cache_tokens": [
+        0,
+        0
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "nominal",
+          "fair"
+        ],
+        [
+          "nominal",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 8.795761108398438,
+      "swap_before": [
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 839.00M  free = 1209.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase1-10g-1024-57344-cold",
+        "phase2-10g-1024-57344-cold"
+      ]
+    },
+    {
+      "memory_gib": 10,
+      "requested_chunk": 2048,
+      "depth": 4096,
+      "mode": "cached",
+      "trials": 2,
+      "prompt_tokens": 4013,
+      "pp_tokens_per_second": 48.680912168314265,
+      "decode_tokens_per_second": 69.1518919889836,
+      "ttft_seconds": 0.2691308955545537,
+      "pp_samples_tokens_per_second": [
+        48.86648548477433,
+        48.4953388518542
+      ],
+      "decode_samples_tokens_per_second": [
+        69.29770507323168,
+        69.00607890473552
+      ],
+      "ttft_samples_seconds": [
+        0.2680611250689253,
+        0.2702006660401821
+      ],
+      "elapsed_seconds": 1.2094284795457497,
+      "elapsed_min_seconds": 1.20639041706454,
+      "elapsed_max_seconds": 1.2124665420269594,
+      "completion_tokens": [
+        66,
+        66
+      ],
+      "cache_tokens": [
+        4000,
+        4000
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "nominal",
+          "nominal"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 8.795761108398438,
+      "swap_before": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 959.00M  free = 1089.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 959.00M  free = 1089.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase3-10g-2048-4096-cached",
+        "phase4-10g-2048-4096-cached"
+      ]
+    },
+    {
+      "memory_gib": 10,
+      "requested_chunk": 2048,
+      "depth": 4096,
+      "mode": "cold",
+      "trials": 2,
+      "prompt_tokens": 4013,
+      "pp_tokens_per_second": 1284.9165546315676,
+      "decode_tokens_per_second": 59.020541390403324,
+      "ttft_seconds": 3.12960397900315,
+      "pp_samples_tokens_per_second": [
+        1283.7693233195273,
+        1286.063785943608
+      ],
+      "decode_samples_tokens_per_second": [
+        59.013333381754535,
+        59.02774939905211
+      ],
+      "ttft_samples_seconds": [
+        3.130648749996908,
+        3.128559208009392
+      ],
+      "elapsed_seconds": 4.230678208521567,
+      "elapsed_min_seconds": 4.228948959033005,
+      "elapsed_max_seconds": 4.23240745801013,
+      "completion_tokens": [
+        66,
+        66
+      ],
+      "cache_tokens": [
+        0,
+        0
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "nominal",
+          "nominal"
+        ],
+        [
+          "nominal",
+          "nominal"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 8.795761108398438,
+      "swap_before": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 959.00M  free = 1089.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 959.00M  free = 1089.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase3-10g-2048-4096-cold",
+        "phase4-10g-2048-4096-cold"
+      ]
+    },
+    {
+      "memory_gib": 10,
+      "requested_chunk": 2048,
+      "depth": 32768,
+      "mode": "cached",
+      "trials": 2,
+      "prompt_tokens": 32689,
+      "pp_tokens_per_second": 46.32523838828891,
+      "decode_tokens_per_second": 54.577742028311434,
+      "ttft_seconds": 0.37901485397014767,
+      "pp_samples_tokens_per_second": [
+        39.375641301805025,
+        53.27483547477279
+      ],
+      "decode_samples_tokens_per_second": [
+        53.08916834123458,
+        56.06631571538829
+      ],
+      "ttft_samples_seconds": [
+        0.4354699579998851,
+        0.32255974994041026
+      ],
+      "elapsed_seconds": 1.2412342505413108,
+      "elapsed_min_seconds": 1.1613217090489343,
+      "elapsed_max_seconds": 1.3211467920336872,
+      "completion_tokens": [
+        48,
+        48
+      ],
+      "cache_tokens": [
+        32672,
+        32672
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "fair",
+          "fair"
+        ],
+        [
+          "fair",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 8.795761108398438,
+      "swap_before": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 959.00M  free = 1089.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 959.00M  free = 1089.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase3-10g-2048-32768-cached",
+        "phase4-10g-2048-32768-cached"
+      ]
+    },
+    {
+      "memory_gib": 10,
+      "requested_chunk": 2048,
+      "depth": 32768,
+      "mode": "cold",
+      "trials": 2,
+      "prompt_tokens": 32689,
+      "pp_tokens_per_second": 910.4822584839262,
+      "decode_tokens_per_second": 54.92207373618055,
+      "ttft_seconds": 35.93413143750513,
+      "pp_samples_tokens_per_second": [
+        914.983174878815,
+        905.9813420890373
+      ],
+      "decode_samples_tokens_per_second": [
+        55.09590203714167,
+        54.74824543521943
+      ],
+      "ttft_samples_seconds": [
+        35.75601670797914,
+        36.11224616703112
+      ],
+      "elapsed_seconds": 36.78946893749526,
+      "elapsed_min_seconds": 36.609542999998666,
+      "elapsed_max_seconds": 36.96939487499185,
+      "completion_tokens": [
+        48,
+        48
+      ],
+      "cache_tokens": [
+        0,
+        0
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "nominal",
+          "fair"
+        ],
+        [
+          "nominal",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 8.795761108398438,
+      "swap_before": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 959.00M  free = 1089.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 959.00M  free = 1089.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase3-10g-2048-32768-cold",
+        "phase4-10g-2048-32768-cold"
+      ]
+    },
+    {
+      "memory_gib": 10,
+      "requested_chunk": 2048,
+      "depth": 57344,
+      "mode": "cached",
+      "trials": 2,
+      "prompt_tokens": 57259,
+      "pp_tokens_per_second": 40.51015289865573,
+      "decode_tokens_per_second": 47.7399535826011,
+      "ttft_seconds": 0.27816433302359655,
+      "pp_samples_tokens_per_second": [
+        38.50165557118956,
+        42.51865022612191
+      ],
+      "decode_samples_tokens_per_second": [
+        50.13670251974266,
+        45.34320464545955
+      ],
+      "ttft_samples_seconds": [
+        0.2904560409951955,
+        0.2658726250519976
+      ],
+      "elapsed_seconds": 1.266472208488267,
+      "elapsed_min_seconds": 1.2292527499375865,
+      "elapsed_max_seconds": 1.3036916670389473,
+      "completion_tokens": [
+        48,
+        48
+      ],
+      "cache_tokens": [
+        57248,
+        57248
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "fair",
+          "fair"
+        ],
+        [
+          "fair",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 8.795761108398438,
+      "swap_before": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 943.00M  free = 1105.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 943.00M  free = 1105.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase3-10g-2048-57344-cached",
+        "phase4-10g-2048-57344-cached"
+      ]
+    },
+    {
+      "memory_gib": 10,
+      "requested_chunk": 2048,
+      "depth": 57344,
+      "mode": "cold",
+      "trials": 2,
+      "prompt_tokens": 57259,
+      "pp_tokens_per_second": 695.1412777531789,
+      "decode_tokens_per_second": 43.36329907286691,
+      "ttft_seconds": 82.5113243329688,
+      "pp_samples_tokens_per_second": [
+        717.6616765456122,
+        672.6208789607457
+      ],
+      "decode_samples_tokens_per_second": [
+        41.41844971623956,
+        45.30814842949426
+      ],
+      "ttft_samples_seconds": [
+        79.83619516598992,
+        85.18645349994767
+      ],
+      "elapsed_seconds": 83.59870989597403,
+      "elapsed_min_seconds": 80.97197887499351,
+      "elapsed_max_seconds": 86.22544091695454,
+      "completion_tokens": [
+        48,
+        48
+      ],
+      "cache_tokens": [
+        0,
+        0
+      ],
+      "correct": true,
+      "thermal": [
+        [
+          "nominal",
+          "fair"
+        ],
+        [
+          "nominal",
+          "fair"
+        ]
+      ],
+      "memory_pressure": [
+        [
+          "warning",
+          "warning"
+        ],
+        [
+          "warning",
+          "warning"
+        ]
+      ],
+      "maximum_sampled_metal_peak_gib": 8.795761108398438,
+      "swap_before": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 959.00M  free = 1089.00M  (encrypted)"
+      ],
+      "swap_after": [
+        "vm.swapusage: total = 3072.00M  used = 1384.06M  free = 1687.94M  (encrypted)",
+        "vm.swapusage: total = 2048.00M  used = 943.00M  free = 1105.00M  (encrypted)"
+      ],
+      "keys": [
+        "phase3-10g-2048-57344-cold",
+        "phase4-10g-2048-57344-cold"
+      ]
+    }
+  ],
+  "raw_results": [
+    "/Users/mymac/splash/splash/build/validation/option19-10g-20261105/run.json",
+    "/Users/mymac/splash/splash/build/validation/option19-10g-1024-20261105/run.json",
+    "/Users/mymac/splash/splash/build/validation/option19-10g-control-20261105/run.json"
+  ],
+  "selected_profile": {
+    "memory_gib": 10,
+    "requested_chunk": 512,
+    "expert_memory": "auto"
+  }
+}
