@@ -1,6 +1,133 @@
 # Mac performance estimates - reviewed November 5, 2026
 
-This is the complete saved estimate document, including historical tables and later measured Air results. Source: `/Users/mymac/MacPerfEstimates.md`; source SHA-256: `2990889489a75dd756e3e600f41a0b8ebfef4149a70dd0910a8d26bccf5b4cfb`. Repository artifact links have been made relative for publication.
+This is the complete saved estimate document, including historical tables and later measured Air results. Source: `/Users/mymac/MacPerfEstimates.md`; source SHA-256: `8054ede8c39798362766bd4bb5c6db29e89951e1c84823860543b0f0482712b3`. Repository artifact links have been made relative for publication.
+
+<!-- option19-memory-chunks-20261105:start -->
+## Option 19: 10 GiB memory and chunk-size results, November 5, 2026
+
+Measured on the **Apple M5 MacBook Air, 8 GPU cores, 16 GiB unified memory**. Model: `unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS`. The selected profile uses a **10 GiB engine cap, automatic expert memory and requested 512-token prefill chunks**. The repository and installed home launchers were updated and the service was restored with these settings. The memory cap is not total process RSS. These measurements apply to option 19 on this machine; the option 20 and other-device estimates below retain their existing assumptions.
+
+Configuration: 81,920 served context tokens, INT8 KV, BF16 recurrent state, DFlash2, `verify-rows auto`, one active request, reasoning disabled, temperature zero and seed 42. Each launch used an isolated 2 GiB persistent prefix cache. The coding output cap was 384 tokens; actual timed outputs were 48-66 tokens. These are short executable coding fixtures with repeated repository-note filler, rather than a representative codebase or sustained long-generation benchmark.
+
+### All memory/chunk combinations
+
+Values are arithmetic means of all **54 timed coding requests**. Rates are tokens/s and times are seconds. Paired time values are **cold / cached**. Cold means zero prompt-prefix reuse, with warm model/OS caches. Cached runs reuse all but the final short suffix; cached suffix PP is omitted because it does not measure full-prompt processing. Decode ranges show individual-trial variation.
+
+| Memory cap | Requested chunk | Filled prompt | Trials per mode | Cold PP tok/s | Cold decode tok/s (range) | Cached decode tok/s | SSE TTFT s, cold / cached | Request s, cold / cached | Peak Metal GiB |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 8 GiB | 512 | 4,013 | 2 | 1,256.8 | 44.6 (44.0-45.2) | 47.0 | 3.198 / 0.343 | 4.656 / 1.727 | 6.80 |
+| 8 GiB | 512 | 32,689 | 2 | 905.5 | 36.7 (36.6-36.8) | 35.5 | 36.132 / 0.455 | 37.415 / 1.969 | 6.91 |
+| 8 GiB | 512 | 57,259 | 2 | 685.3 | 33.2 (33.1-33.3) | 34.3 | 83.601 / 0.332 | 85.018 / 1.791 | 7.06 |
+| 10 GiB | 512 | 4,013 | 3 | 1,283.6 | 59.0 (58.9-59.0) | 69.0 | 3.131 / 0.269 | 4.234 / 1.211 | 8.80 |
+| 10 GiB | 512 | 32,689 | 3 | 907.8 | 54.7 (54.5-54.8) | 54.0 | 36.037 / 0.324 | 36.896 / 1.195 | 8.80 |
+| 10 GiB | 512 | 57,259 | 3 | 685.4 | 39.8 (37.4-41.0) | 43.7 | 83.624 / 0.263 | 84.807 / 1.344 | 8.80 |
+| 10 GiB | 1024 | 4,013 | 2 | 1,285.5 | 58.9 (58.8-58.9) | 69.0 | 3.126 / 0.268 | 4.231 / 1.210 | 8.80 |
+| 10 GiB | 1024 | 32,689 | 2 | 922.8 | 54.7 (54.7-54.7) | 54.7 | 35.461 / 0.324 | 36.321 / 1.185 | 8.80 |
+| 10 GiB | 1024 | 57,259 | 2 | 702.5 | 46.2 (41.5-50.9) | 50.5 | 81.559 / 0.235 | 82.589 / 1.170 | 8.80 |
+| 10 GiB | 2048 | 4,013 | 2 | 1,284.9 | 59.0 (59.0-59.0) | 69.2 | 3.130 / 0.269 | 4.231 / 1.209 | 8.80 |
+| 10 GiB | 2048 | 32,689 | 2 | 910.5 | 54.9 (54.7-55.1) | 54.6 | 35.934 / 0.379 | 36.789 / 1.241 | 8.80 |
+| 10 GiB | 2048 | 57,259 | 2 | 695.1 | 43.4 (41.4-45.3) | 47.7 | 82.511 / 0.278 | 83.599 / 1.266 | 8.80 |
+
+Cached requests reused 4,000 of 4,013 tokens, 32,672 of 32,689 tokens and 57,248 of 57,259 tokens, respectively. All cold requests reported zero reused prefix tokens.
+
+### Interpretation and memory conditions
+
+At 10 GiB, the larger automatic expert cache improved observed decode compared with the legacy 8 GiB/1900M expert-memory profile. At 4K and 32K, changing the requested chunk among 512, 1024 and 2048 had essentially no decode effect. At 57K, 1024 averaged 702.5 PP tok/s versus 685.4 for the three 512 controls, about 2.5% higher. Its decode results were higher but variable (41.5-50.9 tok/s), and the follow-up was not fully interleaved. The sample does not establish a reliable overall chunk-size advantage; the default remains 512.
+
+| Memory profile | Initial expert slots | Shared prefill MiB | Observed Metal peak GiB | Memory pressure during timed requests |
+|---|---:|---:|---:|---|
+| 8 GiB cap, 1900M expert floor, 512 requested chunks | 1,730 | 805.14 | 6.80-7.06 | normal / warning |
+| 10 GiB cap, automatic experts, 512/1024/2048 requested chunks | 3,186 | 805.14 | 8.80 | warning |
+
+This target uses fixed 2,048-row geometry for grouped streamed experts in `runtime/model/RuntimeArenas.hpp`, so all three requested chunk settings allocate the same shared prefill workspace. Allocation equality alone does not prove identical scheduling or timing. Each timed pair began after two nominal thermal readings; long cold runs could end fair. System-wide swap was already in use and its recorded usage decreased over the full session; this does not establish absence of paging or attribute swap activity to the benchmark. No full 80K filled-context, concurrency or other-Mac performance claim is made.
+
+Order: 8G/512, 10G/512, 10G/2048, 10G/2048, 10G/512, 8G/512; then two 10G/1024 launches and a fresh 10G/512 control. All used the same native artifact and matched messages at each depth. Different tasks were used at 4K versus 32K/57K; compare profiles within a depth. DFlash2 automatic verification can vary output length and decode rates even with greedy sampling.
+
+### Validation results
+
+| Check | Count | Result |
+|---|---:|---|
+| Timed cold/cache coding responses, executable correctness and reuse checks | 54 | Passed |
+| Phase readiness and exact-output smoke requests | 9 | Passed |
+| Phase cold/cache smoke requests | 18 | Passed |
+| Forced tool calls | 9 | Passed |
+| Tool-result continuations | 9 | Passed |
+| Streaming smoke responses | 9 | Passed |
+| Tracked launcher regression tests | 39 | Passed |
+| Shell syntax, Ruff lint/format and whitespace checks | All required checks | Passed |
+| Canonical post-restoration exact `READY_OK` checks | 2 | Passed |
+| Additional post-restoration exact `MEMORY_OK` probe | 1 | Strict check failed: model returned `MEMORY_OK.` with a trailing period; HTTP request completed normally. Excluded from the 54 phase smoke checks. |
+
+The final saved service status was ready on port 1235, with the 10 GiB cap, 512 requested chunks, 81,920 context, healthy Metal and zero failed server requests. This describes the restoration snapshot from this evaluation, rather than a later live-status measurement.
+
+### Every timed coding request
+
+The table below retains all 54 individual measurements, including the additional 512 control. Cached PP is omitted for the same short-suffix reason as above. All rows passed the executable coding fixture, health/counter checks and the required cold/reuse assertion.
+
+| Run | Memory GiB | Requested chunk | Filled prompt | Mode | Cached tokens | Output tokens | Cold PP tok/s | Decode tok/s | SSE TTFT s | Request s | Correct |
+|---|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---|
+| 20261105/phase1-8g-512-4096-cold | 8 | 512 | 4,013 | cold | 0 | 66 | 1254.3 | 45.2 | 3.204 | 4.642 | Pass |
+| 20261105/phase1-8g-512-4096-cached | 8 | 512 | 4,013 | cached | 4,000 | 66 | suffix only | 47.3 | 0.343 | 1.718 | Pass |
+| 20261105/phase1-8g-512-32768-cold | 8 | 512 | 32,689 | cold | 0 | 48 | 914.0 | 36.6 | 35.794 | 37.080 | Pass |
+| 20261105/phase1-8g-512-32768-cached | 8 | 512 | 32,689 | cached | 32,672 | 48 | suffix only | 36.3 | 0.440 | 1.737 | Pass |
+| 20261105/phase1-8g-512-57344-cold | 8 | 512 | 57,259 | cold | 0 | 48 | 684.7 | 33.1 | 83.681 | 85.102 | Pass |
+| 20261105/phase1-8g-512-57344-cached | 8 | 512 | 57,259 | cached | 57,248 | 51 | suffix only | 34.9 | 0.316 | 1.751 | Pass |
+| 20261105/phase2-10g-512-4096-cold | 10 | 512 | 4,013 | cold | 0 | 66 | 1283.3 | 59.0 | 3.132 | 4.235 | Pass |
+| 20261105/phase2-10g-512-4096-cached | 10 | 512 | 4,013 | cached | 4,000 | 66 | suffix only | 68.9 | 0.270 | 1.214 | Pass |
+| 20261105/phase2-10g-512-32768-cold | 10 | 512 | 32,689 | cold | 0 | 48 | 906.3 | 54.8 | 36.098 | 36.956 | Pass |
+| 20261105/phase2-10g-512-32768-cached | 10 | 512 | 32,689 | cached | 32,672 | 48 | suffix only | 54.2 | 0.325 | 1.193 | Pass |
+| 20261105/phase2-10g-512-57344-cold | 10 | 512 | 57,259 | cold | 0 | 48 | 699.6 | 41.0 | 81.901 | 83.048 | Pass |
+| 20261105/phase2-10g-512-57344-cached | 10 | 512 | 57,259 | cached | 57,248 | 48 | suffix only | 47.8 | 0.242 | 1.226 | Pass |
+| 20261105/phase3-10g-2048-4096-cold | 10 | 2048 | 4,013 | cold | 0 | 66 | 1283.8 | 59.0 | 3.131 | 4.232 | Pass |
+| 20261105/phase3-10g-2048-4096-cached | 10 | 2048 | 4,013 | cached | 4,000 | 66 | suffix only | 69.3 | 0.268 | 1.206 | Pass |
+| 20261105/phase3-10g-2048-32768-cold | 10 | 2048 | 32,689 | cold | 0 | 48 | 915.0 | 55.1 | 35.756 | 36.610 | Pass |
+| 20261105/phase3-10g-2048-32768-cached | 10 | 2048 | 32,689 | cached | 32,672 | 48 | suffix only | 53.1 | 0.435 | 1.321 | Pass |
+| 20261105/phase3-10g-2048-57344-cold | 10 | 2048 | 57,259 | cold | 0 | 48 | 717.7 | 41.4 | 79.836 | 80.972 | Pass |
+| 20261105/phase3-10g-2048-57344-cached | 10 | 2048 | 57,259 | cached | 57,248 | 48 | suffix only | 50.1 | 0.290 | 1.229 | Pass |
+| 20261105/phase4-10g-2048-4096-cold | 10 | 2048 | 4,013 | cold | 0 | 66 | 1286.1 | 59.0 | 3.129 | 4.229 | Pass |
+| 20261105/phase4-10g-2048-4096-cached | 10 | 2048 | 4,013 | cached | 4,000 | 66 | suffix only | 69.0 | 0.270 | 1.212 | Pass |
+| 20261105/phase4-10g-2048-32768-cold | 10 | 2048 | 32,689 | cold | 0 | 48 | 906.0 | 54.7 | 36.112 | 36.969 | Pass |
+| 20261105/phase4-10g-2048-32768-cached | 10 | 2048 | 32,689 | cached | 32,672 | 48 | suffix only | 56.1 | 0.323 | 1.161 | Pass |
+| 20261105/phase4-10g-2048-57344-cold | 10 | 2048 | 57,259 | cold | 0 | 48 | 672.6 | 45.3 | 85.186 | 86.225 | Pass |
+| 20261105/phase4-10g-2048-57344-cached | 10 | 2048 | 57,259 | cached | 57,248 | 48 | suffix only | 45.3 | 0.266 | 1.304 | Pass |
+| 20261105/phase5-10g-512-4096-cold | 10 | 512 | 4,013 | cold | 0 | 66 | 1285.5 | 59.0 | 3.126 | 4.228 | Pass |
+| 20261105/phase5-10g-512-4096-cached | 10 | 512 | 4,013 | cached | 4,000 | 66 | suffix only | 69.2 | 0.270 | 1.211 | Pass |
+| 20261105/phase5-10g-512-32768-cold | 10 | 512 | 32,689 | cold | 0 | 48 | 906.4 | 54.5 | 36.093 | 36.956 | Pass |
+| 20261105/phase5-10g-512-32768-cached | 10 | 512 | 32,689 | cached | 32,672 | 48 | suffix only | 53.9 | 0.323 | 1.196 | Pass |
+| 20261105/phase5-10g-512-57344-cold | 10 | 512 | 57,259 | cold | 0 | 48 | 671.7 | 41.0 | 85.301 | 86.449 | Pass |
+| 20261105/phase5-10g-512-57344-cached | 10 | 512 | 57,259 | cached | 57,248 | 48 | suffix only | 40.3 | 0.276 | 1.443 | Pass |
+| 20261105/phase6-8g-512-4096-cold | 8 | 512 | 4,013 | cold | 0 | 66 | 1259.2 | 44.0 | 3.192 | 4.670 | Pass |
+| 20261105/phase6-8g-512-4096-cached | 8 | 512 | 4,013 | cached | 4,000 | 66 | suffix only | 46.7 | 0.344 | 1.736 | Pass |
+| 20261105/phase6-8g-512-32768-cold | 8 | 512 | 32,689 | cold | 0 | 48 | 897.0 | 36.8 | 36.470 | 37.749 | Pass |
+| 20261105/phase6-8g-512-32768-cached | 8 | 512 | 32,689 | cached | 32,672 | 61 | suffix only | 34.7 | 0.469 | 2.201 | Pass |
+| 20261105/phase6-8g-512-57344-cold | 8 | 512 | 57,259 | cold | 0 | 48 | 686.0 | 33.3 | 83.521 | 84.935 | Pass |
+| 20261105/phase6-8g-512-57344-cached | 8 | 512 | 57,259 | cached | 57,248 | 51 | suffix only | 33.8 | 0.348 | 1.831 | Pass |
+| 1024/phase1-10g-1024-4096-cold | 10 | 1024 | 4,013 | cold | 0 | 66 | 1286.4 | 58.8 | 3.124 | 4.231 | Pass |
+| 1024/phase1-10g-1024-4096-cached | 10 | 1024 | 4,013 | cached | 4,000 | 66 | suffix only | 69.3 | 0.268 | 1.205 | Pass |
+| 1024/phase1-10g-1024-32768-cold | 10 | 1024 | 32,689 | cold | 0 | 48 | 936.3 | 54.7 | 34.942 | 35.801 | Pass |
+| 1024/phase1-10g-1024-32768-cached | 10 | 1024 | 32,689 | cached | 32,672 | 48 | suffix only | 55.8 | 0.324 | 1.168 | Pass |
+| 1024/phase1-10g-1024-57344-cold | 10 | 1024 | 57,259 | cold | 0 | 48 | 701.0 | 50.9 | 81.734 | 82.659 | Pass |
+| 1024/phase1-10g-1024-57344-cached | 10 | 1024 | 57,259 | cached | 57,248 | 48 | suffix only | 53.6 | 0.229 | 1.107 | Pass |
+| 1024/phase2-10g-1024-4096-cold | 10 | 1024 | 4,013 | cold | 0 | 66 | 1284.7 | 58.9 | 3.129 | 4.232 | Pass |
+| 1024/phase2-10g-1024-4096-cached | 10 | 1024 | 4,013 | cached | 4,000 | 66 | suffix only | 68.7 | 0.269 | 1.215 | Pass |
+| 1024/phase2-10g-1024-32768-cold | 10 | 1024 | 32,689 | cold | 0 | 48 | 909.3 | 54.7 | 35.980 | 36.840 | Pass |
+| 1024/phase2-10g-1024-32768-cached | 10 | 1024 | 32,689 | cached | 32,672 | 48 | suffix only | 53.6 | 0.324 | 1.202 | Pass |
+| 1024/phase2-10g-1024-57344-cold | 10 | 1024 | 57,259 | cold | 0 | 48 | 704.0 | 41.5 | 81.385 | 82.519 | Pass |
+| 1024/phase2-10g-1024-57344-cached | 10 | 1024 | 57,259 | cached | 57,248 | 48 | suffix only | 47.4 | 0.241 | 1.234 | Pass |
+| control/phase1-10g-512-4096-cold | 10 | 512 | 4,013 | cold | 0 | 66 | 1282.0 | 58.9 | 3.135 | 4.239 | Pass |
+| control/phase1-10g-512-4096-cached | 10 | 512 | 4,013 | cached | 4,000 | 66 | suffix only | 69.1 | 0.268 | 1.209 | Pass |
+| control/phase1-10g-512-32768-cold | 10 | 512 | 32,689 | cold | 0 | 48 | 910.8 | 54.8 | 35.919 | 36.777 | Pass |
+| control/phase1-10g-512-32768-cached | 10 | 512 | 32,689 | cached | 32,672 | 48 | suffix only | 53.9 | 0.324 | 1.196 | Pass |
+| control/phase1-10g-512-57344-cold | 10 | 512 | 57,259 | cold | 0 | 48 | 684.8 | 37.4 | 83.669 | 84.925 | Pass |
+| control/phase1-10g-512-57344-cached | 10 | 512 | 57,259 | cached | 57,248 | 48 | suffix only | 43.0 | 0.271 | 1.364 | Pass |
+
+### Build and saved evidence
+
+Build: `src-6a06f0d6c0d0ed50806c8908cc3c19b1629f79495f59de3a349c4fb0937b951d`. Native binary SHA-256: `e355f85c8cb6a92f304e97c490f2c0bad113a5a1a8ef81b2c44432c734471691`. The same binary was used in all nine launches.
+
+Published in commit [`ad985097`](https://github.com/anegussie/bosaip01splash/commit/ad98509775f53d975e3c356b21de9b9547fbce88). [Benchmark report](qwen36-option19-10g-evaluation-20261105.md) and [machine-readable results with per-trial rates](qwen36-option19-10g-evaluation-20261105.json). Raw requests, responses, SSE events, statuses, thermal/memory readings, smoke results and launcher logs remain under the three `build/validation/option19-10g*-20261105/` directories referenced by the JSON.
+
+<!-- option19-memory-chunks-20261105:end -->
 
 <!-- budget108-20261105:start -->
 ## Option 20 10.8 GiB engine budget, November 5, 2026
