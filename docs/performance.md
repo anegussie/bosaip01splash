@@ -2,6 +2,57 @@
 
 [Back to Splash](../README.md#performance)
 
+## Option 20 Mac performance
+
+Updated November 5, 2026 from saved option-20 measurements and planning
+scenarios. PP is cold prefill around 30K prompt tokens; TPS is short-code
+generation. All rates are tokens per second. Only the **16 GB Air IQ3_XXS**
+row is measured. Other rows are conditional estimates, including every Q2_0
+value. The 64 GB mini assumes a 16-core GPU and the Studio a 40-core GPU.
+
+| Mac | IQ3_XXS PP | IQ3_XXS TPS | Q2_0 PP | Q2_0 TPS |
+| --- | ---: | ---: | ---: | ---: |
+| M5 Air 16 GB, 8-core GPU | **241** | **8.81-8.92** | 260-330 | 10-13 |
+| M5 Air 32 GB | 250-360 | 11-16 | 320-500 | 14-22 |
+| M6 mini 32 GB | 250-360 | 11-16 | 320-500 | 14-22 |
+| M5 Pro mini 48 GB, 16-core GPU | 290-530 | 15-25 | 410-770 | 22-40 |
+| M5 Pro mini 64 GB, 16-core GPU | 600-900 | 35-60 | 850-1,150 | 65-90 |
+| M5 Max Studio 128 GB, 40-core GPU | 1,200-1,800 | 70-110 | 1,600-2,300 | 100-150 |
+
+The measured artifact is
+`ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS`, with matching
+DFlash2, INT8 KV, BF16 recurrent state and one active request. The entire
+26.82 GiB n-gram table remains SSD-backed with an approximately 64 MiB RAM
+row cache. The alternative estimates use the same repository's `Q2_0`;
+option 20 still selects IQ3_XXS.
+
+The 241 PP figure is the mean of two 28,589-token cold requests at a 10G cap
+with 2,048-token chunks (234.57-247.43 tok/s). The TPS figures are means of
+two separate short-code baseline blocks. Cold prefill uses repeated
+repository-note filler, while generation uses separate short coding probes.
+The current 16 GiB preset defaults to 10.8G, 2,048-token chunks and 131,072
+served context. Its later 10.8G validation checked 4K processing and a
+near-131K persisted replay, rather than repeating the cold 28.6K benchmark.
+
+The estimates transfer the matched 28.6K prefill ratio of 1.4164 fully to
+16 GB Q2/32 GB scenarios, partially to 48 GB, and leave resident scenarios
+unchanged. These transfer fractions are planning assumptions. No generation
+uplift is applied. Larger-Mac scenarios require explicit larger memory caps,
+2,048-token chunks and one active request; their unmodified option-20 defaults
+remain 10G, 1,024 chunks and two admitted requests. Requested caps may be
+clamped, and expert residency must be checked on the actual device.
+
+The 64 GB and Studio fast ranges assume near/full expert residency. For the
+64 GB IQ3 mini, the cautious planning point remains approximately 500 PP and
+30 TPS until residency is confirmed. None of these ranges establishes
+filled-131K codebase performance, sustained generation or concurrency.
+
+See the [option-20 guide](../dev/benchmarks/qwen38-option20.md),
+[calculation and memory assumptions](../dev/benchmarks/qwen38-option20-mac-rebase-20261105.md),
+[raw I/O-tuning measurements](../dev/benchmarks/qwen38-option20-io-tuning-20261105.json),
+and [complete estimate history](../dev/benchmarks/qwen38-option20-mac-estimates-20261105.md).
+This is separate from the release benchmark comparisons below.
+
 ## Splash 1.0 launch benchmarks
 
 Measured for the Splash 1.0 release (September 2026) on an M5 Pro (16-core

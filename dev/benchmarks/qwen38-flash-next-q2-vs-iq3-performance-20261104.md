@@ -1,5 +1,9 @@
 # Flash-Next Q2_0 versus IQ3_XXS performance estimates - November 4, 2026
 
+Historical comparison: its performance estimates are superseded by the
+[November 5 six-Mac prefill and generation update](qwen38-option20-mac-rebase-20261105.md).
+The original dated analysis below is retained for traceability.
+
 This saves the comparison for all five requested Macs. Only the IQ3_XXS
 16 GB Air figures and the separately identified publisher Q2_0 reference are
 measurements. Every other figure is a low-confidence planning estimate, not a

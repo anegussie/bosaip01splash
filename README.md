@@ -178,6 +178,10 @@ Strata serving the same GGUF on that Mac.
 [Measurement details](docs/performance.md#splash-10-launch-benchmarks) ·
 [Run benchmarks locally](docs/validate.md#local-benchmarks)
 
+[Option-20 Mac prefill and generation estimates](docs/performance.md#option-20-mac-performance)
+cover six configurations, with measured Air results separated from conditional
+larger-Mac and Q2_0 planning scenarios.
+
 ### GGUF against llama.cpp
 
 Same Unsloth UD-Q4_K_M weights on Metal. Decode speed in tok/s:

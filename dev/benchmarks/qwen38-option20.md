@@ -1,6 +1,6 @@
 # Option 20: Flash-Next GSQ-RCO IQ3_XXS
 
-Latest planning update: [revised estimates for all six Macs](qwen38-option20-mac-rebase-20261105.md), based on the November 5 2,048-chunk measurements. Larger-Mac scenarios require explicit chunk, memory and active-request overrides.
+Latest planning update: [revised estimates for all six Macs](qwen38-option20-mac-rebase-20261105.md), based on the November 5 2,048-chunk measurements. The combined prefill and generation table is below and in the [performance documentation](../../docs/performance.md#option-20-mac-performance). Larger-Mac scenarios require explicit chunk, memory and active-request overrides.
 
 The profile in `/Users/mymac/startllamacpp.sh` selects `ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS`, with the matching `incoai/Qwen3.8-Flash-Next-DFlash2` draft selected by Splash. It is a text-only profile for the 16 GiB M5. The model downloads on its first real launch, approximately 75.8 GB plus the draft.
 
@@ -24,7 +24,36 @@ Interactive menu selection `20` starts the same profile. Like the other direct S
 | Prefix cache | 16 GiB disk quota, persistent, in its own option-20 directory |
 | Input | text only |
 
-Measured on 2026-11-03 with the 8 GiB quota live
+## Prefill and generation estimates for all six Macs
+
+PP is cold prefill around 30K prompt tokens; TPS is short-code generation.
+All rates are tokens per second. Only the **16 GB Air IQ3_XXS** figures are
+measured; every other figure is a conditional planning estimate.
+
+| Mac | IQ3_XXS PP | IQ3_XXS TPS | Q2_0 PP | Q2_0 TPS |
+| --- | ---: | ---: | ---: | ---: |
+| M5 Air 16 GB, 8-core GPU | **241** | **8.81-8.92** | 260-330 | 10-13 |
+| M5 Air 32 GB | 250-360 | 11-16 | 320-500 | 14-22 |
+| M6 mini 32 GB | 250-360 | 11-16 | 320-500 | 14-22 |
+| M5 Pro mini 48 GB, 16-core GPU | 290-530 | 15-25 | 410-770 | 22-40 |
+| M5 Pro mini 64 GB, 16-core GPU | 600-900 | 35-60 | 850-1,150 | 65-90 |
+| M5 Max Studio 128 GB, 40-core GPU | 1,200-1,800 | 70-110 | 1,600-2,300 | 100-150 |
+
+The Air's 241 PP measurement used 2,048 chunks and a 10G cap; the generation
+figures are means from two separate short-code baseline blocks. The current
+10.8G preset was validated separately. Larger-Mac estimates assume explicit
+2,048 chunks, one active request and larger memory caps. The 64 GB and Studio
+fast ranges assume near/full expert residency. The cautious 64 GB IQ3 planning
+point remains about 500 PP and 30 TPS. Q2_0 is an unmeasured alternative;
+option 20 selects IQ3_XXS. No generation uplift or filled-131K performance is
+established by these estimates.
+
+The [full rebase report](qwen38-option20-mac-rebase-20261105.md) records the
+transfer assumptions, requested caps, expert allocations and source evidence.
+
+## Launcher settings and earlier cache evidence
+
+Historically, measured on 2026-11-03 with the 8 GiB quota live
 (`qwen38-option20-v1-20261103.md`): a 28,589-token prompt costs 185-192 seconds
 cold and 1.2 seconds when its KV is read back from the disk tier, and cold
 prefill and decode are unchanged. The spill freed about 1 GiB of Metal memory and
@@ -68,9 +97,9 @@ the plan sizes the resident KV allowance against the model's 262,144-token windo
 against its 2.15 GiB reserve. The flag raises a floor, not a ceiling. Measurements in
 `qwen38-option20-v2-20261103.md` and `qwen38-option20-v3-20261103.md`.
 
-## Current 16 GB Air defaults (2026-11-04 follow-up)
+## Current 16 GB Air defaults (2026-11-05)
 
-Option 20 now admits **one active request by default on hosts below 24 GB**. That single-request implementation retained 131,072-token server context, 129,024-token OpenCode context, a 10 GiB cap, 16 GiB persistent prefix-cache quota, automatic expert memory, 1,024-token prefill chunks, INT8 KV, BF16 state, low reasoning and the 64 MiB PLE row cache. The later prefill tuning below raises the chunk size only for its validated preset. The full n-gram table remains on SSD. `verify-rows auto` remains the engine default.
+Option 20 admits **one active request by default on hosts below 24 GB**. The current validated 16 GiB preset uses 131,072-token server context, 129,024-token OpenCode context, a 10.8 GiB cap, 16 GiB persistent prefix-cache quota, automatic expert memory, 2,048-token prefill chunks, INT8 KV, BF16 state, low reasoning and the 64 MiB PLE row cache. The full n-gram table remains on SSD. `verify-rows auto` remains the engine default. Other presets retain 10G/1,024-chunk defaults; explicit overrides win. The earlier [single-request profile validation](qwen38-option20-air-profile-20261104.md) used 10G and 1,024 chunks before the November 5 tuning and budget changes.
 
 This prevents an additional client from becoming a competing active request on a memory-constrained host. It does not establish faster isolated generation, and it deliberately queues delegated requests behind the current request. An explicit `SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=2` retains the prior opt-in behavior; 24 GB and larger hosts retain their two-request default.
 
@@ -80,7 +109,7 @@ The smaller-context recommendation remains an explicit workload choice, preservi
 SPLASH_FLASH_NEXT_MAX_CONTEXT=65536 bash /Users/mymac/startllamacpp.sh --direct 20
 ```
 
-This override synchronizes the OpenCode context to 63,488 tokens. It is not a measured speedup. The persistent cache stays enabled; keeping the system/tools and other long prompt prefixes stable across turns lets it reuse their KV and recurrent state. Prefix reuse improves prompt latency, not the SSD-bound decode rate. No n-gram-cache increase, larger prefill chunk or expert-memory floor is selected without matching evidence.
+This override synchronizes the OpenCode context to 63,488 tokens. It is not a measured speedup. The persistent cache stays enabled; keeping the system/tools and other long prompt prefixes stable across turns lets it reuse their KV and recurrent state. Prefix reuse improves prompt latency, not the SSD-bound decode rate. Changing context leaves the validated preset, so set `SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS=2048` explicitly to retain the larger chunk. No throughput improvement is established for that combination.
 
 The [November 5 single-request performance run](qwen38-option20-air-performance-20261105.md) measures three cold/reuse pairs at 4K and 28.6K, one pair at 65.4K, and repeated short coding/reasoning probes. It preserves full raw evidence and does not establish a controlled speedup from the request-admission change.
 
@@ -130,9 +159,9 @@ The reproducible launcher change is [startllamacpp-option20.patch](startllamacpp
 
 The 8 GiB configuration was the original option-20 plan. It used a smaller Flash-Next prefill arena and PLE cache alongside the shared expert arena, which lowers I/O reuse and reduces prefill and decode speed. The live 4K run reached Ready with a 7.60 GiB planner minimum and returned the requested marker correctly. Full evidence is in `build/validation/option20-10g/8g-status.json` and the smoke response. This is an engine planner budget, not a total process RSS or no-swap guarantee.
 
-Under that 8 GiB plan the 32K allocation reserved seven speculative rows, which is where the 32,761 ceiling came from, and the launcher used that exact integer to avoid startup rejection. The plan behind the current 10 GiB cap reports `memory_plan.maximum_context_tokens` 204,793 on this 16 GiB M5 against a model maximum of 262,144, so the launcher ceiling is now 131,072 and the 32,761 number is history. Filled-32K inference performance was measured on 2026-11-01 at 179.65 tok/s prefill and 11.9 tok/s decode, and remains the fastest context setting measured so far.
+Under that 8 GiB plan the 32K allocation reserved seven speculative rows, which is where the 32,761 ceiling came from, and the launcher used that exact integer to avoid startup rejection. The later 10 GiB plan reported `memory_plan.maximum_context_tokens` 204,793 on this 16 GiB M5 against a model maximum of 262,144, allowing the launcher ceiling to rise to 131,072. Filled-32K inference performance was measured on 2026-11-01 at 179.65 tok/s prefill and 11.9 tok/s decode. These are historical measurements; the current 2,048-chunk results are recorded above.
 
-The latest scratch-sizing revision and 1,024-token default are documented in [the scratch and chunk report](qwen38-option20-scratch-20261101.md). It passed a 28,589-token live request under the same 8 GiB cap.
+The November 1 scratch-sizing revision and then-current 1,024-token default are documented in [the scratch and chunk report](qwen38-option20-scratch-20261101.md). It passed a 28,589-token live request under the same 8 GiB cap.
 
 The 131,072-token instance was measured live on 2026-11-02 in [the 131k live report](qwen38-option20-live-131k-20261102.md). Long prefill there is about 10 percent slower than the same chunk profile at 32,761 context (161.02 against 179.65 tok/s at 28,589 prompt tokens, TTFT 177.55 s against 159.17 s) while decode is unchanged at 11.9 tok/s, so the 1,024-token chunk default deserves a re-sweep at the larger served context. DFlash2 acceptance measured 99 to 100 percent on structured output and 72.3 percent on reasoning-on agent output, and a 65,451-token request prefilled at 156.09 tok/s with no capacity or Metal failure.
 

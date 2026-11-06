@@ -16,7 +16,8 @@ These documents run from using Splash to working on it:
 - [Validate](validate.md): the checks, the release check and local benchmarks.
 - [Package](package.md): the release archive and bottle, the desktop app, its
   updates and releases, and private test releases.
-- [Performance](performance.md): measurements and how they were made.
+- [Performance](performance.md): measurements, option-20 Mac planning
+  estimates with prefill and generation TPS, and how they were derived.
 
 Building from source needs Apple Silicon with macOS 26.4+, Xcode 26 or newer,
 Python 3.12–3.14, and a Metal 4 compiler with `uint4b_format` tensor support.

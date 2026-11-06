@@ -1,5 +1,9 @@
 # Flash-Next expert-cache estimates reviewed against the November 4 logs
 
+Historical estimates: superseded by the
+[November 5 six-Mac prefill and generation update](qwen38-option20-mac-rebase-20261105.md).
+The original dated analysis below is retained for traceability.
+
 These are conditional planning estimates for larger Macs, not measurements of
 those machines. They supersede the cross-machine estimates in
 [the November 3 report](qwen38-option20-machine-scaling-20261103.md). No tests,
