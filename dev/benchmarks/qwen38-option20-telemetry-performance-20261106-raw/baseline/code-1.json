@@ -1,0 +1,112 @@
+{
+  "name": "code-1",
+  "clean": true,
+  "foreign_active_samples": 0,
+  "status_samples": 4,
+  "started_blocked": false,
+  "idle_wait_seconds": 0.0,
+  "wall_seconds": 16.027,
+  "sse_ttft_seconds": 2.113,
+  "prompt_tokens": 33,
+  "completion_tokens": 128,
+  "cached_tokens": 0,
+  "prefill_tokens": 33,
+  "prefill_tok_s": 15.64,
+  "ttft_ms": 2110.6,
+  "queue_to_start_ms": 0.2,
+  "decode_tokens": 127,
+  "decode_tok_s": 9.61,
+  "draft_n": 122,
+  "draft_n_accepted": 102,
+  "cycles": 26,
+  "acceptance_rate": 0.8361,
+  "tokens_per_cycle": 4.923,
+  "reasoning_tokens": 0,
+  "memory_pressure_after": "warning",
+  "thermal_state_after": "nominal",
+  "metal_peak_gib_after": 8.29,
+  "correct": null,
+  "text": "```python\nfrom typing import List\n\n\ndef merge_sorted_lists(list1: List[int], list2: List[int]) -> List[int]:\n    \"\"\"\n    Merge two sorted lists into a single sorted list without using sort.\n    \n    Args:\n        list1: A sorted list of integers.\n        list2: A sorted list of integers.\n    \n    Returns:\n        A merged sorted list containing all elements from both input lists.\n    \"\"\"\n    merged: List[int] = []\n    i, j = 0, 0\n    \n    while i < len(list1) and j < len",
+  "usage": {
+    "prompt_tokens": 33,
+    "completion_tokens": 128,
+    "total_tokens": 161,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    }
+  },
+  "timings": {
+    "prompt_n": 33,
+    "prompt_ms": 2110.396,
+    "prompt_per_second": 15.636875733274701,
+    "predicted_n": 128,
+    "predicted_ms": 13221.042,
+    "predicted_per_second": 9.605899444234426,
+    "cache_n": 0,
+    "draft_n": 122,
+    "draft_n_accepted": 102
+  },
+  "metrics": {
+    "prefill": {
+      "tokens": 33
+    },
+    "decode": {
+      "tokens": 127
+    },
+    "request_latency": {
+      "start_to_first_token_ms": 2110.396,
+      "first_token_to_done_ms": 13221.042,
+      "wall_ms": 15331.648,
+      "ttft_ms": 2110.6059999999998,
+      "queue_to_start_ms": 0.20999999999958163,
+      "stream_tokens_per_second": 9.605899444234426
+    },
+    "cache": {
+      "status": "miss",
+      "matched_tokens": 0,
+      "deduplicated_tokens": 0,
+      "lane": 0
+    },
+    "speculation": {
+      "drafted_tokens": 122,
+      "accepted_draft_tokens": 102,
+      "cycles": 26
+    }
+  },
+  "complete_sse": true,
+  "status_before": {
+    "requests_completed": 4,
+    "prefill_input_tokens": 4420,
+    "decode_output_tokens": 384,
+    "decode_batches": 52,
+    "prefill_rows": 4420,
+    "drafted": 336,
+    "accepted": 332,
+    "acceptance_rate": 0.9880952381,
+    "capacity_failures": 0,
+    "metal_failures": 0,
+    "memory_pressure": "warning",
+    "thermal_state": "nominal",
+    "metal_allocated_gib": 7.875,
+    "metal_peak_gib": 8.29
+  },
+  "status_after": {
+    "requests_completed": 5,
+    "prefill_input_tokens": 4453,
+    "decode_output_tokens": 512,
+    "decode_batches": 78,
+    "prefill_rows": 4453,
+    "drafted": 458,
+    "accepted": 434,
+    "acceptance_rate": 0.9475982533,
+    "capacity_failures": 0,
+    "metal_failures": 0,
+    "memory_pressure": "warning",
+    "thermal_state": "nominal",
+    "metal_allocated_gib": 7.875,
+    "metal_peak_gib": 8.29
+  }
+}

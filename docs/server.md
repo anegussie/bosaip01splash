@@ -481,7 +481,11 @@ off` loads every expert, as a SIZE that holds them all does.
   released), its experts and those resident;
   per use (`prefill`, `decode`) its loads, the distinct experts they routed,
   those read and of them those read ahead, the experts read ahead whole, the
-  hit rate, the bytes read and the host steps' round trips, one per round
+  hit rate, the bytes read (`read_bytes`), bytes read ahead
+  (`ahead_read_bytes`) and bytes of that read-ahead consumed by routed
+  experts (`ahead_used_bytes`). Their difference is read-ahead traffic the
+  next load did not use. `format_evictions` counts resident experts discarded
+  when a shared arena changes format. The host steps' round trips, one per round
   (`host_steps`: `pickup_ms`, `work_ms`, `resume_ms`); and the `failure` that
   stopped it.
 

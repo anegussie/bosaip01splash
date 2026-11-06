@@ -1,0 +1,112 @@
+{
+  "name": "code-2",
+  "clean": true,
+  "foreign_active_samples": 0,
+  "status_samples": 4,
+  "started_blocked": false,
+  "idle_wait_seconds": 0.0,
+  "wall_seconds": 16.023,
+  "sse_ttft_seconds": 2.08,
+  "prompt_tokens": 32,
+  "completion_tokens": 128,
+  "cached_tokens": 0,
+  "prefill_tokens": 32,
+  "prefill_tok_s": 15.4,
+  "ttft_ms": 2078.0,
+  "queue_to_start_ms": 0.2,
+  "decode_tokens": 127,
+  "decode_tok_s": 9.68,
+  "draft_n": 113,
+  "draft_n_accepted": 94,
+  "cycles": 30,
+  "acceptance_rate": 0.8319,
+  "tokens_per_cycle": 4.133,
+  "reasoning_tokens": 0,
+  "memory_pressure_after": "warning",
+  "thermal_state_after": "nominal",
+  "metal_peak_gib_after": 8.29,
+  "correct": null,
+  "text": "```python\ndef is_balanced(text: str) -> bool:\n    \"\"\"\n    Validate that parentheses, brackets, and braces in a string are balanced.\n    \n    Args:\n        text: A string containing parentheses (), brackets [], and braces {}.\n        \n    Returns:\n        True if all brackets are properly balanced, False otherwise.\n    \"\"\"\n    stack: list[str] = []\n    matching_pairs: dict[str, str] = {\n        ')': '(',\n        ']': '[',\n        '}': '{',\n    }\n    opening_brackets: set[str] = {'(', '[",
+  "usage": {
+    "prompt_tokens": 32,
+    "completion_tokens": 128,
+    "total_tokens": 160,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    }
+  },
+  "timings": {
+    "prompt_n": 32,
+    "prompt_ms": 2077.821,
+    "prompt_per_second": 15.400749150191475,
+    "predicted_n": 128,
+    "predicted_ms": 13123.005,
+    "predicted_per_second": 9.677661480735548,
+    "cache_n": 0,
+    "draft_n": 113,
+    "draft_n_accepted": 94
+  },
+  "metrics": {
+    "prefill": {
+      "tokens": 32
+    },
+    "decode": {
+      "tokens": 127
+    },
+    "request_latency": {
+      "start_to_first_token_ms": 2077.821,
+      "first_token_to_done_ms": 13123.005,
+      "wall_ms": 15200.995,
+      "ttft_ms": 2077.9900000000016,
+      "queue_to_start_ms": 0.16900000000168802,
+      "stream_tokens_per_second": 9.677661480735548
+    },
+    "cache": {
+      "status": "miss",
+      "matched_tokens": 0,
+      "deduplicated_tokens": 0,
+      "lane": 0
+    },
+    "speculation": {
+      "drafted_tokens": 113,
+      "accepted_draft_tokens": 94,
+      "cycles": 30
+    }
+  },
+  "complete_sse": true,
+  "status_before": {
+    "requests_completed": 5,
+    "prefill_input_tokens": 4453,
+    "decode_output_tokens": 512,
+    "decode_batches": 78,
+    "prefill_rows": 4453,
+    "drafted": 458,
+    "accepted": 434,
+    "acceptance_rate": 0.9475982533,
+    "capacity_failures": 0,
+    "metal_failures": 0,
+    "memory_pressure": "warning",
+    "thermal_state": "nominal",
+    "metal_allocated_gib": 7.875,
+    "metal_peak_gib": 8.29
+  },
+  "status_after": {
+    "requests_completed": 6,
+    "prefill_input_tokens": 4485,
+    "decode_output_tokens": 640,
+    "decode_batches": 112,
+    "prefill_rows": 4485,
+    "drafted": 571,
+    "accepted": 528,
+    "acceptance_rate": 0.9246935201,
+    "capacity_failures": 0,
+    "metal_failures": 0,
+    "memory_pressure": "warning",
+    "thermal_state": "nominal",
+    "metal_allocated_gib": 7.875,
+    "metal_peak_gib": 8.29
+  }
+}

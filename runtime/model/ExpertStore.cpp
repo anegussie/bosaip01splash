@@ -305,7 +305,7 @@ struct ExpertStore::Impl {
   // The host step after a long chunk's load: block `block`'s experts that
   // are not resident read ahead into the whole staging.
   void readBlockAhead(uint32_t block, ops::MoePhase phase);
-  void countAhead(size_t group, size_t from, size_t to);
+  void countAhead(size_t group, size_t from, size_t to, bool used);
   void retireAhead();
   void evict(Size &size, uint32_t slot);
   void abandon();
@@ -561,7 +561,7 @@ void ExpertStore::Impl::stage(uint32_t index, uint32_t capacity, ExpertStoreStat
       taken[group.place] = 1;
       continue;
     }
-    countAhead(at, piece, end);
+    countAhead(at, piece, end, routed);
     if (!routed) continue;
     taken[group.place] = 1;
     now.groups.push_back(group);
@@ -695,15 +695,19 @@ void ExpertStore::Impl::startAhead() {
 // Counts group `group` of the read-ahead, its pieces [from, to), which
 // ended or were never taken, once: the bytes its readers read, and its
 // expert if they read all of it.
-void ExpertStore::Impl::countAhead(size_t group, size_t from, size_t to) {
+void ExpertStore::Impl::countAhead(size_t group, size_t from, size_t to, bool used) {
   if (ahead.counted[group]) return;
   ahead.counted[group] = 1;
   const SsdReaders::Batch &batch = *ahead.batch;
   bool whole = true;
   for (size_t p = from; p < to; ++p) {
     const Piece &piece = ahead.reads.pieces[p];
-    if (p < batch.taken() && !batch.failed(p)) ahead.use->readBytes += piece.to - piece.from;
-    else whole = false;
+    if (p < batch.taken() && !batch.failed(p)) {
+      const uint64_t bytes = piece.to - piece.from;
+      ahead.use->readBytes += bytes;
+      ahead.use->aheadReadBytes += bytes;
+      if (used) ahead.use->aheadUsedBytes += bytes;
+    } else whole = false;
   }
   ahead.use->readAhead += whole;
 }
@@ -716,7 +720,7 @@ void ExpertStore::Impl::retireAhead() {
     const std::vector<Piece> &pieces = ahead.reads.pieces;
     for (size_t piece = 0, end = 0; piece < pieces.size(); piece = end) {
       while (end < pieces.size() && pieces[end].group == pieces[piece].group) ++end;
-      countAhead(pieces[piece].group, piece, end);
+      countAhead(pieces[piece].group, piece, end, false);
     }
     ahead.batch.reset();
   }
@@ -969,7 +973,10 @@ void ExpertStore::Impl::load(uint32_t index, ops::MoePhase phase, uint32_t rows,
       if (sharedArena.sizeBytes() && activeSize != nextSize) {
         if (activeSize != kNoSlot) {
           Size &previous = sizes[activeSize];
-          for (uint32_t slot = 0; slot < previous.slots; ++slot) evict(previous, slot);
+          for (uint32_t slot = 0; slot < previous.slots; ++slot) {
+            use.formatEvictions += previous.ownerBlock[slot] != kNoSlot;
+            evict(previous, slot);
+          }
           previous.recycling.reset();
         }
         activeSize = nextSize;

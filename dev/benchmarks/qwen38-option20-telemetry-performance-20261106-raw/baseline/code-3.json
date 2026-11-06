@@ -1,0 +1,112 @@
+{
+  "name": "code-3",
+  "clean": true,
+  "foreign_active_samples": 0,
+  "status_samples": 4,
+  "started_blocked": false,
+  "idle_wait_seconds": 0.0,
+  "wall_seconds": 16.023,
+  "sse_ttft_seconds": 2.236,
+  "prompt_tokens": 36,
+  "completion_tokens": 128,
+  "cached_tokens": 0,
+  "prefill_tokens": 36,
+  "prefill_tok_s": 16.13,
+  "ttft_ms": 2232.4,
+  "queue_to_start_ms": 0.2,
+  "decode_tokens": 127,
+  "decode_tok_s": 10.71,
+  "draft_n": 110,
+  "draft_n_accepted": 101,
+  "cycles": 26,
+  "acceptance_rate": 0.9182,
+  "tokens_per_cycle": 4.885,
+  "reasoning_tokens": 0,
+  "memory_pressure_after": "warning",
+  "thermal_state_after": "nominal",
+  "metal_peak_gib_after": 8.29,
+  "correct": null,
+  "text": "```python\nfrom typing import List\n\n\ndef longest_common_prefix(strs: List[str]) -> str:\n    \"\"\"\n    Return the longest common prefix of a list of strings.\n\n    Args:\n        strs: A list of strings to find the common prefix among.\n\n    Returns:\n        The longest common prefix string. Returns an empty string if there\n        is no common prefix or if the input list is empty.\n\n    Examples:\n        >>> longest_common_prefix([\"flower\", \"flow\", \"flight\"])\n        'fl'\n        >>> longest_common_prefix([\"dog\", \"racecar\", \"car\"])",
+  "usage": {
+    "prompt_tokens": 36,
+    "completion_tokens": 128,
+    "total_tokens": 164,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    }
+  },
+  "timings": {
+    "prompt_n": 36,
+    "prompt_ms": 2232.203,
+    "prompt_per_second": 16.127565458876276,
+    "predicted_n": 128,
+    "predicted_ms": 11853.545,
+    "predicted_per_second": 10.714094391171587,
+    "cache_n": 0,
+    "draft_n": 110,
+    "draft_n_accepted": 101
+  },
+  "metrics": {
+    "prefill": {
+      "tokens": 36
+    },
+    "decode": {
+      "tokens": 127
+    },
+    "request_latency": {
+      "start_to_first_token_ms": 2232.203,
+      "first_token_to_done_ms": 11853.545,
+      "wall_ms": 14085.932,
+      "ttft_ms": 2232.3870000000006,
+      "queue_to_start_ms": 0.1840000000006512,
+      "stream_tokens_per_second": 10.714094391171587
+    },
+    "cache": {
+      "status": "miss",
+      "matched_tokens": 0,
+      "deduplicated_tokens": 0,
+      "lane": 0
+    },
+    "speculation": {
+      "drafted_tokens": 110,
+      "accepted_draft_tokens": 101,
+      "cycles": 26
+    }
+  },
+  "complete_sse": true,
+  "status_before": {
+    "requests_completed": 6,
+    "prefill_input_tokens": 4485,
+    "decode_output_tokens": 640,
+    "decode_batches": 112,
+    "prefill_rows": 4485,
+    "drafted": 571,
+    "accepted": 528,
+    "acceptance_rate": 0.9246935201,
+    "capacity_failures": 0,
+    "metal_failures": 0,
+    "memory_pressure": "warning",
+    "thermal_state": "nominal",
+    "metal_allocated_gib": 7.875,
+    "metal_peak_gib": 8.29
+  },
+  "status_after": {
+    "requests_completed": 7,
+    "prefill_input_tokens": 4521,
+    "decode_output_tokens": 768,
+    "decode_batches": 138,
+    "prefill_rows": 4521,
+    "drafted": 681,
+    "accepted": 629,
+    "acceptance_rate": 0.9236417034,
+    "capacity_failures": 0,
+    "metal_failures": 0,
+    "memory_pressure": "warning",
+    "thermal_state": "nominal",
+    "metal_allocated_gib": 7.875,
+    "metal_peak_gib": 8.29
+  }
+}

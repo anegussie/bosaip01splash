@@ -641,6 +641,9 @@ void testStreamedExpertsStatus() {
                      .prefetched = 600,
                      .readAhead = 900,
                      .readBytes = 1973000000,
+                     .aheadReadBytes = 1200000000,
+                     .aheadUsedBytes = 800000000,
+                     .formatEvictions = 1800,
                      .pickup = {.count = 500, .totalMilliseconds = 11.5, .maximumMilliseconds = 0.09,
                                 .p50Milliseconds = 0.032, .p95Milliseconds = 0.032, .p99Milliseconds = 0.064},
                      .work = {.count = 500, .totalMilliseconds = 240, .maximumMilliseconds = 9.5,
@@ -654,10 +657,13 @@ void testStreamedExpertsStatus() {
               "\"cap_chunks\":4,\"shrinks\":2,\"regrows\":1,\"arena_bytes\":17179869184,"
               "\"staging_bytes\":452984832,\"slots\":8192,"
               "\"experts\":25088,\"resident\":8000,\"prefill\":{\"loads\":0,\"routed\":0,\"read\":0,\"prefetched\":0,"
-              "\"read_ahead\":0,\"hit_rate\":0,\"read_bytes\":0,\"host_steps\":{\"pickup_ms\":" +
+              "\"read_ahead\":0,\"hit_rate\":0,\"read_bytes\":0,\"ahead_read_bytes\":0,"
+              "\"ahead_used_bytes\":0,\"format_evictions\":0,\"host_steps\":{\"pickup_ms\":" +
               none + ",\"work_ms\":" + none + ",\"resume_ms\":" + none +
               "}},\"decode\":{\"loads\":480,\"routed\":4000,\"read\":1000,\"prefetched\":600,"
-              "\"read_ahead\":900,\"hit_rate\":0.75,\"read_bytes\":1973000000,\"host_steps\":"
+              "\"read_ahead\":900,\"hit_rate\":0.75,\"read_bytes\":1973000000,"
+              "\"ahead_read_bytes\":1200000000,\"ahead_used_bytes\":800000000,"
+              "\"format_evictions\":1800,\"host_steps\":"
               "{\"pickup_ms\":{\"p50\":0.032,\"p95\":0.032,\"p99\":0.064,\"max\":0.09,\"total\":11.5,"
               "\"samples\":500},\"work_ms\":{\"p50\":0.512,\"p95\":2.048,\"p99\":8.192,\"max\":9.5,"
               "\"total\":240,\"samples\":500},\"resume_ms\":{\"p50\":0.128,\"p95\":0.128,\"p99\":16.384,"

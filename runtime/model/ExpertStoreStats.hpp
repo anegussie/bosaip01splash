@@ -31,7 +31,9 @@ struct ExpertStoreStats final {
   // Per ops::MoePhase, at its value (uses[0] prefill, uses[1] decode): the
   // blocks loaded, the distinct experts they routed, those not resident and
   // of them those read ahead, the experts read ahead whole (routed or not),
-  // the bytes read from the sources (ahead or not, routed or not), and the
+  // the bytes read from the sources (ahead or not, routed or not), the
+  // read-ahead bytes consumed by a routed expert, the resident experts
+  // evicted on a shared-arena format change, and the
   // round trips of the loads' host steps, one per round (metal::
   // HostStepTiming: the GPU's work before a step to the runner taking it up,
   // its work, its end to the GPU's work after it).
@@ -42,6 +44,9 @@ struct ExpertStoreStats final {
     uint64_t prefetched = 0;
     uint64_t readAhead = 0;
     uint64_t readBytes = 0;
+    uint64_t aheadReadBytes = 0;
+    uint64_t aheadUsedBytes = 0;
+    uint64_t formatEvictions = 0;
     LatencyStats pickup, work, resume;
   };
   Use uses[2];

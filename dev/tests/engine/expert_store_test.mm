@@ -306,6 +306,11 @@ int streamedExperts(MetalBackend &backend, const MoeShape &shape, const std::fil
     }
     const ExpertStoreStats::Use &prefill = stats.uses[0], &decode = stats.uses[1];
     decodePrefetched += decode.prefetched;
+    for (const ExpertStoreStats::Use &use : stats.uses)
+      if (use.aheadUsedBytes > use.aheadReadBytes || use.aheadReadBytes > use.readBytes) {
+        printf("  %s: read-ahead byte accounting exceeds source reads FAIL\n", formats.c_str());
+        ++failures;
+      }
     if (loads != index || read <= stats.slots || stats.resident > stats.slots || routed < read || !prefill.loads ||
         !decode.loads || !prefill.prefetched || prefill.prefetched > prefill.read || decode.prefetched > decode.read ||
         prefill.readAhead < prefill.prefetched || decode.readAhead < decode.prefetched || !stats.failure.empty()) {
@@ -604,6 +609,9 @@ int sharedFormatArena(MetalBackend &backend, const MoeShape &shape, const std::f
         require(slotsHoldTheirExperts(m, streamed[block], b, *plan), "shared format slot contents differ");
       }
     }
+    const ExpertStoreStats measured = store.stats();
+    require(measured.uses[0].formatEvictions + measured.uses[1].formatEvictions > 0,
+            "shared format switches did not count their resident evictions");
     store.release();
     require(store.stats().arenaBytes == 0, "released shared arena counted live");
     require(store.restore(splash::test::admitAll, splash::test::admitAll), "shared arena restore failed");

@@ -151,8 +151,9 @@ void appendStreamedTable(std::ostringstream &out, const std::optional<model::Spa
 // them, per use (prefill, decode) its loads: the distinct experts they
 // routed, those not resident (read) and of them those read ahead
 // (prefetched), the experts read ahead whole, the bytes read from the
-// sources and their host steps' round trips, one per round (pickup, work,
-// resume); and why a load failed, which fails every later load.
+// sources, the read-ahead bytes read and used, shared-format evictions and
+// their host steps' round trips, one per round (pickup, work, resume); and
+// why a load failed, which fails every later load.
 void appendStreamedExperts(std::ostringstream &out, const std::optional<model::ExpertStoreStats> &experts) {
   if (!experts) {
     out << "null";
@@ -170,7 +171,11 @@ void appendStreamedExperts(std::ostringstream &out, const std::optional<model::E
         << ",\"read\":" << counters.read << ",\"prefetched\":" << counters.prefetched
         << ",\"read_ahead\":" << counters.readAhead << ",\"hit_rate\":"
         << (counters.routed ? double(counters.routed - counters.read) / double(counters.routed) : 0.0)
-        << ",\"read_bytes\":" << counters.readBytes << ",\"host_steps\":{\"pickup_ms\":";
+        << ",\"read_bytes\":" << counters.readBytes
+        << ",\"ahead_read_bytes\":" << counters.aheadReadBytes
+        << ",\"ahead_used_bytes\":" << counters.aheadUsedBytes
+        << ",\"format_evictions\":" << counters.formatEvictions
+        << ",\"host_steps\":{\"pickup_ms\":";
     appendLatency(out, counters.pickup);
     out << ",\"work_ms\":";
     appendLatency(out, counters.work);

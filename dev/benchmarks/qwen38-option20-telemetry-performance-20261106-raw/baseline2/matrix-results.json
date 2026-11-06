@@ -1,0 +1,568 @@
+{
+  "complete": true,
+  "label": "baseline2",
+  "phase": "matrix",
+  "rows": [
+    {
+      "name": "4k-cold",
+      "clean": true,
+      "foreign_active_samples": 0,
+      "status_samples": 5,
+      "started_blocked": false,
+      "idle_wait_seconds": 0.0,
+      "wall_seconds": 20.033,
+      "sse_ttft_seconds": 9.921,
+      "prompt_tokens": 4019,
+      "completion_tokens": 96,
+      "cached_tokens": 0,
+      "prefill_tokens": 4019,
+      "prefill_tok_s": 405.29,
+      "ttft_ms": 9916.6,
+      "queue_to_start_ms": 0.1,
+      "decode_tokens": 95,
+      "decode_tok_s": 12.67,
+      "draft_n": 84,
+      "draft_n_accepted": 83,
+      "cycles": 13,
+      "acceptance_rate": 0.9881,
+      "tokens_per_cycle": 7.385,
+      "reasoning_tokens": 0,
+      "memory_pressure_after": "warning",
+      "thermal_state_after": "nominal",
+      "metal_peak_gib_after": 8.29,
+      "correct": true,
+      "text": "ORCHID\n1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 2",
+      "usage": {
+        "prompt_tokens": 4019,
+        "completion_tokens": 96,
+        "total_tokens": 4115,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "timings": {
+        "prompt_n": 4019,
+        "prompt_ms": 9916.477,
+        "prompt_per_second": 405.2850624269082,
+        "predicted_n": 96,
+        "predicted_ms": 7499.038,
+        "predicted_per_second": 12.668291586200791,
+        "cache_n": 0,
+        "draft_n": 84,
+        "draft_n_accepted": 83
+      },
+      "metrics": {
+        "prefill": {
+          "tokens": 4019
+        },
+        "decode": {
+          "tokens": 95
+        },
+        "request_latency": {
+          "start_to_first_token_ms": 9916.477,
+          "first_token_to_done_ms": 7499.038,
+          "wall_ms": 17415.622,
+          "ttft_ms": 9916.583999999999,
+          "queue_to_start_ms": 0.1069999999981519,
+          "stream_tokens_per_second": 12.668291586200791
+        },
+        "cache": {
+          "status": "miss",
+          "matched_tokens": 0,
+          "deduplicated_tokens": 0,
+          "lane": 0
+        },
+        "speculation": {
+          "drafted_tokens": 84,
+          "accepted_draft_tokens": 83,
+          "cycles": 13
+        }
+      },
+      "complete_sse": true,
+      "status_before": {
+        "requests_completed": 2,
+        "prefill_input_tokens": 382,
+        "decode_output_tokens": 192,
+        "decode_batches": 26,
+        "prefill_rows": 382,
+        "drafted": 168,
+        "accepted": 166,
+        "acceptance_rate": 0.9880952381,
+        "capacity_failures": 0,
+        "metal_failures": 0,
+        "memory_pressure": "warning",
+        "thermal_state": "nominal",
+        "metal_allocated_gib": 7.875,
+        "metal_peak_gib": 8.29
+      },
+      "status_after": {
+        "requests_completed": 3,
+        "prefill_input_tokens": 4401,
+        "decode_output_tokens": 288,
+        "decode_batches": 39,
+        "prefill_rows": 4401,
+        "drafted": 252,
+        "accepted": 249,
+        "acceptance_rate": 0.9880952381,
+        "capacity_failures": 0,
+        "metal_failures": 0,
+        "memory_pressure": "warning",
+        "thermal_state": "nominal",
+        "metal_allocated_gib": 7.875,
+        "metal_peak_gib": 8.29
+      }
+    },
+    {
+      "name": "4k-reuse",
+      "clean": true,
+      "foreign_active_samples": 0,
+      "status_samples": 3,
+      "started_blocked": false,
+      "idle_wait_seconds": 0.0,
+      "wall_seconds": 12.018,
+      "sse_ttft_seconds": 1.521,
+      "prompt_tokens": 4019,
+      "completion_tokens": 96,
+      "cached_tokens": 4000,
+      "prefill_tokens": 19,
+      "prefill_tok_s": 12.52,
+      "ttft_ms": 1519.1,
+      "queue_to_start_ms": 1.6,
+      "decode_tokens": 95,
+      "decode_tok_s": 12.48,
+      "draft_n": 84,
+      "draft_n_accepted": 83,
+      "cycles": 13,
+      "acceptance_rate": 0.9881,
+      "tokens_per_cycle": 7.385,
+      "reasoning_tokens": 0,
+      "memory_pressure_after": "warning",
+      "thermal_state_after": "fair",
+      "metal_peak_gib_after": 8.29,
+      "correct": true,
+      "text": "ORCHID\n1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 2",
+      "usage": {
+        "prompt_tokens": 4019,
+        "completion_tokens": 96,
+        "total_tokens": 4115,
+        "prompt_tokens_details": {
+          "cached_tokens": 4000
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "timings": {
+        "prompt_n": 4019,
+        "prompt_ms": 1517.589,
+        "prompt_per_second": 12.519858802350308,
+        "predicted_n": 96,
+        "predicted_ms": 7612.173,
+        "predicted_per_second": 12.480010635596432,
+        "cache_n": 4000,
+        "draft_n": 84,
+        "draft_n_accepted": 83
+      },
+      "metrics": {
+        "prefill": {
+          "tokens": 19
+        },
+        "decode": {
+          "tokens": 95
+        },
+        "request_latency": {
+          "start_to_first_token_ms": 1517.589,
+          "first_token_to_done_ms": 7612.173,
+          "wall_ms": 9131.322,
+          "ttft_ms": 1519.1490000000003,
+          "queue_to_start_ms": 1.5600000000004002,
+          "stream_tokens_per_second": 12.480010635596432
+        },
+        "cache": {
+          "status": "hit",
+          "matched_tokens": 4000,
+          "deduplicated_tokens": 0,
+          "lane": 0
+        },
+        "speculation": {
+          "drafted_tokens": 84,
+          "accepted_draft_tokens": 83,
+          "cycles": 13
+        }
+      },
+      "complete_sse": true,
+      "status_before": {
+        "requests_completed": 3,
+        "prefill_input_tokens": 4401,
+        "decode_output_tokens": 288,
+        "decode_batches": 39,
+        "prefill_rows": 4401,
+        "drafted": 252,
+        "accepted": 249,
+        "acceptance_rate": 0.9880952381,
+        "capacity_failures": 0,
+        "metal_failures": 0,
+        "memory_pressure": "warning",
+        "thermal_state": "nominal",
+        "metal_allocated_gib": 7.875,
+        "metal_peak_gib": 8.29
+      },
+      "status_after": {
+        "requests_completed": 4,
+        "prefill_input_tokens": 4420,
+        "decode_output_tokens": 384,
+        "decode_batches": 52,
+        "prefill_rows": 4420,
+        "drafted": 336,
+        "accepted": 332,
+        "acceptance_rate": 0.9880952381,
+        "capacity_failures": 0,
+        "metal_failures": 0,
+        "memory_pressure": "warning",
+        "thermal_state": "fair",
+        "metal_allocated_gib": 7.875,
+        "metal_peak_gib": 8.29
+      }
+    },
+    {
+      "name": "code-1",
+      "clean": true,
+      "foreign_active_samples": 0,
+      "status_samples": 4,
+      "started_blocked": false,
+      "idle_wait_seconds": 0.0,
+      "wall_seconds": 16.025,
+      "sse_ttft_seconds": 2.15,
+      "prompt_tokens": 33,
+      "completion_tokens": 128,
+      "cached_tokens": 0,
+      "prefill_tokens": 33,
+      "prefill_tok_s": 15.37,
+      "ttft_ms": 2147.5,
+      "queue_to_start_ms": 0.2,
+      "decode_tokens": 127,
+      "decode_tok_s": 9.62,
+      "draft_n": 122,
+      "draft_n_accepted": 102,
+      "cycles": 26,
+      "acceptance_rate": 0.8361,
+      "tokens_per_cycle": 4.923,
+      "reasoning_tokens": 0,
+      "memory_pressure_after": "warning",
+      "thermal_state_after": "fair",
+      "metal_peak_gib_after": 8.29,
+      "correct": null,
+      "text": "```python\nfrom typing import List\n\n\ndef merge_sorted_lists(list1: List[int], list2: List[int]) -> List[int]:\n    \"\"\"\n    Merge two sorted lists into a single sorted list without using sort.\n    \n    Args:\n        list1: A sorted list of integers.\n        list2: A sorted list of integers.\n    \n    Returns:\n        A merged sorted list containing all elements from both input lists.\n    \"\"\"\n    merged: List[int] = []\n    i, j = 0, 0\n    \n    while i < len(list1) and j < len",
+      "usage": {
+        "prompt_tokens": 33,
+        "completion_tokens": 128,
+        "total_tokens": 161,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "timings": {
+        "prompt_n": 33,
+        "prompt_ms": 2147.316,
+        "prompt_per_second": 15.368022219365944,
+        "predicted_n": 128,
+        "predicted_ms": 13198.222,
+        "predicted_per_second": 9.62250824391346,
+        "cache_n": 0,
+        "draft_n": 122,
+        "draft_n_accepted": 102
+      },
+      "metrics": {
+        "prefill": {
+          "tokens": 33
+        },
+        "decode": {
+          "tokens": 127
+        },
+        "request_latency": {
+          "start_to_first_token_ms": 2147.316,
+          "first_token_to_done_ms": 13198.222,
+          "wall_ms": 15345.766,
+          "ttft_ms": 2147.544,
+          "queue_to_start_ms": 0.22800000000006548,
+          "stream_tokens_per_second": 9.62250824391346
+        },
+        "cache": {
+          "status": "miss",
+          "matched_tokens": 0,
+          "deduplicated_tokens": 0,
+          "lane": 0
+        },
+        "speculation": {
+          "drafted_tokens": 122,
+          "accepted_draft_tokens": 102,
+          "cycles": 26
+        }
+      },
+      "complete_sse": true,
+      "status_before": {
+        "requests_completed": 4,
+        "prefill_input_tokens": 4420,
+        "decode_output_tokens": 384,
+        "decode_batches": 52,
+        "prefill_rows": 4420,
+        "drafted": 336,
+        "accepted": 332,
+        "acceptance_rate": 0.9880952381,
+        "capacity_failures": 0,
+        "metal_failures": 0,
+        "memory_pressure": "warning",
+        "thermal_state": "fair",
+        "metal_allocated_gib": 7.875,
+        "metal_peak_gib": 8.29
+      },
+      "status_after": {
+        "requests_completed": 5,
+        "prefill_input_tokens": 4453,
+        "decode_output_tokens": 512,
+        "decode_batches": 78,
+        "prefill_rows": 4453,
+        "drafted": 458,
+        "accepted": 434,
+        "acceptance_rate": 0.9475982533,
+        "capacity_failures": 0,
+        "metal_failures": 0,
+        "memory_pressure": "warning",
+        "thermal_state": "fair",
+        "metal_allocated_gib": 7.875,
+        "metal_peak_gib": 8.29
+      }
+    },
+    {
+      "name": "code-2",
+      "clean": true,
+      "foreign_active_samples": 0,
+      "status_samples": 4,
+      "started_blocked": false,
+      "idle_wait_seconds": 0.0,
+      "wall_seconds": 16.026,
+      "sse_ttft_seconds": 2.049,
+      "prompt_tokens": 32,
+      "completion_tokens": 128,
+      "cached_tokens": 0,
+      "prefill_tokens": 32,
+      "prefill_tok_s": 15.63,
+      "ttft_ms": 2047.7,
+      "queue_to_start_ms": 0.2,
+      "decode_tokens": 127,
+      "decode_tok_s": 9.66,
+      "draft_n": 113,
+      "draft_n_accepted": 94,
+      "cycles": 30,
+      "acceptance_rate": 0.8319,
+      "tokens_per_cycle": 4.133,
+      "reasoning_tokens": 0,
+      "memory_pressure_after": "warning",
+      "thermal_state_after": "fair",
+      "metal_peak_gib_after": 8.29,
+      "correct": null,
+      "text": "```python\ndef is_balanced(text: str) -> bool:\n    \"\"\"\n    Validate that parentheses, brackets, and braces in a string are balanced.\n    \n    Args:\n        text: A string containing parentheses (), brackets [], and braces {}.\n        \n    Returns:\n        True if all brackets are properly balanced, False otherwise.\n    \"\"\"\n    stack: list[str] = []\n    matching_pairs: dict[str, str] = {\n        ')': '(',\n        ']': '[',\n        '}': '{',\n    }\n    opening_brackets: set[str] = {'(', '[",
+      "usage": {
+        "prompt_tokens": 32,
+        "completion_tokens": 128,
+        "total_tokens": 160,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "timings": {
+        "prompt_n": 32,
+        "prompt_ms": 2047.546,
+        "prompt_per_second": 15.628464513129375,
+        "predicted_n": 128,
+        "predicted_ms": 13141.682,
+        "predicted_per_second": 9.66390755764749,
+        "cache_n": 0,
+        "draft_n": 113,
+        "draft_n_accepted": 94
+      },
+      "metrics": {
+        "prefill": {
+          "tokens": 32
+        },
+        "decode": {
+          "tokens": 127
+        },
+        "request_latency": {
+          "start_to_first_token_ms": 2047.546,
+          "first_token_to_done_ms": 13141.682,
+          "wall_ms": 15189.431,
+          "ttft_ms": 2047.7489999999998,
+          "queue_to_start_ms": 0.20299999999974716,
+          "stream_tokens_per_second": 9.66390755764749
+        },
+        "cache": {
+          "status": "miss",
+          "matched_tokens": 0,
+          "deduplicated_tokens": 0,
+          "lane": 0
+        },
+        "speculation": {
+          "drafted_tokens": 113,
+          "accepted_draft_tokens": 94,
+          "cycles": 30
+        }
+      },
+      "complete_sse": true,
+      "status_before": {
+        "requests_completed": 5,
+        "prefill_input_tokens": 4453,
+        "decode_output_tokens": 512,
+        "decode_batches": 78,
+        "prefill_rows": 4453,
+        "drafted": 458,
+        "accepted": 434,
+        "acceptance_rate": 0.9475982533,
+        "capacity_failures": 0,
+        "metal_failures": 0,
+        "memory_pressure": "warning",
+        "thermal_state": "fair",
+        "metal_allocated_gib": 7.875,
+        "metal_peak_gib": 8.29
+      },
+      "status_after": {
+        "requests_completed": 6,
+        "prefill_input_tokens": 4485,
+        "decode_output_tokens": 640,
+        "decode_batches": 112,
+        "prefill_rows": 4485,
+        "drafted": 571,
+        "accepted": 528,
+        "acceptance_rate": 0.9246935201,
+        "capacity_failures": 0,
+        "metal_failures": 0,
+        "memory_pressure": "warning",
+        "thermal_state": "fair",
+        "metal_allocated_gib": 7.875,
+        "metal_peak_gib": 8.29
+      }
+    },
+    {
+      "name": "code-3",
+      "clean": true,
+      "foreign_active_samples": 0,
+      "status_samples": 4,
+      "started_blocked": false,
+      "idle_wait_seconds": 0.0,
+      "wall_seconds": 16.026,
+      "sse_ttft_seconds": 2.215,
+      "prompt_tokens": 36,
+      "completion_tokens": 128,
+      "cached_tokens": 0,
+      "prefill_tokens": 36,
+      "prefill_tok_s": 16.27,
+      "ttft_ms": 2213.2,
+      "queue_to_start_ms": 0.2,
+      "decode_tokens": 127,
+      "decode_tok_s": 10.96,
+      "draft_n": 105,
+      "draft_n_accepted": 102,
+      "cycles": 26,
+      "acceptance_rate": 0.9714,
+      "tokens_per_cycle": 4.923,
+      "reasoning_tokens": 0,
+      "memory_pressure_after": "warning",
+      "thermal_state_after": "fair",
+      "metal_peak_gib_after": 8.29,
+      "correct": null,
+      "text": "```python\nfrom typing import List\n\n\ndef longest_common_prefix(strs: List[str]) -> str:\n    \"\"\"\n    Return the longest common prefix of a list of strings.\n\n    Args:\n        strs: A list of strings.\n\n    Returns:\n        The longest common prefix shared by all strings in the list.\n        Returns an empty string if the list is empty or if there is no common prefix.\n\n    Examples:\n        >>> longest_common_prefix([\"flower\", \"flow\", \"flight\"])\n        'fl'\n        >>> longest_common_prefix([\"dog\", \"racecar\", \"car\"])\n",
+      "usage": {
+        "prompt_tokens": 36,
+        "completion_tokens": 128,
+        "total_tokens": 164,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "timings": {
+        "prompt_n": 36,
+        "prompt_ms": 2213.041,
+        "prompt_per_second": 16.267208786461705,
+        "predicted_n": 128,
+        "predicted_ms": 11592.363,
+        "predicted_per_second": 10.955488540170801,
+        "cache_n": 0,
+        "draft_n": 105,
+        "draft_n_accepted": 102
+      },
+      "metrics": {
+        "prefill": {
+          "tokens": 36
+        },
+        "decode": {
+          "tokens": 127
+        },
+        "request_latency": {
+          "start_to_first_token_ms": 2213.041,
+          "first_token_to_done_ms": 11592.363,
+          "wall_ms": 13805.593,
+          "ttft_ms": 2213.2300000000014,
+          "queue_to_start_ms": 0.18900000000121508,
+          "stream_tokens_per_second": 10.955488540170801
+        },
+        "cache": {
+          "status": "miss",
+          "matched_tokens": 0,
+          "deduplicated_tokens": 0,
+          "lane": 0
+        },
+        "speculation": {
+          "drafted_tokens": 105,
+          "accepted_draft_tokens": 102,
+          "cycles": 26
+        }
+      },
+      "complete_sse": true,
+      "status_before": {
+        "requests_completed": 6,
+        "prefill_input_tokens": 4485,
+        "decode_output_tokens": 640,
+        "decode_batches": 112,
+        "prefill_rows": 4485,
+        "drafted": 571,
+        "accepted": 528,
+        "acceptance_rate": 0.9246935201,
+        "capacity_failures": 0,
+        "metal_failures": 0,
+        "memory_pressure": "warning",
+        "thermal_state": "fair",
+        "metal_allocated_gib": 7.875,
+        "metal_peak_gib": 8.29
+      },
+      "status_after": {
+        "requests_completed": 7,
+        "prefill_input_tokens": 4521,
+        "decode_output_tokens": 768,
+        "decode_batches": 138,
+        "prefill_rows": 4521,
+        "drafted": 676,
+        "accepted": 630,
+        "acceptance_rate": 0.9319526627,
+        "capacity_failures": 0,
+        "metal_failures": 0,
+        "memory_pressure": "warning",
+        "thermal_state": "fair",
+        "metal_allocated_gib": 7.875,
+        "metal_peak_gib": 8.29
+      }
+    }
+  ],
+  "completed_at": 1793946747.598623
+}
