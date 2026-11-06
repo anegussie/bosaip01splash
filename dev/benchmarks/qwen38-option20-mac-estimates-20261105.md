@@ -1,6 +1,39 @@
 # Mac performance estimates - reviewed November 5, 2026
 
-This is the complete saved estimate document, including historical tables and later measured Air results. Source: `/Users/mymac/MacPerfEstimates.md`; source SHA-256: `8054ede8c39798362766bd4bb5c6db29e89951e1c84823860543b0f0482712b3`. Repository artifact links have been made relative for publication.
+This is the complete saved estimate document, including historical tables and later measured Air results. Source: `/Users/mymac/MacPerfEstimates.md`; source SHA-256: `11585807a1ba804c1c3820ac4dccdd7e8779b892df970c73817e607babbaeb27`. Repository artifact links have been made relative for publication.
+
+<!-- option20-mac-rebase-20261105:start -->
+## Current option-20 estimates for all six Macs - November 5, 2026
+
+**This section supersedes the older option-20 hardware tables below.** Earlier entries retain their original dated measurements, configuration descriptions and conclusions for history. Option-19 measurements are unaffected.
+
+The matched 1,024/2,048-chunk Air comparison measured **400.28 cold prefill tok/s at 4,019 tokens** and **241.00 at 28,589 tokens** with 2,048 chunks and a 10G cap. The controlled 28.6K ratio is `241 / 170.155 = 1.4164`; the earlier separate-run 183.27 figure is not its control. Short-code baseline block means were 8.92 and 8.81 tok/s, with no established generation speedup.
+
+The current 16 GiB preset uses **10.8G, 2,048 chunks, 131,072 context, one active request**, IQ3_XXS/DFlash2, INT8 KV/BF16 state, SSD n-gram with an approximately 64 MiB row cache, a 1.946 GiB expert store including staging, and 16 GiB SSD prefix cache. The 10.8G checks validated 4K processing and near-131K persisted-replay residency, not a new cold 28.6K benchmark. All larger-Mac scenarios require explicit larger caps, 2,048 chunks and one active request; their unchanged launcher defaults select 10G/1,024 chunks/two admitted requests.
+
+Rates below are tok/s. All figures beyond the IQ3 16 GB Air row are low-confidence estimates. Requested memory ceilings can be clamped; expert allocations are inherited assumptions, not new planner results. Full/partial transfer assumes `new_PP = old_PP / ((1-f) + f/1.4163557)` with `f=1` for 16 GB Q2/32 GB and `f=0.5` for 48 GB, rounded outward to tens. These fractions are scenario choices, not measured bottleneck fractions. Resident rows use `f=0` and retain earlier ranges. If the chunk benefit does not transfer, the prior ranges remain valid alternatives. Q2 transfer has not been tested. Generation ranges receive no multiplier.
+
+| Mac | Quant | Requested engine cap | Assumed expert RAM, GiB | Previous cold PP | Revised cold PP | Short-code generation |
+|---|---|---:|---:|---:|---:|---:|
+| M5 Air 16 GB, 8-core GPU | IQ3_XXS | 10.8G current; measurements at 10G | 1.946, measured store | 183.27, earlier run | **241.00, measured at 28,589** | **8.81-8.92, measured block means** |
+| M5 Air 16 GB, 8-core GPU | Q2_0 | 10.8G, hypothetical Q2 profile | 2-4 | 190-230 | **260-330**, full-transfer scenario | 10-13 |
+| M5 Air 32 GB | IQ3_XXS | 24G | 12-16 | 180-250 | **250-360**, full-transfer scenario | 11-16 |
+| M5 Air 32 GB | Q2_0 | 24G | 14-18 | 230-350 | **320-500**, full-transfer scenario | 14-22 |
+| M6 mini 32 GB | IQ3_XXS | 24G | 12-16 | 180-250 | **250-360**, full-transfer scenario | 11-16 |
+| M6 mini 32 GB | Q2_0 | 24G | 14-18 | 230-350 | **320-500**, full-transfer scenario | 14-22 |
+| M5 Pro mini 48 GB, 16-core GPU | IQ3_XXS | 40G | 26-32 | 250-450 | **290-530**, partial-transfer scenario | 15-25 |
+| M5 Pro mini 48 GB, 16-core GPU | Q2_0 | 40G | 28-32 | 350-650 | **410-770**, partial-transfer scenario | 22-40 |
+| M5 Pro mini 64 GB, 16-core GPU | IQ3_XXS | 48G maximum | 38-41.55, conditional near/full residency | 600-900 | **600-900**, resident scenario retained | 35-60, conditional |
+| M5 Pro mini 64 GB, 16-core GPU | Q2_0 | 48G maximum | Approximately 32-34, conditional full residency | 850-1,150 | **850-1,150**, resident scenario retained | 65-90, conditional |
+| M5 Max Studio 128 GB, 40-core GPU | IQ3_XXS | 56G | 41.55, assumed resident weights | 1,200-1,800 | **1,200-1,800**, resident scenario retained | 70-110 |
+| M5 Max Studio 128 GB, 40-core GPU | Q2_0 | 56G | Approximately 32-34, assumed resident weights | 1,600-2,300 | **1,600-2,300**, resident scenario retained | 100-150 |
+
+For the 64 GB IQ3 mini, full/near expert residency remains conditional: 45.373 GiB of weights plus draft leaves only 2.627 GiB under the requested 48G cap for all other allocations, with larger chunks using more scratch. Alternative prefill scenarios are **350-650 tok/s** with recurring expert reads and **280-430 tok/s** with substantial streaming; the cautious planning point remains about **500 PP / 30 generation tok/s**. The resident row is not a promised result.
+
+The separate 130,733-token cold trial measured 321.84 PP tok/s at 10G with SSD KV spill; the later 10.8G request reused 130,720 tokens. Neither establishes a cold resident-KV 10.8G result or general filled-131K throughput. The 4K uplift is not applied to 30K or longer prompts. DGX Spark's separate CUDA estimates remain unchanged.
+
+[Full calculation, configuration and limitations](qwen38-option20-mac-rebase-20261105.md), [controlled raw measurements](qwen38-option20-io-tuning-20261105.json), and [10.8G functional validation](qwen38-option20-budget108-20261105.md). This estimate update used saved evidence only, with no inference, build, restart or runtime configuration change.
+<!-- option20-mac-rebase-20261105:end -->
 
 <!-- option19-memory-chunks-20261105:start -->
 ## Option 19: 10 GiB memory and chunk-size results, November 5, 2026

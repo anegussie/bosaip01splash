@@ -1,5 +1,7 @@
 # Option 20: Flash-Next GSQ-RCO IQ3_XXS
 
+Latest planning update: [revised estimates for all six Macs](qwen38-option20-mac-rebase-20261105.md), based on the November 5 2,048-chunk measurements. Larger-Mac scenarios require explicit chunk, memory and active-request overrides.
+
 The profile in `/Users/mymac/startllamacpp.sh` selects `ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS`, with the matching `incoai/Qwen3.8-Flash-Next-DFlash2` draft selected by Splash. It is a text-only profile for the 16 GiB M5. The model downloads on its first real launch, approximately 75.8 GB plus the draft.
 
 ```sh
