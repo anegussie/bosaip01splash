@@ -42,7 +42,7 @@ SPLASH_QWEN36_IQ3_MAX_CACHE_DISK="${SPLASH_QWEN36_IQ3_MAX_CACHE_DISK:-2G}"
 SPLASH_QWEN36_IQ3_PERSISTENT_CACHE="${SPLASH_QWEN36_IQ3_PERSISTENT_CACHE:-1}"
 SPLASH_QWEN36_IQ3_CACHE_DIR="${SPLASH_QWEN36_IQ3_CACHE_DIR:-$HOME/Library/Caches/Splash/qwen36-option19-iq3-xxs}"
 SPLASH_FLASH_NEXT_MODEL_ID="ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS"
-SPLASH_FLASH_NEXT_MAX_CONTEXT="${SPLASH_FLASH_NEXT_MAX_CONTEXT:-131072}"
+SPLASH_FLASH_NEXT_MAX_CONTEXT="${SPLASH_FLASH_NEXT_MAX_CONTEXT:-150000}"
 SPLASH_FLASH_NEXT_OPENCODE_CONTEXT="${SPLASH_FLASH_NEXT_OPENCODE_CONTEXT:-auto}"
 splash_flash_next_default_output=0
 [[ -n "${SPLASH_FLASH_NEXT_MAX_TOKENS:-}" ]] || splash_flash_next_default_output=1
@@ -318,7 +318,7 @@ splash_host_memory_bytes() {
 }
 
 # Resolve once before either the menu or launch path uses the profile. A caller's
-# explicit concurrency choice wins; a small host keeps the 131K context
+# explicit concurrency choice wins; a small host keeps the configured context
 # settings and persistent prefix cache without admitting competing requests.
 splash_flash_next_host_defaults() {
   local host_memory
@@ -328,10 +328,11 @@ splash_flash_next_host_defaults() {
      (( host_memory > 0 && host_memory < 25769803776 )); then
     SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=1
   fi
-  # Give the 16 GiB preset room for 131K resident admission with 2,048-token
-  # prefill. Host pressure can still force spill. Explicit settings win.
+  # Keep the 16 GiB long-context preset at 10.8G with 2,048-token prefill.
+  # 150K residency is unverified; host pressure can force spill. Explicit settings win.
   if [[ "$host_memory" == "17179869184" &&
-        "$SPLASH_FLASH_NEXT_MAX_CONTEXT" == "131072" &&
+        ( "$SPLASH_FLASH_NEXT_MAX_CONTEXT" == "131072" ||
+          "$SPLASH_FLASH_NEXT_MAX_CONTEXT" == "150000" ) &&
         "$SPLASH_FLASH_NEXT_MAX_CACHE_DISK" == "16G" &&
         "$SPLASH_FLASH_NEXT_PERSISTENT_CACHE" == "1" &&
         "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" == "auto" &&
@@ -1807,7 +1808,7 @@ case "$choice" in
     fi
     splash_context_max=24576
     [[ "$choice" != "19" ]] || splash_context_max=81920
-    [[ "$choice" != "20" ]] || splash_context_max=131072
+    [[ "$choice" != "20" ]] || splash_context_max=150000
     splash_client_context_max="$((splash_context_max - 2048))"
     if ! splash_context_limit="$(splash_context_tokens "$SPLASH_BONSAI_MAX_CONTEXT")" ||
        (( splash_context_limit < 4096 || splash_context_limit > splash_context_max )); then

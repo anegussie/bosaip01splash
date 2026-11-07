@@ -1,11 +1,107 @@
-# Mac performance estimates - reviewed November 5, 2026
+# Mac performance estimates - reviewed November 7, 2026
 
-This is the complete saved estimate document, including historical tables and later measured Air results. Source: `/Users/mymac/MacPerfEstimates.md`; source SHA-256: `11585807a1ba804c1c3820ac4dccdd7e8779b892df970c73817e607babbaeb27`. Repository artifact links have been made relative for publication.
+This is the complete saved estimate document, including historical tables and later measured Air results. Source: `/Users/mymac/MacPerfEstimates.md`; source SHA-256: `5ecc75a99e6115755f37e4eb98f5aa3ec2cf99da6326360c18766b7dfab85f20`. Repository artifact links have been made relative for publication.
+
+<!-- option20-context150k-20261107:start -->
+## Option 20: 150,000-token context validation - November 7, 2026
+
+**Active KV stayed resident, but operation without SSD spilling was not verified: macOS performed new swap-outs.** This is the latest measured Air context result. Earlier configuration descriptions and measurements below remain historical evidence; larger-Mac planning estimates are not revised by this run.
+
+The current Flash-Next preset has **150,000 server context tokens / 147,952 OpenCode context tokens**, preserving a 2,048-token margin and a 1,024-token output limit. The engine budget remains **10.8 GiB (11,596,411,699 bytes)**. Both launchers and the active OpenCode configuration were updated; 40 repository launcher tests and five installed-launcher checks passed. The validation server was started at 150,000 tokens with the same native model/build identity.
+
+Hardware: Apple M5 MacBook Air, 8 GPU cores, 16 GiB unified memory. Exact model: `ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS`, matching DFlash2, verification auto, INT8 KV, BF16 state, one active request, 2,048-token prefill chunks, automatic expert memory, approximately 64 MiB PLE row cache with the n-gram table on SSD, and a separate 16 GiB persistent SSD prefix-cache quota. Reasoning disabled, temperature zero, seed 42. The memory cap is not total process RSS.
+
+The long workload used **148,967 input tokens plus a 1,024-token output allowance**, reserving 149,991 tokens. Both responses generated 114 tokens, reaching 149,081 actual total tokens. A fresh cache salt ensured zero prefix reuse for the cold request. Both runs correctly recalled ORCHID from the beginning and counted from 1 through 30. This was one repeated-filler cold/reuse pair after a successful short smoke/cache check, rather than an exactly filled 150,000-token or representative coding benchmark.
+
+| Request | Input tokens | Cached tokens | Cold PP tok/s | Decode tok/s | SSE TTFT s | Active KV |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Cold | 148,967 | 0 | **310.18** | **11.06** | 480.28 | resident |
+| Cached repeat | 148,967 | 148,960 | n/a, seven new tokens | **8.94** | 0.76 | resident |
+
+Both long requests had **zero KV spill admissions, resident-to-spill conversions, spill moves, spilled bytes or spill write-through bytes**. All four smoke/long requests completed correctly, with no failed requests, capacity failures or Metal failures. Cached prefix traffic and streamed expert/PLE reads remain separate from active KV spill.
+
+However, system-wide `vm_stat` Swapouts increased by **637.84 MiB during the cold run** and **366.31 MiB during the repeat**, totaling **1,004.16 MiB of new swap-outs**. The VM page size was 16,384 bytes. Swap was already in use before testing; net swap use fell from 2,234.88 to 1,803.62 MiB while cumulative swap-outs rose. These are whole-system counters and do not attribute writes to Splash alone. They prevent a claim that this occupied Mac ran the workload without OS swapping.
+
+Sampled Metal allocation peaked at **9.711 GiB** under the unchanged 10.8 GiB hard cap. Memory pressure was warning, thermals ranged nominal to fair, and the final governor reported zero host headroom with growth denied. The result establishes resident active KV for this specific near-150K run, without establishing general no-swap capacity or a speedup over earlier differently filled workloads. Other applications were not closed and governor safeguards were retained.
+
+Build ID: `src-d3ea0ffe96934b78c61585e3965e6ccc76fea994a2f23b6c26b62f10b004d0cd`.
+
+[Full validation report](qwen38-option20-context150k-spill-20261107.md), [structured results](qwen38-option20-context150k-spill-20261107.json). Raw SSE events, requests, status and host samples, logs and artifact hashes: `build/validation/option20-context150k-spill-20261107`. This document update uses those saved results and runs no additional inference.
+<!-- option20-context150k-20261107:end -->
+
+<!-- option20-conservative-estimates-20261105:start -->
+## Conservative option-20 planning estimates - November 5, 2026
+
+This section supersedes the earlier planning tables below. It uses more conservative expert-store targets and throughput assumptions. Only the 16 GB Air IQ3_XXS row is measured, and those saved measurements used the 1.946 GiB expert store at a 10G cap. Every other figure is a low-confidence estimate, not a validated safe allocation, a guaranteed rate or a benchmark result.
+
+PP is cold prefill around 30K prompt tokens; TPS is short-code generation, in tokens per second. Expert RAM is in GiB. Assumptions: one active request, 2,048-token prefill chunks, matching DFlash2, INT8 KV, BF16 recurrent state, the whole n-gram table SSD-backed with an approximately 64 MiB RAM row cache, and a separate 16 GiB persistent SSD prefix cache. Neither n-gram file size nor prefix-cache disk quota is included in expert RAM.
+
+| Mac | IQ3_XXS expert RAM (GiB) | IQ3_XXS PP | IQ3_XXS TPS | Q2_0 expert RAM (GiB) | Q2_0 PP | Q2_0 TPS |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| M5 Air 16 GB, 8-core GPU | 1.946, measured | 241, measured | 8.81-8.92, measured block means | 2-3 | 240-300 | 10-12 |
+| M5 Air 32 GB | 12 | 250-270 | 9-12 | 14 | 250-350 | 11-17 |
+| M6 mini 32 GB | 12 | 250-270 | 9-12 | 14 | 250-350 | 11-17 |
+| M5 Pro mini 48 GB, 16-core GPU | 24 | 330-430 | 13-20 | 24 | 330-540 | 16-28 |
+| M5 Pro mini 64 GB, 16-core GPU | 32 | 340-450 | 15-23 | 28 | 360-580 | 20-34 |
+| M5 Max Studio 128 GB, 40-core GPU | 41.55, resident | 900-1,350 | 50-85 | ~32-34, resident | 1,200-1,750 | 75-115 |
+
+### Conservative memory choices
+
+- Keep the 16 GB Air IQ3 expert store at its measured 1.946 GiB. The speculative 3 GiB IQ3 / 4 GiB Q2 targets are not adopted. The 2-3 GiB Q2 target still needs exact-model sizing.
+- Use 12 GiB IQ3 / 14 GiB Q2 on both 32 GB machines. Exclude a 24 GiB expert store. These targets leave more room than the earlier 16/18 GiB proposal, but actual Metal budgets and model-specific footprints still need checking.
+- Use 24 GiB for either quant on the 48 GB mini. The earlier 32 GiB IQ3 target was an unverified upper scenario; neither 32 nor 38 GiB is used here. Do not assume fully resident Q2 on this host.
+- Use 32 GiB IQ3 / 28 GiB Q2 on the 64 GB mini and model both as streaming, rather than assuming full residency. Additional capacity or a confirmed resident plan may improve performance beyond these conservative scenarios.
+- A 48 GiB expert store is not needed for either quant: all IQ3 expert weights total about 41.55 GiB, while Q2 is estimated at 32-34 GiB. A 48G total engine cap is a different quantity and still requires the actual Metal budget to permit it; this conservative 64 GB scenario uses a 40G engine ceiling.
+- Only the 128 GB Studio retains the earlier fully resident expert scenario. Its requested 56G budget leaves substantially more room around the saved 45.373 GiB IQ3 weights-plus-draft sizing. Q2's approximately 32-34 GiB resident-expert sizing remains approximate.
+- Working engine-cap scenarios are 10.8G for the Air 16 GB, 24G for the 32 GB hosts, 32G for the 48 GB mini, 40G for the 64 GB mini, and 56G for the Studio. These are proposed total engine ceilings, not measured allocations on the other devices or settings applied by this update. Metal can clamp them and host pressure can block growth.
+- For context only, the saved IQ3 Air minimum excluding its expert store was about 6.684 GiB. Adding the proposed IQ3 stores gives approximately 18.684, 30.684 and 38.684 GiB for the 32/48/64 GB host scenarios before additional resident-KV growth and device-specific differences. This is rough budget arithmetic, not a planner run or a proof of safe startup.
+
+Expert RAM counts the whole streaming store, including staging/bookkeeping. Studio resident rows count expert weights without adding another store. `--expert-memory SIZE` sets a floor, not an exact cache cap; automatic planning can select a different final allocation. Long contexts may spill more KV to SSD. Device-specific sizing and serving validation are required before changing a real deployment.
+
+### Conservative calculation
+
+For the streamed 32/48/64 GB scenarios, use `rate = baseline_rate / ((1-p)/g + p*(1-h))`. This recalculates from the small-store baseline rather than applying another multiplier to the older larger-cache estimates.
+
+- IQ3 baseline: 241.00 PP at 28,589 tokens and 8.8675 short-code TPS, the equal-weight average of the two saved production-setting baseline block means. They are separate workloads. The measured Air table entry keeps those block means visible rather than presenting the modeled average as a new measurement.
+- Q2 planning baseline: 240-300 PP and 10-12 TPS. These are conservative small-store judgments, not local Q2 measurements. They reduce the earlier 260-330 PP / 10-13 TPS proxy; no exact Q2 performance baseline has been validated here.
+- Assumed expert-read-sensitive time fractions `p`: 0.35 for PP and 0.75 for generation, reduced from the optimistic scenario's 0.50 and 0.85. Neither fraction has been profiled.
+- Assumed avoided expert reads `h`: IQ3 15-30%, Q2 20-35% for the 32 GB rows; IQ3 40-60%, Q2 45-65% for the 48 GB row; IQ3 50-70%, Q2 60-75% for the 64 GB row. Cache capacity does not establish these traffic reductions; they are explicit scenario assumptions.
+- Assumed speed factor for the non-expert-I/O portion `g`: 1 for both 32 GB rows, and 1.25-1.5 for the 16-core-GPU minis. No M6 uplift is assumed. These compute factors have not been benchmarked on those devices.
+- Round streaming PP outward to tens and TPS outward to whole tokens/s. These are scenario bands, not statistical confidence intervals or guaranteed bounds.
+- For the Studio, retain the prior resident scenarios with a 25% planning discount for uncertainty, then round PP outward to 50 and TPS outward to 5: IQ3 900-1,350 PP / 50-85 TPS; Q2 1,200-1,750 PP / 75-115 TPS. The discount is a budgeting judgment, not a measured regression or a fitted correction.
+
+Poor expert reuse, Metal clamping, thermal/memory pressure, draft acceptance or SSD performance can put actual throughput outside the table, including below its lower endpoints. This update does not establish filled-131K novel-codebase performance, sustained generation, coding quality or simultaneous-request throughput. In particular, the previous 48 GB Q2 65-90 TPS resident scenario is not used in this conservative table.
+
+Evidence: [I/O tuning report](qwen38-option20-io-tuning-20261105.md), [raw measurements](qwen38-option20-io-tuning-20261105.json), [10.8G validation](qwen38-option20-budget108-20261105.md), and [previous scenarios](qwen38-option20-mac-rebase-20261105.md).
+
+No runtime configuration, inference, benchmark, model download, build or server restart was performed for this revision. Earlier tables and their source measurements remain below as dated history.
+<!-- option20-conservative-estimates-20261105:end -->
 
 <!-- option20-mac-rebase-20261105:start -->
 ## Current option-20 estimates for all six Macs - November 5, 2026
 
 **This section supersedes the older option-20 hardware tables below.** Earlier entries retain their original dated measurements, configuration descriptions and conclusions for history. Option-19 measurements are unaffected.
+
+<!-- option20-compact-pp-tps-20261105:start -->
+### Combined prefill and generation TPS
+
+PP is cold prefill around 30K prompt tokens; TPS is short-code generation. All values are tokens per second. Only the **16 GB Air IQ3_XXS** figures are measured; all others are conditional planning estimates.
+
+| Mac | IQ3_XXS expert RAM (GiB) | IQ3_XXS PP | IQ3_XXS TPS | Q2_0 expert RAM (GiB) | Q2_0 PP | Q2_0 TPS |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| M5 Air 16 GB, 8-core GPU | 1.946 | **241** | **8.81-8.92** | 2-4 | 260-330 | 10-13 |
+| M5 Air 32 GB | 12-16 | 250-360 | 11-16 | 14-18 | 320-500 | 14-22 |
+| M6 mini 32 GB | 12-16 | 250-360 | 11-16 | 14-18 | 320-500 | 14-22 |
+| M5 Pro mini 48 GB, 16-core GPU | 26-32 | 290-530 | 15-25 | 28-32 | 410-770 | 22-40 |
+| M5 Pro mini 64 GB, 16-core GPU | 38-41.55 | 600-900 | 35-60 | ~32-34 | 850-1,150 | 65-90 |
+| M5 Max Studio 128 GB, 40-core GPU | 41.55 | 1,200-1,800 | 70-110 | ~32-34 | 1,600-2,300 | 100-150 |
+
+Expert RAM means the streamed-expert store including staging/bookkeeping, or resident expert weights for the near/full-resident scenarios. The measured 1.946 GiB Air store comprises a 1.233 GiB expert arena and 0.713 GiB staging. All other expert allocations are assumptions, not observed cache sizes or cache-hit rates. The 64 GB IQ3 range is conditional on near/full residency; the Studio IQ3 allocation assumes full residency, and Q2 resident-weight sizes are approximate. These allocations exclude the SSD-backed n-gram table and the separate 16 GiB persistent prefix-cache quota.
+
+The measured Air PP uses 2,048-token chunks and a 10G cap; its TPS values are means of two separate short-code baseline blocks. The current preset uses 10.8G, validated separately. Larger-Mac scenarios require explicit 2,048 chunks, one active request and the larger memory caps listed below. The 64 GB and Studio fast ranges assume near/full expert residency; the cautious 64 GB IQ3 planning point remains about 500 PP and 30 TPS. No generation uplift or filled-131K codebase performance is established.
+
+[Performance documentation](/Users/mymac/splash/splash/docs/performance.md#option-20-mac-performance) and [full calculation and assumptions](qwen38-option20-mac-rebase-20261105.md).
+<!-- option20-compact-pp-tps-20261105:end -->
 
 The matched 1,024/2,048-chunk Air comparison measured **400.28 cold prefill tok/s at 4,019 tokens** and **241.00 at 28,589 tokens** with 2,048 chunks and a 10G cap. The controlled 28.6K ratio is `241 / 170.155 = 1.4164`; the earlier separate-run 183.27 figure is not its control. Short-code baseline block means were 8.92 and 8.81 tok/s, with no established generation speedup.
 
@@ -1057,7 +1153,7 @@ estimates or imply a new benchmark was run.
 
 ## Historical appendix: superseded November 3 analysis and early November 4 conclusion
 
-The original local document is preserved below verbatim for traceability. Its estimates, confidence statements, slot-cost arithmetic, concurrency guarantees and unit conversions are superseded by the current revised section and measured evidence above. Relative links within the original copy refer to ``.
+The original local document is preserved below verbatim for traceability. Its estimates, confidence statements, slot-cost arithmetic, concurrency guarantees and unit conversions are superseded by the current revised section and measured evidence above. Relative links within the original copy refer to `/Users/mymac/splash/splash/dev/benchmarks/`.
 
 <details>
 <summary>Original saved document - historical, not current guidance</summary>
@@ -1066,7 +1162,7 @@ The original local document is preserved below verbatim for traceability. Its es
 
 > Saved copy of `dev/benchmarks/qwen38-option20-machine-scaling-20261103.md` in
 > the splash repo, commits `95e35a27` and `8a7d090b`. Relative links below resolve inside
-> ``. Measurements were taken on a
+> `/Users/mymac/splash/splash/dev/benchmarks/`. Measurements were taken on a
 > 16 GB M5 MacBook Air, live server on port 1235, engine build `src-6a06f0d6c0d0`,
 > git `3c693864`.
 

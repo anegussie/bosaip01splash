@@ -372,7 +372,7 @@ print('Ready test server',flush=True)
         for flag, value in {
             "--model": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS",
             "--served-model-name": "qwen3.8-flash-next-iq3-xxs-splash",
-            "--max-context": "131072",
+            "--max-context": "150000",
             "--max-memory": "10G",
             "--expert-memory": "auto",
             "--ple-memory": "64M",
@@ -396,7 +396,7 @@ print('Ready test server',flush=True)
         alias = "qwen3.8-flash-next-iq3-xxs-splash"
         self.assertEqual(config["model"], "local-llama/" + alias)
         model = config["provider"]["local-llama"]["models"][alias]
-        self.assertEqual(model["limit"], {"context": 129024, "output": 1024})
+        self.assertEqual(model["limit"], {"context": 147952, "output": 1024})
         self.assertEqual(model["modalities"], {"input": ["text"], "output": ["text"]})
         self.assertTrue(model["reasoning"])
         self.assertEqual(
@@ -476,9 +476,9 @@ print('Ready test server',flush=True)
     def test_option20_invalid_settings_preserve_config(self):
         before = self.config.read_bytes()
         for name, values in {
-            "SPLASH_FLASH_NEXT_MAX_CONTEXT": ["132097", "0", "999999999999999K"],
-            "SPLASH_FLASH_NEXT_OPENCODE_CONTEXT": ["131072", "016384"],
-            "SPLASH_FLASH_NEXT_MAX_TOKENS": ["129024", "0"],
+            "SPLASH_FLASH_NEXT_MAX_CONTEXT": ["150001", "0", "999999999999999K"],
+            "SPLASH_FLASH_NEXT_OPENCODE_CONTEXT": ["150000", "147953", "016384"],
+            "SPLASH_FLASH_NEXT_MAX_TOKENS": ["147952", "0"],
             "SPLASH_FLASH_NEXT_MAX_MEMORY": ["7G", "auto", "57G", "10g"],
             "SPLASH_FLASH_NEXT_REASONING_EFFORT": ["invalid", "HIGH"],
             "SPLASH_FLASH_NEXT_MAX_CACHE_DISK": ["65G", "-1"],
@@ -501,7 +501,7 @@ print('Ready test server',flush=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertEqual(args[args.index("--max-active-requests") + 1], "1")
-        self.assertEqual(args[args.index("--max-context") + 1], "131072")
+        self.assertEqual(args[args.index("--max-context") + 1], "150000")
         self.assertEqual(args[args.index("--max-memory") + 1], "10.8G")
         self.assertEqual(args[args.index("--ple-memory") + 1], "64M")
         self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "2048")
@@ -529,6 +529,22 @@ print('Ready test server',flush=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "1024")
+
+    def test_option20_air_preserves_legacy_131k_context_and_budget(self):
+        r = self.run_launcher(
+            "20",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
+            SPLASH_FLASH_NEXT_MAX_CONTEXT="131072",
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--max-context") + 1], "131072")
+        self.assertEqual(args[args.index("--max-memory") + 1], "10.8G")
+        self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "2048")
+        model = json.loads(self.config.read_text())["provider"]["local-llama"][
+            "models"
+        ]["qwen3.8-flash-next-iq3-xxs-splash"]
+        self.assertEqual(model["limit"], {"context": 129024, "output": 1024})
 
     def test_option20_air_preserves_explicit_10g_cap(self):
         for cap in ("10G", "10.5G"):
@@ -638,7 +654,7 @@ print('Ready test server',flush=True)
         self.assertIn("memory_governor.growth_allowed", r.stdout)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertEqual(args[args.index("--max-active-requests") + 1], "2")
-        self.assertEqual(args[args.index("--max-context") + 1], "131072")
+        self.assertEqual(args[args.index("--max-context") + 1], "150000")
 
         # An explicit single lane uses the Air's new default cap and context.
         r = self.run_launcher(
@@ -650,7 +666,7 @@ print('Ready test server',flush=True)
         self.assertNotIn("below the 24 GB gate", r.stdout)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertEqual(args[args.index("--max-active-requests") + 1], "1")
-        self.assertEqual(args[args.index("--max-context") + 1], "131072")
+        self.assertEqual(args[args.index("--max-context") + 1], "150000")
         self.assertEqual(args[args.index("--max-memory") + 1], "10.8G")
 
         # Setting the gate back to 0 restores the 24 GB rule.
