@@ -280,7 +280,7 @@ class SmokeRealTests(unittest.TestCase):
     def test_verify_rows_reach_the_server(self):
         model = ["--model", "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ4_XS"]
         self.assertIsNone(smoke_real.parse_args(model).verify_rows)
-        for rows in ("auto", "all"):
+        for rows in ("auto", "all", *(str(count) for count in range(1, 9))):
             self.assertEqual(
                 smoke_real.parse_args([*model, "--verify-rows", rows]).verify_rows,
                 rows,

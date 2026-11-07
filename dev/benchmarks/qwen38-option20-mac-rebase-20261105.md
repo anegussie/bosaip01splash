@@ -1,5 +1,7 @@
 # Option 20: revised estimates for all six Macs, November 5, 2026
 
+Historical planning scenarios: superseded by the [conservative cache, prefill and generation estimates](qwen38-option20-mac-conservative-20261105.md). The original analysis and measurements below are retained for traceability.
+
 The latest saved chunk-size comparison replaces the older Air prefill anchor. **The 16 GB M5 Air measured 400.28 tok/s at 4,019 tokens and 241.00 tok/s at 28,589 tokens with 2,048-token chunks.** All other Mac figures below are conditional planning scenarios. They have not been measured on those devices. This revision supersedes the earlier option-20 hardware estimate tables; their original measurements and assumptions remain in the [complete estimate history](qwen38-option20-mac-estimates-20261105.md).
 
 ## Measured basis and current launcher

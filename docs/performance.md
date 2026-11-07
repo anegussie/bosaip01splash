@@ -4,54 +4,58 @@
 
 ## Option 20 Mac performance
 
-Updated November 5, 2026 from saved option-20 measurements and planning
-scenarios. PP is cold prefill around 30K prompt tokens; TPS is short-code
-generation. All rates are tokens per second. Only the **16 GB Air IQ3_XXS**
-row is measured. Other rows are conditional estimates, including every Q2_0
-value. The 64 GB mini assumes a 16-core GPU and the Studio a 40-core GPU.
+Updated November 5, 2026 with conservative expert-store targets. PP is cold
+prefill around 30K prompt tokens; TPS is short-code generation, in tokens per
+second. Expert RAM is in GiB. Only the 16 GB Air IQ3_XXS figures are measured;
+every other rate and cache allocation is an unverified planning estimate.
+These are not validated safe limits or guaranteed throughput bounds.
 
-| Mac | IQ3_XXS PP | IQ3_XXS TPS | Q2_0 PP | Q2_0 TPS |
-| --- | ---: | ---: | ---: | ---: |
-| M5 Air 16 GB, 8-core GPU | **241** | **8.81-8.92** | 260-330 | 10-13 |
-| M5 Air 32 GB | 250-360 | 11-16 | 320-500 | 14-22 |
-| M6 mini 32 GB | 250-360 | 11-16 | 320-500 | 14-22 |
-| M5 Pro mini 48 GB, 16-core GPU | 290-530 | 15-25 | 410-770 | 22-40 |
-| M5 Pro mini 64 GB, 16-core GPU | 600-900 | 35-60 | 850-1,150 | 65-90 |
-| M5 Max Studio 128 GB, 40-core GPU | 1,200-1,800 | 70-110 | 1,600-2,300 | 100-150 |
+| Mac | IQ3_XXS expert RAM (GiB) | IQ3_XXS PP | IQ3_XXS TPS | Q2_0 expert RAM (GiB) | Q2_0 PP | Q2_0 TPS |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| M5 Air 16 GB, 8-core GPU | 1.946, measured | 241, measured | 8.81-8.92, measured block means | 2-3 | 240-300 | 10-12 |
+| M5 Air 32 GB | 12 | 250-270 | 9-12 | 14 | 250-350 | 11-17 |
+| M6 mini 32 GB | 12 | 250-270 | 9-12 | 14 | 250-350 | 11-17 |
+| M5 Pro mini 48 GB, 16-core GPU | 24 | 330-430 | 13-20 | 24 | 330-540 | 16-28 |
+| M5 Pro mini 64 GB, 16-core GPU | 32 | 340-450 | 15-23 | 28 | 360-580 | 20-34 |
+| M5 Max Studio 128 GB, 40-core GPU | 41.55, resident | 900-1,350 | 50-85 | ~32-34, resident | 1,200-1,750 | 75-115 |
 
-The measured artifact is
-`ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS`, with matching
-DFlash2, INT8 KV, BF16 recurrent state and one active request. The entire
-26.82 GiB n-gram table remains SSD-backed with an approximately 64 MiB RAM
-row cache. The alternative estimates use the same repository's `Q2_0`;
-option 20 still selects IQ3_XXS.
+The exact models are
+`ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS` and `:Q2_0`;
+option 20 selects IQ3_XXS. The Pro minis assume 16-core GPUs and the Studio a
+40-core GPU. The estimates assume matching DFlash2, INT8 KV, BF16 state,
+one active request and 2,048-token chunks. The full n-gram table stays on SSD
+with an approximately 64 MiB RAM row cache, separate from the 16 GiB SSD
+prefix-cache quota.
 
-The 241 PP figure is the mean of two 28,589-token cold requests at a 10G cap
-with 2,048-token chunks (234.57-247.43 tok/s). The TPS figures are means of
-two separate short-code baseline blocks. Cold prefill uses repeated
-repository-note filler, while generation uses separate short coding probes.
-The current 16 GiB preset defaults to 10.8G, 2,048-token chunks and 131,072
-served context. Its later 10.8G validation checked 4K processing and a
-near-131K persisted replay, rather than repeating the cold 28.6K benchmark.
+The measured Air PP is the mean of two cold 28,589-token repeated-filler
+requests at a 10G cap. Its TPS entries are means from two separate short-code
+baseline blocks. The current Air preset uses 10.8G, validated separately;
+there is no new cold 28.6K benchmark at that cap.
 
-The estimates transfer the matched 28.6K prefill ratio of 1.4164 fully to
-16 GB Q2/32 GB scenarios, partially to 48 GB, and leave resident scenarios
-unchanged. These transfer fractions are planning assumptions. No generation
-uplift is applied. Larger-Mac scenarios require explicit larger memory caps,
-2,048-token chunks and one active request; their unmodified option-20 defaults
-remain 10G, 1,024 chunks and two admitted requests. Requested caps may be
-clamped, and expert residency must be checked on the actual device.
+The minis now assume streamed experts. The earlier 48 GB Q2 full-residency
+scenario and 64 GB near/full-residency rates are superseded here. Only the
+Studio retains a resident-expert scenario, with a 25% planning discount from
+the earlier ranges. Q2 resident sizing remains approximate.
 
-The 64 GB and Studio fast ranges assume near/full expert residency. For the
-64 GB IQ3 mini, the cautious planning point remains approximately 500 PP and
-30 TPS until residency is confirmed. None of these ranges establishes
-filled-131K codebase performance, sustained generation or concurrency.
+Proposed total engine caps are 24G on 32 GB hosts, 32G on the 48 GB mini,
+40G on the 64 GB mini and 56G on the Studio. Actual Metal budgets can clamp
+them. A 48 GiB expert store on the 64 GB mini would exceed the expert weights
+needed for either quant; it is different from a 48G total engine cap.
+Expert stores include staging/bookkeeping, while resident rows count weights.
+`--expert-memory SIZE` sets a floor, not an exact cache cap.
+
+Larger-Mac scenarios need explicit engine budgets, 2,048 chunks and one active
+request; unmodified option 20 keeps its other-host 10G/1,024-chunk/two-request
+defaults. No settings were changed for this estimate update. Device-specific
+sizing is still required. Poor expert reuse, pressure and KV spill can put
+actual performance below these ranges. They do not establish filled-131K
+codebase performance, sustained generation or simultaneous-request throughput.
 
 See the [option-20 guide](../dev/benchmarks/qwen38-option20.md),
-[calculation and memory assumptions](../dev/benchmarks/qwen38-option20-mac-rebase-20261105.md),
-[raw I/O-tuning measurements](../dev/benchmarks/qwen38-option20-io-tuning-20261105.json),
-and [complete estimate history](../dev/benchmarks/qwen38-option20-mac-estimates-20261105.md).
-This is separate from the release benchmark comparisons below.
+[conservative model and assumptions](../dev/benchmarks/qwen38-option20-mac-conservative-20261105.md),
+[raw measurements](../dev/benchmarks/qwen38-option20-io-tuning-20261105.json),
+and [complete history](../dev/benchmarks/qwen38-option20-mac-estimates-20261105.md).
+The release benchmark comparisons below retain their original workloads.
 
 ## Splash 1.0 launch benchmarks
 

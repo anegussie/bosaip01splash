@@ -705,6 +705,8 @@ struct ModelTelemetry final {
   // Whether decode cycles verify the rows the verify budget chooses
   // (budgetsVerifyRows) rather than every row.
   bool verifyBudget = false;
+  // Explicit fixed verification size; zero selects auto/all above.
+  uint32_t fixedVerifyRows = 0;
   double lastConstrainedTargetForwardGpuSeconds = 0.0;
   double totalConstrainedTargetForwardGpuSeconds = 0.0;
   double lastConstrainedMaskWaitSeconds = 0.0;

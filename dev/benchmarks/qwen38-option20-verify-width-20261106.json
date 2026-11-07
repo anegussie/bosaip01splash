@@ -1,0 +1,1136 @@
+{
+  "model": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS",
+  "identity": {
+    "sha256": {
+      "build/splash": "0bc3a70727414fc3bb884c5f2e87393ee19c02c568fe7da9a1938df5755b999a",
+      "build/splash.metallib": "826339b41ce381c8bc5e4823d213e178e8687ac4743c9b4b01fcafb476e583eb",
+      "build/host-step.metallib": "8e177c753e2051cd8a31c79bf031b3fae8daf04f5564ced9fc37db064bdfe51a"
+    },
+    "run": "f455afecda604dcbaa91121fe1f5edbc",
+    "date": "2026-11-06T20:43:14Z"
+  },
+  "decision": "Keep verify-rows auto; no fixed-width gain established.",
+  "blocks": [
+    {
+      "name": "screen-auto",
+      "verify_rows": "auto",
+      "combined_coding_wall_seconds": 21.917909291998512,
+      "mean_decode_tps": 11.050897006855166,
+      "expert_source_MB_per_output_token": 564.470943288889,
+      "tokens_per_decode_batch": 6.428571428571429,
+      "tasks": [
+        {
+          "name": "merge",
+          "text": "def merge_sorted(a, b):\n    i, j = 0, 0\n    result = []\n    while i < len(a) and j < len(b):\n        if a[i] <= b[j]:\n            result.append(a[i])\n            i += 1\n        else:\n            result.append(b[j])\n            j += 1\n    result.extend(a[i:])\n    result.extend(b[j:])\n    return result",
+          "wall_seconds": 11.187599249999039,
+          "sse_ttft_seconds": 2.779293832998519,
+          "usage": {
+            "prompt_tokens": 59,
+            "completion_tokens": 96,
+            "total_tokens": 155,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "timings": {
+            "prompt_n": 59,
+            "prompt_ms": 2776.482,
+            "prompt_per_second": 21.24991265925729,
+            "predicted_n": 96,
+            "predicted_ms": 8408.029,
+            "predicted_per_second": 11.298724112393046,
+            "cache_n": 0,
+            "draft_n": 83,
+            "draft_n_accepted": 82
+          },
+          "metrics": {
+            "prefill": {
+              "tokens": 59
+            },
+            "decode": {
+              "tokens": 95
+            },
+            "request_latency": {
+              "start_to_first_token_ms": 2776.482,
+              "first_token_to_done_ms": 8408.029,
+              "wall_ms": 11184.776,
+              "ttft_ms": 2776.7469999999994,
+              "queue_to_start_ms": 0.2649999999994179,
+              "stream_tokens_per_second": 11.298724112393046
+            },
+            "cache": {
+              "status": "miss",
+              "matched_tokens": 0,
+              "deduplicated_tokens": 0,
+              "lane": 0
+            },
+            "speculation": {
+              "drafted_tokens": 83,
+              "accepted_draft_tokens": 82,
+              "cycles": 13
+            }
+          },
+          "cycles": 13,
+          "tokens_per_cycle": 7.384615384615385,
+          "decode_tps": 11.429122353087143,
+          "expert_bytes_per_token": 549428224.0,
+          "drafted": 83,
+          "accepted": 82,
+          "thermal": "nominal",
+          "pressure": "warning",
+          "correct": true,
+          "check_diagnostic": ""
+        },
+        {
+          "name": "balanced",
+          "text": "```python\ndef is_balanced(s):\n    stack = []\n    pairs = {')': '(', ']': '[', '}': '{'}\n    for c in s:\n        if c in '([{':\n            stack.append(c)\n        elif c in pairs:\n            if not stack or stack.pop() != pairs[c]:\n                return False\n    return not stack\n```",
+          "wall_seconds": 10.730310041999473,
+          "sse_ttft_seconds": 2.8504167499995674,
+          "usage": {
+            "prompt_tokens": 56,
+            "completion_tokens": 84,
+            "total_tokens": 140,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "timings": {
+            "prompt_n": 56,
+            "prompt_ms": 2847.737,
+            "prompt_per_second": 19.664737298423272,
+            "predicted_n": 84,
+            "predicted_ms": 7879.647,
+            "predicted_per_second": 10.533466791088484,
+            "cache_n": 0,
+            "draft_n": 82,
+            "draft_n_accepted": 68
+          },
+          "metrics": {
+            "prefill": {
+              "tokens": 56
+            },
+            "decode": {
+              "tokens": 83
+            },
+            "request_latency": {
+              "start_to_first_token_ms": 2847.737,
+              "first_token_to_done_ms": 7879.647,
+              "wall_ms": 10727.64,
+              "ttft_ms": 2847.9929999999995,
+              "queue_to_start_ms": 0.25599999999940337,
+              "stream_tokens_per_second": 10.533466791088484
+            },
+            "cache": {
+              "status": "miss",
+              "matched_tokens": 0,
+              "deduplicated_tokens": 0,
+              "lane": 0
+            },
+            "speculation": {
+              "drafted_tokens": 82,
+              "accepted_draft_tokens": 68,
+              "cycles": 15
+            }
+          },
+          "cycles": 15,
+          "tokens_per_cycle": 5.6,
+          "decode_tps": 10.67267166062319,
+          "expert_bytes_per_token": 581662622.4761904,
+          "drafted": 82,
+          "accepted": 68,
+          "thermal": "nominal",
+          "pressure": "warning",
+          "correct": true,
+          "check_diagnostic": ""
+        }
+      ]
+    },
+    {
+      "name": "screen-2",
+      "verify_rows": "2",
+      "combined_coding_wall_seconds": 29.81107858300129,
+      "mean_decode_tps": 7.44242945954166,
+      "expert_source_MB_per_output_token": 796.8575032888889,
+      "tokens_per_decode_batch": 1.978021978021978,
+      "tasks": [
+        {
+          "name": "merge",
+          "text": "def merge_sorted(a, b):\n    i, j = 0, 0\n    result = []\n    while i < len(a) and j < len(b):\n        if a[i] <= b[j]:\n            result.append(a[i])\n            i += 1\n        else:\n            result.append(b[j])\n            j += 1\n    result.extend(a[i:])\n    result.extend(b[j:])\n    return result",
+          "wall_seconds": 16.052244375001465,
+          "sse_ttft_seconds": 2.7732507920009084,
+          "usage": {
+            "prompt_tokens": 59,
+            "completion_tokens": 96,
+            "total_tokens": 155,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "timings": {
+            "prompt_n": 59,
+            "prompt_ms": 2770.411,
+            "prompt_per_second": 21.296479114470742,
+            "predicted_n": 96,
+            "predicted_ms": 13278.841,
+            "predicted_per_second": 7.154238837561199,
+            "cache_n": 0,
+            "draft_n": 48,
+            "draft_n_accepted": 47
+          },
+          "metrics": {
+            "prefill": {
+              "tokens": 59
+            },
+            "decode": {
+              "tokens": 95
+            },
+            "request_latency": {
+              "start_to_first_token_ms": 2770.411,
+              "first_token_to_done_ms": 13278.841,
+              "wall_ms": 16049.537,
+              "ttft_ms": 2770.696,
+              "queue_to_start_ms": 0.2849999999998545,
+              "stream_tokens_per_second": 7.154238837561199
+            },
+            "cache": {
+              "status": "miss",
+              "matched_tokens": 0,
+              "deduplicated_tokens": 0,
+              "lane": 0
+            },
+            "speculation": {
+              "drafted_tokens": 48,
+              "accepted_draft_tokens": 47,
+              "cycles": 48
+            }
+          },
+          "cycles": 48,
+          "tokens_per_cycle": 2.0,
+          "decode_tps": 7.244842111446536,
+          "expert_bytes_per_token": 821206357.3333334,
+          "drafted": 48,
+          "accepted": 47,
+          "thermal": "nominal",
+          "pressure": "warning",
+          "correct": true,
+          "check_diagnostic": ""
+        },
+        {
+          "name": "balanced",
+          "text": "```python\ndef is_balanced(s):\n    stack = []\n    pairs = {')': '(', ']': '[', '}': '{'}\n    for c in s:\n        if c in '([{':\n            stack.append(c)\n        elif c in pairs:\n            if not stack or stack.pop() != pairs[c]:\n                return False\n    return not stack\n```",
+          "wall_seconds": 13.758834207999826,
+          "sse_ttft_seconds": 2.738773041000968,
+          "usage": {
+            "prompt_tokens": 56,
+            "completion_tokens": 84,
+            "total_tokens": 140,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "timings": {
+            "prompt_n": 56,
+            "prompt_ms": 2735.939,
+            "prompt_per_second": 20.46829260447693,
+            "predicted_n": 84,
+            "predicted_ms": 11019.896,
+            "predicted_per_second": 7.531831516377286,
+            "cache_n": 0,
+            "draft_n": 43,
+            "draft_n_accepted": 40
+          },
+          "metrics": {
+            "prefill": {
+              "tokens": 56
+            },
+            "decode": {
+              "tokens": 83
+            },
+            "request_latency": {
+              "start_to_first_token_ms": 2735.939,
+              "first_token_to_done_ms": 11019.896,
+              "wall_ms": 13756.11,
+              "ttft_ms": 2736.214,
+              "queue_to_start_ms": 0.27500000000009095,
+              "stream_tokens_per_second": 7.531831516377286
+            },
+            "cache": {
+              "status": "miss",
+              "matched_tokens": 0,
+              "deduplicated_tokens": 0,
+              "lane": 0
+            },
+            "speculation": {
+              "drafted_tokens": 43,
+              "accepted_draft_tokens": 40,
+              "cycles": 43
+            }
+          },
+          "cycles": 43,
+          "tokens_per_cycle": 1.9534883720930232,
+          "decode_tps": 7.640016807636783,
+          "expert_bytes_per_token": 769030241.5238096,
+          "drafted": 43,
+          "accepted": 40,
+          "thermal": "fair",
+          "pressure": "warning",
+          "correct": true,
+          "check_diagnostic": ""
+        }
+      ]
+    },
+    {
+      "name": "screen-4",
+      "verify_rows": "4",
+      "combined_coding_wall_seconds": 24.466553750000458,
+      "mean_decode_tps": 9.511773816083755,
+      "expert_source_MB_per_output_token": 644.9449642666666,
+      "tokens_per_decode_batch": 3.9130434782608696,
+      "tasks": [
+        {
+          "name": "merge",
+          "text": "def merge_sorted(a, b):\n    i, j = 0, 0\n    result = []\n    while i < len(a) and j < len(b):\n        if a[i] <= b[j]:\n            result.append(a[i])\n            i += 1\n        else:\n            result.append(b[j])\n            j += 1\n    result.extend(a[i:])\n    result.extend(b[j:])\n    return result",
+          "wall_seconds": 13.14694687500014,
+          "sse_ttft_seconds": 2.761340041000949,
+          "usage": {
+            "prompt_tokens": 59,
+            "completion_tokens": 96,
+            "total_tokens": 155,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "timings": {
+            "prompt_n": 59,
+            "prompt_ms": 2758.575,
+            "prompt_per_second": 21.38785423633579,
+            "predicted_n": 96,
+            "predicted_ms": 10384.481,
+            "predicted_per_second": 9.148266533493585,
+            "cache_n": 0,
+            "draft_n": 72,
+            "draft_n_accepted": 71
+          },
+          "metrics": {
+            "prefill": {
+              "tokens": 59
+            },
+            "decode": {
+              "tokens": 95
+            },
+            "request_latency": {
+              "start_to_first_token_ms": 2758.575,
+              "first_token_to_done_ms": 10384.481,
+              "wall_ms": 13143.351,
+              "ttft_ms": 2758.870000000001,
+              "queue_to_start_ms": 0.29500000000098225,
+              "stream_tokens_per_second": 9.148266533493585
+            },
+            "cache": {
+              "status": "miss",
+              "matched_tokens": 0,
+              "deduplicated_tokens": 0,
+              "lane": 0
+            },
+            "speculation": {
+              "drafted_tokens": 72,
+              "accepted_draft_tokens": 71,
+              "cycles": 24
+            }
+          },
+          "cycles": 24,
+          "tokens_per_cycle": 4.0,
+          "decode_tps": 9.257468571255817,
+          "expert_bytes_per_token": 663852885.3333334,
+          "drafted": 72,
+          "accepted": 71,
+          "thermal": "fair",
+          "pressure": "warning",
+          "correct": true,
+          "check_diagnostic": ""
+        },
+        {
+          "name": "balanced",
+          "text": "```python\ndef is_balanced(s):\n    stack = []\n    pairs = {')': '(', ']': '[', '}': '{'}\n    for c in s:\n        if c in '([{':\n            stack.append(c)\n        elif c in pairs:\n            if not stack or stack.pop() != pairs[c]:\n                return False\n    return not stack\n```",
+          "wall_seconds": 11.319606875000318,
+          "sse_ttft_seconds": 2.704466291999779,
+          "usage": {
+            "prompt_tokens": 56,
+            "completion_tokens": 84,
+            "total_tokens": 140,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "timings": {
+            "prompt_n": 56,
+            "prompt_ms": 2701.746,
+            "prompt_per_second": 20.72733706277348,
+            "predicted_n": 84,
+            "predicted_ms": 8614.903,
+            "predicted_per_second": 9.634467155346961,
+            "cache_n": 0,
+            "draft_n": 66,
+            "draft_n_accepted": 61
+          },
+          "metrics": {
+            "prefill": {
+              "tokens": 56
+            },
+            "decode": {
+              "tokens": 83
+            },
+            "request_latency": {
+              "start_to_first_token_ms": 2701.746,
+              "first_token_to_done_ms": 8614.903,
+              "wall_ms": 11316.899,
+              "ttft_ms": 2701.995999999999,
+              "queue_to_start_ms": 0.2499999999990905,
+              "stream_tokens_per_second": 9.634467155346961
+            },
+            "cache": {
+              "status": "miss",
+              "matched_tokens": 0,
+              "deduplicated_tokens": 0,
+              "lane": 0
+            },
+            "speculation": {
+              "drafted_tokens": 66,
+              "accepted_draft_tokens": 61,
+              "cycles": 22
+            }
+          },
+          "cycles": 22,
+          "tokens_per_cycle": 3.8181818181818183,
+          "decode_tps": 9.766079060911693,
+          "expert_bytes_per_token": 623335911.6190476,
+          "drafted": 66,
+          "accepted": 61,
+          "thermal": "fair",
+          "pressure": "warning",
+          "correct": true,
+          "check_diagnostic": ""
+        }
+      ]
+    },
+    {
+      "name": "screen-8",
+      "verify_rows": "8",
+      "combined_coding_wall_seconds": 22.39863666599922,
+      "mean_decode_tps": 10.71765850464818,
+      "expert_source_MB_per_output_token": 585.8011818666666,
+      "tokens_per_decode_batch": 6.923076923076923,
+      "tasks": [
+        {
+          "name": "merge",
+          "text": "def merge_sorted(a, b):\n    i, j = 0, 0\n    result = []\n    while i < len(a) and j < len(b):\n        if a[i] <= b[j]:\n            result.append(a[i])\n            i += 1\n        else:\n            result.append(b[j])\n            j += 1\n    result.extend(a[i:])\n    result.extend(b[j:])\n    return result",
+          "wall_seconds": 11.037969666000208,
+          "sse_ttft_seconds": 2.7657766659995104,
+          "usage": {
+            "prompt_tokens": 59,
+            "completion_tokens": 96,
+            "total_tokens": 155,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "timings": {
+            "prompt_n": 59,
+            "prompt_ms": 2762.832,
+            "prompt_per_second": 21.354899610254986,
+            "predicted_n": 96,
+            "predicted_ms": 8271.923,
+            "predicted_per_second": 11.484633017014302,
+            "cache_n": 0,
+            "draft_n": 84,
+            "draft_n_accepted": 83
+          },
+          "metrics": {
+            "prefill": {
+              "tokens": 59
+            },
+            "decode": {
+              "tokens": 95
+            },
+            "request_latency": {
+              "start_to_first_token_ms": 2762.832,
+              "first_token_to_done_ms": 8271.923,
+              "wall_ms": 11035.017,
+              "ttft_ms": 2763.093999999999,
+              "queue_to_start_ms": 0.2619999999992615,
+              "stream_tokens_per_second": 11.484633017014302
+            },
+            "cache": {
+              "status": "miss",
+              "matched_tokens": 0,
+              "deduplicated_tokens": 0,
+              "lane": 0
+            },
+            "speculation": {
+              "drafted_tokens": 84,
+              "accepted_draft_tokens": 83,
+              "cycles": 12
+            }
+          },
+          "cycles": 12,
+          "tokens_per_cycle": 8.0,
+          "decode_tps": 11.617503429251032,
+          "expert_bytes_per_token": 541449728.0,
+          "drafted": 84,
+          "accepted": 83,
+          "thermal": "fair",
+          "pressure": "warning",
+          "correct": true,
+          "check_diagnostic": ""
+        },
+        {
+          "name": "balanced",
+          "text": "```python\ndef is_balanced(s):\n    stack = []\n    pairs = {')': '(', ']': '[', '}': '{'}\n    for c in s:\n        if c in '([{':\n            stack.append(c)\n        elif c in pairs:\n            if not stack or stack.pop() != pairs[c]:\n                return False\n    return not stack\n```",
+          "wall_seconds": 11.360666999999012,
+          "sse_ttft_seconds": 2.7958525409994763,
+          "usage": {
+            "prompt_tokens": 56,
+            "completion_tokens": 84,
+            "total_tokens": 140,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "timings": {
+            "prompt_n": 56,
+            "prompt_ms": 2793.433,
+            "prompt_per_second": 20.047017415488398,
+            "predicted_n": 84,
+            "predicted_ms": 8564.324,
+            "predicted_per_second": 9.691366183717477,
+            "cache_n": 0,
+            "draft_n": 98,
+            "draft_n_accepted": 69
+          },
+          "metrics": {
+            "prefill": {
+              "tokens": 56
+            },
+            "decode": {
+              "tokens": 83
+            },
+            "request_latency": {
+              "start_to_first_token_ms": 2793.433,
+              "first_token_to_done_ms": 8564.324,
+              "wall_ms": 11358.002,
+              "ttft_ms": 2793.678,
+              "queue_to_start_ms": 0.24499999999989086,
+              "stream_tokens_per_second": 9.691366183717477
+            },
+            "cache": {
+              "status": "miss",
+              "matched_tokens": 0,
+              "deduplicated_tokens": 0,
+              "lane": 0
+            },
+            "speculation": {
+              "drafted_tokens": 98,
+              "accepted_draft_tokens": 69,
+              "cycles": 14
+            }
+          },
+          "cycles": 14,
+          "tokens_per_cycle": 6.0,
+          "decode_tps": 9.817813580045327,
+          "expert_bytes_per_token": 636488557.7142857,
+          "drafted": 98,
+          "accepted": 69,
+          "thermal": "fair",
+          "pressure": "warning",
+          "correct": true,
+          "check_diagnostic": ""
+        }
+      ]
+    },
+    {
+      "name": "confirm-A1",
+      "verify_rows": "auto",
+      "combined_coding_wall_seconds": 21.826020832000722,
+      "mean_decode_tps": 11.01878688093077,
+      "expert_source_MB_per_output_token": 565.0159843555556,
+      "tokens_per_decode_batch": 6.428571428571429,
+      "tasks": [
+        {
+          "name": "merge",
+          "text": "def merge_sorted(a, b):\n    i, j = 0, 0\n    result = []\n    while i < len(a) and j < len(b):\n        if a[i] <= b[j]:\n            result.append(a[i])\n            i += 1\n        else:\n            result.append(b[j])\n            j += 1\n    result.extend(a[i:])\n    result.extend(b[j:])\n    return result",
+          "wall_seconds": 11.192031541000688,
+          "sse_ttft_seconds": 2.7711891250000917,
+          "usage": {
+            "prompt_tokens": 59,
+            "completion_tokens": 96,
+            "total_tokens": 155,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "timings": {
+            "prompt_n": 59,
+            "prompt_ms": 2768.473,
+            "prompt_per_second": 21.311387179864134,
+            "predicted_n": 96,
+            "predicted_ms": 8420.435,
+            "predicted_per_second": 11.282077469869431,
+            "cache_n": 0,
+            "draft_n": 83,
+            "draft_n_accepted": 82
+          },
+          "metrics": {
+            "prefill": {
+              "tokens": 59
+            },
+            "decode": {
+              "tokens": 95
+            },
+            "request_latency": {
+              "start_to_first_token_ms": 2768.473,
+              "first_token_to_done_ms": 8420.435,
+              "wall_ms": 11189.175,
+              "ttft_ms": 2768.74,
+              "queue_to_start_ms": 0.2669999999998254,
+              "stream_tokens_per_second": 11.282077469869431
+            },
+            "cache": {
+              "status": "miss",
+              "matched_tokens": 0,
+              "deduplicated_tokens": 0,
+              "lane": 0
+            },
+            "speculation": {
+              "drafted_tokens": 83,
+              "accepted_draft_tokens": 82,
+              "cycles": 13
+            }
+          },
+          "cycles": 13,
+          "tokens_per_cycle": 7.384615384615385,
+          "decode_tps": 11.411513878010375,
+          "expert_bytes_per_token": 549741738.6666666,
+          "drafted": 83,
+          "accepted": 82,
+          "thermal": "fair",
+          "pressure": "warning",
+          "correct": true,
+          "check_diagnostic": ""
+        },
+        {
+          "name": "balanced",
+          "text": "```python\ndef is_balanced(s):\n    stack = []\n    pairs = {')': '(', ']': '[', '}': '{'}\n    for c in s:\n        if c in '([{':\n            stack.append(c)\n        elif c in pairs:\n            if not stack or stack.pop() != pairs[c]:\n                return False\n    return not stack\n```",
+          "wall_seconds": 10.633989291000034,
+          "sse_ttft_seconds": 2.719101374999809,
+          "usage": {
+            "prompt_tokens": 56,
+            "completion_tokens": 84,
+            "total_tokens": 140,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "timings": {
+            "prompt_n": 56,
+            "prompt_ms": 2716.022,
+            "prompt_per_second": 20.618389689037866,
+            "predicted_n": 84,
+            "predicted_ms": 7914.559,
+            "predicted_per_second": 10.487002497549136,
+            "cache_n": 0,
+            "draft_n": 82,
+            "draft_n_accepted": 68
+          },
+          "metrics": {
+            "prefill": {
+              "tokens": 56
+            },
+            "decode": {
+              "tokens": 83
+            },
+            "request_latency": {
+              "start_to_first_token_ms": 2716.022,
+              "first_token_to_done_ms": 7914.559,
+              "wall_ms": 10630.869,
+              "ttft_ms": 2716.3100000000004,
+              "queue_to_start_ms": 0.28800000000046566,
+              "stream_tokens_per_second": 10.487002497549136
+            },
+            "cache": {
+              "status": "miss",
+              "matched_tokens": 0,
+              "deduplicated_tokens": 0,
+              "lane": 0
+            },
+            "speculation": {
+              "drafted_tokens": 82,
+              "accepted_draft_tokens": 68,
+              "cycles": 15
+            }
+          },
+          "cycles": 15,
+          "tokens_per_cycle": 5.6,
+          "decode_tps": 10.626059883851166,
+          "expert_bytes_per_token": 582472265.1428572,
+          "drafted": 82,
+          "accepted": 68,
+          "thermal": "fair",
+          "pressure": "warning",
+          "correct": true,
+          "check_diagnostic": ""
+        }
+      ]
+    },
+    {
+      "name": "confirm-B1",
+      "verify_rows": "8",
+      "combined_coding_wall_seconds": 22.36023804099932,
+      "mean_decode_tps": 10.692480128129532,
+      "expert_source_MB_per_output_token": 585.7956295111111,
+      "tokens_per_decode_batch": 6.923076923076923,
+      "tasks": [
+        {
+          "name": "merge",
+          "text": "def merge_sorted(a, b):\n    i, j = 0, 0\n    result = []\n    while i < len(a) and j < len(b):\n        if a[i] <= b[j]:\n            result.append(a[i])\n            i += 1\n        else:\n            result.append(b[j])\n            j += 1\n    result.extend(a[i:])\n    result.extend(b[j:])\n    return result",
+          "wall_seconds": 11.036689750000733,
+          "sse_ttft_seconds": 2.740528834001452,
+          "usage": {
+            "prompt_tokens": 59,
+            "completion_tokens": 96,
+            "total_tokens": 155,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "timings": {
+            "prompt_n": 59,
+            "prompt_ms": 2737.775,
+            "prompt_per_second": 21.550346540530175,
+            "predicted_n": 96,
+            "predicted_ms": 8295.808,
+            "predicted_per_second": 11.451566863649688,
+            "cache_n": 0,
+            "draft_n": 84,
+            "draft_n_accepted": 83
+          },
+          "metrics": {
+            "prefill": {
+              "tokens": 59
+            },
+            "decode": {
+              "tokens": 95
+            },
+            "request_latency": {
+              "start_to_first_token_ms": 2737.775,
+              "first_token_to_done_ms": 8295.808,
+              "wall_ms": 11033.842,
+              "ttft_ms": 2738.0339999999997,
+              "queue_to_start_ms": 0.2589999999995598,
+              "stream_tokens_per_second": 11.451566863649688
+            },
+            "cache": {
+              "status": "miss",
+              "matched_tokens": 0,
+              "deduplicated_tokens": 0,
+              "lane": 0
+            },
+            "speculation": {
+              "drafted_tokens": 84,
+              "accepted_draft_tokens": 83,
+              "cycles": 12
+            }
+          },
+          "cycles": 12,
+          "tokens_per_cycle": 8.0,
+          "decode_tps": 11.582658527144824,
+          "expert_bytes_per_token": 541657600.0,
+          "drafted": 84,
+          "accepted": 83,
+          "thermal": "fair",
+          "pressure": "warning",
+          "correct": true,
+          "check_diagnostic": ""
+        },
+        {
+          "name": "balanced",
+          "text": "```python\ndef is_balanced(s):\n    stack = []\n    pairs = {')': '(', ']': '[', '}': '{'}\n    for c in s:\n        if c in '([{':\n            stack.append(c)\n        elif c in pairs:\n            if not stack or stack.pop() != pairs[c]:\n                return False\n    return not stack\n```",
+          "wall_seconds": 11.323548290998588,
+          "sse_ttft_seconds": 2.7445204999985435,
+          "usage": {
+            "prompt_tokens": 56,
+            "completion_tokens": 84,
+            "total_tokens": 140,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "timings": {
+            "prompt_n": 56,
+            "prompt_ms": 2741.266,
+            "prompt_per_second": 20.428517334691342,
+            "predicted_n": 84,
+            "predicted_ms": 8578.792,
+            "predicted_per_second": 9.675021844567395,
+            "cache_n": 0,
+            "draft_n": 98,
+            "draft_n_accepted": 69
+          },
+          "metrics": {
+            "prefill": {
+              "tokens": 56
+            },
+            "decode": {
+              "tokens": 83
+            },
+            "request_latency": {
+              "start_to_first_token_ms": 2741.266,
+              "first_token_to_done_ms": 8578.792,
+              "wall_ms": 11320.327,
+              "ttft_ms": 2741.535,
+              "queue_to_start_ms": 0.2689999999997781,
+              "stream_tokens_per_second": 9.675021844567395
+            },
+            "cache": {
+              "status": "miss",
+              "matched_tokens": 0,
+              "deduplicated_tokens": 0,
+              "lane": 0
+            },
+            "speculation": {
+              "drafted_tokens": 98,
+              "accepted_draft_tokens": 69,
+              "cycles": 14
+            }
+          },
+          "cycles": 14,
+          "tokens_per_cycle": 6.0,
+          "decode_tps": 9.802301729114237,
+          "expert_bytes_per_token": 636239091.8095238,
+          "drafted": 98,
+          "accepted": 69,
+          "thermal": "fair",
+          "pressure": "warning",
+          "correct": true,
+          "check_diagnostic": ""
+        }
+      ]
+    },
+    {
+      "name": "confirm-B2",
+      "verify_rows": "8",
+      "combined_coding_wall_seconds": 22.294706041999234,
+      "mean_decode_tps": 10.733186750948084,
+      "expert_source_MB_per_output_token": 585.4947100444444,
+      "tokens_per_decode_batch": 6.923076923076923,
+      "tasks": [
+        {
+          "name": "merge",
+          "text": "def merge_sorted(a, b):\n    i, j = 0, 0\n    result = []\n    while i < len(a) and j < len(b):\n        if a[i] <= b[j]:\n            result.append(a[i])\n            i += 1\n        else:\n            result.append(b[j])\n            j += 1\n    result.extend(a[i:])\n    result.extend(b[j:])\n    return result",
+          "wall_seconds": 11.01007516699974,
+          "sse_ttft_seconds": 2.754888542000117,
+          "usage": {
+            "prompt_tokens": 59,
+            "completion_tokens": 96,
+            "total_tokens": 155,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "timings": {
+            "prompt_n": 59,
+            "prompt_ms": 2752.101,
+            "prompt_per_second": 21.43816669519033,
+            "predicted_n": 96,
+            "predicted_ms": 8254.879,
+            "predicted_per_second": 11.508345549341183,
+            "cache_n": 0,
+            "draft_n": 84,
+            "draft_n_accepted": 83
+          },
+          "metrics": {
+            "prefill": {
+              "tokens": 59
+            },
+            "decode": {
+              "tokens": 95
+            },
+            "request_latency": {
+              "start_to_first_token_ms": 2752.101,
+              "first_token_to_done_ms": 8254.879,
+              "wall_ms": 11007.232,
+              "ttft_ms": 2752.352999999999,
+              "queue_to_start_ms": 0.2519999999990432,
+              "stream_tokens_per_second": 11.508345549341183
+            },
+            "cache": {
+              "status": "miss",
+              "matched_tokens": 0,
+              "deduplicated_tokens": 0,
+              "lane": 0
+            },
+            "speculation": {
+              "drafted_tokens": 84,
+              "accepted_draft_tokens": 83,
+              "cycles": 12
+            }
+          },
+          "cycles": 12,
+          "tokens_per_cycle": 8.0,
+          "decode_tps": 11.640149972565256,
+          "expert_bytes_per_token": 541315584.0,
+          "drafted": 84,
+          "accepted": 83,
+          "thermal": "fair",
+          "pressure": "warning",
+          "correct": true,
+          "check_diagnostic": ""
+        },
+        {
+          "name": "balanced",
+          "text": "```python\ndef is_balanced(s):\n    stack = []\n    pairs = {')': '(', ']': '[', '}': '{'}\n    for c in s:\n        if c in '([{':\n            stack.append(c)\n        elif c in pairs:\n            if not stack or stack.pop() != pairs[c]:\n                return False\n    return not stack\n```",
+          "wall_seconds": 11.284630874999493,
+          "sse_ttft_seconds": 2.727275625000402,
+          "usage": {
+            "prompt_tokens": 56,
+            "completion_tokens": 84,
+            "total_tokens": 140,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "timings": {
+            "prompt_n": 56,
+            "prompt_ms": 2724.649,
+            "prompt_per_second": 20.553106106511336,
+            "predicted_n": 84,
+            "predicted_ms": 8557.123,
+            "predicted_per_second": 9.699521673347457,
+            "cache_n": 0,
+            "draft_n": 98,
+            "draft_n_accepted": 69
+          },
+          "metrics": {
+            "prefill": {
+              "tokens": 56
+            },
+            "decode": {
+              "tokens": 83
+            },
+            "request_latency": {
+              "start_to_first_token_ms": 2724.649,
+              "first_token_to_done_ms": 8557.123,
+              "wall_ms": 11282.01,
+              "ttft_ms": 2724.8870000000006,
+              "queue_to_start_ms": 0.2380000000007385,
+              "stream_tokens_per_second": 9.699521673347457
+            },
+            "cache": {
+              "status": "miss",
+              "matched_tokens": 0,
+              "deduplicated_tokens": 0,
+              "lane": 0
+            },
+            "speculation": {
+              "drafted_tokens": 98,
+              "accepted_draft_tokens": 69,
+              "cycles": 14
+            }
+          },
+          "cycles": 14,
+          "tokens_per_cycle": 6.0,
+          "decode_tps": 9.826223529330912,
+          "expert_bytes_per_token": 635985139.8095238,
+          "drafted": 98,
+          "accepted": 69,
+          "thermal": "fair",
+          "pressure": "warning",
+          "correct": true,
+          "check_diagnostic": ""
+        }
+      ]
+    },
+    {
+      "name": "confirm-A2",
+      "verify_rows": "auto",
+      "combined_coding_wall_seconds": 21.827074332999473,
+      "mean_decode_tps": 11.055041020127115,
+      "expert_source_MB_per_output_token": 564.277248,
+      "tokens_per_decode_batch": 6.428571428571429,
+      "tasks": [
+        {
+          "name": "merge",
+          "text": "def merge_sorted(a, b):\n    i, j = 0, 0\n    result = []\n    while i < len(a) and j < len(b):\n        if a[i] <= b[j]:\n            result.append(a[i])\n            i += 1\n        else:\n            result.append(b[j])\n            j += 1\n    result.extend(a[i:])\n    result.extend(b[j:])\n    return result",
+          "wall_seconds": 11.187296374999278,
+          "sse_ttft_seconds": 2.781384124999022,
+          "usage": {
+            "prompt_tokens": 59,
+            "completion_tokens": 96,
+            "total_tokens": 155,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "timings": {
+            "prompt_n": 59,
+            "prompt_ms": 2778.619,
+            "prompt_per_second": 21.23356962577453,
+            "predicted_n": 96,
+            "predicted_ms": 8405.607,
+            "predicted_per_second": 11.301979738048662,
+            "cache_n": 0,
+            "draft_n": 83,
+            "draft_n_accepted": 82
+          },
+          "metrics": {
+            "prefill": {
+              "tokens": 59
+            },
+            "decode": {
+              "tokens": 95
+            },
+            "request_latency": {
+              "start_to_first_token_ms": 2778.619,
+              "first_token_to_done_ms": 8405.607,
+              "wall_ms": 11184.495,
+              "ttft_ms": 2778.888000000001,
+              "queue_to_start_ms": 0.2690000000006876,
+              "stream_tokens_per_second": 11.301979738048662
+            },
+            "cache": {
+              "status": "miss",
+              "matched_tokens": 0,
+              "deduplicated_tokens": 0,
+              "lane": 0
+            },
+            "speculation": {
+              "drafted_tokens": 83,
+              "accepted_draft_tokens": 82,
+              "cycles": 13
+            }
+          },
+          "cycles": 13,
+          "tokens_per_cycle": 7.384615384615385,
+          "decode_tps": 11.431977041751162,
+          "expert_bytes_per_token": 549124437.3333334,
+          "drafted": 83,
+          "accepted": 82,
+          "thermal": "nominal",
+          "pressure": "warning",
+          "correct": true,
+          "check_diagnostic": ""
+        },
+        {
+          "name": "balanced",
+          "text": "```python\ndef is_balanced(s):\n    stack = []\n    pairs = {')': '(', ']': '[', '}': '{'}\n    for c in s:\n        if c in '([{':\n            stack.append(c)\n        elif c in pairs:\n            if not stack or stack.pop() != pairs[c]:\n                return False\n    return not stack\n```",
+          "wall_seconds": 10.639777958000195,
+          "sse_ttft_seconds": 2.7639677500010293,
+          "usage": {
+            "prompt_tokens": 56,
+            "completion_tokens": 84,
+            "total_tokens": 140,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "timings": {
+            "prompt_n": 56,
+            "prompt_ms": 2761.217,
+            "prompt_per_second": 20.280912365815507,
+            "predicted_n": 84,
+            "predicted_ms": 7875.557,
+            "predicted_per_second": 10.538937118987267,
+            "cache_n": 0,
+            "draft_n": 82,
+            "draft_n_accepted": 68
+          },
+          "metrics": {
+            "prefill": {
+              "tokens": 56
+            },
+            "decode": {
+              "tokens": 83
+            },
+            "request_latency": {
+              "start_to_first_token_ms": 2761.217,
+              "first_token_to_done_ms": 7875.557,
+              "wall_ms": 10637.073,
+              "ttft_ms": 2761.5160000000005,
+              "queue_to_start_ms": 0.2990000000004329,
+              "stream_tokens_per_second": 10.538937118987267
+            },
+            "cache": {
+              "status": "miss",
+              "matched_tokens": 0,
+              "deduplicated_tokens": 0,
+              "lane": 0
+            },
+            "speculation": {
+              "drafted_tokens": 82,
+              "accepted_draft_tokens": 68,
+              "cycles": 15
+            }
+          },
+          "cycles": 15,
+          "tokens_per_cycle": 5.6,
+          "decode_tps": 10.678104998503068,
+          "expert_bytes_per_token": 581594745.9047619,
+          "drafted": 82,
+          "accepted": 68,
+          "thermal": "nominal",
+          "pressure": "warning",
+          "correct": true,
+          "check_diagnostic": ""
+        }
+      ]
+    }
+  ],
+  "all_coding_outputs_identical": true
+}

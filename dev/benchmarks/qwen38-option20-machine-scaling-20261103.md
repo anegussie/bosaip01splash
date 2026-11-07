@@ -1,7 +1,7 @@
 # Option 20 cross-machine throughput estimates (2026-11-03)
 
 Historical estimates: superseded by the
-[November 5 six-Mac prefill and generation update](qwen38-option20-mac-rebase-20261105.md).
+[conservative November 5 six-Mac estimates](qwen38-option20-mac-conservative-20261105.md).
 The intermediate [November 4 log review](qwen38-option20-cache-estimates-20261104.md)
 is also retained for history.
 The larger-cache hit rates, linear store-cost scaling, launcher constraints,

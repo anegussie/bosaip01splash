@@ -340,6 +340,13 @@ void testCleanRuntimeStatus(const char *goldenPath) {
   require(json.find("\"verify_rows\":\"auto\"") != std::string::npos &&
               unmeasured.find("\"verify_rows\":\"all\"") != std::string::npos,
           "status lost the rows decode cycles verify");
+  auto fixedTelemetry = executorTelemetry;
+  fixedTelemetry.verifyBudget = false;
+  fixedTelemetry.fixedVerifyRows = 4;
+  const auto fixedStatus = runtimeStatusJson(memoryPlan, engine, metal, warmup, audit(memoryPlan),
+      metrics, fixedTelemetry, identity, governor, true, {}, {}, {}, {}, {}, {});
+  require(fixedStatus.find("\"verify_rows\":\"4\"") != std::string::npos,
+          "status lost the fixed verification size");
   require(json.find("\"kv\":{\"block_tokens\":32,"
                     "\"pages_allocated\":128,\"pages_active\":24,"
                     "\"pages_cache\":32,\"pages_free\":72,") !=

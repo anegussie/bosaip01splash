@@ -78,7 +78,7 @@ struct NativeArguments final {
   // validation, keeps them Full, which changes no output
   // (RuntimeResourcesConfig::kvWindowTrim).
   bool kvWindowTrim = true;
-  // --verify-rows auto|all: the rows of the draft's block a decode
+  // --verify-rows auto|all|1-8: the rows of the draft's block a decode
   // cycle verifies (RuntimeResourcesConfig::verifyRows).
   model::VerifyRows verifyRows = model::VerifyRows::Auto;
 };

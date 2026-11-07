@@ -1,6 +1,6 @@
 # Option 20: Flash-Next GSQ-RCO IQ3_XXS
 
-Latest planning update: [revised estimates for all six Macs](qwen38-option20-mac-rebase-20261105.md), based on the November 5 2,048-chunk measurements. The combined prefill and generation table is below and in the [performance documentation](../../docs/performance.md#option-20-mac-performance). Larger-Mac scenarios require explicit chunk, memory and active-request overrides.
+Latest planning update: [conservative expert-RAM, prefill and generation estimates for all six Macs](qwen38-option20-mac-conservative-20261105.md). The combined prefill and generation table is below and in the [performance documentation](../../docs/performance.md#option-20-mac-performance). Larger-Mac scenarios require explicit chunk, memory and active-request overrides.
 
 The profile in `/Users/mymac/startllamacpp.sh` selects `ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS`, with the matching `incoai/Qwen3.8-Flash-Next-DFlash2` draft selected by Splash. It is a text-only profile for the 16 GiB M5. The model downloads on its first real launch, approximately 75.8 GB plus the draft.
 
@@ -26,30 +26,41 @@ Interactive menu selection `20` starts the same profile. Like the other direct S
 
 ## Prefill and generation estimates for all six Macs
 
-PP is cold prefill around 30K prompt tokens; TPS is short-code generation.
-All rates are tokens per second. Only the **16 GB Air IQ3_XXS** figures are
-measured; every other figure is a conditional planning estimate.
+Conservative planning scenarios, November 5, 2026. PP is cold prefill around
+30K prompt tokens; TPS is short-code generation, in tokens per second.
+Expert RAM is in GiB. Only the 16 GB Air IQ3_XXS figures are measured.
+Other rates and allocations are unverified estimates, not validated safe limits.
 
-| Mac | IQ3_XXS PP | IQ3_XXS TPS | Q2_0 PP | Q2_0 TPS |
-| --- | ---: | ---: | ---: | ---: |
-| M5 Air 16 GB, 8-core GPU | **241** | **8.81-8.92** | 260-330 | 10-13 |
-| M5 Air 32 GB | 250-360 | 11-16 | 320-500 | 14-22 |
-| M6 mini 32 GB | 250-360 | 11-16 | 320-500 | 14-22 |
-| M5 Pro mini 48 GB, 16-core GPU | 290-530 | 15-25 | 410-770 | 22-40 |
-| M5 Pro mini 64 GB, 16-core GPU | 600-900 | 35-60 | 850-1,150 | 65-90 |
-| M5 Max Studio 128 GB, 40-core GPU | 1,200-1,800 | 70-110 | 1,600-2,300 | 100-150 |
+| Mac | IQ3_XXS expert RAM (GiB) | IQ3_XXS PP | IQ3_XXS TPS | Q2_0 expert RAM (GiB) | Q2_0 PP | Q2_0 TPS |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| M5 Air 16 GB, 8-core GPU | 1.946, measured | 241, measured | 8.81-8.92, measured block means | 2-3 | 240-300 | 10-12 |
+| M5 Air 32 GB | 12 | 250-270 | 9-12 | 14 | 250-350 | 11-17 |
+| M6 mini 32 GB | 12 | 250-270 | 9-12 | 14 | 250-350 | 11-17 |
+| M5 Pro mini 48 GB, 16-core GPU | 24 | 330-430 | 13-20 | 24 | 330-540 | 16-28 |
+| M5 Pro mini 64 GB, 16-core GPU | 32 | 340-450 | 15-23 | 28 | 360-580 | 20-34 |
+| M5 Max Studio 128 GB, 40-core GPU | 41.55, resident | 900-1,350 | 50-85 | ~32-34, resident | 1,200-1,750 | 75-115 |
 
-The Air's 241 PP measurement used 2,048 chunks and a 10G cap; the generation
-figures are means from two separate short-code baseline blocks. The current
-10.8G preset was validated separately. Larger-Mac estimates assume explicit
-2,048 chunks, one active request and larger memory caps. The 64 GB and Studio
-fast ranges assume near/full expert residency. The cautious 64 GB IQ3 planning
-point remains about 500 PP and 30 TPS. Q2_0 is an unmeasured alternative;
-option 20 selects IQ3_XXS. No generation uplift or filled-131K performance is
-established by these estimates.
+The measured Air row uses a 1.946 GiB expert store and a 10G cap. Its current
+preset uses 10.8G, validated separately. The proposed 3 GiB Air cache, 24 GiB
+caches on 32 GB hosts and 38 GiB cache on the 48 GB mini are not used here.
+The minis assume streamed experts, including Q2 on 48/64 GB; only the Studio
+assumes full expert residency. Expert RAM includes staging/bookkeeping for
+streamed stores and weights for resident rows.
 
-The [full rebase report](qwen38-option20-mac-rebase-20261105.md) records the
-transfer assumptions, requested caps, expert allocations and source evidence.
+Working total engine-cap scenarios are 24G for 32 GB hosts, 32G for the 48 GB
+mini, 40G for the 64 GB mini and 56G for the Studio, with explicit 2,048 chunks
+and one active request. These proposed caps and expert allocations have not
+been applied or validated on those machines. Metal may clamp them and KV may
+spill. A 48 GiB expert store on the 64 GB mini is unnecessary: IQ3 experts
+total about 41.55 GiB and Q2 about 32-34 GiB. A 48G total engine cap is a
+separate quantity. `--expert-memory` sets a floor, not an exact cache cap.
+
+The [conservative calculation](qwen38-option20-mac-conservative-20261105.md) records the assumed I/O
+fractions, expert reuse, compute scaling, budgets and limitations. The
+[earlier rebase](qwen38-option20-mac-rebase-20261105.md) and
+[complete estimate snapshot](qwen38-option20-mac-estimates-20261105.md) remain
+available for history. No filled-131K, sustained-generation or concurrency
+performance is established by these estimates.
 
 ## Launcher settings and earlier cache evidence
 

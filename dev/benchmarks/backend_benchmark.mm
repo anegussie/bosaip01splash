@@ -956,6 +956,12 @@ int main(int argc, char **argv) {
     // round to round: every cycle verifies every row (--verify-rows all), and
     // the times measure the backend, not the budget.
     config.verifyRows = model::VerifyRows::All;
+    // The benchmark pins the 2048-token prefill chunk its warmup and short
+    // scenarios name: serve may run smaller --prefill-chunk-tokens, but a
+    // warmup row count past the load's chunk is invalid (Runtime::warmupPrefill),
+    // and the short prompts' one-chunk-each rows and past records are defined
+    // at the budget.
+    config.prefillChunkTokens = model::ExecutionLimits::prefillTokenBudget;
     bootstrapConfig.nativeLoop.engine.maxContext = maxContext;
     const std::string modelRoot = config.modelRoot.string();
     const auto &capabilities = config.model.capabilities;

@@ -1,7 +1,7 @@
 # Flash-Next expert-cache estimates reviewed against the November 4 logs
 
 Historical estimates: superseded by the
-[November 5 six-Mac prefill and generation update](qwen38-option20-mac-rebase-20261105.md).
+[conservative November 5 six-Mac estimates](qwen38-option20-mac-conservative-20261105.md).
 The original dated analysis below is retained for traceability.
 
 These are conditional planning estimates for larger Macs, not measurements of

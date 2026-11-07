@@ -104,10 +104,17 @@ struct LoadedModel final {
 // limit: the tokens its output budget leaves, at most the block's rows.
 enum class VerifyRows : uint8_t {
   // The verify budget's rows on a MoE target, every row on a dense one.
-  Auto,
+  Auto = 0,
   // Every row, so that a greedy or seeded request repeats its output.
-  All,
+  All = 9,
+  // Fixed rows, including the anchor, clamped to the lane's retention limit.
+  Fixed1 = 1, Fixed2, Fixed3, Fixed4, Fixed5, Fixed6, Fixed7, Fixed8,
 };
+
+[[nodiscard]] constexpr uint32_t fixedVerifyRows(VerifyRows rows) noexcept {
+  const auto count = static_cast<uint32_t>(rows);
+  return count >= 1 && count <= 8 ? count : 0;
+}
 
 // Whether the decode cycles of `model` verify the rows the verify budget
 // chooses (model::VerifyBudget, ops::DraftSelector::addVerifyRows) under

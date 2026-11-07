@@ -427,7 +427,10 @@ void reportStreamedStores(const model::LoadedModel &loaded, const model::Streama
 
 // The rows the target's decode cycles verify (--verify-rows), and why.
 void reportVerifyRows(const model::LoadedModel &loaded, model::VerifyRows rows) {
-  if (model::budgetsVerifyRows(loaded, rows))
+  if (const uint32_t fixed = model::fixedVerifyRows(rows))
+    logLine("Decode cycles verify up to ", fixed, " rows including the anchor (--verify-rows ", fixed,
+            "), bounded by each lane's output limit.");
+  else if (model::budgetsVerifyRows(loaded, rows))
     logLine("Decode cycles verify the rows the verify budget chooses (--verify-rows auto, as ", loaded.name(),
             " is a MoE target): greedy and seeded outputs can differ from run to run.");
   else if (rows == model::VerifyRows::All)

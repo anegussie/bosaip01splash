@@ -53,6 +53,7 @@ if [[ -z "${SPLASH_FLASH_NEXT_MAX_MEMORY:-}" ]]; then
 fi
 SPLASH_FLASH_NEXT_MAX_MEMORY="${SPLASH_FLASH_NEXT_MAX_MEMORY:-10G}"
 SPLASH_FLASH_NEXT_REASONING_EFFORT="${SPLASH_FLASH_NEXT_REASONING_EFFORT:-low}"
+SPLASH_FLASH_NEXT_VERIFY_ROWS="${SPLASH_FLASH_NEXT_VERIFY_ROWS:-auto}"
 SPLASH_FLASH_NEXT_MAX_CACHE_DISK="${SPLASH_FLASH_NEXT_MAX_CACHE_DISK:-16G}"
 SPLASH_FLASH_NEXT_PERSISTENT_CACHE="${SPLASH_FLASH_NEXT_PERSISTENT_CACHE:-1}"
 SPLASH_FLASH_NEXT_CACHE_DIR="${SPLASH_FLASH_NEXT_CACHE_DIR:-$HOME/Library/Caches/Splash/flash-next-option20-iq3-xxs}"
@@ -270,7 +271,7 @@ print_models() {
   echo "   Separate option-19 prefix cache: ${SPLASH_QWEN36_IQ3_MAX_CACHE_DISK} | persistent: ${SPLASH_QWEN36_IQ3_PERSISTENT_CACHE}"
   echo "20) Qwen3.8 Flash-Next GSQ-RCO IQ3_XXS - Splash SSD streaming (downloads on first run)${splash_status}"
   echo "   ${SPLASH_FLASH_NEXT_MAX_CONTEXT} server context | ${SPLASH_FLASH_NEXT_MAX_TOKENS} output tokens | ${SPLASH_FLASH_NEXT_MAX_MEMORY} Metal cap | reasoning ${SPLASH_FLASH_NEXT_REASONING_EFFORT}"
-  echo "   INT8 KV | BF16 state | text only | ${SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE} | expert memory ${SPLASH_FLASH_NEXT_EXPERT_MEMORY} | ${SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS}-token prefill chunks | DFlash2"
+  echo "   INT8 KV | BF16 state | text only | ${SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE} | expert memory ${SPLASH_FLASH_NEXT_EXPERT_MEMORY} | ${SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS}-token prefill chunks | DFlash2 verify rows ${SPLASH_FLASH_NEXT_VERIFY_ROWS}"
   echo "   Source: ${SPLASH_FLASH_NEXT_MODEL_ID} | about 75.8 GB plus draft on first launch"
   echo "   Download cache: ${SPLASH_FLASH_NEXT_HF_HUB_CACHE}"
   echo "   Separate option-20 prefix cache: ${SPLASH_FLASH_NEXT_MAX_CACHE_DISK} | persistent: ${SPLASH_FLASH_NEXT_PERSISTENT_CACHE}"
@@ -1768,6 +1769,10 @@ case "$choice" in
         none|low|medium|xhigh) ;;
         *) echo "SPLASH_FLASH_NEXT_REASONING_EFFORT must be none, low, medium or xhigh." >&2; exit 1 ;;
       esac
+      case "$SPLASH_FLASH_NEXT_VERIFY_ROWS" in
+        auto|all|[1-8]) ;;
+        *) echo "SPLASH_FLASH_NEXT_VERIFY_ROWS must be auto, all or 1-8." >&2; exit 1 ;;
+      esac
       if [[ "$SPLASH_FLASH_NEXT_HF_HUB_CACHE" != /* ]]; then
         echo "SPLASH_FLASH_NEXT_HF_HUB_CACHE must be an absolute path on the intended model drive." >&2
         exit 1
@@ -1779,6 +1784,7 @@ case "$choice" in
         splash_top_p=0.95
       fi
       splash_model_args=(--expert-memory "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" --ple-memory 64M --max-memory "$SPLASH_FLASH_NEXT_MAX_MEMORY")
+      splash_model_args+=(--verify-rows "$SPLASH_FLASH_NEXT_VERIFY_ROWS")
       if [[ "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" != "auto" ]]; then
         if { ! splash_expert_memory_bytes="$(splash_cache_disk_bytes \
              "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" 34359738368)"; } ||

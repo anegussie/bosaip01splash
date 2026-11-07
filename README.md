@@ -179,8 +179,8 @@ Strata serving the same GGUF on that Mac.
 [Run benchmarks locally](docs/validate.md#local-benchmarks)
 
 [Option-20 Mac prefill and generation estimates](docs/performance.md#option-20-mac-performance)
-cover six configurations, with measured Air results separated from conditional
-larger-Mac and Q2_0 planning scenarios.
+cover conservative expert-RAM budgets and rates for six configurations, with
+measured Air results separated from conditional larger-Mac and Q2_0 scenarios.
 
 ### GGUF against llama.cpp
 

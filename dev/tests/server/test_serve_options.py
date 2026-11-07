@@ -100,8 +100,12 @@ OPTIONS = {
     "--disable-ane": ([(["--disable-ane"], True)], []),
     "--verify-rows": values(
         "--verify-rows",
-        {"auto": "auto", "all": "all"},
-        ("", "budget", "every", "ALL"),
+        {
+            "auto": "auto",
+            "all": "all",
+            **{str(rows): str(rows) for rows in range(1, 9)},
+        },
+        ("", "budget", "every", "ALL", "0", "9", "-1", "1.5", "04"),
     ),
     "--ple-memory": values(
         "--ple-memory",

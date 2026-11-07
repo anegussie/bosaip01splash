@@ -1782,7 +1782,7 @@ def add_server_arguments(parser):
     )
     parser.add_argument(
         "--verify-rows",
-        choices=("auto", "all"),
+        choices=("auto", "all", *(str(rows) for rows in range(1, 9))),
         help="the rows of each draft block decode verifies (splash serve "
         "--verify-rows); a MoE model's greedy output repeats only with all",
     )

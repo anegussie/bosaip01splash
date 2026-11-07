@@ -182,9 +182,12 @@ NativeArguments parseNativeArguments(int argc, const char *const *argv) {
         throw UsageError("--ane requires on or off");
       result.neuralEngine = value == "on";
     } else if (option == "--verify-rows") {
-      if (value != "auto" && value != "all")
-        throw UsageError("--verify-rows requires auto or all");
-      result.verifyRows = value == "all" ? model::VerifyRows::All : model::VerifyRows::Auto;
+      if (value == "auto" || value == "all")
+        result.verifyRows = value == "all" ? model::VerifyRows::All : model::VerifyRows::Auto;
+      else if (value.size() == 1 && value[0] >= '1' && value[0] <= '8')
+        result.verifyRows = static_cast<model::VerifyRows>(value[0] - '0');
+      else
+        throw UsageError("--verify-rows requires auto, all or 1-8");
     } else if (option == "--relaunch-context") {
       relaunchContext = value;
     } else {

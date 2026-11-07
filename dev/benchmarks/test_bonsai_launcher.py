@@ -443,6 +443,7 @@ print('Ready test server',flush=True)
             SPLASH_FLASH_NEXT_MAX_TOKENS="3072",
             SPLASH_FLASH_NEXT_MAX_MEMORY="9G",
             SPLASH_FLASH_NEXT_REASONING_EFFORT="none",
+            SPLASH_FLASH_NEXT_VERIFY_ROWS="4",
             SPLASH_FLASH_NEXT_MAX_CACHE_DISK="0",
             SPLASH_FLASH_NEXT_HF_HUB_CACHE=str(hub),
         )
@@ -451,6 +452,7 @@ print('Ready test server',flush=True)
         self.assertEqual(args[args.index("--max-context") + 1], "32761")
         self.assertEqual(args[args.index("--max-memory") + 1], "9G")
         self.assertEqual(args[args.index("--default-reasoning-effort") + 1], "none")
+        self.assertEqual(args[args.index("--verify-rows") + 1], "4")
         self.assertNotIn("--persistent-cache", args)
         self.assertNotIn("--cache-dir", args)
         environment = json.loads((self.root / "environment.json").read_text())
@@ -481,6 +483,7 @@ print('Ready test server',flush=True)
             "SPLASH_FLASH_NEXT_MAX_TOKENS": ["147952", "0"],
             "SPLASH_FLASH_NEXT_MAX_MEMORY": ["7G", "auto", "57G", "10g"],
             "SPLASH_FLASH_NEXT_REASONING_EFFORT": ["invalid", "HIGH"],
+            "SPLASH_FLASH_NEXT_VERIFY_ROWS": ["0", "9", "-1", "04", "1.5", "ALL"],
             "SPLASH_FLASH_NEXT_MAX_CACHE_DISK": ["65G", "-1"],
             "SPLASH_FLASH_NEXT_PERSISTENT_CACHE": ["2"],
             "SPLASH_FLASH_NEXT_EXPERT_MEMORY": ["invalid", "256M", "33G", "9G"],

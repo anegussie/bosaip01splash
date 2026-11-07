@@ -391,6 +391,7 @@ void testVerifyRows(const char *metallibPath, RuntimeResourcesConfig moe) {
   struct Started final {
     std::string log;
     bool budget = false;
+    uint32_t fixed = 0;
   };
   const auto start = [](const RuntimeResourcesConfig &config) {
     Started started;
@@ -403,6 +404,7 @@ void testVerifyRows(const char *metallibPath, RuntimeResourcesConfig moe) {
                   [&] { runtime = model::createRuntime(resources->modelContext()); })),
               "a runtime's arenas were refused");
       started.budget = runtime->telemetry().verifyBudget;
+      started.fixed = runtime->telemetry().fixedVerifyRows;
     });
     return started;
   };
@@ -422,6 +424,10 @@ void testVerifyRows(const char *metallibPath, RuntimeResourcesConfig moe) {
   moe.verifyRows = model::VerifyRows::All;
   requireStart(moe, "Decode cycles verify every row of the draft's block (--verify-rows all).", false,
                "--verify-rows all did not verify every row of a MoE target");
+  moe.verifyRows = model::VerifyRows::Fixed4;
+  const Started fixed = start(moe);
+  require(!fixed.budget && fixed.fixed == 4 && fixed.log.find("--verify-rows 4") != std::string::npos,
+          "fixed verification size did not reach the runtime");
   const test::TemporaryDirectory root("splash-verify-rows");
   requireStart(loadableConfig(metallibPath, root.path(), "verify-rows-test"),
                "Decode cycles verify every row of the draft's block (--verify-rows auto, as verify-rows-test is "

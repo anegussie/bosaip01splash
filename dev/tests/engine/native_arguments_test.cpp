@@ -156,6 +156,7 @@ void testServerCommandLines(const char *path) {
       {"idle_sleep", [](NativeArguments &read) { read.preventIdleSleep = false; }},
       {"disable_ane", [](NativeArguments &read) { read.neuralEngine = false; }},
       {"verify_rows_all", [](NativeArguments &read) { read.verifyRows = model::VerifyRows::All; }},
+      {"verify_rows_fixed", [](NativeArguments &read) { read.verifyRows = model::VerifyRows::Fixed4; }},
       // Auto is the engine's default, which the server leaves out.
       {"verify_rows_auto", [](NativeArguments &) {}},
       // A relaunch keeps the first engine's context; with --max-context,
@@ -239,6 +240,11 @@ void testVerifyRows() {
   require(parse(model, {"auto", "auto"}).verifyRows == model::VerifyRows::Auto &&
               parse(model, {"auto", "auto", "--verify-rows", "auto"}).verifyRows == model::VerifyRows::Auto,
           "--verify-rows auto was not the engine's rule");
+  for (uint32_t rows = 1; rows <= 8; ++rows) {
+    const std::string text = std::to_string(rows);
+    require(model::fixedVerifyRows(parse(model, {"auto", "auto", "--verify-rows", text.c_str()}).verifyRows) == rows,
+            "fixed verification size was not preserved");
+  }
 }
 
 // The stores' memory is the planner's unless set, which the server writes
@@ -298,8 +304,8 @@ void testRefusals() {
   refuses({"auto", "auto", "--idle-sleep", "never"},
           "--idle-sleep requires prevent or allow");
   refuses({"auto", "auto", "--ane", "gpu"}, "--ane requires on or off");
-  for (const char *rows : {"budget", "every", "ALL", ""})
-    refuses({"auto", "auto", "--verify-rows", rows}, "--verify-rows requires auto or all");
+  for (const char *rows : {"budget", "every", "ALL", "", "0", "9", "-1", "1.5", "04"})
+    refuses({"auto", "auto", "--verify-rows", rows}, "--verify-rows requires auto, all or 1-8");
   // The server passes bytes, auto or off.
   for (const char *size : {"0", "2G", "OFF", ""})
     refuses({"auto", "auto", "--ple-memory", size}, "--ple-memory requires a positive byte count, auto or off");

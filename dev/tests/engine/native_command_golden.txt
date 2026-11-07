@@ -31,6 +31,7 @@ disable_ane | --disable-ane | auto auto --ane off
 prefill_chunk | --prefill-chunk-tokens 256 | auto auto --prefill-chunk-tokens 256
 resource_wait | --resource-wait-timeout 60 | auto auto --resource-wait-timeout 60
 verify_rows_all | --verify-rows all | auto auto --verify-rows all
+verify_rows_fixed | --verify-rows 4 | auto auto --verify-rows 4
 verify_rows_auto | --verify-rows auto | auto auto
 relaunch |  | auto auto --relaunch-context 61433
 relaunch_limits | --max-context 100K --max-memory 32G | 102400 34359738368

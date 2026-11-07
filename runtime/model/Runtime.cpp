@@ -440,6 +440,7 @@ struct Runtime::Impl {
   // follow where the budget chooses them (budgetsVerifyRows); none where
   // the cycles verify every row.
   std::optional<VerifyBudget> verifyBudget;
+  uint32_t fixedVerifyRows = 0;
   ops::AneFfn *aneFfn;
   // The readers of spilled K/V, when the target's K/V spills.
   KvBlockCache *blockCache;
@@ -490,6 +491,7 @@ struct Runtime::Impl {
         decodeArena->batchSlice(DecodeTensor::PenaltyState, kLaneCount);
     if (budgetsVerifyRows(model, value.verifyRows))
       verifyBudget.emplace();
+    fixedVerifyRows = model::fixedVerifyRows(value.verifyRows);
     preparePolicyPipelines();
   }
 
@@ -2009,6 +2011,12 @@ struct Runtime::Impl {
     if (verifyBudget && !verifyBudget->explores(lanes, constrained)) {
       const VerifyBudget::Acceptance &acceptance = verifyBudget->acceptance();
       verify = {acceptance.slope, acceptance.intercepts, verifyBudget->costs(lanes, constrained), false};
+    }
+    std::array<uint32_t, kLaneCount> fixedMaximum{};
+    if (fixedVerifyRows) {
+      for (uint32_t lane = 0; lane < lanes; ++lane)
+        fixedMaximum[lane] = std::min(maximumRows[lane], fixedVerifyRows);
+      maximumRows = std::span(fixedMaximum).first(lanes);
     }
     ops::DraftSelector::addVerifyRows(graph, d(DecodeTensor::VerifyConfidence), d(DecodeTensor::VerifyRows),
                                       verify, maximumRows);
@@ -3532,6 +3540,7 @@ ModelTelemetry Runtime::telemetry() const noexcept {
   result.visionArenaBytes = impl_->vision ? impl_->vision->arenaBytes() : 0;
   result.embeddingCacheBytes = impl_->embeddingCacheBytes;
   result.verifyBudget = impl_->verifyBudget.has_value();
+  result.fixedVerifyRows = impl_->fixedVerifyRows;
   result.stateHeldImageBytes = impl_->heldRowsBytes(false);
   for (const auto &[_, held] : impl_->imageRows) {
     if (const std::shared_ptr<const Impl::ImageRows> rows = held.lock())

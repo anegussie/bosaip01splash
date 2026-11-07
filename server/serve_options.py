@@ -768,13 +768,15 @@ SERVE_OPTIONS = (
         "--verify-rows",
         "requests",
         dict(
-            choices=("auto", "all"),
+            choices=("auto", "all", *(str(rows) for rows in range(1, 9))),
             default="auto",
             help="rows of each draft block decode verifies: all verifies every "
             "row, so a MoE model's greedy and seeded outputs repeat as a dense "
             "model's do (default: auto, where a verify budget learned from "
             "earlier cycles chooses a MoE model's rows, which is faster but "
-            "lets those outputs differ from run to run)",
+            "lets those outputs differ from run to run); 1-8 fixes the rows "
+            "including the anchor, bounded by the remaining output budget "
+            "(for tuning; different sizes can produce different outputs)",
         ),
     ),
     ServeOption(
