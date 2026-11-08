@@ -380,7 +380,7 @@ struct ExpertStore::Impl {
   // to avoid wasting SSD bandwidth when routing is uncorrelated across cycles.
   uint32_t cycleAheadMissStreak = 0;
   uint32_t cycleAheadCooldown = 0;
-  static constexpr uint32_t kCycleAheadMaxPredict = 5;
+  static constexpr uint32_t kCycleAheadMaxPredict = 0;
   static constexpr uint32_t kCycleAheadMissThreshold = 4;
   static constexpr uint32_t kCycleAheadCooldownCycles = 3;
   // A read-ahead (startAhead) of block `block`'s experts, one a group, on the
@@ -1338,7 +1338,8 @@ void ExpertStore::addLoad(metal::CommandGraph &graph, std::span<const ops::MoeLo
   // across the cycle boundary.
   const bool cycleAhead =
       phase == ops::MoePhase::Decode && block + 1 == impl.blocks.size() && impl.streams(0);
-  const bool cycleAheadActive = cycleAhead && impl_->cycleAheadCooldown == 0;
+  const bool cycleAheadActive = cycleAhead && impl_->cycleAheadCooldown == 0 &&
+      Impl::kCycleAheadMaxPredict > 0;
   if (cycleAhead && !cycleAheadActive)
     --impl_->cycleAheadCooldown;
   if (predicted) {
