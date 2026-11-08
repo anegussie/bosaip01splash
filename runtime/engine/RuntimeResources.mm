@@ -621,7 +621,8 @@ RuntimeResources::RuntimeResources(
     std::unique_ptr<ops::AneFfn> aneFfn, AneFfnOutcome aneFfnOutcome,
     std::unique_ptr<model::KvBlockCache> blockCache,
     std::unique_ptr<model::KvHistoryStream> historyStream, bool spillAlways,
-    model::VerifyRows verifyRows, uint32_t prefillChunkTokens)
+    model::VerifyRows verifyRows, uint32_t prefillChunkTokens,
+    bool keepExpertsWarm)
     : persistentCache_(std::move(persistentCache)),
       backend_(std::move(backend)), readers_(std::move(readers)), model_(std::move(model)),
       operators_(std::move(operators)),
@@ -633,7 +634,7 @@ RuntimeResources::RuntimeResources(
       diskSpace_(std::move(diskSpace)), kvPool_(std::move(kvPool)),
       cache_(std::move(cache)), aneFfn_(std::move(aneFfn)),
       blockCache_(std::move(blockCache)), historyStream_(std::move(historyStream)),
-      releasableMemory_({model_.images.get(), model_.expertStore()}, idleSplit(aneFfn_.get())),
+      releasableMemory_({model_.images.get(), keepExpertsWarm ? nullptr : model_.expertStore()}, idleSplit(aneFfn_.get())),
       aneFfnOutcome_(std::move(aneFfnOutcome)), prefillChunkTokens_(prefillChunkTokens), spillAlways_(spillAlways), verifyRows_(verifyRows) {}
 
 std::unique_ptr<RuntimeResources>
@@ -809,6 +810,7 @@ RuntimeResources::create(const RuntimeResourcesConfig &config,
          .kvSlotBytes = kvSlotBytes,
          .stateSlotBytes = model::SlotFile::slotBytesFor(stateBytes),
          .activeLimitBytes = activeLimitBytes,
+         .idleReleaseActive = config.idleReleaseSeconds < std::numeric_limits<double>::infinity(),
          .groupPages = groupPages});
   };
   // The plan of the parts as configured, which sizes their stores.
@@ -1148,7 +1150,8 @@ RuntimeResources::create(const RuntimeResourcesConfig &config,
     // whatever its floor, and is made again with it. The stores are final
     // now, and the start reports them.
     model::ModelLoadOptions served = loadOptions;
-    served.expertFloorShare = expertFloorShare(memoryPlan.breakdown().kvSpill.enabled);
+    served.expertFloorShare = expertFloorShare(memoryPlan.breakdown().kvSpill.enabled,
+                                               config.idleReleaseSeconds < std::numeric_limits<double>::infinity());
     if (!holdsStores(loadOptions, served, streamable)) {
       loadOptions = served;
       load(true);
@@ -1284,7 +1287,8 @@ RuntimeResources::create(const RuntimeResourcesConfig &config,
         std::move(memoryGovernor), startClaim, std::move(startScope), std::move(kvPages), std::move(stateStorage),
         std::move(kvTier), std::move(disk.space), std::move(kvPool), std::move(cache),
         std::move(aneFfn.split), std::move(aneFfn.outcome), std::move(blockCache),
-        std::move(historyStream), config.kvSpillAlways, config.verifyRows, config.prefillChunkTokens));
+        std::move(historyStream), config.kvSpillAlways, config.verifyRows, config.prefillChunkTokens,
+        config.idleReleaseSeconds < std::numeric_limits<double>::infinity()));
     result->adoptPersistentCache();
     return result;
   } catch (const RuntimeResourcesError &) {

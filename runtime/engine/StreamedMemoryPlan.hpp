@@ -58,6 +58,10 @@ struct StreamedMemoryInputs final {
   uint64_t kvSlotBytes = 0;
   uint64_t stateSlotBytes = 0;
   uint64_t activeLimitBytes = 0;
+  // Whether idle weight release is configured: when weights can be released
+  // while idle, expert store floors can be lower because the freed weight
+  // memory feeds elastic expert growth during idle periods.
+  bool idleReleaseActive = false;
   // The pages of a prefill group's rows (model::kPrefillGroupChunks chunks).
   uint32_t groupPages = 0;
 };
@@ -79,10 +83,15 @@ struct StreamedMemoryPlan final {
 };
 
 // The share of its slots an automatic routed experts' store keeps as its
-// floor: all of them where the run's KV can spill, which gives memory back
-// instead while every chunk the store gives up costs expert reads from the
-// SSD until it regrows; otherwise model::kExpertFloorShare (0.85).
-[[nodiscard]] constexpr double expertFloorShare(bool spills) noexcept {
+// floor: all of them where the run's KV can spill with no idle release,
+// which gives memory back instead while every chunk the store gives up costs
+// expert reads from the SSD until it regrows; with idle release active, the
+// freed weight memory feeds expert growth, so the store keeps the elastic
+// share (model::kExpertFloorShare, 0.85) even when spilling; otherwise
+// model::kExpertFloorShare (0.85).
+[[nodiscard]] constexpr double expertFloorShare(bool spills, bool idleReleaseActive) noexcept {
+  if (idleReleaseActive)
+    return model::kExpertFloorShare;
   return spills ? 1.0 : model::kExpertFloorShare;
 }
 

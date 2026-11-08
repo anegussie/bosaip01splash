@@ -249,7 +249,7 @@ StreamedMemoryResult planParts(const StreamedMemoryInputs &in, const Part &exper
   // it, and of an automatic store the share this plan's spill gives
   // (expertFloorShare; model::ExpertStoreOptions).
   plan.expertFloorBytes = experts.sized ? experts.charged : 0;
-  plan.expertFloorShare = experts.sized ? 1.0 : expertFloorShare(spill.enabled);
+  plan.expertFloorShare = experts.sized ? 1.0 : expertFloorShare(spill.enabled, in.idleReleaseActive);
   plan.tableBytes = table.streams ? table.charged : 0;
   if (table.automatic) {
     const int64_t kept = rest - allowance(expertsStream);

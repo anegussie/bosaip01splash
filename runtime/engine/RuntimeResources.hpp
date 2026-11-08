@@ -371,7 +371,8 @@ private:
                    std::unique_ptr<ops::AneFfn> aneFfn, AneFfnOutcome aneFfnOutcome,
                    std::unique_ptr<model::KvBlockCache> blockCache,
                    std::unique_ptr<model::KvHistoryStream> historyStream, bool spillAlways,
-                   model::VerifyRows verifyRows, uint32_t prefillChunkTokens);
+                   model::VerifyRows verifyRows, uint32_t prefillChunkTokens,
+                   bool keepExpertsWarm);
   // Takes back the restore points the last process left in a persistent
   // tier (Cache::adopt) and opens its files for this one.
   void adoptPersistentCache();
