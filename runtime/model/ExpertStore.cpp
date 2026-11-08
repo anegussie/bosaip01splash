@@ -258,9 +258,11 @@ struct ExpertStore::Impl {
   // rows in the tiles of `parts`; `predicted` when the step predicted the
   // next block's routes (predictionRoutes and predictionWeights), from the
   // rows `verifyRows` names when the step routes its verify rows alone
-  // (ops::MoeBuffers::verifyRows).
+  // (ops::MoeBuffers::verifyRows); `cycleAhead` when the step predicted the
+  // first block's routes (the last block's decode load predicting across the
+  // cycle boundary, so `predicted` also implies `cycleAhead`).
   void load(uint32_t block, ops::MoePhase phase, uint32_t rows, bool predicted, std::span<const PartTiles> parts,
-            uint32_t round, uint32_t rounds, const metal::MetalBuffer &verifyRows);
+            uint32_t round, uint32_t rounds, const metal::MetalBuffer &verifyRows, bool cycleAhead = false);
   void route(uint32_t block, std::span<const std::span<const MoeTileDescriptor>> parts, ops::MoePhase phase,
              uint32_t rows, ExpertStoreStats::Use &use);
   // Whether a load of `rows` rows of `phase` is a long prefill chunk's,
@@ -370,6 +372,17 @@ struct ExpertStore::Impl {
   metal::MetalBuffer predictionScores, predictionRoutes, predictionWeights;
   std::vector<float> predictionSum;
   std::vector<uint32_t> everyExpert, predictionOrder;
+  // The experts predicted by the last block's cycle-ahead load, carried across
+  // cycles to be checked against block 0's actual routing (telemetry).
+  std::vector<uint32_t> cycleAheadPredicted;
+  bool cycleAheadArmed = false;
+  // Adaptive gating: after consecutive misses, temporarily suppress cycle-ahead
+  // to avoid wasting SSD bandwidth when routing is uncorrelated across cycles.
+  uint32_t cycleAheadMissStreak = 0;
+  uint32_t cycleAheadCooldown = 0;
+  static constexpr uint32_t kCycleAheadMaxPredict = 5;
+  static constexpr uint32_t kCycleAheadMissThreshold = 4;
+  static constexpr uint32_t kCycleAheadCooldownCycles = 3;
   // A read-ahead (startAhead) of block `block`'s experts, one a group, on the
   // readers (`batch`), until the next round halts it (stage takes what it
   // read) and the next read-ahead retires it (retireAhead); its use counts
@@ -984,7 +997,7 @@ void ExpertStore::Impl::publish() {
 
 void ExpertStore::Impl::load(uint32_t index, ops::MoePhase phase, uint32_t rows, bool predicted,
                              std::span<const PartTiles> parts, uint32_t round, uint32_t rounds,
-                             const metal::MetalBuffer &verifyRows) {
+                             const metal::MetalBuffer &verifyRows, bool cycleAhead) {
   std::lock_guard lock(mutex);
   // No job runs until the round's are staged; the last round's ran.
   static_cast<uint32_t *>(grid.contents())[1] = 0;
@@ -1019,6 +1032,29 @@ void ExpertStore::Impl::load(uint32_t index, ops::MoePhase phase, uint32_t rows,
         partTiles.push_back({descriptors, counted->tiles});
       }
       route(index, partTiles, phase, rows, use);
+      // Cycle-ahead telemetry: when block 0 routes, check how many of its
+      // non-resident experts were predicted by the previous cycle's last block.
+      if (index == 0 && cycleAheadArmed) {
+        cycleAheadArmed = false;
+        use.cycleAheadPredicted += cycleAheadPredicted.size();
+        uint32_t hits = 0;
+        for (const auto &[expert, slot] : pending)
+          if (std::binary_search(cycleAheadPredicted.begin(), cycleAheadPredicted.end(), expert))
+            ++hits;
+        use.cycleAheadHits += hits;
+        if (hits == 0)
+          ++cycleAheadMissStreak;
+        else
+          cycleAheadMissStreak = 0;
+        if (cycleAheadMissStreak >= kCycleAheadMissThreshold)
+          cycleAheadCooldown = kCycleAheadCooldownCycles;
+      }
+      // Count decode cycles (each block 0 load marks one cycle boundary).
+      if (index == 0)
+        ++use.cycleAheadCycles;
+      // When the last block loads without cycleAhead, prediction was suppressed.
+      if (index + 1 == blocks.size() && phase == ops::MoePhase::Decode && !predicted && !cycleAhead)
+        ++use.cycleAheadSuppressed;
       ++use.loads;
     } else if (pendingBlock != index) {
       throw std::logic_error("an expert load's round follows another block's load");
@@ -1044,10 +1080,19 @@ void ExpertStore::Impl::load(uint32_t index, ops::MoePhase phase, uint32_t rows,
     // A long chunk's next block is read ahead by the host step after its
     // last repack (readBlockAhead).
     if (predicted) {
+      const uint32_t target = cycleAhead ? 0 : index + 1;
       std::vector<uint32_t> experts;
       for (const uint32_t expert : predictedExperts(rows, verifyRows))
-        if (blocks[index + 1].slot[expert] == kNoSlot) experts.push_back(expert);
-      planAhead(index + 1, experts, use);
+        if (blocks[target].slot[expert] == kNoSlot) experts.push_back(expert);
+      // Cycle-ahead: cap width to reduce wasted reads, and gate on cooldown.
+      if (cycleAhead) {
+        if (experts.size() > kCycleAheadMaxPredict)
+          experts.resize(kCycleAheadMaxPredict);
+        cycleAheadPredicted = experts;
+        std::ranges::sort(cycleAheadPredicted);
+        cycleAheadArmed = true;
+      }
+      planAhead(target, experts, use);
     }
   } catch (const std::exception &error) {
     abandon();
@@ -1286,10 +1331,26 @@ void ExpertStore::addLoad(metal::CommandGraph &graph, std::span<const ops::MoeLo
   // stream: that block's routing of this block's input.
   const bool predicted =
       phase == ops::MoePhase::Decode && block + 1 < impl.blocks.size() && impl.streams(block + 1);
+  // The last block of a decode cycle predicts block 0's routes (cycle-ahead):
+  // the last block's input run through block 0's router as a proxy for the
+  // next cycle's first block, exploiting routing correlation across adjacent
+  // decode steps. The read-ahead it plans gives the SSD reads a head start
+  // across the cycle boundary.
+  const bool cycleAhead =
+      phase == ops::MoePhase::Decode && block + 1 == impl.blocks.size() && impl.streams(0);
+  const bool cycleAheadActive = cycleAhead && impl_->cycleAheadCooldown == 0;
+  if (cycleAhead && !cycleAheadActive)
+    --impl_->cycleAheadCooldown;
   if (predicted) {
     if (parts.size() != 1) throw std::invalid_argument("a decode load serves one step");
     const Impl::Block &next = impl.blocks[block + 1];
     ops::MoE::addRoutes(graph, parts.front().buffers->input, next.router, next.scalarGate, impl.predictionScores,
+                        impl.predictionRoutes, impl.predictionWeights, rows, shape,
+                        parts.front().plan->configuration().ggufRouterTile);
+  } else if (cycleAheadActive) {
+    if (parts.size() != 1) throw std::invalid_argument("a decode load serves one step");
+    const Impl::Block &first = impl.blocks[0];
+    ops::MoE::addRoutes(graph, parts.front().buffers->input, first.router, first.scalarGate, impl.predictionScores,
                         impl.predictionRoutes, impl.predictionWeights, rows, shape,
                         parts.front().plan->configuration().ggufRouterTile);
   }
@@ -1306,11 +1367,11 @@ void ExpertStore::addLoad(metal::CommandGraph &graph, std::span<const ops::MoeLo
   };
   // Each step's read-ahead starts once the GPU went on (startAhead).
   const auto startAhead = [impl = impl_] { impl->startAhead(); };
-  const metal::MetalBuffer verifyRows = predicted ? parts.front().buffers->verifyRows : metal::MetalBuffer{};
+  const metal::MetalBuffer verifyRows = (predicted || cycleAheadActive) ? parts.front().buffers->verifyRows : metal::MetalBuffer{};
   for (uint32_t round = 0; round < rounds; ++round) {
     graph.host(
-        [impl = impl_, block, phase, rows, predicted, tiles, round, rounds, verifyRows] {
-          impl->load(block, phase, rows, predicted, tiles, round, rounds, verifyRows);
+        [impl = impl_, block, phase, rows, predicted, cycleAheadActive, tiles, round, rounds, verifyRows] {
+          impl->load(block, phase, rows, predicted || cycleAheadActive, tiles, round, rounds, verifyRows, cycleAheadActive);
         },
         timed, gpu, startAhead);
     ops::MoE::addExpertLoad(graph, impl.staging, size.chunks, impl.jobs, impl.sources, size.load,

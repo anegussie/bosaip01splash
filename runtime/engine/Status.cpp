@@ -221,6 +221,10 @@ void writeStreamedExperts(json::Writer &w, const std::optional<model::ExpertStor
             .field("ahead_read_bytes", counters.aheadReadBytes)
             .field("ahead_used_bytes", counters.aheadUsedBytes)
             .field("format_evictions", counters.formatEvictions)
+            .field("cycle_ahead_predicted", counters.cycleAheadPredicted)
+            .field("cycle_ahead_hits", counters.cycleAheadHits)
+            .field("cycle_ahead_cycles", counters.cycleAheadCycles)
+            .field("cycle_ahead_suppressed", counters.cycleAheadSuppressed)
             .key("host_steps");
         writeHostSteps(w, counters.pickup, counters.work, counters.resume);
       });

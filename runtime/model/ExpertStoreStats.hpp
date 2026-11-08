@@ -57,6 +57,13 @@ struct ExpertStoreStats final {
     uint64_t aheadReadBytes = 0;
     uint64_t aheadUsedBytes = 0;
     uint64_t formatEvictions = 0;
+    // Cycle-ahead prediction: how many predicted experts from the last block's
+    // prediction were actually routed by block 0 in the next cycle (hits), and
+    // total experts predicted (predicted).
+    uint64_t cycleAheadHits = 0;
+    uint64_t cycleAheadPredicted = 0;
+    uint64_t cycleAheadSuppressed = 0;  // cycles skipped due to cooldown
+    uint64_t cycleAheadCycles = 0;     // total decode cycles through block 0
     LatencyStats pickup, work, resume;
   };
   Use uses[2];
