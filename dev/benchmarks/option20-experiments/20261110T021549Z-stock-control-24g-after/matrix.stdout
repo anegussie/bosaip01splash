@@ -1,0 +1,89 @@
+server pid=18975 model=ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS build=src-882891f890315dd4690df62d5f5cd80d5f701b31d32d975102cdb3dc9611392a state=fresh uptime=23s completed_requests=0 pressure=warning thermal=fair kv_free=256 kv_cache=0 disk_used=17148444672/17179869184 headroom=433635328 growth_allowed=False
+trial 1: smoke prompt tokens=351
+[trial1/smoke-cold] prompt=363 cached=0 prefill=82.4 tok/s ttft=4.405s decode=11.75 tok/s cycles=12 tpc=7.0 correct=True thermal=fair->fair clean=True
+[trial1/smoke-reuse] prompt=363 cached=352 prefill=10.83 tok/s ttft=1.015s decode=11.35 tok/s cycles=13 tpc=6.462 correct=True thermal=fair->fair clean=True
+trial 1: 4k prompt tokens=4019
+[trial1/4k-cold] prompt=4031 cached=0 prefill=258.47 tok/s ttft=15.595s decode=12.25 tok/s cycles=13 tpc=6.462 correct=True thermal=fair->fair clean=True
+[trial1/4k-reuse] prompt=4031 cached=4000 prefill=15.79 tok/s ttft=1.963s decode=12.85 tok/s cycles=12 tpc=7.0 correct=True thermal=fair->fair clean=True
+[trial1/code-1] prompt=45 cached=32 prefill=11.21 tok/s ttft=1.16s decode=10.66 tok/s cycles=19 tpc=7.474 correct=True thermal=fair->fair clean=True
+[trial1/code-2] prompt=44 cached=32 prefill=11.45 tok/s ttft=1.048s decode=11.22 tok/s cycles=17 tpc=5.588 correct=True thermal=fair->fair clean=True
+[trial1/code-3] prompt=48 cached=32 prefill=12.1 tok/s ttft=1.322s decode=11.3 tok/s cycles=18 tpc=6.056 correct=True thermal=fair->fair clean=True
+trial 2: smoke prompt tokens=351
+[trial2/smoke-cold] prompt=363 cached=0 prefill=83.34 tok/s ttft=4.355s decode=12.7 tok/s cycles=14 tpc=6.786 correct=True thermal=fair->fair clean=True
+[trial2/smoke-reuse] prompt=363 cached=352 prefill=10.8 tok/s ttft=1.018s decode=12.61 tok/s cycles=14 tpc=6.786 correct=True thermal=fair->fair clean=True
+trial 2: 4k prompt tokens=4019
+[trial2/4k-cold] prompt=4031 cached=0 prefill=318.95 tok/s ttft=12.638s decode=13.39 tok/s cycles=12 tpc=7.0 correct=True thermal=fair->fair clean=True
+[trial2/4k-reuse] prompt=4031 cached=4000 prefill=15.96 tok/s ttft=1.941s decode=12.29 tok/s cycles=13 tpc=6.462 correct=True thermal=fair->fair clean=True
+[trial2/code-3] prompt=48 cached=32 prefill=12.07 tok/s ttft=1.325s decode=11.46 tok/s cycles=11 tpc=6.364 correct=True thermal=fair->fair clean=True
+[trial2/code-2] prompt=44 cached=32 prefill=10.63 tok/s ttft=1.128s decode=11.87 tok/s cycles=14 tpc=6.429 correct=True thermal=fair->fair clean=True
+[trial2/code-1] prompt=45 cached=32 prefill=11.01 tok/s ttft=1.18s decode=10.39 tok/s cycles=19 tpc=7.421 correct=True thermal=fair->fair clean=True
+# Option 20 full matrix
+
+cache state: fresh | thermal gate: none | build: src-882891f890315dd4690df62d5f5cd80d5f701b31d32d975102cdb3dc9611392a
+
+## trial1
+| Probe | Prompt | Prefill tok/s | TTFT (s) | Decode tok/s | Cycles | Tok/cycle | Cached | Draft acc | Spill pages | Correct | Clean |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|
+| smoke-cold | 363 | 82.4 | 4.405 | 11.75 | 12 | 7.0 | 0 | 72/77 (93.5%) | 0 | True | True |
+| smoke-reuse | 363 | 10.83 | 1.015 | 11.35 | 13 | 6.462 | 352 | 71/79 (89.9%) | 0 | True | True |
+| 4k-cold | 4031 | 258.47 | 15.595 | 12.25 | 13 | 6.462 | 0 | 71/77 (92.2%) | 0 | True | True |
+| 4k-reuse | 4031 | 15.79 | 1.963 | 12.85 | 12 | 7.0 | 4000 | 72/75 (96.0%) | 0 | True | True |
+| code-1 | 45 | 11.21 | 1.16 | 10.66 | 19 | 7.474 | 32 | 123/124 (99.2%) | 1 | True | True |
+| code-2 | 44 | 11.45 | 1.048 | 11.22 | 17 | 5.588 | 32 | 78/79 (98.7%) | 1 | True | True |
+| code-3 | 48 | 12.1 | 1.322 | 11.3 | 18 | 6.056 | 32 | 90/91 (98.9%) | 1 | True | True |
+
+coding decode mean 11.06 tok/s (range 10.66-11.30), tokens/cycle mean 6.373
+4k cold prefill mean 258.47 tok/s
+4k reuse TTFT mean 1.963 s
+draft acceptance 577/602 (95.8%)
+probes marked clean: 7/7
+spill whole-page restores during probes: 3
+disk KV read-back tokens during probes: 96
+thermal states: fair
+
+## trial2
+| Probe | Prompt | Prefill tok/s | TTFT (s) | Decode tok/s | Cycles | Tok/cycle | Cached | Draft acc | Spill pages | Correct | Clean |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|
+| smoke-cold | 363 | 83.34 | 4.355 | 12.7 | 14 | 6.786 | 0 | 82/84 (97.6%) | 0 | True | True |
+| smoke-reuse | 363 | 10.8 | 1.018 | 12.61 | 14 | 6.786 | 352 | 82/84 (97.6%) | 0 | True | True |
+| 4k-cold | 4031 | 318.95 | 12.638 | 13.39 | 12 | 7.0 | 0 | 72/75 (96.0%) | 0 | True | True |
+| 4k-reuse | 4031 | 15.96 | 1.941 | 12.29 | 13 | 6.462 | 4000 | 71/82 (86.6%) | 0 | True | True |
+| code-3 | 48 | 12.07 | 1.325 | 11.46 | 11 | 6.364 | 32 | 59/68 (86.8%) | 1 | True | True |
+| code-2 | 44 | 10.63 | 1.128 | 11.87 | 14 | 6.429 | 32 | 76/76 (100.0%) | 1 | True | True |
+| code-1 | 45 | 11.01 | 1.18 | 10.39 | 19 | 7.421 | 32 | 122/129 (94.6%) | 1 | True | True |
+
+coding decode mean 11.24 tok/s (range 10.39-11.87), tokens/cycle mean 6.738
+4k cold prefill mean 318.95 tok/s
+4k reuse TTFT mean 1.941 s
+draft acceptance 564/598 (94.3%)
+probes marked clean: 7/7
+spill whole-page restores during probes: 3
+disk KV read-back tokens during probes: 96
+thermal states: fair
+
+## pooled
+| Probe | Prompt | Prefill tok/s | TTFT (s) | Decode tok/s | Cycles | Tok/cycle | Cached | Draft acc | Spill pages | Correct | Clean |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|
+| smoke-cold | 363 | 82.4 | 4.405 | 11.75 | 12 | 7.0 | 0 | 72/77 (93.5%) | 0 | True | True |
+| smoke-reuse | 363 | 10.83 | 1.015 | 11.35 | 13 | 6.462 | 352 | 71/79 (89.9%) | 0 | True | True |
+| 4k-cold | 4031 | 258.47 | 15.595 | 12.25 | 13 | 6.462 | 0 | 71/77 (92.2%) | 0 | True | True |
+| 4k-reuse | 4031 | 15.79 | 1.963 | 12.85 | 12 | 7.0 | 4000 | 72/75 (96.0%) | 0 | True | True |
+| code-1 | 45 | 11.21 | 1.16 | 10.66 | 19 | 7.474 | 32 | 123/124 (99.2%) | 1 | True | True |
+| code-2 | 44 | 11.45 | 1.048 | 11.22 | 17 | 5.588 | 32 | 78/79 (98.7%) | 1 | True | True |
+| code-3 | 48 | 12.1 | 1.322 | 11.3 | 18 | 6.056 | 32 | 90/91 (98.9%) | 1 | True | True |
+| smoke-cold | 363 | 83.34 | 4.355 | 12.7 | 14 | 6.786 | 0 | 82/84 (97.6%) | 0 | True | True |
+| smoke-reuse | 363 | 10.8 | 1.018 | 12.61 | 14 | 6.786 | 352 | 82/84 (97.6%) | 0 | True | True |
+| 4k-cold | 4031 | 318.95 | 12.638 | 13.39 | 12 | 7.0 | 0 | 72/75 (96.0%) | 0 | True | True |
+| 4k-reuse | 4031 | 15.96 | 1.941 | 12.29 | 13 | 6.462 | 4000 | 71/82 (86.6%) | 0 | True | True |
+| code-3 | 48 | 12.07 | 1.325 | 11.46 | 11 | 6.364 | 32 | 59/68 (86.8%) | 1 | True | True |
+| code-2 | 44 | 10.63 | 1.128 | 11.87 | 14 | 6.429 | 32 | 76/76 (100.0%) | 1 | True | True |
+| code-1 | 45 | 11.01 | 1.18 | 10.39 | 19 | 7.421 | 32 | 122/129 (94.6%) | 1 | True | True |
+
+coding decode mean 11.15 tok/s (range 10.39-11.87), tokens/cycle mean 6.555
+4k cold prefill mean 288.71 tok/s
+4k reuse TTFT mean 1.952 s
+draft acceptance 1141/1200 (95.1%)
+probes marked clean: 14/14
+spill whole-page restores during probes: 6
+disk KV read-back tokens during probes: 192
+thermal states: fair

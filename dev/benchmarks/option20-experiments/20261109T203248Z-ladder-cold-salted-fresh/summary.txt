@@ -1,0 +1,1 @@
+ladder ttft 8.80s mean, cache 63% mean, draft acceptance 76/85, spill pages 0, disk KV read-back 0 tokens, clean 8/8, thermal fair

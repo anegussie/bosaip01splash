@@ -543,6 +543,42 @@ print('Ready test server',flush=True)
                 self.assertEqual(args[args.index("--max-memory") + 1], cap)
                 self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "2048")
 
+    def test_option20_streamed_memory_override_holds_cap_and_chunk(self):
+        # A streamed store override holds the cap at 10G, and 10G cannot carry
+        # 2,048-token chunks: the plan needs 10,940 MiB against a 10,240 MiB
+        # budget and the engine refuses to start. The launcher therefore keeps
+        # the chunk at 1,024 and now says so, instead of doing it silently.
+        for name, value in (
+            ("SPLASH_FLASH_NEXT_EXPERT_MEMORY", "4G"),
+            ("SPLASH_FLASH_NEXT_PLE_MEMORY", "128M"),
+        ):
+            with self.subTest(setting=name):
+                r = self.run_launcher(
+                    "20",
+                    SPLASH_HOST_MEM_BYTES=str(17179869184),
+                    **{name: value},
+                )
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                args = json.loads((self.root / "argv.json").read_text())
+                self.assertEqual(args[args.index("--max-memory") + 1], "10G")
+                self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "1024")
+                self.assertIn("keep the 16 GiB preset", r.stdout)
+
+    def test_option20_streamed_memory_override_accepts_the_raised_cap_pair(self):
+        # The measured safe pairing: a 10.8G cap with an explicit 2,048-token
+        # chunk starts and serves (dev/benchmarks/option20-experiments).
+        r = self.run_launcher(
+            "20",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
+            SPLASH_FLASH_NEXT_EXPERT_MEMORY="4G",
+            SPLASH_FLASH_NEXT_MAX_MEMORY="10.8G",
+            SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS="2048",
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--max-memory") + 1], "10.8G")
+        self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "2048")
+
     def test_option20_fractional_cap_validates_explicit_expert_budget(self):
         r = self.run_launcher(
             "20",
@@ -704,6 +740,64 @@ print('Ready test server',flush=True)
         self.assertEqual(args[args.index("--expert-memory") + 1], "3G")
         self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "2048")
 
+    def test_option21_uses_the_q2_model_the_local_draft_and_its_own_cache(self):
+        draft = self.root / "draft"
+        draft.mkdir()
+        (draft / "config.json").write_text("{}")
+        (draft / "model.safetensors").write_text("draft weights")
+
+        stock = self.run_launcher("20", SPLASH_HOST_MEM_BYTES=str(17179869184))
+        self.assertEqual(stock.returncode, 0, stock.stdout + stock.stderr)
+        stock_args = json.loads((self.root / "argv.json").read_text())
+        self.assertNotIn("--draft-model", stock_args)
+        stock_cache = stock_args[stock_args.index("--cache-dir") + 1]
+
+        r = self.run_launcher(
+            "21",
+            SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(draft),
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        for flag, value in {
+            "--model": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0",
+            "--served-model-name": "qwen3.8-flash-next-q2-0-dflash2-bf16-splash",
+            "--draft-model": str(draft),
+            "--max-context": "131072",
+            "--max-memory": "10.8G",
+            "--ple-memory": "64M",
+            "--prefill-chunk-tokens": "2048",
+            "--kv-format": "int8",
+            "--state-format": "bf16",
+        }.items():
+            self.assertEqual(args[args.index(flag) + 1], value)
+        option21_cache = args[args.index("--cache-dir") + 1]
+        self.assertTrue(option21_cache.endswith("flash-next-option21-q2-0-bf16-dflash2"), option21_cache)
+        self.assertNotEqual(option21_cache, stock_cache)
+
+    def test_option21_requires_the_cached_bf16_draft(self):
+        r = self.run_launcher("21", SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.root / "absent-draft"))
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("BF16 DFlash2 draft", r.stderr)
+        self.assertFalse((self.root / "argv.json").exists())
+
+    def test_option20_ple_row_cache_default_and_override_reach_the_engine(self):
+        r = self.run_launcher("20")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--ple-memory") + 1], "64M")
+
+        r = self.run_launcher("20", SPLASH_FLASH_NEXT_PLE_MEMORY="192M")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--ple-memory") + 1], "192M")
+
+    def test_option20_rejects_a_ple_row_cache_below_the_engine_minimum(self):
+        r = self.run_launcher("20", SPLASH_FLASH_NEXT_PLE_MEMORY="8M")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("SPLASH_FLASH_NEXT_PLE_MEMORY", r.stderr)
+        self.assertFalse((self.root / "argv.json").exists())
+
     def test_option20_larger_expert_store_and_cache_quota_reach_the_engine(self):
         df = self.root / "bin" / "df"
         df.write_text(
@@ -807,7 +901,7 @@ print('Ready test server',flush=True)
 
     def test_option20_rejects_hermes_and_out_of_range_selection(self):
         before = self.config.read_bytes()
-        for args in (["--hermes", "20"], ["--direct", "21"]):
+        for args in (["--hermes", "20"], ["--direct", "22"], ["--direct", "9x"]):
             r = subprocess.run(
                 ["bash", LAUNCHER, *args],
                 env=self.env,

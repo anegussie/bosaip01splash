@@ -1,0 +1,1 @@
+pre8192 324/11 tok/s; pre4096 269/11 tok/s; pre2048 216/11 tok/s, draft acceptance 28/34, spill pages 0, disk KV read-back 0 tokens, clean 6/6, thermal fair

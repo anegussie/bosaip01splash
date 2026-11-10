@@ -1,0 +1,45 @@
+[2026-11-10T00:14:45-0500] Flash-Next: text only; expert and PLE streaming within a 10G Metal cap; reasoning low; download cache /Users/mymac/.cache/huggingface/hub.
+[2026-11-10T00:14:45-0500] Metal cap note: streamed memory overrides keep the Metal cap at 10G; set SPLASH_FLASH_NEXT_MAX_MEMORY=10.8G to keep the 16 GiB preset cap
+[2026-11-10T00:14:45-0500] Native inference concurrency: 1 (FIFO queue across clients; no worker tool-call budget)
+[2026-11-10T00:14:45-0500] Memory safety: run ONE OpenCode job at a time; multiple chats create queue waits and memory replay. Close unused memory-heavy apps before long jobs.
+[2026-11-10T00:14:45-0500] Launcher: model=ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS alias=qwen3.8-flash-next-iq3-xxs-splash binary=/Users/mymac/splash/splash/splash server_context=131072 client_context=129024 output=1024 reasoning=low kv=int8 state=bf16 prefill_chunk=2048 cache_disk=16G cache_mode=persistent resource_wait=60s host=127.0.0.1 port=1235
+[2026-11-10T00:14:45-0500] Prefix cache kept across restarts: /Users/mymac/Library/Caches/Splash/flash-next-option20-iq3-xxs
+[2026-11-10T00:14:46-0500] Splash model ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS is already installed in /Users/mymac/splash/splash/install/models/.selections/e461880d7561045428f295aff63cde5d4925b5637bb5e22eaa7ebbeac3edf4cc
+[2026-11-10T00:14:47-0500] 00:14:47 Loading · ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS
+[2026-11-10T00:14:48-0500] 00:14:48 Chat template · patched to render later system messages in place (the original template rejects them), generation prompt 5-7 tokens
+[2026-11-10T00:14:48-0500] 00:14:48 Expert formats share one 1262 MiB arena; changing formats evicts the previous format's cached experts.
+[2026-11-10T00:14:50-0500] 00:14:50 Weights loaded in 2.33 s.
+[2026-11-10T00:14:50-0500] 00:14:50 Table per_layer_token_embd.weight streams from its file: 27465 MiB stay on the SSD; row cache of 504370 rows in 63 MiB; 32 readers.
+[2026-11-10T00:14:50-0500] 00:14:50 Routed experts stream from their files: 512 slots for 24576 experts (2%) in 1262 MiB, a store of 1992 MiB in 1 chunks, all that the floors, its own among them, leave it beside the KV kept resident; it gives none back, its floor, the 4096 MiB --expert-memory sets (1992 MiB in whole slots and chunks), being all of it.
+[2026-11-10T00:14:50-0500] 00:14:50 Decode cycles verify the rows the verify budget chooses (--verify-rows auto, as ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS is a MoE target): greedy and seeded outputs can differ from run to run.
+[2026-11-10T00:14:50-0500] error: runtime bootstrap failed [resource_assembly/memory_planning]: the floors of the memory plan require 11471548576 bytes but the Metal memory budget is 10737418240 bytes
+[2026-11-10T00:14:50-0500] engine memory budget validation failed [kv_pool_does_not_fit]: the floors of the memory plan require 11471548576 bytes but the Metal memory budget is 10737418240 bytes
+[2026-11-10T00:14:50-0500] physical memory: 17179869184 bytes (16384.00 MiB)
+[2026-11-10T00:14:50-0500] recommended working set: 12713115648 bytes (12124.17 MiB)
+[2026-11-10T00:14:50-0500] configured memory limit: 10737418240 bytes (10240.00 MiB)
+[2026-11-10T00:14:50-0500] working-set margin (max of 1 GiB or 2%): 1073741824 bytes (1024.00 MiB)
+[2026-11-10T00:14:50-0500] hard budget: 10737418240 bytes (10240.00 MiB)
+[2026-11-10T00:14:50-0500] target weights: 5665555216 bytes (5403.09 MiB)
+[2026-11-10T00:14:50-0500] draft weights: 523436032 bytes (499.19 MiB)
+[2026-11-10T00:14:50-0500] vision weights: 0 bytes (0.00 MiB)
+[2026-11-10T00:14:50-0500] maximum DFlash batch width: 4
+[2026-11-10T00:14:50-0500] lane state: 163250176 bytes (155.69 MiB)
+[2026-11-10T00:14:50-0500] shared prefill: 1686896640 bytes (1608.75 MiB)
+[2026-11-10T00:14:50-0500] shared decode: 183840928 bytes (175.32 MiB)
+[2026-11-10T00:14:50-0500] pipeline reserve: 268435456 bytes (256.00 MiB)
+[2026-11-10T00:14:50-0500] allocator/runtime reserve: 536870912 bytes (512.00 MiB)
+[2026-11-10T00:14:50-0500] streamed table cache: 67108844 bytes (64.00 MiB)
+[2026-11-10T00:14:50-0500] Neural Engine split: 0 bytes (0.00 MiB)
+[2026-11-10T00:14:50-0500] SSD cache state staging: 62128128 bytes (59.25 MiB)
+[2026-11-10T00:14:50-0500] fixed runtime: 8994272156 bytes (8577.61 MiB)
+[2026-11-10T00:14:50-0500] elastic state/KV budget: 1743146084 bytes (1662.39 MiB)
+[2026-11-10T00:14:50-0500] KV page: 32 tokens, 423936 bytes (0.40 MiB)
+[2026-11-10T00:14:50-0500] KV extent: 256 pages, 108527616 bytes (103.50 MiB)
+[2026-11-10T00:14:50-0500] KV capacity of one request: 3584 pages / 114688 tokens
+[2026-11-10T00:14:50-0500] context: 114681 tokens (memory; window 262144, resident 114681, spilled 0, disk 0)
+[2026-11-10T00:14:50-0500] minimum dynamic runtime: 271777792 bytes (259.19 MiB)
+[2026-11-10T00:14:50-0500] minimum required: 11471548576 bytes (10940.12 MiB)
+[2026-11-10T00:14:50-0500] deficit: 734130336 bytes (700.12 MiB)
+[2026-11-10T00:14:50-0500] 00:14:50 Error · the floors of the memory plan require 11471548576 bytes but the Metal memory budget is 10737418240 bytes
+[2026-11-10T00:14:50-0500] 00:14:50 Stopping · releasing engine resources
+/Users/mymac/startllamacpp.sh: line 415: 81388 Terminated: 15          sleep "$SPLASH_PRESSURE_RESTART_INTERVAL"

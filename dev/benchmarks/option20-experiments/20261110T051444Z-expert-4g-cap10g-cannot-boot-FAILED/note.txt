@@ -1,0 +1,13 @@
+[2026-11-10T00:14:50-0500] KV capacity of one request: 3584 pages / 114688 tokens
+[2026-11-10T00:14:50-0500] context: 114681 tokens (memory; window 262144, resident 114681, spilled 0, disk 0)
+[2026-11-10T00:14:50-0500] minimum dynamic runtime: 271777792 bytes (259.19 MiB)
+[2026-11-10T00:14:50-0500] minimum required: 11471548576 bytes (10940.12 MiB)
+[2026-11-10T00:14:50-0500] deficit: 734130336 bytes (700.12 MiB)
+[2026-11-10T00:14:50-0500] 00:14:50 Error · the floors of the memory plan require 11471548576 bytes but the Metal memory budget is 10737418240 bytes
+[2026-11-10T00:14:50-0500] 00:14:50 Stopping · releasing engine resources
+/Users/mymac/startllamacpp.sh: line 415: 81388 Terminated: 15          sleep "$SPLASH_PRESSURE_RESTART_INTERVAL"
+
+SPLASH_FLASH_NEXT_EXPERT_MEMORY=4G with the stock 10G cap and 2,048-token
+prefill chunks: the memory plan needs 11,471,548,576 bytes against a
+10,737,418,240-byte Metal budget (734,130,336 deficit) and the engine refuses
+to start. The launcher accepted the request; only the engine caught it.

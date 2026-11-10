@@ -1,0 +1,1 @@
+coding decode 10.96 tok/s, tokens/cycle 6.29, 4k cold 331.3 tok/s, 4k reuse TTFT 1.988 s, draft acceptance 1072/1137, spill pages 6, disk KV read-back 192 tokens, clean 14/14, thermal fair

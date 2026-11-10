@@ -1,0 +1,1 @@
+pre1024 180/11 tok/s; pre512 101/10 tok/s; pre128 38/11 tok/s, draft acceptance 30/38, spill pages 0, disk KV read-back 0 tokens, clean 6/6, thermal fair

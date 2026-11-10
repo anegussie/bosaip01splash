@@ -1,0 +1,61 @@
+--- dev/benchmarks/option20-launcher-drift-20261109/startllamacpp.sh.synced	2026-11-09 15:16:33
++++ dev/benchmarks/option20-launcher-drift-20261109/startllamacpp.sh.drifted	2026-11-09 15:16:33
+@@ -327,7 +327,7 @@
+ }
+ 
+ # Resolve once before either the menu or launch path uses the profile. A caller's
+-# explicit concurrency choice wins; a small host keeps the 131K context
++# explicit concurrency choice wins; a small host keeps the configured context
+ # settings and persistent prefix cache without admitting competing requests.
+ splash_flash_next_host_defaults() {
+   local host_memory
+@@ -337,10 +337,11 @@
+      (( host_memory > 0 && host_memory < 25769803776 )); then
+     SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=1
+   fi
+-  # Give the 16 GiB preset room for 131K resident admission with 2,048-token
+-  # prefill. Host pressure can still force spill. Explicit settings win.
++  # Keep the 16 GiB long-context preset at 10.8G with 2,048-token prefill.
++  # 150K residency is unverified; host pressure can force spill. Explicit settings win.
+   if [[ "$host_memory" == "17179869184" &&
+-        "$SPLASH_FLASH_NEXT_MAX_CONTEXT" == "131072" &&
++        ( "$SPLASH_FLASH_NEXT_MAX_CONTEXT" == "131072" ||
++          "$SPLASH_FLASH_NEXT_MAX_CONTEXT" == "150000" ) &&
+         "$SPLASH_FLASH_NEXT_MAX_CACHE_DISK" == "16G" &&
+         "$SPLASH_FLASH_NEXT_PERSISTENT_CACHE" == "1" &&
+         "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" == "auto" &&
+@@ -1031,7 +1032,7 @@
+   choice="$DIRECT_CHOICE"
+ else
+   print_models
+-  if ! read -r -p "Enter choice (1-10, 14-21; 9 stops): " choice; then
++  if ! read -r -p "Enter choice (1-10, 14-20; 9 stops): " choice; then
+     echo "No model choice received." >&2
+     exit 2
+   fi
+@@ -1044,14 +1045,14 @@
+     exit $?
+     ;;
+   *)
+-    echo "Invalid choice: $choice (expected 1-10, 14-21; 9 stops)." >&2
++    echo "Invalid choice: $choice (expected 1-10, 14-20; 9 stops)." >&2
+     exit 2
+     ;;
+ esac
+ 
+ if [[ "$choice" == "8" || "$choice" == "10" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" || "$choice" == "20" || "$choice" == "21" ]]; then
+   if (( HERMES_LAUNCH == 1 )); then
+-    echo "Options 8, 10, and 14-21 do not use hermeslocal profiles; run them from the interactive menu or with --direct." >&2
++    echo "Options 8, 10, and 14-20 do not use hermeslocal profiles; run them from the interactive menu or with --direct." >&2
+     exit 2
+   fi
+   # Keep the reasoning-only profile direct; MTP option 10 is supervised by the
+@@ -1841,7 +1842,7 @@
+     fi
+     splash_context_max=24576
+     [[ "$choice" != "19" ]] || splash_context_max=81920
+-    [[ "$choice" != "20" && "$choice" != "21" ]] || splash_context_max=131072
++    [[ "$choice" != "20" && "$choice" != "21" ]] || splash_context_max=150000
+     splash_client_context_max="$((splash_context_max - 2048))"
+     if ! splash_context_limit="$(splash_context_tokens "$SPLASH_BONSAI_MAX_CONTEXT")" ||
+        (( splash_context_limit < 4096 || splash_context_limit > splash_context_max )); then

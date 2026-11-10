@@ -42,6 +42,8 @@ SPLASH_QWEN36_IQ3_MAX_CACHE_DISK="${SPLASH_QWEN36_IQ3_MAX_CACHE_DISK:-2G}"
 SPLASH_QWEN36_IQ3_PERSISTENT_CACHE="${SPLASH_QWEN36_IQ3_PERSISTENT_CACHE:-1}"
 SPLASH_QWEN36_IQ3_CACHE_DIR="${SPLASH_QWEN36_IQ3_CACHE_DIR:-$HOME/Library/Caches/Splash/qwen36-option19-iq3-xxs}"
 SPLASH_FLASH_NEXT_MODEL_ID="ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS"
+SPLASH_FLASH_NEXT_Q2_MODEL_ID="ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0"
+SPLASH_FLASH_NEXT_DFLASH2_MODEL="${SPLASH_FLASH_NEXT_DFLASH2_MODEL:-$HOME/.cache/huggingface/hub/models--incoai--Qwen3.8-Flash-Next-DFlash2/snapshots/a22a1744e85c17364dcc54a6a420af7135d4c7f6}"
 SPLASH_FLASH_NEXT_MAX_CONTEXT="${SPLASH_FLASH_NEXT_MAX_CONTEXT:-131072}"
 SPLASH_FLASH_NEXT_OPENCODE_CONTEXT="${SPLASH_FLASH_NEXT_OPENCODE_CONTEXT:-auto}"
 splash_flash_next_default_output=0
@@ -57,6 +59,10 @@ SPLASH_FLASH_NEXT_MAX_CACHE_DISK="${SPLASH_FLASH_NEXT_MAX_CACHE_DISK:-16G}"
 SPLASH_FLASH_NEXT_PERSISTENT_CACHE="${SPLASH_FLASH_NEXT_PERSISTENT_CACHE:-1}"
 SPLASH_FLASH_NEXT_CACHE_DIR="${SPLASH_FLASH_NEXT_CACHE_DIR:-$HOME/Library/Caches/Splash/flash-next-option20-iq3-xxs}"
 SPLASH_FLASH_NEXT_EXPERT_MEMORY="${SPLASH_FLASH_NEXT_EXPERT_MEMORY:-auto}"
+# The PLE n-gram table row cache (--ple-memory). Option 20 shipped this
+# hardcoded at 64M; the measured cache sits at its 504,370-row capacity, so the
+# value is now a knob with the same default. Explicit sizes stay explicit.
+SPLASH_FLASH_NEXT_PLE_MEMORY="${SPLASH_FLASH_NEXT_PLE_MEMORY:-64M}"
 SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS_DEFAULTED=0
 if [[ -z "${SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS:-}" ]]; then
   SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS_DEFAULTED=1
@@ -270,10 +276,13 @@ print_models() {
   echo "   Separate option-19 prefix cache: ${SPLASH_QWEN36_IQ3_MAX_CACHE_DISK} | persistent: ${SPLASH_QWEN36_IQ3_PERSISTENT_CACHE}"
   echo "20) Qwen3.8 Flash-Next GSQ-RCO IQ3_XXS - Splash SSD streaming (downloads on first run)${splash_status}"
   echo "   ${SPLASH_FLASH_NEXT_MAX_CONTEXT} server context | ${SPLASH_FLASH_NEXT_MAX_TOKENS} output tokens | ${SPLASH_FLASH_NEXT_MAX_MEMORY} Metal cap | reasoning ${SPLASH_FLASH_NEXT_REASONING_EFFORT}"
-  echo "   INT8 KV | BF16 state | text only | ${SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE} | expert memory ${SPLASH_FLASH_NEXT_EXPERT_MEMORY} | ${SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS}-token prefill chunks | DFlash2"
+  echo "   INT8 KV | BF16 state | text only | ${SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE} | expert memory ${SPLASH_FLASH_NEXT_EXPERT_MEMORY} | ${SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS}-token prefill chunks | PLE row cache ${SPLASH_FLASH_NEXT_PLE_MEMORY} | DFlash2"
   echo "   Source: ${SPLASH_FLASH_NEXT_MODEL_ID} | about 75.8 GB plus draft on first launch"
   echo "   Download cache: ${SPLASH_FLASH_NEXT_HF_HUB_CACHE}"
   echo "   Separate option-20 prefix cache: ${SPLASH_FLASH_NEXT_MAX_CACHE_DISK} | persistent: ${SPLASH_FLASH_NEXT_PERSISTENT_CACHE}"
+  echo "21) Qwen3.8 Flash-Next GSQ-RCO Q2_0 - Splash with local BF16 DFlash2${splash_status}"
+  echo "   Source: ${SPLASH_FLASH_NEXT_Q2_MODEL_ID} | local BF16 DFlash2 draft: ${SPLASH_FLASH_NEXT_DFLASH2_MODEL}"
+  echo "   Same Flash-Next serving settings as option 20 | isolated option-21 prefix cache"
 
 }
 
@@ -330,11 +339,20 @@ splash_flash_next_host_defaults() {
   fi
   # Give the 16 GiB preset room for 131K resident admission with 2,048-token
   # prefill. Host pressure can still force spill. Explicit settings win.
+  # Both raises need the whole stock profile. A raised streamed store competes
+  # for the same Metal room, and 2,048-token chunks sit on top of that room:
+  # asking for a 4G expert store on the 10G cap with 2,048-token chunks plans
+  # 10,940 MiB of floors against a 10,240 MiB budget and the engine refuses to
+  # start, so the chunk stays 1,024 until the cap is raised by hand. Leaving
+  # 1,024-token chunks in place silently costs a third of cold prompt throughput
+  # and three times the expert SSD reads, so the launch says what it did.
+  # See dev/benchmarks/qwen38-option20-prompt-processing-20261109.md.
   if [[ "$host_memory" == "17179869184" &&
         "$SPLASH_FLASH_NEXT_MAX_CONTEXT" == "131072" &&
         "$SPLASH_FLASH_NEXT_MAX_CACHE_DISK" == "16G" &&
         "$SPLASH_FLASH_NEXT_PERSISTENT_CACHE" == "1" &&
         "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" == "auto" &&
+        "$SPLASH_FLASH_NEXT_PLE_MEMORY" == "64M" &&
         "$SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS" == "1" ]]; then
     if [[ "$SPLASH_FLASH_NEXT_MAX_MEMORY_DEFAULTED" == "1" ]]; then
       SPLASH_FLASH_NEXT_MAX_MEMORY=10.8G
@@ -344,6 +362,13 @@ splash_flash_next_host_defaults() {
             "$SPLASH_FLASH_NEXT_MAX_MEMORY" == "10.8G" ) ]]; then
       SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS=2048
     fi
+  fi
+  SPLASH_FLASH_NEXT_CAP_NOTE=""
+  if [[ "$host_memory" == "17179869184" &&
+        "$SPLASH_FLASH_NEXT_MAX_CONTEXT" == "131072" &&
+        ( "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" != "auto" ||
+          "$SPLASH_FLASH_NEXT_PLE_MEMORY" != "64M" ) ]]; then
+    SPLASH_FLASH_NEXT_CAP_NOTE="streamed memory overrides hold the Metal cap at ${SPLASH_FLASH_NEXT_MAX_MEMORY} and the prefill chunk at ${SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS} tokens; set SPLASH_FLASH_NEXT_MAX_MEMORY=10.8G and SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS=2048 alongside them to keep the 16 GiB preset"
   fi
   if [[ "$SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS" == "1" ]]; then
     SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE="one active request"
@@ -960,7 +985,7 @@ usage() {
 Usage:
   startllamacpp.sh                  Select a model, or choose 9 to stop serving
   startllamacpp.sh --watch [1-7|10] Start a watchdog-managed server
-  startllamacpp.sh --direct [1-8|10|14|15|16|17|18|19|20] Start the selected server without the watchdog
+  startllamacpp.sh --direct [1-8|10|14|15|16|17|18|19|20|21] Start the selected server without the watchdog
   startllamacpp.sh --hermes [1-7]  Start a model and its matching Hermes profile
   startllamacpp.sh --list           List model choices
 
@@ -1021,32 +1046,32 @@ if (( DIRECT_LAUNCH == 1 || HERMES_LAUNCH == 1 )) && [[ -n "$DIRECT_CHOICE" ]]; 
   choice="$DIRECT_CHOICE"
 else
   print_models
-  if ! read -r -p "Enter choice (1-10, 14-20; 9 stops): " choice; then
+  if ! read -r -p "Enter choice (1-10, 14-21; 9 stops): " choice; then
     echo "No model choice received." >&2
     exit 2
   fi
 fi
 
 case "$choice" in
-  1|2|3|4|5|6|7|8|10|14|15|16|17|18|19|20) ;;
+  1|2|3|4|5|6|7|8|10|14|15|16|17|18|19|20|21) ;;
   9)
     stop_llamacpp
     exit $?
     ;;
   *)
-    echo "Invalid choice: $choice (expected 1-10, 14-20; 9 stops)." >&2
+    echo "Invalid choice: $choice (expected 1-10, 14-21; 9 stops)." >&2
     exit 2
     ;;
 esac
 
-if [[ "$choice" == "8" || "$choice" == "10" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" || "$choice" == "20" ]]; then
+if [[ "$choice" == "8" || "$choice" == "10" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" || "$choice" == "20" || "$choice" == "21" ]]; then
   if (( HERMES_LAUNCH == 1 )); then
-    echo "Options 8, 10, and 14-20 do not use hermeslocal profiles; run them from the interactive menu or with --direct." >&2
+    echo "Options 8, 10, and 14-21 do not use hermeslocal profiles; run them from the interactive menu or with --direct." >&2
     exit 2
   fi
   # Keep the reasoning-only profile direct; MTP option 10 is supervised by the
   # watchdog unless the caller explicitly requests --direct.
-  if [[ "$choice" == "8" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" || "$choice" == "20" ]]; then
+  if [[ "$choice" == "8" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" || "$choice" == "20" || "$choice" == "21" ]]; then
     DIRECT_LAUNCH=1
   fi
 fi
@@ -1666,7 +1691,7 @@ case "$choice" in
       2>&1 | tee -a "$splash_qwen_log"
     ;;
 
-  14|16|18|19|20)
+  14|16|18|19|20|21)
     splash_reasoning_effort=none
     splash_temperature=0.7
     splash_top_p=0.80
@@ -1718,7 +1743,7 @@ case "$choice" in
         fi
         splash_model_args=(--expert-memory auto --max-memory "$SPLASH_QWEN36_IQ3_MAX_MEMORY")
       fi
-    elif [[ "$choice" == "20" ]]; then
+    elif [[ "$choice" == "20" || "$choice" == "21" ]]; then
       SPLASH_BONSAI_MODEL_ID="$SPLASH_FLASH_NEXT_MODEL_ID"
       SPLASH_BONSAI_ALIAS="qwen3.8-flash-next-iq3-xxs-splash"
       SPLASH_BONSAI_DISPLAY_NAME="Qwen3.8 Flash-Next GSQ-RCO IQ3_XXS via Splash SSD streaming"
@@ -1729,6 +1754,12 @@ case "$choice" in
       SPLASH_BONSAI_MAX_CACHE_DISK="$SPLASH_FLASH_NEXT_MAX_CACHE_DISK"
       SPLASH_BONSAI_PERSISTENT_CACHE="$SPLASH_FLASH_NEXT_PERSISTENT_CACHE"
       SPLASH_BONSAI_CACHE_DIR="$SPLASH_FLASH_NEXT_CACHE_DIR"
+      if [[ "$choice" == "21" ]]; then
+        SPLASH_BONSAI_MODEL_ID="$SPLASH_FLASH_NEXT_Q2_MODEL_ID"
+        SPLASH_BONSAI_ALIAS="qwen3.8-flash-next-q2-0-dflash2-bf16-splash"
+        SPLASH_BONSAI_DISPLAY_NAME="Qwen3.8 Flash-Next GSQ-RCO Q2_0 with local BF16 DFlash2 draft via Splash"
+        SPLASH_BONSAI_CACHE_DIR="${SPLASH_FLASH_NEXT_CACHE_DIR%/*}/flash-next-option21-q2-0-bf16-dflash2"
+      fi
       SPLASH_BONSAI_STATE_FORMAT=bf16
       SPLASH_BONSAI_PREFILL_CHUNK_TOKENS="$SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS"
       SPLASH_BONSAI_MAX_ACTIVE_REQUESTS="$SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS"
@@ -1777,7 +1808,25 @@ case "$choice" in
         splash_temperature=1.0
         splash_top_p=0.95
       fi
-      splash_model_args=(--expert-memory "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" --ple-memory 64M --max-memory "$SPLASH_FLASH_NEXT_MAX_MEMORY")
+      if [[ "$SPLASH_FLASH_NEXT_PLE_MEMORY" != "off" ]]; then
+        if { ! splash_ple_memory_bytes="$(splash_cache_disk_bytes \
+             "$SPLASH_FLASH_NEXT_PLE_MEMORY" 2147483648)"; } ||
+           (( splash_ple_memory_bytes < 16777216 )); then
+          echo "SPLASH_FLASH_NEXT_PLE_MEMORY must be off or a size from 16M to 2G." >&2
+          exit 1
+        fi
+        if (( splash_ple_memory_bytes * 4 > splash_memory_cap_bytes )); then
+          echo "   PLE row cache ${SPLASH_FLASH_NEXT_PLE_MEMORY} is over a quarter of the ${SPLASH_FLASH_NEXT_MAX_MEMORY} cap: the planner leaves less room for weights, KV, and state."
+        fi
+      fi
+      splash_model_args=(--expert-memory "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" --ple-memory "$SPLASH_FLASH_NEXT_PLE_MEMORY" --max-memory "$SPLASH_FLASH_NEXT_MAX_MEMORY")
+      if [[ "$choice" == "21" ]]; then
+        if [[ ! -f "$SPLASH_FLASH_NEXT_DFLASH2_MODEL/config.json" || ! -f "$SPLASH_FLASH_NEXT_DFLASH2_MODEL/model.safetensors" ]]; then
+          echo "Option 21 requires the cached BF16 DFlash2 draft at $SPLASH_FLASH_NEXT_DFLASH2_MODEL." >&2
+          exit 1
+        fi
+        splash_model_args+=(--draft-model "$SPLASH_FLASH_NEXT_DFLASH2_MODEL")
+      fi
       if [[ "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" != "auto" ]]; then
         if { ! splash_expert_memory_bytes="$(splash_cache_disk_bytes \
              "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" 34359738368)"; } ||
@@ -1807,7 +1856,7 @@ case "$choice" in
     fi
     splash_context_max=24576
     [[ "$choice" != "19" ]] || splash_context_max=81920
-    [[ "$choice" != "20" ]] || splash_context_max=131072
+    [[ "$choice" != "20" && "$choice" != "21" ]] || splash_context_max=131072
     splash_client_context_max="$((splash_context_max - 2048))"
     if ! splash_context_limit="$(splash_context_tokens "$SPLASH_BONSAI_MAX_CONTEXT")" ||
        (( splash_context_limit < 4096 || splash_context_limit > splash_context_max )); then
@@ -1923,6 +1972,9 @@ case "$choice" in
     if [[ "$choice" == "20" ]]; then
       printf 'Flash-Next: text only; expert and PLE streaming within a %s Metal cap; reasoning %s; download cache %s.\n' \
         "$SPLASH_FLASH_NEXT_MAX_MEMORY" "$splash_reasoning_effort" "$HF_HUB_CACHE" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+      if [[ -n "$SPLASH_FLASH_NEXT_CAP_NOTE" ]]; then
+        printf 'Metal cap note: %s\n' "$SPLASH_FLASH_NEXT_CAP_NOTE" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+      fi
     fi
     printf 'Native inference concurrency: %s (FIFO queue across clients; no worker tool-call budget)\n' "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
     printf 'Memory safety: run ONE OpenCode job at a time; multiple chats create queue waits and memory replay. Close unused memory-heavy apps before long jobs.\n' | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"

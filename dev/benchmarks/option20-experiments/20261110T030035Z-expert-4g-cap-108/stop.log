@@ -1,0 +1,58 @@
+Available local models:
+1) Qwen3.5 9B Q4_K_XL — llama.cpp planner — model not installed
+   32K context | 4K output | reasoning on (4K budget) | Q4 KV | MTP off
+2) Gemma 4 12B IQ4_XS — general use
+   32K context | 4K output | reasoning off | Q4 KV | MTP off
+3) LFM 2.5 8B Q6_K_XL — compact model — model not installed
+   32K context | 4K output | reasoning auto | Q4 KV | MTP off
+4) Ternary Bonsai 2 27B PTQ1 GGUF — llama-server
+   24K server / 20K OpenCode context | 4K output | non-thinking instruct sampling | Q4 KV | 512 MiB RAM cache | single sequence | guarded
+5) Qwen3.5 9B MTP Q4_K_XL — speculative decoding — model not installed
+   16K context | 2K output | reasoning off | MTP 3 | Q4 target/Q8 draft KV
+6) Qwen3.5 9B Q4_K_XL — fast non-MTP — model not installed
+   16K context | 2K output | reasoning off | Q4 KV | MTP off
+7) Qwen3.5 9B MTP Q4_K_XL — long-context speculative — model not installed
+   32K context | 2K output | reasoning off | MTP 4 | Q4 target/Q8 draft KV
+8) Qwen3.5 9B MLX 4-bit — deep reasoning — mlx-vlm runtime not installed
+   General coding + optional long_analysis agent | all tools enabled
+   32K OpenCode / 48K server | 12288 generation reserve
+   Q4 KV | MTP off | APC on: 4096 cached tokens
+9) Stop local LLM watchdog and server
+10) Qwen3.5 9B MLX 4-bit — MTP reasoning — mlx-vlm runtime not installed
+   22K context | 3K output | reasoning on (no separate budget) | native MTP width 2 | Q4 KV | APC on: 4096 cached tokens
+14) Ternary Bonsai 2 27B PTQ1_0 — Splash (downloads on first run)
+   24K server / 22528 tokens OpenCode context | 4096 output tokens | INT8 KV | bf16 state | 512-token prefill chunks | 8G SSD cache | 60s resource wait
+   Persistent prefix cache: 1 (1=keep across restarts, 0=temporary) | startup retries: 2
+   Memory pressure monitor: Splash controls admission/recovery; 24K requires room for other apps
+   Source: prism-ml/Ternary-Bonsai-2-27B-gguf:PTQ1_0
+   Monitor: bash /Users/mymac/monitorsplash.sh --once (or --report 24)
+15) Ternary Bonsai 2 27B PTQ1_0 GGUF — Lithos Metal (experimental BF16 execution)
+   4096-token context | 1024-token OpenCode output reserve | BF16 KV | 2-token prefill | warmup 16 tokens | target-only
+   Source: same local GGUF as option 14 | local weight pack prepared on first run
+16) Ternary Bonsai 2 27B Uncensored Heretic PTQ1_0 - Splash (local GGUF)
+   24K server / 22528 tokens OpenCode context | INT8 KV | bf16 state | 512-token chunks
+   Source: /Users/mymac/.cache/huggingface/hub/models--prism-ml--Ternary-Bonsai-2-27B-gguf/snapshots/b072e1d3b35a0a630cece372c2127528e0994386/Ternary-Bonsai-2-27B-Uncensored-Heretic-PTQ1_0.gguf
+   Separate option-16 prefix cache | DFlash2 draft; acceptance depends on these weights
+17) Qwen3.5 9B Q4_K_XL - Splash target-only (8K, int8 KV) - runtime not built
+   Source: /Users/mymac/.lmstudio/models/unsloth/Qwen3.5-9B-MTP-GGUF/Qwen3.5-9B-UD-Q4_K_XL.gguf | no MTP or DFlash2 | 1024 output tokens
+18) Qwen3.6 35B A3B UD-Q2_K_XL - Splash SSD expert streaming (downloads on first run)
+   24K server context | 2048 output tokens | 8 GiB Metal budget | automatic expert RAM cache / SSD reads
+   INT8 KV | BF16 state | 512-token prefill chunks | one active request | reasoning off | DFlash2
+   Source: unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q2_K_XL
+   Separate option-18 prefix cache: 2G | persistent: 1
+19) Qwen3.6 35B A3B UD-IQ3_XXS - Splash SSD expert streaming (downloads on first run)
+   80K server context | up to 4096 worker output tokens (parent up to 2048) | 10G Metal cap | expert RAM cache / SSD reads
+   INT8 KV | BF16 state | 512-token prefill chunks | one active request | reasoning off | DFlash2
+   Vision: at most 1,048,576 resized pixels per image (4096 patches; about 1024x1024)
+   Source: unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS
+   Separate option-19 prefix cache: 2G | persistent: 1
+20) Qwen3.8 Flash-Next GSQ-RCO IQ3_XXS - Splash SSD streaming (downloads on first run)
+   131072 server context | 1024 output tokens | 10.8G Metal cap | reasoning low
+   INT8 KV | BF16 state | text only | one active request | expert memory auto | 2048-token prefill chunks | PLE row cache 64M | DFlash2
+   Source: ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS | about 75.8 GB plus draft on first launch
+   Download cache: /Users/mymac/.cache/huggingface/hub
+   Separate option-20 prefix cache: 16G | persistent: 1
+21) Qwen3.8 Flash-Next GSQ-RCO Q2_0 - Splash with local BF16 DFlash2
+   Source: ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0 | local BF16 DFlash2 draft: /Users/mymac/.cache/huggingface/hub/models--incoai--Qwen3.8-Flash-Next-DFlash2/snapshots/a22a1744e85c17364dcc54a6a420af7135d4c7f6
+   Same Flash-Next serving settings as option 20 | isolated option-21 prefix cache
+Local LLM watchdog and server are stopped.
