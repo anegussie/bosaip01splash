@@ -42,6 +42,9 @@ mode=os.environ.get('MOCK_MODE','exit')
 if mode=='memory':
  print('runtime bootstrap failed: not enough free memory to start',flush=True)
  sys.exit(1)
+if mode=='timeout':
+ print('runtime bootstrap failed [maximum_prefill]: maximum_prefill threw: Metal command 1095 failed: Caused GPU Timeout Error (00000002:kIOGPUCommandBufferCallbackErrorTimeout)',flush=True)
+ sys.exit(1)
 if mode=='error':
  print('Metal backend failed',flush=True)
  sys.exit(2)
@@ -781,6 +784,164 @@ print('Ready test server',flush=True)
         self.assertIn("BF16 DFlash2 draft", r.stderr)
         self.assertFalse((self.root / "argv.json").exists())
 
+    def draft(self):
+        draft = self.root / "bf16-draft"
+        draft.mkdir(exist_ok=True)
+        (draft / "config.json").write_text("{}")
+        (draft / "model.safetensors").write_text("draft weights")
+        return draft
+
+    def test_option21_shares_the_raised_pair_option_20_uses(self):
+        # The 16 GiB raise (10.8G with 2,048-token chunks) was measured on the
+        # IQ3_XXS target, and it holds for the Q2_0 target with the BF16 draft
+        # too: 443.7 against 282.3 tok/s cold prefill at 8,204 prompt tokens and
+        # 441.4 against 272.2 at 4,108, with decode unchanged (17.56 against
+        # 17.68 tok/s). See dev/benchmarks/qwen38-option21-chunk-2048-20261110.md.
+        # A 2,048-token chunk puts about 4.6 s of GPU work inside one host step,
+        # close to the engine's fixed 5,000 ms Metal event window, so the launch
+        # loop keeps a fallback to 10G with 1,024-token chunks.
+        host = str(17179869184)
+        raised = self.run_launcher("20", SPLASH_HOST_MEM_BYTES=host)
+        self.assertEqual(raised.returncode, 0, raised.stdout + raised.stderr)
+        raised_args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(raised_args[raised_args.index("--max-memory") + 1], "10.8G")
+        self.assertEqual(
+            raised_args[raised_args.index("--prefill-chunk-tokens") + 1], "2048"
+        )
+
+        r = self.run_launcher(
+            "21",
+            SPLASH_HOST_MEM_BYTES=host,
+            SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.draft()),
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--max-memory") + 1], "10.8G")
+        self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "2048")
+        self.assertEqual(args[args.index("--max-active-requests") + 1], "1")
+        self.assertIn(
+            "Option 21 profile: 10.8G Metal cap with 2048-token prefill chunks",
+            r.stdout,
+        )
+        self.assertIn(
+            "retries with 10G and 1,024-token chunks",
+            r.stdout,
+        )
+
+        listed = subprocess.run(
+            ["bash", LAUNCHER, "--list"],
+            env={**self.env, "SPLASH_HOST_MEM_BYTES": host},
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        self.assertEqual(listed.returncode, 0, listed.stdout + listed.stderr)
+        menu = listed.stdout.split("20) Qwen3.8 Flash-Next", 1)[1]
+        option20 = menu.split("21) Qwen3.8", 1)[0]
+        self.assertIn("10.8G Metal cap", option20)
+        self.assertIn("2048-token prefill chunks", option20)
+        option21 = listed.stdout.split("21) Qwen3.8 Flash-Next", 1)[1]
+        self.assertIn("10.8G Metal cap", option21)
+        self.assertIn("2048-token prefill chunks", option21)
+        self.assertIn("retries with 10G and 1,024-token chunks", option21)
+
+    def test_option21_falls_back_to_the_stock_chunk_after_a_warmup_timeout(self):
+        # The 2,048-token warmup has one documented failure mode: a host step
+        # over the engine's fixed 5,000 ms Metal event window, which kills
+        # bootstrap with "Caused GPU Timeout Error". The launcher retries that
+        # attempt once with 10G and 1,024-token chunks instead of exiting.
+        r = self.run_launcher(
+            "21",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
+            SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.draft()),
+            MOCK_MODE="timeout",
+            SPLASH_BONSAI_STARTUP_RETRY_DELAY="1",
+        )
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "1024")
+        self.assertEqual(args[args.index("--max-memory") + 1], "10G")
+        self.assertEqual(args[args.index("--draft-model") + 1], str(self.draft()))
+        self.assertIn("tripped the engine's 5 s Metal event window", r.stdout)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+
+    def test_option21_explicit_raised_pair_still_reaches_the_engine(self):
+        # The stock pair is the default, not a ceiling: both settings given
+        # explicitly still reach the engine, so the raising experiment is one
+        # command away.
+        r = self.run_launcher(
+            "21",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
+            SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.draft()),
+            SPLASH_FLASH_NEXT_MAX_MEMORY="10.8G",
+            SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS="2048",
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--max-memory") + 1], "10.8G")
+        self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "2048")
+
+    def test_option21_explicit_cap_outside_the_stock_set_keeps_the_chunk(self):
+        # The chunk raise needs the whole stock profile. A cap the preset never
+        # uses (12G) leaves the chunk at its default, so a raised store or an
+        # off-profile cap does not silently put 4.6 s of GPU work inside one
+        # host step next to the 5 s Metal event window.
+        r = self.run_launcher(
+            "21",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
+            SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.draft()),
+            SPLASH_FLASH_NEXT_MAX_MEMORY="12G",
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--max-memory") + 1], "12G")
+        self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "1024")
+
+    def test_option21_streamed_override_note_names_the_pair_it_holds(self):
+        # A streamed expert or PLE store holds the cap at 10G and the chunk at
+        # 1,024 tokens, and the note for both options says how to get the
+        # 16 GiB preset back.
+        for name, value in (
+            ("SPLASH_FLASH_NEXT_EXPERT_MEMORY", "4G"),
+            ("SPLASH_FLASH_NEXT_PLE_MEMORY", "128M"),
+        ):
+            with self.subTest(setting=name):
+                r = self.run_launcher(
+                    "21",
+                    SPLASH_HOST_MEM_BYTES=str(17179869184),
+                    SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.draft()),
+                    **{name: value},
+                )
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                args = json.loads((self.root / "argv.json").read_text())
+                self.assertEqual(args[args.index("--max-memory") + 1], "10G")
+                self.assertEqual(
+                    args[args.index("--prefill-chunk-tokens") + 1], "1024"
+                )
+                self.assertIn("keep the 16 GiB preset", r.stdout)
+                self.assertNotIn("option 21 holds that pair", r.stdout)
+
+    def test_failed_startup_drains_the_log_without_a_bash_job_error(self):
+        # bash 3.2 cannot wait on a process substitution, so the launcher used
+        # to end every startup attempt with
+        # "wait: pid N is not a child of this shell" and drained nothing: the
+        # engine's last lines could land in the log after the launcher's own.
+        # Stopping the pressure watchdog and the monitor also used to `pkill -P`
+        # their outstanding sleeps, which made bash append
+        # "Terminated: 15 sleep ..." to the run log on every shutdown.
+        logs = self.root / "logs"
+        r = self.run_launcher("14", MOCK_MODE="memory")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertNotIn("not a child of this shell", r.stdout + r.stderr)
+        self.assertNotIn("Terminated", r.stdout + r.stderr)
+        written = sorted(logs.glob("*-*.log"))
+        self.assertTrue(written)
+        text = "\n".join(path.read_text() for path in written)
+        self.assertNotIn("not a child of this shell", text)
+        self.assertNotIn("Terminated", text)
+        engine_line = text.index("not enough free memory to start")
+        launcher_line = text.index("Splash startup needs more free memory")
+        self.assertLess(engine_line, launcher_line)
+
     def test_option20_ple_row_cache_default_and_override_reach_the_engine(self):
         r = self.run_launcher("20")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
@@ -1011,7 +1172,13 @@ print('Ready test server',flush=True)
                     p.kill()
                     p.wait()
         self.assertTrue((self.root / "stopped").exists())
-        self.assertIn("Clean shutdown and cache flush", (self.root / "out").read_text())
+        drained = (self.root / "out").read_text()
+        self.assertIn("Clean shutdown and cache flush", drained)
+        # The shutdown must not lean on bash job notices: no
+        # "wait: pid N is not a child of this shell" for the log writer, and no
+        # "Terminated: 15 sleep ..." for the watchdog or monitor sleeps.
+        self.assertNotIn("not a child of this shell", drained)
+        self.assertNotIn("Terminated", drained)
         pid = int((self.root / "server.pid").read_text())
         with self.assertRaises(ProcessLookupError):
             os.kill(pid, 0)

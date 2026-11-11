@@ -281,8 +281,10 @@ print_models() {
   echo "   Download cache: ${SPLASH_FLASH_NEXT_HF_HUB_CACHE}"
   echo "   Separate option-20 prefix cache: ${SPLASH_FLASH_NEXT_MAX_CACHE_DISK} | persistent: ${SPLASH_FLASH_NEXT_PERSISTENT_CACHE}"
   echo "21) Qwen3.8 Flash-Next GSQ-RCO Q2_0 - Splash with local BF16 DFlash2${splash_status}"
+  echo "   ${SPLASH_FLASH_NEXT_MAX_CONTEXT} server context | ${SPLASH_FLASH_NEXT_MAX_TOKENS} output tokens | ${SPLASH_FLASH_NEXT_Q2_MAX_MEMORY} Metal cap | reasoning ${SPLASH_FLASH_NEXT_REASONING_EFFORT}"
+  echo "   INT8 KV | BF16 state | text only | ${SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE} | expert memory ${SPLASH_FLASH_NEXT_EXPERT_MEMORY} | ${SPLASH_FLASH_NEXT_Q2_PREFILL_CHUNK_TOKENS}-token prefill chunks | PLE row cache ${SPLASH_FLASH_NEXT_PLE_MEMORY}"
   echo "   Source: ${SPLASH_FLASH_NEXT_Q2_MODEL_ID} | local BF16 DFlash2 draft: ${SPLASH_FLASH_NEXT_DFLASH2_MODEL}"
-  echo "   Same Flash-Next serving settings as option 20 | isolated option-21 prefix cache"
+  echo "   Option 21 uses option 20's 16 GiB preset; if a 2,048-token chunk trips the 5 s Metal event window the launcher retries with 10G and 1,024-token chunks"
 
 }
 
@@ -343,10 +345,12 @@ splash_flash_next_host_defaults() {
   # for the same Metal room, and 2,048-token chunks sit on top of that room:
   # asking for a 4G expert store on the 10G cap with 2,048-token chunks plans
   # 10,940 MiB of floors against a 10,240 MiB budget and the engine refuses to
-  # start, so the chunk stays 1,024 until the cap is raised by hand. Leaving
-  # 1,024-token chunks in place silently costs a third of cold prompt throughput
-  # and three times the expert SSD reads, so the launch says what it did.
-  # See dev/benchmarks/qwen38-option20-prompt-processing-20261109.md.
+  # start, so the chunk stays 1,024 whenever a store is raised by hand. Leaving
+  # 1,024-token chunks in place with the stock profile silently costs a third of
+  # cold prompt throughput and three times the expert SSD reads, so the launch
+  # says what it did. See dev/benchmarks/qwen38-option20-prompt-processing-20261109.md
+  # for the IQ3_XXS numbers and qwen38-option21-chunk-2048-20261110.md for the
+  # same comparison on the Q2_0 target with the BF16 draft.
   if [[ "$host_memory" == "17179869184" &&
         "$SPLASH_FLASH_NEXT_MAX_CONTEXT" == "131072" &&
         "$SPLASH_FLASH_NEXT_MAX_CACHE_DISK" == "16G" &&
@@ -377,6 +381,35 @@ splash_flash_next_host_defaults() {
   fi
 }
 
+# Option 21 (the Q2_0 target with the local BF16 DFlash2 draft) runs the same
+# pair option 20 uses on a 16 GiB Mac: a 10.8G cap with 2,048-token prefill
+# chunks. Measured with the Q2_0 target and the BF16 draft on an M5 (dev/
+# benchmarks/qwen38-option21-chunk-2048-20261110.md), the larger chunk is the
+# faster one: 443.7 tok/s cold prefill at 8,204 prompt tokens against 282.3 with
+# 1,024-token chunks, 441.4 against 272.2 at 4,108, and a turn-8 ladder TTFT of
+# 6.40 s against 9.70 s, with decode unchanged (17.56 against 17.68 tok/s).
+# One host step of a 2,048-token chunk carries about 4.6 s of GPU work, close to
+# the engine's fixed 5,000 ms Metal event window; a cold run hit 5.157 s there
+# and bootstrap died with "Caused GPU Timeout Error" before Ready. The launch
+# loop therefore retries the stock pair (10G, 1,024 tokens) when bootstrap trips
+# that window, so a host that cannot warm up still serves. Settings given
+# explicitly always win.
+splash_flash_next_q2_profile() {
+  SPLASH_FLASH_NEXT_Q2_MAX_MEMORY="$SPLASH_FLASH_NEXT_MAX_MEMORY"
+  SPLASH_FLASH_NEXT_Q2_PREFILL_CHUNK_TOKENS="$SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS"
+}
+
+# Rebuild the streaming flags from the current cap so a startup fallback can
+# change the cap without leaving a stale --max-memory in the attempt's argv.
+splash_flash_next_model_args() {
+  splash_model_args=(--expert-memory "$SPLASH_FLASH_NEXT_EXPERT_MEMORY"
+                     --ple-memory "$SPLASH_FLASH_NEXT_PLE_MEMORY"
+                     --max-memory "$SPLASH_FLASH_NEXT_MAX_MEMORY")
+  if [[ "${choice:-}" == "21" ]]; then
+    splash_model_args+=(--draft-model "$SPLASH_FLASH_NEXT_DFLASH2_MODEL")
+  fi
+}
+
 # Available bytes on the volume that will hold a path, walking up to the first
 # existing ancestor so a cache directory can be validated before it is created.
 splash_volume_free_bytes() {
@@ -388,10 +421,30 @@ splash_volume_free_bytes() {
 splash_stop_monitor() {
   local pid="$1"
   [[ -n "$pid" ]] || return 0
-  # Stop the monitor's outstanding curl/sleep as well as its shell.
-  pkill -TERM -P "$pid" 2>/dev/null || true
+  # Signal the loop's shell, never its outstanding curl/sleep from outside: a
+  # child that is reaped after an outside `pkill -P` makes bash print
+  # "Terminated: 15 sleep ..." into the run log on every shutdown, retry, and
+  # Ctrl-C. The pressure watchdog traps TERM and ends its own sleep; the
+  # external monitor's outstanding call finishes on its own within its interval.
   kill -TERM "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
+}
+
+# bash 3.2 cannot `wait` on a process substitution because it is not a job, so
+# `wait "$splash_logger_pid"` only prints
+# "wait: pid N is not a child of this shell" and drains nothing. Poll the writer
+# instead: closing fd 3 above ends its input, so it finishes on its own, and a
+# bounded poll keeps the log in order without letting a grandchild that still
+# holds the log fd hang the launcher.
+splash_drain_run_log() {
+  local waited=0
+  [[ -n "$splash_logger_pid" ]] || return 0
+  while (( waited < 20 )) && kill -0 "$splash_logger_pid" 2>/dev/null; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  splash_logger_pid=""
+  return 0
 }
 
 splash_cleanup_run() {
@@ -401,12 +454,23 @@ splash_cleanup_run() {
   fi
   # Close the parent's log writer and drain the final shutdown/cache messages.
   exec 3>&-
-  if [[ -n "$splash_logger_pid" ]]; then
-    wait "$splash_logger_pid" 2>/dev/null || true
-  fi
+  splash_drain_run_log
   splash_stop_monitor "$splash_pressure_watchdog_pid"
   splash_stop_monitor "$splash_monitor_pid"
   splash_stop_monitor "$splash_retry_pid"
+}
+
+# The pressure watchdog sleeps as a job of its own shell so a trapped TERM can
+# end that sleep from inside. Killing it from outside with `pkill -P` makes bash
+# print "Terminated: 15 sleep ..." into the run log on every startup failure,
+# retry, and Ctrl-C.
+splash_watchdog_sleep_pid=""
+
+splash_watchdog_wait() {
+  sleep "$SPLASH_PRESSURE_RESTART_INTERVAL" &
+  splash_watchdog_sleep_pid=$!
+  wait "$splash_watchdog_sleep_pid" 2>/dev/null || true
+  splash_watchdog_sleep_pid=""
 }
 
 splash_pressure_watchdog() {
@@ -414,10 +478,12 @@ splash_pressure_watchdog() {
   local payload state pressure headroom waiting suspended
   local pressure_active=0
 
+  trap 'if [[ -n "$splash_watchdog_sleep_pid" ]]; then kill -TERM "$splash_watchdog_sleep_pid" 2>/dev/null; fi; exit 143' TERM
+
   while :; do
     payload="$(curl --max-time 3 -fsS "http://${HOST}:${PORT}/status" 2>/dev/null)" || {
       consecutive=0
-      sleep "$SPLASH_PRESSURE_RESTART_INTERVAL"
+      splash_watchdog_wait
       continue
     }
     state="$(jq -r '[.memory_pressure // "unknown",
@@ -425,7 +491,7 @@ splash_pressure_watchdog() {
       (.admission.waiting_memory // 0 | tostring),
       (.admission.suspended // 0 | tostring)] | @tsv' <<< "$payload")" || {
       consecutive=0
-      sleep "$SPLASH_PRESSURE_RESTART_INTERVAL"
+      splash_watchdog_wait
       continue
     }
     IFS=$'\t' read -r pressure headroom waiting suspended <<< "$state"
@@ -447,7 +513,7 @@ splash_pressure_watchdog() {
         "Splash pressure monitor: pressure wait cleared (pressure=$pressure headroom=$headroom waiting=$waiting suspended=$suspended)." >> "$SPLASH_RUN_LOG"
       pressure_active=0
     fi
-    sleep "$SPLASH_PRESSURE_RESTART_INTERVAL"
+    splash_watchdog_wait
   done
 }
 
@@ -995,6 +1061,7 @@ EOF
 }
 
 splash_flash_next_host_defaults
+splash_flash_next_q2_profile
 
 case "${1:-}" in
   --help|-h)
@@ -1759,6 +1826,9 @@ case "$choice" in
         SPLASH_BONSAI_ALIAS="qwen3.8-flash-next-q2-0-dflash2-bf16-splash"
         SPLASH_BONSAI_DISPLAY_NAME="Qwen3.8 Flash-Next GSQ-RCO Q2_0 with local BF16 DFlash2 draft via Splash"
         SPLASH_BONSAI_CACHE_DIR="${SPLASH_FLASH_NEXT_CACHE_DIR%/*}/flash-next-option21-q2-0-bf16-dflash2"
+        # Same cap and chunk as option 20 on this host; the fallback in the
+        # launch loop halves the chunk if the warmup trips the Metal window.
+        splash_flash_next_q2_profile
       fi
       SPLASH_BONSAI_STATE_FORMAT=bf16
       SPLASH_BONSAI_PREFILL_CHUNK_TOKENS="$SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS"
@@ -1819,14 +1889,13 @@ case "$choice" in
           echo "   PLE row cache ${SPLASH_FLASH_NEXT_PLE_MEMORY} is over a quarter of the ${SPLASH_FLASH_NEXT_MAX_MEMORY} cap: the planner leaves less room for weights, KV, and state."
         fi
       fi
-      splash_model_args=(--expert-memory "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" --ple-memory "$SPLASH_FLASH_NEXT_PLE_MEMORY" --max-memory "$SPLASH_FLASH_NEXT_MAX_MEMORY")
       if [[ "$choice" == "21" ]]; then
         if [[ ! -f "$SPLASH_FLASH_NEXT_DFLASH2_MODEL/config.json" || ! -f "$SPLASH_FLASH_NEXT_DFLASH2_MODEL/model.safetensors" ]]; then
           echo "Option 21 requires the cached BF16 DFlash2 draft at $SPLASH_FLASH_NEXT_DFLASH2_MODEL." >&2
           exit 1
         fi
-        splash_model_args+=(--draft-model "$SPLASH_FLASH_NEXT_DFLASH2_MODEL")
       fi
+      splash_flash_next_model_args
       if [[ "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" != "auto" ]]; then
         if { ! splash_expert_memory_bytes="$(splash_cache_disk_bytes \
              "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" 34359738368)"; } ||
@@ -1969,9 +2038,13 @@ case "$choice" in
       printf 'SSD expert streaming: RAM expert cache within a %s Metal cap; missing routed experts read from the model file.\n' \
         "$splash_streaming_memory" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
     fi
-    if [[ "$choice" == "20" ]]; then
+    if [[ "$choice" == "20" || "$choice" == "21" ]]; then
       printf 'Flash-Next: text only; expert and PLE streaming within a %s Metal cap; reasoning %s; download cache %s.\n' \
         "$SPLASH_FLASH_NEXT_MAX_MEMORY" "$splash_reasoning_effort" "$HF_HUB_CACHE" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+      if [[ "$choice" == "21" ]]; then
+        printf "Option 21 profile: %s Metal cap with %s-token prefill chunks, the pair option 20 uses on a 16 GiB Mac; it measured 443.7 tok/s cold prefill at 8,204 prompt tokens against 282.3 with 1,024-token chunks. If the warmup trips the engine's 5 s Metal event window, the launcher retries with 10G and 1,024-token chunks.\n" \
+          "$SPLASH_FLASH_NEXT_MAX_MEMORY" "$SPLASH_BONSAI_PREFILL_CHUNK_TOKENS" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+      fi
       if [[ -n "$SPLASH_FLASH_NEXT_CAP_NOTE" ]]; then
         printf 'Metal cap note: %s\n' "$SPLASH_FLASH_NEXT_CAP_NOTE" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
       fi
@@ -1999,6 +2072,7 @@ case "$choice" in
       splash_monitor_pid=$!
     fi
     splash_startup_retries=0
+    splash_chunk_fallback=0
     while :; do
       splash_pressure_watchdog >>"$SPLASH_RUN_LOG" 2>&1 &
       splash_pressure_watchdog_pid=$!
@@ -2026,12 +2100,28 @@ case "$choice" in
       if wait "$splash_server_pid"; then splash_status=0; else splash_status=$?; fi
       splash_server_pid=""
       exec 3>&-
-      wait "$splash_logger_pid" || true
-      splash_logger_pid=""
+      splash_drain_run_log
       splash_stop_monitor "$splash_pressure_watchdog_pid"
       splash_pressure_watchdog_pid=""
       if (( splash_status == 0 || splash_status >= 128 )); then
         exit "$splash_status"
+      fi
+      # A 2,048-token chunk puts about 4.6 s of GPU work inside one host step,
+      # just under the engine's fixed 5,000 ms Metal event window. When a warmup
+      # step crosses it, bootstrap fails with "Caused GPU Timeout Error". Retry
+      # that attempt once with the stock pair so the server still reaches Ready.
+      if (( (choice == 20 || choice == 21) )) &&
+         (( SPLASH_BONSAI_PREFILL_CHUNK_TOKENS > 1024 )) &&
+         (( splash_chunk_fallback == 0 )) &&
+         tail -c "+$((splash_attempt_offset + 1))" "$SPLASH_RUN_LOG" |
+           grep -Eq 'runtime bootstrap failed.*GPU Timeout'; then
+        splash_failed_chunk="$SPLASH_BONSAI_PREFILL_CHUNK_TOKENS"
+        splash_chunk_fallback=1
+        SPLASH_FLASH_NEXT_MAX_MEMORY="10G"
+        SPLASH_BONSAI_PREFILL_CHUNK_TOKENS=1024
+        splash_flash_next_model_args
+        printf "Prefill chunk %s tokens tripped the engine's 5 s Metal event window; retrying with 1024-token chunks and a 10G cap. Set SPLASH_FLASH_NEXT_MAX_MEMORY and SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS together to try the larger pair again.\n" "$splash_failed_chunk" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+        continue
       fi
       # Retry only a startup admission failure, never a runtime/Metal failure.
       if ! tail -c "+$((splash_attempt_offset + 1))" "$SPLASH_RUN_LOG" |
