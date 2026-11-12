@@ -1,0 +1,16 @@
+{
+  "source": "dev/benchmarks/tensorfold-copy-20261112/run.py",
+  "functions_identical": [
+    "save",
+    "system_snapshot",
+    "wait_nominal",
+    "probe"
+  ],
+  "original_runner_sha256": "bea7856ca1094f1f93447a26aa563fd6e0ae0629a5a02ca0697b1eb051def28b",
+  "helper_function_ast_sha256": {
+    "save": "e39370047050b880ff32950fc85c2ad28e5f8cdc75cd9856638db24ad9842072",
+    "system_snapshot": "6e89a03cd1e50a57c3bfd4c58f70778af9816605ef9e239bde9bc77d1982d8dc",
+    "wait_nominal": "b3230db64105d2abde3c68fe94db3bdbeaadd7ab509a0adcb17af70c7f6c2c54",
+    "probe": "f538cbde2df83e7ac90fa35a7f666c325b39d65e1f5b2ddc5a9c07a4721b1a49"
+  }
+}

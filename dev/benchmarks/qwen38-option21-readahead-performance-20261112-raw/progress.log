@@ -1,0 +1,74 @@
+Original service stopped; starting smoke gates
+warmup correct True PP 441.929039621929 TPS 25.87248839414639 copies 0 accepted 0
+4096-cold correct True PP 432.48387660523315 TPS 23.94838844991913 copies 0 accepted 0
+4096-reuse correct True PP 16.0748875427659 TPS 23.346731899893147 copies 0 accepted 0
+code-3 correct True PP 23.846476385033156 TPS 17.7781020421498 copies 0 accepted 0
+ARM COMPLETE smoke-candidate
+4096-reuse correct True PP 13.996682786179676 TPS 23.334551642555933 copies 0 accepted 0
+ARM COMPLETE smoke-restart
+warmup correct True PP 422.8239721430228 TPS 22.944958907993854 copies 0 accepted 0
+4096-cold correct True PP 410.0877595791629 TPS 23.962457135578322 copies 0 accepted 0
+Cooling to nominal before the next long-copy probe
+4096-reuse correct True PP 14.3042416844675 TPS 23.29451078339685 copies 0 accepted 0
+code-3 correct True PP 23.721685326902122 TPS 17.80178064044796 copies 0 accepted 0
+ARM COMPLETE smoke-baseline
+warmup correct True PP 432.3773142527372 TPS 23.90474738217853 copies 0 accepted 0
+4096-cold correct True PP 413.20834350930966 TPS 24.006163772070824 copies 0 accepted 0
+Cooling to nominal before the next long-copy probe
+4096-reuse correct True PP 12.828297513875942 TPS 23.325705418438602 copies 0 accepted 0
+8192-cold correct True PP 440.24774507187084 TPS 22.838745474923297 copies 0 accepted 0
+8192-reuse correct True PP 16.072131727191636 TPS 23.473702781411397 copies 0 accepted 0
+16384-cold correct True PP 400.061429290948 TPS 23.018233105888964 copies 0 accepted 0
+Cooling to nominal before the next long-copy probe
+16384-reuse correct True PP 13.098377547634433 TPS 23.064740785089786 copies 0 accepted 0
+code-3 correct True PP 23.746682266917656 TPS 16.812263782235334 copies 0 accepted 0
+ARM COMPLETE A1
+warmup correct True PP 429.7557976494618 TPS 25.223158576670436 copies 0 accepted 0
+4096-cold correct True PP 410.37911517947197 TPS 23.95481969711526 copies 0 accepted 0
+Cooling to nominal before the next long-copy probe
+4096-reuse correct True PP 13.135181818281326 TPS 23.250503618145476 copies 0 accepted 0
+8192-cold correct True PP 437.5348357247086 TPS 22.91898067954054 copies 0 accepted 0
+8192-reuse correct True PP 16.090838144940907 TPS 23.3730281160306 copies 0 accepted 0
+16384-cold correct True PP 390.3622521702055 TPS 22.741184020942953 copies 0 accepted 0
+Cooling to nominal before the next long-copy probe
+16384-reuse correct True PP 13.48373692779796 TPS 23.21519163041024 copies 0 accepted 0
+code-3 correct True PP 24.301447303070944 TPS 16.994142317775896 copies 0 accepted 0
+ARM COMPLETE B1
+warmup correct True PP 430.7127551682123 TPS 25.733611075746207 copies 0 accepted 0
+4096-cold correct True PP 414.9923774951694 TPS 25.023495745478915 copies 0 accepted 0
+Cooling to nominal before the next long-copy probe
+4096-reuse correct True PP 14.602483882508414 TPS 24.83195302526377 copies 0 accepted 0
+8192-cold correct True PP 440.8495348940682 TPS 22.79975741058115 copies 0 accepted 0
+8192-reuse correct True PP 16.07482294252313 TPS 23.45198970383593 copies 0 accepted 0
+Cooling to nominal before the next long-copy probe
+16384-cold correct True PP 425.6998278247232 TPS 23.102056618034 copies 0 accepted 0
+Cooling to nominal before the next long-copy probe
+16384-reuse correct True PP 13.615120953330768 TPS 23.412629856919256 copies 0 accepted 0
+code-3 correct True PP 24.14760221856095 TPS 16.94020328243939 copies 0 accepted 0
+ARM COMPLETE B2
+warmup correct True PP 431.67570772276036 TPS 25.832471797738815 copies 0 accepted 0
+4096-cold correct True PP 411.75543731674975 TPS 23.967704653292014 copies 0 accepted 0
+Cooling to nominal before the next long-copy probe
+4096-reuse correct True PP 14.299230463080578 TPS 23.39672697029379 copies 0 accepted 0
+8192-cold correct True PP 440.3934876088336 TPS 22.858336302911933 copies 0 accepted 0
+8192-reuse correct True PP 15.97790787937212 TPS 23.462253062873653 copies 0 accepted 0
+Cooling to nominal before the next long-copy probe
+16384-cold correct True PP 425.73085506183105 TPS 23.426890469916298 copies 0 accepted 0
+Cooling to nominal before the next long-copy probe
+16384-reuse correct True PP 13.724229899149783 TPS 23.199997655579185 copies 0 accepted 0
+code-3 correct True PP 23.971031009025594 TPS 16.28253281776209 copies 0 accepted 0
+ARM COMPLETE A2
+warmup correct True PP 429.61426955220765 TPS 25.52041498881131 copies 0 accepted 0
+Cooling to nominal before the next long-copy probe
+8192-cold correct True PP 440.75676281457044 TPS 22.948068279923916 copies 0 accepted 0
+8192-reuse correct True PP 15.869531293393248 TPS 22.898540663951625 copies 0 accepted 0
+code-3 correct True PP 23.17454585132177 TPS 17.663062178566676 copies 0 accepted 0
+ARM COMPLETE native-baseline
+warmup correct True PP 395.6351084746138 TPS 25.080481946541084 copies 0 accepted 0
+Cooling to nominal before the next long-copy probe
+8192-cold correct True PP 439.98979506847814 TPS 23.100506168564635 copies 0 accepted 0
+8192-reuse correct True PP 15.931431120457551 TPS 22.874848333735848 copies 0 accepted 0
+code-3 correct True PP 23.61291350884943 TPS 17.49399240397218 copies 0 accepted 0
+ARM COMPLETE native-candidate
+PERFORMANCE MATRIX COMPLETE
+Original service restored on port 1235 with matching identity

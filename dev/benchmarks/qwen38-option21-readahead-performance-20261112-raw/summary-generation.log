@@ -1,0 +1,24 @@
+/Users/mymac/splash/splash/dev/benchmarks/qwen38-option21-readahead-performance-20261112.md
+{
+  "4096": {
+    "pp_percent": 0.049421787726688926,
+    "tps_percent": 2.093737799764983,
+    "ttft_percent": -0.04822155304347042,
+    "cached_tps_percent": 2.9108592706847958,
+    "cached_ttft_percent": -2.2924762924410813
+  },
+  "8192": {
+    "pp_percent": -0.2562748572489282,
+    "tps_percent": 0.047391018078024594,
+    "ttft_percent": 0.26715754363115796,
+    "cached_tps_percent": -0.23636042437606974,
+    "cached_ttft_percent": -0.3703960179906596
+  },
+  "16384": {
+    "pp_percent": -1.17828714825986,
+    "tps_percent": -1.2959012496671418,
+    "ttft_percent": 1.2982661117106442,
+    "cached_tps_percent": 0.7847943355956843,
+    "cached_ttft_percent": -1.164630553148549
+  }
+}

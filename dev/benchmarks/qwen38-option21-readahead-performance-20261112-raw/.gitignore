@@ -1,0 +1,4 @@
+__pycache__/
+frozen-expert-cache/
+binaries/*/splash
+binaries/*/*.metallib

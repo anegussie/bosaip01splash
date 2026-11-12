@@ -59,7 +59,7 @@ SPLASH_FLASH_NEXT_MAX_MEMORY="${SPLASH_FLASH_NEXT_MAX_MEMORY:-10G}"
 SPLASH_FLASH_NEXT_REASONING_EFFORT="${SPLASH_FLASH_NEXT_REASONING_EFFORT:-low}"
 SPLASH_FLASH_NEXT_MAX_CACHE_DISK="${SPLASH_FLASH_NEXT_MAX_CACHE_DISK:-16G}"
 # Option 21's Q2_0 target has a small persistent-cache default for low-disk Macs.
-SPLASH_FLASH_NEXT_Q2_MAX_CACHE_DISK="${SPLASH_FLASH_NEXT_Q2_MAX_CACHE_DISK:-2G}"
+SPLASH_FLASH_NEXT_Q2_MAX_CACHE_DISK="${SPLASH_FLASH_NEXT_Q2_MAX_CACHE_DISK:-3G}"
 SPLASH_FLASH_NEXT_PERSISTENT_CACHE="${SPLASH_FLASH_NEXT_PERSISTENT_CACHE:-1}"
 SPLASH_FLASH_NEXT_CACHE_DIR="${SPLASH_FLASH_NEXT_CACHE_DIR:-$HOME/Library/Caches/Splash/flash-next-option20-iq3-xxs}"
 SPLASH_FLASH_NEXT_EXPERT_MEMORY="${SPLASH_FLASH_NEXT_EXPERT_MEMORY:-auto}"
@@ -345,7 +345,8 @@ splash_flash_next_host_defaults() {
   fi
   # Give the 16 GiB preset room for 131K resident admission with 2,048-token
   # prefill. Host pressure can still force spill. Explicit settings win.
-  # Both raises need the whole stock profile. A raised streamed store competes
+  # Both raises need the stock streamed stores. Context and disk-cache settings
+  # do not select GPU workspace geometry. A raised streamed store competes
   # for the same Metal room, and 2,048-token chunks sit on top of that room:
   # asking for a 4G expert store on the 10G cap with 2,048-token chunks plans
   # 10,940 MiB of floors against a 10,240 MiB budget and the engine refuses to
@@ -356,9 +357,6 @@ splash_flash_next_host_defaults() {
   # for the IQ3_XXS numbers and qwen38-option21-chunk-2048-20261110.md for the
   # same comparison on the Q2_0 target with the BF16 draft.
   if [[ "$host_memory" == "17179869184" &&
-        "$SPLASH_FLASH_NEXT_MAX_CONTEXT" == "131072" &&
-        "$SPLASH_FLASH_NEXT_MAX_CACHE_DISK" == "16G" &&
-        "$SPLASH_FLASH_NEXT_PERSISTENT_CACHE" == "1" &&
         "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" == "auto" &&
         "$SPLASH_FLASH_NEXT_PLE_MEMORY" == "64M" &&
         "$SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS" == "1" ]]; then
@@ -373,7 +371,6 @@ splash_flash_next_host_defaults() {
   fi
   SPLASH_FLASH_NEXT_CAP_NOTE=""
   if [[ "$host_memory" == "17179869184" &&
-        "$SPLASH_FLASH_NEXT_MAX_CONTEXT" == "131072" &&
         ( "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" != "auto" ||
           "$SPLASH_FLASH_NEXT_PLE_MEMORY" != "64M" ) ]]; then
     SPLASH_FLASH_NEXT_CAP_NOTE="streamed memory overrides hold the Metal cap at ${SPLASH_FLASH_NEXT_MAX_MEMORY} and the prefill chunk at ${SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS} tokens; set SPLASH_FLASH_NEXT_MAX_MEMORY=10.8G and SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS=2048 alongside them to keep the 16 GiB preset"

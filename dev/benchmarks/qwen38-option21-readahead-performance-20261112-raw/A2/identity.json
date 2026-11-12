@@ -1,0 +1,32 @@
+{
+  "binary": "/Users/mymac/splash/splash/dev/benchmarks/qwen38-option21-readahead-performance-20261112-raw/binaries/baseline/splash",
+  "sha256": "5b29bd9a5c71ab5cf2ada1cd42fc51c0ffdf2a209073a60c4d8d049ac79d3388",
+  "flags": [
+    "--model",
+    "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0",
+    "--model-root",
+    "/Users/mymac/splash/splash/install/models/.selections/be19a0828c0f96ac1e4ea064e868e18642917d41b5063d625fb3899718685cab",
+    "--binary",
+    "/Users/mymac/splash/splash/dev/benchmarks/qwen38-option21-readahead-performance-20261112-raw/binaries/baseline/splash",
+    "--max-context",
+    "131072",
+    "--max-memory",
+    "10.8G",
+    "--max-cache-disk",
+    "3G",
+    "--prefill-chunk-tokens",
+    "2048",
+    "--ple-memory",
+    "64M",
+    "--state-format",
+    "bf16",
+    "--verify-rows",
+    "auto",
+    "--startup-timeout",
+    "180",
+    "--expert-cache",
+    "/Users/mymac/splash/splash/dev/benchmarks/qwen38-option21-readahead-performance-20261112-raw/frozen-expert-cache",
+    "--expert-cache-disk",
+    "536346624"
+  ]
+}

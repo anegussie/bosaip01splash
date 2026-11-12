@@ -27,6 +27,18 @@ class Option14(unittest.TestCase):
             p = tools / name
             p.write_text("#!/bin/sh\nexit 1\n")
             p.chmod(0o755)
+        # The launcher checks the cache volume's free space against the cache
+        # quota. Pin that measurement so a profile's defaults are tested
+        # against a roomy volume rather than whatever the developer's Mac
+        # happens to have free today; a test that wants a full volume writes
+        # its own df.
+        df = tools / "df"
+        df.write_text(
+            "#!/bin/sh\n"
+            "echo 'Filesystem 1024-blocks Used Available Capacity Mounted on'\n"
+            "echo '/dev/disk3s1 104857600 40960000 64000000 40% /private/tmp'\n"
+        )
+        df.chmod(0o755)
         self.mock = self.root / "server.py"
         self.mock.write_text("""#!/usr/bin/env python3
 import json,os,signal,sys,time
@@ -784,7 +796,7 @@ print('Ready test server',flush=True)
             "--prefill-chunk-tokens": "2048",
             "--kv-format": "int8",
             "--state-format": "bf16",
-            "--max-cache-disk": str(2 * 1024**3),
+            "--max-cache-disk": str(3 * 1024**3),
         }.items():
             self.assertEqual(args[args.index(flag) + 1], value)
         option21_cache = args[args.index("--cache-dir") + 1]
@@ -926,7 +938,8 @@ print('Ready test server',flush=True)
 
     def test_option21_default_context_retries_at_measured_ceiling(self):
         r = self.run_launcher(
-            "21", SPLASH_HOST_MEM_BYTES=str(17179869184),
+            "21",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
             SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.draft()),
             MOCK_MODE="context_once",
         )
@@ -936,13 +949,16 @@ print('Ready test server',flush=True)
         self.assertEqual(args[args.index("--max-context") + 1], "114681")
         self.assertEqual(args[args.index("--draft-model") + 1], str(self.draft()))
         config = json.loads(self.config.read_text())
-        model = config["provider"]["local-llama"]["models"]["qwen3.8-flash-next-q2-0-dflash2-bf16-splash"]
+        model = config["provider"]["local-llama"]["models"][
+            "qwen3.8-flash-next-q2-0-dflash2-bf16-splash"
+        ]
         self.assertEqual(model["limit"], {"context": 112633, "output": 1024})
         self.assertIn("retrying once with server_context=114681", r.stdout)
 
     def test_option21_context_fallback_is_bounded(self):
         r = self.run_launcher(
-            "21", SPLASH_HOST_MEM_BYTES=str(17179869184),
+            "21",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
             SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.draft()),
             MOCK_MODE="context_repeat",
         )
@@ -958,9 +974,11 @@ print('Ready test server',flush=True)
             with self.subTest(overrides=overrides):
                 (self.root / "attempts").unlink(missing_ok=True)
                 r = self.run_launcher(
-                    "21", SPLASH_HOST_MEM_BYTES=str(17179869184),
+                    "21",
+                    SPLASH_HOST_MEM_BYTES=str(17179869184),
                     SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.draft()),
-                    MOCK_MODE="context_once", **overrides,
+                    MOCK_MODE="context_once",
+                    **overrides,
                 )
                 self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
                 self.assertEqual((self.root / "attempts").read_text(), "1")
@@ -980,6 +998,26 @@ print('Ready test server',flush=True)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertEqual(args[args.index("--max-memory") + 1], "10.8G")
         self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "2048")
+
+    def test_option21_fast_profile_survives_context_and_prefix_cache_changes(self):
+        for overrides in (
+            {"SPLASH_FLASH_NEXT_MAX_CONTEXT": "32768"},
+            {"SPLASH_FLASH_NEXT_MAX_CACHE_DISK": "4G"},
+            {"SPLASH_FLASH_NEXT_PERSISTENT_CACHE": "0"},
+        ):
+            with self.subTest(overrides=overrides):
+                r = self.run_launcher(
+                    "21",
+                    SPLASH_HOST_MEM_BYTES=str(17179869184),
+                    SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.draft()),
+                    **overrides,
+                )
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                args = json.loads((self.root / "argv.json").read_text())
+                self.assertEqual(args[args.index("--max-memory") + 1], "10.8G")
+                self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "2048")
+                self.assertNotIn("--expert-cache", args)
+                self.assertNotIn("--expert-cache-disk", args)
 
     def test_option21_explicit_cap_outside_the_stock_set_keeps_the_chunk(self):
         # The chunk raise needs the whole stock profile. A cap the preset never

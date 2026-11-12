@@ -1,0 +1,30 @@
+{
+  "model": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0",
+  "contexts": [
+    4096,
+    8192,
+    16384
+  ],
+  "server_context": 131072,
+  "max_memory": "10.8G",
+  "prefill_chunk": 2048,
+  "state": "bf16",
+  "kv": "int8",
+  "expert_memory": "auto",
+  "verify_rows": "auto",
+  "active_requests": 1,
+  "prefix_cache_quota": "3G",
+  "prepared_cache_bytes": 536346624,
+  "recall_output_budget": 96,
+  "code_output_budget": 192,
+  "temperature": 0.0,
+  "seed": 1234,
+  "thinking": false,
+  "sequence": [
+    "A1",
+    "B1",
+    "B2",
+    "A2"
+  ],
+  "cold_definition": "zero reused prefix tokens; model/OS caches warm"
+}

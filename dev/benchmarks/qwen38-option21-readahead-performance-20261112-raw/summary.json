@@ -1,0 +1,545 @@
+{
+  "contract": {
+    "model": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0",
+    "contexts": [
+      4096,
+      8192,
+      16384
+    ],
+    "server_context": 131072,
+    "max_memory": "10.8G",
+    "prefill_chunk": 2048,
+    "state": "bf16",
+    "kv": "int8",
+    "expert_memory": "auto",
+    "verify_rows": "auto",
+    "active_requests": 1,
+    "prefix_cache_quota": "3G",
+    "prepared_cache_bytes": 536346624,
+    "recall_output_budget": 96,
+    "code_output_budget": 192,
+    "temperature": 0.0,
+    "seed": 1234,
+    "thinking": false,
+    "sequence": [
+      "A1",
+      "B1",
+      "B2",
+      "A2"
+    ],
+    "cold_definition": "zero reused prefix tokens; model/OS caches warm"
+  },
+  "rows": [
+    {
+      "engine": "Original",
+      "prompt": 4108,
+      "pp": [
+        413.20834350930966,
+        411.75543731674975
+      ],
+      "tps": [
+        24.006163772070824,
+        23.967704653292014
+      ],
+      "ttft": [
+        9.947815083000023,
+        9.981895582997822
+      ],
+      "cached_tps": [
+        23.325705418438602,
+        23.39672697029379
+      ],
+      "cached_ttft": [
+        0.9428440000010596,
+        0.8476615830004448
+      ],
+      "output_tokens": [
+        96,
+        96,
+        96,
+        96
+      ]
+    },
+    {
+      "engine": "Candidate",
+      "prompt": 4108,
+      "pp": [
+        410.37911517947197,
+        414.9923774951694
+      ],
+      "tps": [
+        23.95481969711526,
+        25.023495745478915
+      ],
+      "ttft": [
+        10.016169999998965,
+        9.903930249998666
+      ],
+      "cached_tps": [
+        23.250503618145476,
+        24.83195302526377
+      ],
+      "cached_ttft": [
+        0.9210974999987229,
+        0.8283611669976381
+      ],
+      "output_tokens": [
+        96,
+        96,
+        96,
+        96
+      ]
+    },
+    {
+      "engine": "Original",
+      "prompt": 8204,
+      "pp": [
+        440.24774507187084,
+        440.3934876088336
+      ],
+      "tps": [
+        22.838745474923297,
+        22.858336302911933
+      ],
+      "ttft": [
+        18.64166720800131,
+        18.63549504099865
+      ],
+      "cached_tps": [
+        23.473702781411397,
+        23.462253062873653
+      ],
+      "cached_ttft": [
+        0.7488849170003959,
+        0.7534940839977935
+      ],
+      "output_tokens": [
+        96,
+        96,
+        96,
+        96
+      ]
+    },
+    {
+      "engine": "Candidate",
+      "prompt": 8204,
+      "pp": [
+        437.5348357247086,
+        440.8495348940682
+      ],
+      "tps": [
+        22.91898067954054,
+        22.79975741058115
+      ],
+      "ttft": [
+        18.760412332998385,
+        18.6163386670014
+      ],
+      "cached_tps": [
+        23.3730281160306,
+        23.45198970383593
+      ],
+      "cached_ttft": [
+        0.7480409580020932,
+        0.748773291001271
+      ],
+      "output_tokens": [
+        96,
+        96,
+        96,
+        96
+      ]
+    },
+    {
+      "engine": "Original",
+      "prompt": 16396,
+      "pp": [
+        400.061429290948,
+        425.73085506183105
+      ],
+      "tps": [
+        23.018233105888964,
+        23.426890469916298
+      ],
+      "ttft": [
+        41.00015829200129,
+        38.526067624999996
+      ],
+      "cached_tps": [
+        23.064740785089786,
+        23.199997655579185
+      ],
+      "cached_ttft": [
+        0.926858374998119,
+        0.8827712920028716
+      ],
+      "output_tokens": [
+        96,
+        96,
+        96,
+        96
+      ]
+    },
+    {
+      "engine": "Candidate",
+      "prompt": 16396,
+      "pp": [
+        390.3622521702055,
+        425.6998278247232
+      ],
+      "tps": [
+        22.741184020942953,
+        23.102056618034
+      ],
+      "ttft": [
+        42.01849395800309,
+        38.540194000001065
+      ],
+      "cached_tps": [
+        23.21519163041024,
+        23.412629856919256
+      ],
+      "cached_ttft": [
+        0.8998025420005433,
+        0.8887516249997134
+      ],
+      "output_tokens": [
+        96,
+        96,
+        96,
+        96
+      ]
+    }
+  ],
+  "comparison": {
+    "4096": {
+      "pp_percent": 0.049421787726688926,
+      "tps_percent": 2.093737799764983,
+      "ttft_percent": -0.04822155304347042,
+      "cached_tps_percent": 2.9108592706847958,
+      "cached_ttft_percent": -2.2924762924410813
+    },
+    "8192": {
+      "pp_percent": -0.2562748572489282,
+      "tps_percent": 0.047391018078024594,
+      "ttft_percent": 0.26715754363115796,
+      "cached_tps_percent": -0.23636042437606974,
+      "cached_ttft_percent": -0.3703960179906596
+    },
+    "16384": {
+      "pp_percent": -1.17828714825986,
+      "tps_percent": -1.2959012496671418,
+      "ttft_percent": 1.2982661117106442,
+      "cached_tps_percent": 0.7847943355956843,
+      "cached_ttft_percent": -1.164630553148549
+    }
+  },
+  "arms": {
+    "A1": {
+      "swapout_pages": 0,
+      "thermals": [
+        "fair",
+        "nominal"
+      ],
+      "pressures": [
+        "warning"
+      ],
+      "minimum_host_headroom_bytes": 985022464,
+      "expert_slots": [
+        1512
+      ],
+      "peak_metal_bytes": 9257959424,
+      "kv_spilled_pages": 0,
+      "plane_cache": {
+        "enabled": true,
+        "capacity_bytes": 536346624,
+        "used_bytes": 536346624,
+        "hits": 6676,
+        "misses": 227802,
+        "writes": 0,
+        "corruptions": 0,
+        "errors": 0,
+        "skipped_writes": 99783,
+        "read_bytes": 9228902400,
+        "written_bytes": 0,
+        "failure": ""
+      },
+      "prepared_payload_read_bytes": 6342451200,
+      "accepted": 557,
+      "drafted": 575,
+      "acceptance_percent": 96.8695652173913,
+      "expert_io": {
+        "prefill": {
+          "read_bytes": 220362866688,
+          "ahead_read_bytes": 175695167488,
+          "ahead_used_bytes": 103159578624,
+          "host_step_work_seconds": 7.45336532
+        },
+        "decode": {
+          "read_bytes": 169976905728,
+          "ahead_read_bytes": 79086977024,
+          "ahead_used_bytes": 45808861184,
+          "host_step_work_seconds": 15.679041344999998
+        }
+      },
+      "all_correct": true,
+      "requests": 7
+    },
+    "B1": {
+      "swapout_pages": 0,
+      "thermals": [
+        "fair",
+        "nominal"
+      ],
+      "pressures": [
+        "warning"
+      ],
+      "minimum_host_headroom_bytes": 871235584,
+      "expert_slots": [
+        1512
+      ],
+      "peak_metal_bytes": 9257959424,
+      "kv_spilled_pages": 0,
+      "plane_cache": {
+        "enabled": true,
+        "capacity_bytes": 536346624,
+        "used_bytes": 536346624,
+        "hits": 7837,
+        "misses": 89143,
+        "writes": 0,
+        "corruptions": 0,
+        "errors": 0,
+        "skipped_writes": 98743,
+        "read_bytes": 10833868800,
+        "written_bytes": 0,
+        "failure": ""
+      },
+      "prepared_payload_read_bytes": 7622553600,
+      "accepted": 557,
+      "drafted": 575,
+      "acceptance_percent": 96.8695652173913,
+      "expert_io": {
+        "prefill": {
+          "read_bytes": 219382366208,
+          "ahead_read_bytes": 172323127296,
+          "ahead_used_bytes": 100760125440,
+          "host_step_work_seconds": 7.595335767
+        },
+        "decode": {
+          "read_bytes": 169790799872,
+          "ahead_read_bytes": 78561443840,
+          "ahead_used_bytes": 45387382784,
+          "host_step_work_seconds": 15.615450809000002
+        }
+      },
+      "all_correct": true,
+      "requests": 7
+    },
+    "B2": {
+      "swapout_pages": 0,
+      "thermals": [
+        "fair",
+        "nominal"
+      ],
+      "pressures": [
+        "normal",
+        "warning"
+      ],
+      "minimum_host_headroom_bytes": 1042546688,
+      "expert_slots": [
+        1512,
+        1786
+      ],
+      "peak_metal_bytes": 9257959424,
+      "kv_spilled_pages": 0,
+      "plane_cache": {
+        "enabled": true,
+        "capacity_bytes": 536346624,
+        "used_bytes": 536346624,
+        "hits": 7812,
+        "misses": 87814,
+        "writes": 0,
+        "corruptions": 0,
+        "errors": 0,
+        "skipped_writes": 96710,
+        "read_bytes": 10799308800,
+        "written_bytes": 0,
+        "failure": ""
+      },
+      "prepared_payload_read_bytes": 7596288000,
+      "accepted": 557,
+      "drafted": 575,
+      "acceptance_percent": 96.8695652173913,
+      "expert_io": {
+        "prefill": {
+          "read_bytes": 218687881216,
+          "ahead_read_bytes": 172497240064,
+          "ahead_used_bytes": 100852891648,
+          "host_step_work_seconds": 7.447307002
+        },
+        "decode": {
+          "read_bytes": 166979436544,
+          "ahead_read_bytes": 77117095936,
+          "ahead_used_bytes": 44261654528,
+          "host_step_work_seconds": 15.363053162
+        }
+      },
+      "all_correct": true,
+      "requests": 7
+    },
+    "A2": {
+      "swapout_pages": 0,
+      "thermals": [
+        "fair",
+        "nominal"
+      ],
+      "pressures": [
+        "normal",
+        "warning"
+      ],
+      "minimum_host_headroom_bytes": 990887936,
+      "expert_slots": [
+        1512,
+        1786
+      ],
+      "peak_metal_bytes": 9257959424,
+      "kv_spilled_pages": 0,
+      "plane_cache": {
+        "enabled": true,
+        "capacity_bytes": 536346624,
+        "used_bytes": 536346624,
+        "hits": 6702,
+        "misses": 227429,
+        "writes": 0,
+        "corruptions": 0,
+        "errors": 0,
+        "skipped_writes": 99310,
+        "read_bytes": 9264844800,
+        "written_bytes": 0,
+        "failure": ""
+      },
+      "prepared_payload_read_bytes": 6404659200,
+      "accepted": 557,
+      "drafted": 579,
+      "acceptance_percent": 96.20034542314335,
+      "expert_io": {
+        "prefill": {
+          "read_bytes": 220374564864,
+          "ahead_read_bytes": 175828254720,
+          "ahead_used_bytes": 103286439936,
+          "host_step_work_seconds": 7.496050897
+        },
+        "decode": {
+          "read_bytes": 170996072448,
+          "ahead_read_bytes": 79018147840,
+          "ahead_used_bytes": 46022279168,
+          "host_step_work_seconds": 15.74641982
+        }
+      },
+      "all_correct": true,
+      "requests": 7
+    },
+    "native-baseline": {
+      "swapout_pages": 0,
+      "thermals": [
+        "fair",
+        "nominal"
+      ],
+      "pressures": [
+        "normal",
+        "warning"
+      ],
+      "minimum_host_headroom_bytes": 1295925248,
+      "expert_slots": [
+        1512,
+        1786
+      ],
+      "peak_metal_bytes": 9257959424,
+      "kv_spilled_pages": 0,
+      "plane_cache": {
+        "enabled": false,
+        "capacity_bytes": 0,
+        "used_bytes": 0,
+        "hits": 0,
+        "misses": 0,
+        "writes": 0,
+        "corruptions": 0,
+        "errors": 0,
+        "skipped_writes": 0,
+        "read_bytes": 0,
+        "written_bytes": 0,
+        "failure": ""
+      },
+      "prepared_payload_read_bytes": 0,
+      "accepted": 229,
+      "drafted": 242,
+      "acceptance_percent": 94.62809917355372,
+      "expert_io": {
+        "prefill": {
+          "read_bytes": 71827800064,
+          "ahead_read_bytes": 50687098880,
+          "ahead_used_bytes": 31387385856,
+          "host_step_work_seconds": 3.279903058
+        },
+        "decode": {
+          "read_bytes": 75633377280,
+          "ahead_read_bytes": 34564784128,
+          "ahead_used_bytes": 20712767488,
+          "host_step_work_seconds": 6.809167410000001
+        }
+      },
+      "all_correct": true,
+      "requests": 3
+    },
+    "native-candidate": {
+      "swapout_pages": 0,
+      "thermals": [
+        "fair",
+        "nominal"
+      ],
+      "pressures": [
+        "warning"
+      ],
+      "minimum_host_headroom_bytes": 1059962880,
+      "expert_slots": [
+        1512
+      ],
+      "peak_metal_bytes": 9257959424,
+      "kv_spilled_pages": 0,
+      "plane_cache": {
+        "enabled": false,
+        "capacity_bytes": 0,
+        "used_bytes": 0,
+        "hits": 0,
+        "misses": 0,
+        "writes": 0,
+        "corruptions": 0,
+        "errors": 0,
+        "skipped_writes": 0,
+        "read_bytes": 0,
+        "written_bytes": 0,
+        "failure": ""
+      },
+      "prepared_payload_read_bytes": 0,
+      "accepted": 229,
+      "drafted": 242,
+      "acceptance_percent": 94.62809917355372,
+      "expert_io": {
+        "prefill": {
+          "read_bytes": 71853637632,
+          "ahead_read_bytes": 50381127680,
+          "ahead_used_bytes": 31084281856,
+          "host_step_work_seconds": 3.3636783360000004
+        },
+        "decode": {
+          "read_bytes": 75385372672,
+          "ahead_read_bytes": 34371387392,
+          "ahead_used_bytes": 20586840064,
+          "host_step_work_seconds": 6.836506565
+        }
+      },
+      "all_correct": true,
+      "requests": 3
+    }
+  }
+}
