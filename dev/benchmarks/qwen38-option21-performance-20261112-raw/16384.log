@@ -1,0 +1,7 @@
+trial 1: 16384 content tokens; max output 96; thinking disabled
+[16384-trial1/pre-16384-cold] prompt=16396 cached=0 prefill=392.82 tok/s ttft=41.738s decode=27.15 tok/s cycles=12 tpc=7.0 correct=True thermal=fair->fair clean=True
+[16384-trial1/pre-16384-reuse] prompt=16396 cached=16384 prefill=14.53 tok/s ttft=0.825s decode=27.9 tok/s cycles=12 tpc=7.0 correct=True thermal=fair->fair clean=True
+trial 2: 16384 content tokens; max output 96; thinking disabled
+[16384-trial2/pre-16384-cold] prompt=16396 cached=0 prefill=310.72 tok/s ttft=52.767s decode=24.31 tok/s cycles=12 tpc=7.0 correct=True thermal=fair->fair clean=True
+[16384-trial2/pre-16384-reuse] prompt=16396 cached=16384 prefill=14.31 tok/s ttft=0.838s decode=21.9 tok/s cycles=12 tpc=7.0 correct=True thermal=fair->fair clean=True
+COMPLETE: 16384: 4 clean requests; recall/counting and cache gates passed

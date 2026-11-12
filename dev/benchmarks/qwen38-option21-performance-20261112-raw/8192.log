@@ -1,0 +1,7 @@
+trial 1: 8192 content tokens; max output 96; thinking disabled
+[8192-trial1/pre-8192-cold] prompt=8204 cached=0 prefill=445.07 tok/s ttft=18.433s decode=27.6 tok/s cycles=12 tpc=7.0 correct=True thermal=nominal->nominal clean=True
+[8192-trial1/pre-8192-reuse] prompt=8204 cached=8192 prefill=13.77 tok/s ttft=0.871s decode=25.87 tok/s cycles=14 tpc=6.786 correct=True thermal=nominal->fair clean=True
+trial 2: 8192 content tokens; max output 96; thinking disabled
+[8192-trial2/pre-8192-cold] prompt=8204 cached=0 prefill=436.02 tok/s ttft=18.815s decode=25.87 tok/s cycles=14 tpc=6.786 correct=True thermal=fair->fair clean=True
+[8192-trial2/pre-8192-reuse] prompt=8204 cached=8192 prefill=13.3 tok/s ttft=0.902s decode=24.13 tok/s cycles=14 tpc=6.786 correct=True thermal=fair->fair clean=True
+COMPLETE: 8192: 4 clean requests; recall/counting and cache gates passed

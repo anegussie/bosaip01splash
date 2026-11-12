@@ -1,0 +1,37 @@
+{
+  "instance": {
+    "id": "0f3ab782d6be0eeaffe71d96",
+    "pid": 99973,
+    "model": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0",
+    "host": "127.0.0.1",
+    "port": 1235,
+    "started_at": 1794463074.4842749
+  },
+  "build_id": "src-1ef6dc39d99601da3f23483d61dd79525938de3d02d0f05c50243809fefc66b7",
+  "loaded_model_layout_sha256": "96e1a0e5c6503ab81fac1ad802613e9293eac8c057aa7e0ed819a97b57f182d2",
+  "target_model_sha256": "d74e3079cbbeb7d92a28c936b96376ff4aa9a8fd8ecbf607d974f944b02fc2ef",
+  "maximum_context_tokens": 114681,
+  "prefill_chunk_tokens": null,
+  "verify_rows": "auto",
+  "model_bytes": null,
+  "kv_page_bytes": 423936,
+  "kv_page_tokens": 32,
+  "kv_format": "int8",
+  "kv_quantization": null,
+  "state_format": "bf16",
+  "model_state_bytes_per_token": null,
+  "governor_limit_bytes": 11596411699,
+  "governor_host_spare_reserve_bytes": 2147483648,
+  "disk_capacity_bytes": 2147483648,
+  "disk_limit_bytes": 1287569408,
+  "disk_persistent": true,
+  "table_cache_bytes": 67108844,
+  "table_cache_capacity_rows": 504370,
+  "expert_cap_bytes": 3420717840,
+  "expert_floor_bytes": 2971419408,
+  "expert_slot_count": null,
+  "expert_count": null,
+  "env": {
+    "SPLASH_FLASH_NEXT_CACHE_QUOTA": "5500000000"
+  }
+}

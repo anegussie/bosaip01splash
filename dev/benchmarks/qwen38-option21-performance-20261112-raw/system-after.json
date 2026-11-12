@@ -1,0 +1,32 @@
+{
+  "sysctl vm.swapusage": {
+    "exit_code": 0,
+    "stdout": "vm.swapusage: total = 2048.00M  used = 423.44M  free = 1624.56M  (encrypted)\n",
+    "stderr": ""
+  },
+  "vm_stat": {
+    "exit_code": 0,
+    "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                     4991.\nPages active:                                 106340.\nPages inactive:                               104528.\nPages speculative:                               882.\nPages throttled:                                   0.\nPages wired down:                             678383.\nPages purgeable:                                6085.\n\"Translation faults\":                     2442363118.\nPages copy-on-write:                       500927768.\nPages zero filled:                         929565535.\nPages reactivated:                         117762295.\nPages purged:                               13094214.\nFile-backed pages:                             77742.\nAnonymous pages:                              134008.\nPages stored in compressor:                   289022.\nPages occupied by compressor:                 111694.\nDecompressions:                             82570981.\nCompressions:                               89771909.\nPageins:                                   106705386.\nPageouts:                                     820319.\nSwapins:                                     1500832.\nSwapouts:                                    2009739.\nPages tagged:                                  82762.\nPages tagged resident:                         63230.\nPages tagged compressed:                       19532.\nPages tag-storage:                             32768.\nPages tag-storage holding tags:                 5043.\nPages tag-storage free:                          228.\nPages tag-storage non-tag pageable:            27409.\nPages tag-storage non-tag wired:                  88.\nBytes of compressed tags:                    3034688.\nTagged compressions:                         6037336.\nTagged decompressions:                       5660167.\n",
+    "stderr": ""
+  },
+  "pmset -g therm": {
+    "exit_code": 0,
+    "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+    "stderr": ""
+  },
+  "git rev-parse HEAD": {
+    "exit_code": 0,
+    "stdout": "256988ba25650146440aaccf71b295263b227afc\n",
+    "stderr": ""
+  },
+  "git status --short": {
+    "exit_code": 0,
+    "stdout": " M dev/benchmarks/test_bonsai_launcher.py\n",
+    "stderr": ""
+  },
+  "shasum -a 256 build/splash build/splash.metallib build/host-step.metallib startllamacpp.sh": {
+    "exit_code": 0,
+    "stdout": "9ce0459f074f088e62327ce77889bbf42ff76e566459567cc3e9adf45418f6e2  build/splash\ncae45f1a2be9d8abd7b22e24dbb540dd1451367168f7dbff960427f187ad6007  build/splash.metallib\n8e177c753e2051cd8a31c79bf031b3fae8daf04f5564ced9fc37db064bdfe51a  build/host-step.metallib\ncb243e74840cf6ea47cebc77c6d7c030f0cf359abff214da8d9d3c8147f5541f  startllamacpp.sh\n",
+    "stderr": ""
+  }
+}

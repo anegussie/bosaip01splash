@@ -1,0 +1,32 @@
+Option 21 verified: {'id': '0f3ab782d6be0eeaffe71d96', 'pid': 99973, 'model': 'ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0', 'host': '127.0.0.1', 'port': 1235, 'started_at': 1794463074.4842749}
+trial 1: smoke prompt tokens=351
+[trial1/smoke-cold] prompt=363 cached=0 prefill=111.98 tok/s ttft=3.241s decode=27.06 tok/s cycles=12 tpc=7.0 correct=True thermal=nominal->nominal clean=True
+[trial1/smoke-reuse] prompt=363 cached=352 prefill=11.18 tok/s ttft=0.983s decode=28.48 tok/s cycles=13 tpc=7.308 correct=True thermal=nominal->nominal clean=True
+trial 1: 4k prompt tokens=4019
+[trial1/4k-cold] prompt=4031 cached=0 prefill=469.26 tok/s ttft=8.59s decode=27.38 tok/s cycles=12 tpc=7.0 correct=True thermal=nominal->nominal clean=True
+[trial1/4k-reuse] prompt=4031 cached=4000 prefill=20.48 tok/s ttft=1.514s decode=24.49 tok/s cycles=14 tpc=6.786 correct=True thermal=nominal->nominal clean=True
+[trial1/code-1] prompt=45 cached=0 prefill=23.91 tok/s ttft=1.882s decode=16.63 tok/s cycles=19 tpc=7.474 correct=True thermal=nominal->nominal clean=True
+[trial1/code-2] prompt=44 cached=0 prefill=23.2 tok/s ttft=1.897s decode=18.88 tok/s cycles=21 tpc=4.905 correct=True thermal=nominal->nominal clean=True
+[trial1/code-3] prompt=48 cached=0 prefill=24.64 tok/s ttft=1.947s decode=20.88 tok/s cycles=15 tpc=6.4 correct=True thermal=nominal->nominal clean=True
+trial 2: smoke prompt tokens=351
+[trial2/smoke-cold] prompt=363 cached=0 prefill=111.79 tok/s ttft=3.247s decode=25.27 tok/s cycles=14 tpc=6.786 correct=True thermal=fair->fair clean=True
+[trial2/smoke-reuse] prompt=363 cached=352 prefill=12.19 tok/s ttft=0.902s decode=28.97 tok/s cycles=12 tpc=7.0 correct=True thermal=fair->fair clean=True
+trial 2: 4k prompt tokens=4019
+[trial2/4k-cold] prompt=4031 cached=0 prefill=464.39 tok/s ttft=8.68s decode=27.99 tok/s cycles=12 tpc=7.0 correct=True thermal=fair->fair clean=True
+[trial2/4k-reuse] prompt=4031 cached=4000 prefill=19.8 tok/s ttft=1.565s decode=23.84 tok/s cycles=14 tpc=6.0 correct=True thermal=fair->fair clean=True
+[trial2/code-3] prompt=48 cached=32 prefill=15.92 tok/s ttft=1.004s decode=19.84 tok/s cycles=11 tpc=6.364 correct=True thermal=fair->fair clean=True
+[trial2/code-2] prompt=44 cached=32 prefill=13.48 tok/s ttft=0.89s decode=19.84 tok/s cycles=13 tpc=7.0 correct=True thermal=fair->fair clean=True
+[trial2/code-1] prompt=45 cached=32 prefill=14.74 tok/s ttft=0.882s decode=17.69 tok/s cycles=19 tpc=7.474 correct=True thermal=fair->fair clean=True
+trial 1: prefill 8192 prompt tokens=8192
+[trial1/pre-8192-cold] prompt=8204 cached=0 prefill=436.54 tok/s ttft=18.792s decode=10.58 tok/s cycles=3 tpc=2.333 correct=True thermal=fair->fair clean=True
+[trial1/pre-8192-reuse] prompt=8204 cached=8192 prefill=14.93 tok/s ttft=0.803s decode=15.24 tok/s cycles=3 tpc=2.333 correct=True thermal=fair->fair clean=True
+trial 1: prefill 16384 prompt tokens=16384
+[trial1/pre-16384-cold] prompt=16396 cached=0 prefill=349.43 tok/s ttft=46.921s decode=14.95 tok/s cycles=3 tpc=2.333 correct=True thermal=fair->fair clean=True
+[trial1/pre-16384-reuse] prompt=16396 cached=16384 prefill=20.81 tok/s ttft=0.576s decode=17.41 tok/s cycles=2 tpc=3.5 correct=True thermal=fair->fair clean=True
+trial 2: prefill 8192 prompt tokens=8192
+[trial2/pre-8192-cold] prompt=8204 cached=0 prefill=315.05 tok/s ttft=26.04s decode=17.62 tok/s cycles=2 tpc=3.5 correct=True thermal=fair->fair clean=True
+[trial2/pre-8192-reuse] prompt=8204 cached=8192 prefill=20.34 tok/s ttft=0.589s decode=17.59 tok/s cycles=2 tpc=3.5 correct=True thermal=fair->fair clean=True
+trial 2: prefill 16384 prompt tokens=16384
+[trial2/pre-16384-cold] prompt=16396 cached=0 prefill=326.19 tok/s ttft=50.265s decode=17.63 tok/s cycles=2 tpc=3.5 correct=True thermal=fair->fair clean=True
+[trial2/pre-16384-reuse] prompt=16396 cached=16384 prefill=19.98 tok/s ttft=0.6s decode=17.11 tok/s cycles=2 tpc=3.5 correct=True thermal=fair->fair clean=True
+COMPLETE: 22 clean, correct probes
