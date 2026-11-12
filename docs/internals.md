@@ -689,8 +689,8 @@ history without.
 
 ## Sparse attention
 
-Qwen3.8-Flash-Next's full-attention layers attend sparsely (QSA): past 512
-complete blocks of 4 tokens, a query row attends only to the 512 blocks its
+Qwen3.8-Flash-Next's full-attention layers attend sparsely (QSA): past 1024
+complete blocks of 4 tokens, a query row attends only to the 1024 blocks its
 indexer scores highest and to its tokens after its last complete block. The
 indexer (four query heads and one key head of 128) keeps each block's pooled
 key, bf16, in its page's index, in the index plane of the page's extent apart

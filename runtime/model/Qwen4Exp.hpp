@@ -84,7 +84,11 @@ struct Qwen4ExpLayout final : QwenHybridLayout {
                           .hyperRank = 320,
                           .indexerHeads = 4,
                           .indexerHeadDimension = 128,
-                          .indexerTopBlocks = 512,
+                          // A row attends the indexerTopBlocks blocks of indexerBlockTokens
+                          // tokens its indexer scores highest: 1024 of 4, the 4096 tokens its
+                          // GGUFs state as attention.indexer.top_k (GgufImage.cpp
+                          // requireMetadata holds the file to this layout).
+                          .indexerTopBlocks = 1024,
                           .indexerBlockTokens = 4,
                           .pleLayer = 1,
                           .pleNgram = 3,

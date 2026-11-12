@@ -717,8 +717,8 @@ void testConfigurationCheck(const std::filesystem::path &fixtures) {
   for (const auto &[from, to, error] : std::initializer_list<std::array<std::string_view, 3>>{
            {R"("qwen4exp.hyper_connection.count": 4)", R"("qwen4exp.hyper_connection.count": 2)",
             "GGUF metadata does not match the target: hyper_connection.count 2 (expected 4)"},
-           {R"("qwen4exp.attention.indexer.top_k": 2048)", R"("qwen4exp.attention.indexer.top_k": 1024)",
-            "GGUF metadata does not match the target: attention.indexer.top_k 1024 (expected 2048)"}}) {
+           {R"("qwen4exp.attention.indexer.top_k": 4096)", R"("qwen4exp.attention.indexer.top_k": 2048)",
+            "GGUF metadata does not match the target: attention.indexer.top_k 2048 (expected 4096)"}}) {
     std::string metadata = flashMetadata;
     const size_t at = metadata.find(from);
     require(at != std::string::npos, "the GGUF metadata has no " + std::string(from));
