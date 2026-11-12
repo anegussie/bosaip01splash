@@ -33,3 +33,7 @@ The default-cache-disabled controls and production restoration are recorded
 separately. `production-restored.json` confirms that the original model/build,
 131,072 configured context and 2,048-token prefill profile were restored on
 port 1235. The user's production prefix cache was preserved.
+
+`production-restored.log` is a fixed startup/readiness snapshot. Ongoing service
+output goes to `build/validation/<evidence-directory-name>/production-live.log`
+so it cannot keep changing the published evidence after the benchmark exits.

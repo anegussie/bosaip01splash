@@ -257,7 +257,9 @@ def arm(
 
 def restore(command, before):
     command[0] = str(ROOT / ".venv/bin/python")
-    with (OUT / "production-restored.log").open("ab") as log:
+    live_log = ROOT / "build/validation" / OUT.name / "production-live.log"
+    live_log.parent.mkdir(parents=True, exist_ok=True)
+    with live_log.open("ab") as log:
         process = subprocess.Popen(
             command,
             cwd=ROOT,
@@ -266,9 +268,13 @@ def restore(command, before):
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
-    save(OUT / "restored-process.json", {"pid": process.pid, "command": command})
+    save(
+        OUT / "restored-process.json",
+        {"pid": process.pid, "command": command, "live_log": str(live_log)},
+    )
     for _ in range(180):
         if process.poll() is not None:
+            shutil.copyfile(live_log, OUT / "production-restored.log")
             raise RuntimeError("Production restart failed; see production-restored.log")
         try:
             after = status()
@@ -278,6 +284,7 @@ def restore(command, before):
                     assert after[key] == before[key]
                 assert after["instance"]["model"] == before["instance"]["model"]
                 save(OUT / "production-restored.json", after)
+                shutil.copyfile(live_log, OUT / "production-restored.log")
                 print(
                     "Original service restored on port 1235 with matching identity",
                     flush=True,
@@ -286,6 +293,7 @@ def restore(command, before):
         except OSError:
             pass
         time.sleep(1)
+    shutil.copyfile(live_log, OUT / "production-restored.log")
     raise RuntimeError("Production readiness timeout")
 
 
