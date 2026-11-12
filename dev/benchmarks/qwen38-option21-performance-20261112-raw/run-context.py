@@ -4,7 +4,7 @@ import subprocess
 import uuid
 import sys
 SIZE = int(sys.argv[1])
-assert SIZE in (8192, 16384)
+assert SIZE in (8192, 16384, 102400)
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent

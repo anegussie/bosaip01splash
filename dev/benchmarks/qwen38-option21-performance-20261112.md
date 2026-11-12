@@ -1,4 +1,4 @@
-# Option 21 serving performance through 64K — 2026-11-12
+# Option 21 serving performance through 100K — 2026-11-12
 
 [Detailed results, conditions and raw evidence](qwen38-option21-performance-20261112-raw/CONTEXT-REPORT.md).
 
@@ -15,6 +15,7 @@ with the model and operating-system caches already warm. Prefix reuse uses the i
 | 8,204 | 436.02–445.07 | 25.87–27.60 | 18.433–18.815 | 24.13–25.87 | 0.871–0.902 |
 | 16,396 | 310.72–392.82 | 24.31–27.15 | 41.738–52.767 | 21.90–27.90 | 0.825–0.838 |
 | 65,548 | 276.27–345.20 | 22.77–23.56 | 189.884–237.264 | 21.13–21.32 | 0.856–0.890 |
+| 102,412 | 264.92–306.83 | 22.05–23.88 | 333.780–386.576 | 21.62–23.36 | 0.803–0.900 |
 
 TPS measures decode only; PP measures fresh prompt processing. Ranges contain both observations.
 0.35K/4K results are from the original run. 8K/16K results here replace the
@@ -56,18 +57,29 @@ Before: vm.swapusage: total = 2048.00M  used = 423.44M  free = 1624.56M  (encryp
 After: vm.swapusage: total = 2048.00M  used = 423.44M  free = 1624.56M  (encrypted)
 KV spilled-page delta: 0; whole-page restore delta: 0.
 
+### context102400
+
+Four clean requests; ORCHID recall/counting and full-prefix cache gates passed.
+Actual output tokens: [96, 85, 85, 85].
+Thermal states: ['fair', 'nominal']; memory pressure: ['warning'].
+Peak Metal allocation: 9.461 GiB.
+System swap-out delta: 0 pages; swap-in delta: 16 pages.
+Before: vm.swapusage: total = 2048.00M  used = 423.44M  free = 1624.56M  (encrypted)
+After: vm.swapusage: total = 2048.00M  used = 423.44M  free = 1624.56M  (encrypted)
+KV spilled-page delta: 0; whole-page restore delta: 0.
+
 ## Configuration and evidence
 
 Apple M5, 8 GPU cores, 16 GiB RAM; 10.8 GiB cap, 2,048-token chunks,
 INT8 KV, BF16 state, automatic verification width, one active request.
 Configured context remains 114,681 tokens after the launcher fallback.
-Largest context actually filled: 65,548 tokens. No full-capacity claim.
+Largest context actually filled: 102,412 tokens. No full-capacity claim.
 Persistent cache quota is subject to available disk space; see per-run status snapshots.
 This is a current-condition measurement; thermal/cache state differs across time.
 
 Each context directory contains request metrics, responses, correctness checks,
 sampled conditions, profile/build identity, status and system snapshots.
-`64k.log`, `8192.log` and `16384.log` preserve progress and completion.
+`64k.log`, `8192.log`, `16384.log` and `102400.log` preserve progress and completion.
 `run64k.py` and `run-context.py` reproduce the added runs.
 The original report, raw results and build hashes remain beside this file.
 
@@ -81,5 +93,6 @@ BENCH=dev/benchmarks/qwen38-option21-performance-20261112-raw
 .venv/bin/python "$BENCH/run64k.py"
 .venv/bin/python "$BENCH/run-context.py" 8192
 .venv/bin/python "$BENCH/run-context.py" 16384
+.venv/bin/python "$BENCH/run-context.py" 102400
 .venv/bin/python "$BENCH/summarize-context.py"
 ```

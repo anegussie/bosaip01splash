@@ -1,0 +1,17 @@
+{
+  "sysctl vm.swapusage": {
+    "exit_code": 0,
+    "stdout": "vm.swapusage: total = 2048.00M  used = 423.44M  free = 1624.56M  (encrypted)\n",
+    "stderr": ""
+  },
+  "vm_stat": {
+    "exit_code": 0,
+    "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                     6571.\nPages active:                                  99212.\nPages inactive:                                92544.\nPages speculative:                              5702.\nPages throttled:                                   0.\nPages wired down:                             684612.\nPages purgeable:                                4121.\n\"Translation faults\":                     2456521648.\nPages copy-on-write:                       503999706.\nPages zero filled:                         933296442.\nPages reactivated:                         118122544.\nPages purged:                               13109255.\nFile-backed pages:                             78670.\nAnonymous pages:                              118788.\nPages stored in compressor:                   300000.\nPages occupied by compressor:                 117985.\nDecompressions:                             82742885.\nCompressions:                               89948113.\nPageins:                                   106866350.\nPageouts:                                     821543.\nSwapins:                                     1500848.\nSwapouts:                                    2009739.\nPages tagged:                                  83597.\nPages tagged resident:                         63938.\nPages tagged compressed:                       19659.\nPages tag-storage:                             32768.\nPages tag-storage holding tags:                 4942.\nPages tag-storage free:                          328.\nPages tag-storage non-tag pageable:            27410.\nPages tag-storage non-tag wired:                  88.\nBytes of compressed tags:                    3053760.\nTagged compressions:                         6053757.\nTagged decompressions:                       5675669.\n",
+    "stderr": ""
+  },
+  "pmset -g therm": {
+    "exit_code": 0,
+    "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+    "stderr": ""
+  }
+}

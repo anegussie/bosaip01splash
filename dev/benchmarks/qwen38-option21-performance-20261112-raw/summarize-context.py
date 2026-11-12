@@ -12,7 +12,7 @@ def span(rows, key, digits=2):
     return f'{min(values):.{digits}f}–{max(values):.{digits}f}'
 
 original = read(ROOT / 'results.json')['rows']
-lines = ['# Option 21 performance including 64K', '',
+lines = ['# Option 21 performance including 100K', '',
          'Two trials per context, on the same live Q2_0 + BF16 DFlash2 server.',
          'Output budget: 96 tokens; thinking disabled, temperature 1.0, top_p 0.95.',
          'Prompt counts include 12 chat-template tokens. Cold means zero reused prefix tokens,',
@@ -25,7 +25,7 @@ for content, cold, reuse in [
     (4019, [r for r in original if r['name']=='4k-cold'], [r for r in original if r['name']=='4k-reuse']),
     *[(size, [r for r in read(ROOT / directory / 'results.json')['rows'] if r['name'].endswith('-cold')],
              [r for r in read(ROOT / directory / 'results.json')['rows'] if r['name'].endswith('-reuse')])
-      for size,directory in [(8192,'context8192'),(16384,'context16384'),(65536,'context64k')]]
+      for size,directory in [(8192,'context8192'),(16384,'context16384'),(65536,'context64k'),(102400,'context102400')]]
 ]:
     lines.append(f"| {cold[0]['prompt_tokens']:,} | {span(cold,'prefill_tok_s')} | {span(cold,'decode_tok_s')} | {span(cold,'sse_ttft_seconds',3)} | {span(reuse,'decode_tok_s')} | {span(reuse,'sse_ttft_seconds',3)} |")
 
@@ -34,7 +34,7 @@ lines += ['', 'TPS measures decode only; PP measures fresh prompt processing. Ra
           'original eight-token probes with 96-token output-budget reruns. All requests',
           'finish naturally or at that budget; actual output counts are in raw records.', '',
           '## Added runs: validation and conditions', '']
-for directory in ['context64k','context8192','context16384']:
+for directory in ['context64k','context8192','context16384','context102400']:
     out = ROOT / directory
     result = read(out / 'results.json')
     rows = result['rows']
@@ -57,12 +57,12 @@ lines += ['## Configuration and evidence', '',
           'Apple M5, 8 GPU cores, 16 GiB RAM; 10.8 GiB cap, 2,048-token chunks,',
           'INT8 KV, BF16 state, automatic verification width, one active request.',
           'Configured context remains 114,681 tokens after the launcher fallback.',
-          'Largest context actually filled: 65,548 tokens. No full-capacity claim.',
+          'Largest context actually filled: 102,412 tokens. No full-capacity claim.',
           'Persistent cache quota is subject to available disk space; see per-run status snapshots.',
           'This is a current-condition measurement; thermal/cache state differs across time.', '',
           'Each context directory contains request metrics, responses, correctness checks,',
           'sampled conditions, profile/build identity, status and system snapshots.',
-          '`64k.log`, `8192.log` and `16384.log` preserve progress and completion.',
+          '`64k.log`, `8192.log`, `16384.log` and `102400.log` preserve progress and completion.',
           '`run64k.py` and `run-context.py` reproduce the added runs.',
           'The original report, raw results and build hashes remain beside this file.']
 (ROOT / 'CONTEXT-REPORT.md').write_text('\n'.join(lines)+'\n')
