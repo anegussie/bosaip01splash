@@ -45,6 +45,11 @@ if mode=='memory':
 if mode=='timeout':
  print('runtime bootstrap failed [maximum_prefill]: maximum_prefill threw: Metal command 1095 failed: Caused GPU Timeout Error (00000002:kIOGPUCommandBufferCallbackErrorTimeout)',flush=True)
  sys.exit(1)
+if mode in ('context_once', 'context_repeat') and (n==1 or mode=='context_repeat'):
+ ceiling=os.environ.get('MOCK_CONTEXT_CEILING','114681')
+ requested=sys.argv[sys.argv.index('--max-context')+1]
+ print(f'23:49:12 Error · --max-context {requested} exceeds the {ceiling} tokens the model and --max-memory allow; omit it or pass at most {ceiling}',flush=True)
+ sys.exit(1)
 if mode=='error':
  print('Metal backend failed',flush=True)
  sys.exit(2)
@@ -918,6 +923,47 @@ print('Ready test server',flush=True)
         self.assertEqual(args[args.index("--draft-model") + 1], str(self.draft()))
         self.assertIn("tripped the engine's 5 s Metal event window", r.stdout)
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+
+    def test_option21_default_context_retries_at_measured_ceiling(self):
+        r = self.run_launcher(
+            "21", SPLASH_HOST_MEM_BYTES=str(17179869184),
+            SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.draft()),
+            MOCK_MODE="context_once",
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual((self.root / "attempts").read_text(), "2")
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--max-context") + 1], "114681")
+        self.assertEqual(args[args.index("--draft-model") + 1], str(self.draft()))
+        config = json.loads(self.config.read_text())
+        model = config["provider"]["local-llama"]["models"]["qwen3.8-flash-next-q2-0-dflash2-bf16-splash"]
+        self.assertEqual(model["limit"], {"context": 112633, "output": 1024})
+        self.assertIn("retrying once with server_context=114681", r.stdout)
+
+    def test_option21_context_fallback_is_bounded(self):
+        r = self.run_launcher(
+            "21", SPLASH_HOST_MEM_BYTES=str(17179869184),
+            SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.draft()),
+            MOCK_MODE="context_repeat",
+        )
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual((self.root / "attempts").read_text(), "2")
+
+    def test_option21_context_fallback_preserves_explicit_limits(self):
+        for overrides in (
+            {"SPLASH_FLASH_NEXT_MAX_CONTEXT": "131072"},
+            {"SPLASH_FLASH_NEXT_OPENCODE_CONTEXT": "120000"},
+            {"MOCK_CONTEXT_CEILING": "3000"},
+        ):
+            with self.subTest(overrides=overrides):
+                (self.root / "attempts").unlink(missing_ok=True)
+                r = self.run_launcher(
+                    "21", SPLASH_HOST_MEM_BYTES=str(17179869184),
+                    SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.draft()),
+                    MOCK_MODE="context_once", **overrides,
+                )
+                self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+                self.assertEqual((self.root / "attempts").read_text(), "1")
 
     def test_option21_explicit_raised_pair_still_reaches_the_engine(self):
         # The stock pair is the default, not a ceiling: both settings given

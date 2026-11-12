@@ -44,6 +44,8 @@ SPLASH_QWEN36_IQ3_CACHE_DIR="${SPLASH_QWEN36_IQ3_CACHE_DIR:-$HOME/Library/Caches
 SPLASH_FLASH_NEXT_MODEL_ID="ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS"
 SPLASH_FLASH_NEXT_Q2_MODEL_ID="ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0"
 SPLASH_FLASH_NEXT_DFLASH2_MODEL="${SPLASH_FLASH_NEXT_DFLASH2_MODEL:-$HOME/.cache/huggingface/hub/models--incoai--Qwen3.8-Flash-Next-DFlash2/snapshots/a22a1744e85c17364dcc54a6a420af7135d4c7f6}"
+splash_flash_next_context_defaulted=0
+[[ -n "${SPLASH_FLASH_NEXT_MAX_CONTEXT:-}" ]] || splash_flash_next_context_defaulted=1
 SPLASH_FLASH_NEXT_MAX_CONTEXT="${SPLASH_FLASH_NEXT_MAX_CONTEXT:-131072}"
 SPLASH_FLASH_NEXT_OPENCODE_CONTEXT="${SPLASH_FLASH_NEXT_OPENCODE_CONTEXT:-auto}"
 splash_flash_next_default_output=0
@@ -1939,6 +1941,8 @@ case "$choice" in
     if [[ "$choice" == "19" && "$SPLASH_QWEN36_IQ3_MAX_MEMORY" == "8G" ]] && (( splash_context_limit >= 70 * 1024 )); then
       splash_model_args=(--expert-memory 1900M --max-memory 8G)
     fi
+    splash_client_context_auto=0
+    [[ "$SPLASH_BONSAI_OPENCODE_CONTEXT" != "auto" ]] || splash_client_context_auto=1
     if [[ "$SPLASH_BONSAI_OPENCODE_CONTEXT" == "auto" ]]; then
       SPLASH_BONSAI_OPENCODE_CONTEXT="$((splash_context_limit - 2048))"
     fi
@@ -2076,6 +2080,7 @@ case "$choice" in
     fi
     splash_startup_retries=0
     splash_chunk_fallback=0
+    splash_context_fallback=0
     while :; do
       splash_pressure_watchdog >>"$SPLASH_RUN_LOG" 2>&1 &
       splash_pressure_watchdog_pid=$!
@@ -2125,6 +2130,34 @@ case "$choice" in
         splash_flash_next_model_args
         printf "Prefill chunk %s tokens tripped the engine's 5 s Metal event window; retrying with 1024-token chunks and a 10G cap. Set SPLASH_FLASH_NEXT_MAX_MEMORY and SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS together to try the larger pair again.\n" "$splash_failed_chunk" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
         continue
+      fi
+      # Retry the default option-21 context once at the engine's measured
+      # ceiling. Explicit server/client limits remain the operator's contract.
+      if [[ "$choice" == "21" && "$splash_flash_next_context_defaulted" == "1" ]] &&
+         (( splash_context_fallback == 0 )); then
+        splash_context_ceiling="$(tail -c "+$((splash_attempt_offset + 1))" "$SPLASH_RUN_LOG" |
+          sed -nE 's/.*--max-context [0-9]+ exceeds the ([0-9]+) tokens .*allow.*/\1/p' | tail -1)"
+        if [[ "$splash_context_ceiling" =~ ^[0-9]{4,6}$ ]] &&
+           (( splash_context_ceiling >= 4096 && splash_context_ceiling < splash_context_limit )) &&
+           { [[ "$splash_client_context_auto" == "1" ]] ||
+             (( SPLASH_BONSAI_OPENCODE_CONTEXT < splash_context_ceiling )); }; then
+          splash_context_fallback=1
+          splash_context_limit="$splash_context_ceiling"
+          SPLASH_BONSAI_MAX_CONTEXT="$splash_context_ceiling"
+          if [[ "$splash_client_context_auto" == "1" ]]; then
+            SPLASH_BONSAI_OPENCODE_CONTEXT="$((splash_context_limit - 2048))"
+            if (( splash_bonsai_default_output && SPLASH_BONSAI_OPENCODE_CONTEXT <= SPLASH_BONSAI_MAX_TOKENS )); then
+              SPLASH_BONSAI_MAX_TOKENS="$((SPLASH_BONSAI_OPENCODE_CONTEXT / 2))"
+            fi
+          fi
+          if (( SPLASH_BONSAI_MAX_TOKENS < SPLASH_BONSAI_OPENCODE_CONTEXT )); then
+            sync_opencode_splash || exit 1
+            printf 'Option 21 default context exceeds the current memory/disk plan; retrying once with server_context=%s client_context=%s output=%s. Explicit SPLASH_FLASH_NEXT_MAX_CONTEXT overrides remain exact.\n' \
+              "$SPLASH_BONSAI_MAX_CONTEXT" "$SPLASH_BONSAI_OPENCODE_CONTEXT" "$SPLASH_BONSAI_MAX_TOKENS" |
+              timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
+            continue
+          fi
+        fi
       fi
       # Retry only a startup admission failure, never a runtime/Metal failure.
       if ! tail -c "+$((splash_attempt_offset + 1))" "$SPLASH_RUN_LOG" |
