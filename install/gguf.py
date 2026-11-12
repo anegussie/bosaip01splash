@@ -542,6 +542,8 @@ TENSOR_TYPES = {
     42: "Q2_0",
     142: "PQ2_0",
     143: "PTQ1_0",
+    145: "TQK6",
+    146: "TQK7",
 }
 QUANTIZED_TYPES = {
     "Q2_K",
@@ -568,6 +570,8 @@ QUANTIZED_TYPES = {
     "Q2_0",
     "PQ2_0",
     "PTQ1_0",
+    "TQK6",
+    "TQK7",
 }
 FORMAT_TYPES = QUANTIZED_TYPES | {"BF16", "F16"}
 # Splash loads quantized GGUFs: BF16 and F16 are formats for the tensors a
@@ -593,7 +597,7 @@ F32 = {"F32"}
 NORM_TYPES = {"F32", "BF16", "F16"}
 FLOAT_PROJECTION_TYPES = {"F32", "BF16"}
 ROUTER_TYPES = FLOAT_PROJECTION_TYPES | QUANTIZED_TYPES
-FLOAT_ROW_TYPES = {"F32", "BF16", "Q8_0"}
+FLOAT_ROW_TYPES = {"F32", "BF16", "Q8_0", "Q6_K"}
 MODEL_TENSORS = {
     "token_embd.weight": EMBEDDING_TYPES,
     "output_norm.weight": NORM_TYPES,
@@ -890,6 +894,27 @@ def require_rotation(metadata):
     }
     if not keys:
         return
+    if text_architecture(metadata) == "qwen4exp":
+        expected = {
+            f"blk.{i}.ffn_{p}_exps.weight"
+            for i in range(loaded_layers(metadata, "qwen4exp"))
+            for p in ("gate", "up", "down")
+        }
+        requirements = {k: v for k, v in ROTATION.items() if k != "gdn_v_grouped"}
+        requirements["block_size"] = 128
+        if (
+            not keys <= ROTATION.keys() | ROTATION_ARRAYS
+            or any(
+                type(metadata.values.get(ROTATION_PREFIX + k)) is not type(v)
+                or metadata.values.get(ROTATION_PREFIX + k) != v
+                for k, v in requirements.items()
+            )
+            or set(metadata.values.get(ROTATION_PREFIX + "weight_names", []))
+            != expected
+            or metadata.values.get(ROTATION_PREFIX + "inverse_weight_names", [])
+        ):
+            raise ModelError("unsupported Gyro routed-expert rotation")
+        return
     if (
         text_architecture(metadata) != "qwen35"
         or not keys <= ROTATION.keys() | ROTATION_ARRAYS
@@ -911,6 +936,11 @@ def require_loadable(metadata):
     experts are all unquantized, or a file the native loader cannot read,
     missing a tensor it reads or storing one in a type it does not accept for
     that tensor."""
+    if (
+        any(t in (145, 146) for t in metadata.tensors.values())
+        and metadata.values.get("agention.trellis.state_bits") != 15
+    ):
+        raise ModelError("Gyro TQK tensors require agention.trellis.state_bits=15")
     require_rotation(metadata)
     require_arrays(metadata)
     loaded = loaded_tensors(metadata)

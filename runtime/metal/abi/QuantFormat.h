@@ -122,7 +122,9 @@
 #define GGUF_FMT_F16 42u
 #define GGUF_FMT_Q20 43u
 #define GGUF_FMT_PTQ10 44u
-#define GGUF_FMT_COUNT 45u
+#define GGUF_FMT_TQK6 45u
+#define GGUF_FMT_TQK7 46u
+#define GGUF_FMT_COUNT 47u
 
 // The tensor type an image descriptor names for an MLX affine format: no GGUF
 // type is of this form.
@@ -197,6 +199,8 @@ QUANT_CONSTANT QuantFormat kQuantFormats[GGUF_FMT_COUNT] = {
     {1, 256, 512, 64, 0, 4, 8, "f16"},
     {42, 64, 18, 8, 0, 2, 2, "q20"},      // GGUF's block_q2_0, one d per 64 elements; meta: d
     {143, 128, 28, 7, 0, 2, 4, "ptq10"}, // PTQ1_0, 7 bytes per 32 trits; meta: d per 128 elements
+    {145, 128, 26, 8, 0, 2, 4, "tqk6"}, // trellis stream plus two circular lookahead bytes per group
+    {146, 128, 30, 9, 0, 2, 4, "tqk7"},
 };
 
 // The format that stores a GGUF tensor type (or a loader's);
@@ -220,7 +224,7 @@ inline constexpr bool quant_loader_format(uint32_t format) {
 // Whether a format's values enter a bf16 matrix multiply exactly, as the
 // Apple9 register tile takes them (kernels/decode/linear_gguf_sgmatrix.metal):
 // every format's but F16's, whose 11-bit significands bf16 does not hold.
-inline constexpr bool quant_register_format(uint32_t format) { return format != GGUF_FMT_F16; }
+inline constexpr bool quant_register_format(uint32_t format) { return format != GGUF_FMT_F16 && format != GGUF_FMT_TQK6 && format != GGUF_FMT_TQK7; }
 // The MLX affine format of b bits in groups of g; GGUF_FMT_COUNT when none
 // (QUANT_AFFINE_TYPE holds b and g in a byte each).
 inline constexpr uint32_t quant_affine_format_of(uint32_t bits, uint32_t group) {

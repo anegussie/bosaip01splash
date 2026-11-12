@@ -328,6 +328,38 @@ class GgufMetadataTests(unittest.TestCase):
         with self.assertRaisesRegex(models.ModelError, "input rotation"):
             gguf.require_loadable(gguf.Metadata(path, tensors=True))
 
+    def test_gyro_screening_checks_state_width_and_routed_rotation(self):
+        values = fixture(family=FLASH_NEXT)
+        tensors = loadable_tensors(values, self.root)
+        rotated = [name for name in tensors if "_exps.weight" in name]
+        for name in rotated:
+            tensors[name] = 146 if "_down_" in name else 145
+        values |= {
+            "agention.trellis.state_bits": 15,
+            "prism.hadamard.version": 1,
+            "prism.hadamard.block_size": 128,
+            "prism.hadamard.transform": "normalized-sylvester-walsh-hadamard",
+            "prism.hadamard.axis": "input-last-dimension",
+            "prism.hadamard.sign_mode": "explicit",
+            "prism.hadamard.weight_names": rotated,
+        }
+        path = write_gguf(self.root / "gyro.gguf", values, tensors.items())
+        gguf.require_loadable(gguf.Metadata(path, tensors=True))
+        for changes, error in [
+            ({"agention.trellis.state_bits": 16}, "state_bits=15"),
+            ({"prism.hadamard.block_size": 1024}, "routed-expert rotation"),
+            ({"prism.hadamard.weight_names": rotated[:-1]}, "routed-expert rotation"),
+            (
+                {"prism.hadamard.inverse_weight_names": ["token_embd.weight"]},
+                "routed-expert rotation",
+            ),
+        ]:
+            path = write_gguf(
+                self.root / "gyro-bad.gguf", values | changes, tensors.items()
+            )
+            with self.assertRaisesRegex(models.ModelError, error):
+                gguf.require_loadable(gguf.Metadata(path, tensors=True))
+
     def test_screening_accepts_each_tensor_as_the_native_loader_reads_it(self):
         values = fixture()
         values["qwen35moe.block_count"] = 41

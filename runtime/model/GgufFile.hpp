@@ -43,7 +43,7 @@ struct GgmlTypeTraits {
 // (id, name, block elements, block bytes) of the ggml types this parser can
 // size, as ggml-common.h defines them and, for 142, PrismML-Eng/llama.cpp's
 // block_pq2_0; a tensor of another type is rejected.
-inline constexpr std::array<std::pair<uint32_t, GgmlTypeTraits>, 34> kGgmlTypes{{
+inline constexpr std::array<std::pair<uint32_t, GgmlTypeTraits>, 36> kGgmlTypes{{
     {0, {"F32", 1, 4}},         {1, {"F16", 1, 2}},         {2, {"Q4_0", 32, 18}},
     {3, {"Q4_1", 32, 20}},      {6, {"Q5_0", 32, 22}},      {7, {"Q5_1", 32, 24}},
     {8, {"Q8_0", 32, 34}},      {9, {"Q8_1", 32, 36}},      {10, {"Q2_K", 256, 84}},
@@ -55,6 +55,7 @@ inline constexpr std::array<std::pair<uint32_t, GgmlTypeTraits>, 34> kGgmlTypes{
     {26, {"I32", 1, 4}},        {27, {"I64", 1, 8}},        {28, {"F64", 1, 8}},
     {29, {"IQ1_M", 256, 56}},   {30, {"BF16", 1, 2}},       {39, {"MXFP4", 32, 17}},
     {40, {"NVFP4", 64, 36}},    {42, {"Q2_0", 64, 18}},     {142, {"PQ2_0", 128, 34}},  {143, {"PTQ1_0", 128, 28}},
+    {145, {"TQK6", 128, 26}}, {146, {"TQK7", 128, 30}},
 }};
 
 // nullptr for type ids this parser does not know.
@@ -86,6 +87,7 @@ struct GgufRotation {
   // The GDN value dimension of the rotated inputs is in grouped head order
   // (prism.hadamard.gdn_v_grouped), not llama.cpp's tiled one.
   bool valueHeadsGrouped = false;
+  uint32_t blockSize = 1024;
   std::set<std::string, std::less<>> weights;
   std::set<std::string, std::less<>> tables;
   std::map<uint32_t, std::vector<int8_t>> signs;

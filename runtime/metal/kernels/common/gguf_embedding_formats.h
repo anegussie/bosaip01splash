@@ -396,7 +396,24 @@ GGUF_EMBED_AFFINE(8)
   X(af4g32, GgufEmbedAF4G32) X(af4g64, GgufEmbedAF4G64) X(af4g128, GgufEmbedAF4G128)                               \
   X(af5g32, GgufEmbedAF5G32) X(af5g64, GgufEmbedAF5G64) X(af5g128, GgufEmbedAF5G128)                               \
   X(af6g32, GgufEmbedAF6G32) X(af6g64, GgufEmbedAF6G64) X(af6g128, GgufEmbedAF6G128)                               \
-  X(af8g32, GgufEmbedAF8G32) X(af8g64, GgufEmbedAF8G64) X(af8g128, GgufEmbedAF8G128)
+  X(af8g32, GgufEmbedAF8G32) X(af8g64, GgufEmbedAF8G64) X(af8g128, GgufEmbedAF8G128) X(tqk6, GgufEmbedTQK6) X(tqk7, GgufEmbedTQK7)
+template <uint Bits> struct GgufEmbedGyro {
+  enum : uint { Weights = 128, Bytes = 2 + 4 * Bits };
+  static float decode(device const uchar *block, uint dim) {
+    const uint e = dim % 128, t = e / 4, off = (31 - t) * Bits;
+    uint state = 0;
+    for (uint b = 0; b < 15; ++b) {
+      const uint bit = (off + b) % (32 * Bits);
+      state |= uint((block[2 + bit / 8] >> (bit % 8)) & 1) << b;
+    }
+    const uint x = state * 0x9e3779b1u;
+    const uint index = (e % 4) < 2 ? (x >> 21) : ((x >> 10) & 2047u);
+    return float(gguf_half(block, 0)) * float(as_type<half>(kGyroHyb[2 * index + (e % 2)]));
+  }
+};
+using GgufEmbedTQK6 = GgufEmbedGyro<6>;
+using GgufEmbedTQK7 = GgufEmbedGyro<7>;
+
 #define GGUF_EMBEDDING_FORMATS(X) GGUF_QUANTIZED_EMBEDDING_FORMATS(X) X(bf16, GgufEmbedBF16) X(f16, GgufEmbedF16)
 #define GGUF_EMBEDDING_ONE(f, F) +1
 static_assert(0 GGUF_EMBEDDING_FORMATS(GGUF_EMBEDDING_ONE) == GGUF_FMT_COUNT, "GGUF_EMBEDDING_FORMATS lists every format");

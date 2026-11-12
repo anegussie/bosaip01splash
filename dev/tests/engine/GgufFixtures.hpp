@@ -506,7 +506,8 @@ inline std::vector<Tensor> withFusedGateUp(std::vector<Tensor> tensors, uint32_t
 inline std::vector<test_gguf::Key> metadata(const model::QwenTargetDimensions &g) {
   const std::string arch = architecture(g);
   const bool hybrid = g.gdnLayerCount() != 0;
-  std::vector<test_gguf::Key> keys{test_gguf::stringKey("general.architecture", arch)};
+  std::vector<test_gguf::Key> keys{test_gguf::stringKey("general.architecture", arch),
+                                    test_gguf::uint32Key("agention.trellis.state_bits", 15)};
   const auto key = [&](const char *name, uint32_t value) {
     keys.push_back(test_gguf::uint32Key(arch + "." + name, value));
   };

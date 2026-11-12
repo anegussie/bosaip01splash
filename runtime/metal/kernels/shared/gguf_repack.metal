@@ -106,6 +106,12 @@ static inline void gguf_repack_group(device const uchar *row, uint fmt, uint G, 
       if (j == 0) { for (uint i = 0; i < 16; ++i) meta[i] = blk[192 + i]; meta[16] = blk[208]; meta[17] = blk[209]; meta[18] = 0; meta[19] = 0; }
       break;
     }
+    case GGUF_FMT_TQK6: case GGUF_FMT_TQK7: {
+      const uint bits = fmt == GGUF_FMT_TQK6 ? 6 : 7;
+      for (uint i = 0; i < bits + 2; ++i) out0[i] = blk[2 + ((3 - j) * bits + i) % (4 * bits)];
+      if (j == 0) { meta[0] = blk[0]; meta[1] = blk[1]; }
+      break;
+    }
     case GGUF_FMT_Q3K: {
       const uint hb = j / 4, jj = j % 4;
       for (uint e = 0; e < 32; ++e) {

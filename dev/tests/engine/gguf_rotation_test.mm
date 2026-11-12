@@ -7,6 +7,7 @@
 #include "metal/CommandGraph.hpp"
 #include "metal/MetalBackend.hpp"
 #include "metal/abi/Gguf.h"
+#include "metal/abi/MoE.h"
 
 #include <cmath>
 #include <cstdint>
@@ -151,6 +152,34 @@ int main(int argc, char **argv) {
         failures += check("gguf_rotate H (D x)", static_cast<const uint16_t *>(out.contents()), fp32, fp64);
       }
 
+      { // Routed rows rotate, shared and inactive rows retain their basis.
+        constexpr uint32_t width = 640, tileRows = 8, nTiles = 3;
+        std::vector<uint16_t> input(width*tileRows*nTiles);
+        std::vector<int8_t> gyroSigns(width);
+        for (auto &s : gyroSigns) s = rng() & 1 ? 1 : -1;
+        for (auto &v : input) v = floatToBf16(float(int(rng()%101)-50)/32);
+        auto expected = input;
+        for (uint32_t row=0; row<3; ++row)
+          for (uint32_t base=0; base<width; base+=128) {
+            float v[128];
+            for (uint32_t j=0;j<128;++j) v[j]=bf16ToFloat(input[row*width+base+j])*gyroSigns[base+j];
+            for (uint32_t stride=1;stride<128;stride*=2)
+              for (uint32_t a=0;a<128;++a) if (!(a&stride)) {
+                float x=v[a],y=v[a+stride];v[a]=x+y;v[a+stride]=x-y;
+              }
+            for (uint32_t j=0;j<128;++j) expected[row*width+base+j]=floatToBf16(v[j]*0.08838834764831845f);
+          }
+        const auto values=upload(backend,input), sign=upload(backend,gyroSigns);
+        const auto desc=upload(backend,std::vector<MoeTileDescriptor>{{0,3},{512,2},{1,4}});
+        const auto count=upload(backend,std::vector<MoeTileCount>{{2,{},{}}});
+        CommandGraph graph;
+        graph.add("moe_gyro_rotate",{values,sign,desc,count},MoeGyroRotationParams{width,tileRows,512},
+                  {width/128,nTiles,1},{128,1,1});
+        static_cast<void>(backend.submitCommandAsync(graph.dispatches()).wait());
+        const bool same=std::memcmp(values.contents(),expected.data(),expected.size()*2)==0;
+        failures += !same;
+        std::cout << "Gyro routed/shared/padding rotation: " << (same?"ok":"FAIL") << '\n';
+      }
       failures += checkRotatedEmbedding(backend, signs, rng, PQ20, "gguf_embed_rotated_pq20");
       failures += checkRotatedEmbedding(backend, signs, rng, PTQ10, "gguf_embed_rotated_ptq10");
     } catch (const std::exception &e) {

@@ -42,6 +42,11 @@ void requireSegment(const QuantizedSegment &segment, uint32_t output, uint32_t i
 void validate(const BlockMoeWeights &weights, MoeShape shape) {
   const uint32_t hidden = shape.hiddenSize, intermediate = shape.expertIntermediateSize;
   requireSegment(weights.router, shape.experts, hidden, true, "MoE router");
+  if (weights.gateUpRotationSigns || weights.downRotationSigns) {
+    if (hidden % 128 || intermediate % 128) throw std::invalid_argument("Gyro rotation width must be a multiple of 128");
+    requireBytes(weights.gateUpRotationSigns, hidden, "Gyro gate/up signs");
+    requireBytes(weights.downRotationSigns, intermediate, "Gyro down signs");
+  }
   if (shape.sharedGate) {
     requireSegment(weights.sharedScalarGate, 1, hidden, true, "MoE shared scalar gate");
     // The select kernel reads the scalar gate's fp32 weights.
@@ -153,6 +158,14 @@ void addExperts(metal::CommandGraph &graph, const MoeScratch &scratch, const Blo
   };
   const uint32_t hidden = shape.hiddenSize;
   const uint32_t intermediate = shape.expertIntermediateSize;
+  const auto rotate = [&](const metal::MetalBuffer &values, const metal::MetalBuffer &signs, uint32_t width) {
+    if (!signs) return;
+    if (table16) throw std::invalid_argument("Gyro rotation requires staged expert tiles");
+    graph.add("moe_gyro_rotate", {values, signs, scratch.tileDescriptors, scratch.tileCount},
+              MoeGyroRotationParams{width, plan.tileRows(), shape.experts},
+              {width / 128, tiles, 1}, {128, 1, 1});
+  };
+  rotate(scratch.groupedInput, weights.gateUpRotationSigns, hidden);
   if (oneGateUpPass(plan)) {
     const BlockExpertProjection &gate = weights.gate, &up = weights.up;
     // One pair table where gate and up share their formats, one each otherwise.
@@ -172,6 +185,7 @@ void addExperts(metal::CommandGraph &graph, const MoeScratch &scratch, const Blo
     pass(weights.up, 1, true, scratch.groupedInput, scratch.expertIntermediate,
          intermediate, hidden, group.gate_up_columns, gateUpGrid);
   }
+  rotate(scratch.expertIntermediate, weights.downRotationSigns, intermediate);
   if (table16)
     graph.add("moe_prepare_table16",
               {scratch.expertIntermediate, scratch.tileCount,

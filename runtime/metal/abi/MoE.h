@@ -91,6 +91,12 @@ struct MoeTileCount {
 static_assert(sizeof(MoeTileCount) == 28,
               "the MoE tile count is 28 bytes on both sides");
 
+struct MoeGyroRotationParams {
+  uint32_t width;
+  uint32_t tileRows;
+  uint32_t experts;
+};
+
 struct MoeGatherParams {
   uint32_t tile_rows;
   uint32_t input_size;

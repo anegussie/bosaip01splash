@@ -173,6 +173,10 @@ GgufFile::GgufFile(std::span<WeightSource *const> sources) : sources_(sources.be
   if (metadata_.unsignedValue("split.tensors.count").value_or(tensors_.size()) != tensors_.size())
     throw GgufError("the GGUF's split files hold another number of tensors than split.tensors.count");
   rotation_ = readRotation();
+  for (const auto &tensor : tensors_)
+    if ((tensor.type == 145 || tensor.type == 146) &&
+        metadata_.unsignedValue("agention.trellis.state_bits") != 15)
+      throw GgufError("Gyro TQK tensors require agention.trellis.state_bits=15");
 }
 
 void GgufFile::parse(WeightSource &source, uint32_t file) {
@@ -322,20 +326,22 @@ std::optional<GgufRotation> GgufFile::readRotation() const {
       throw GgufError("unsupported rotation metadata: " + key);
   const auto key = [](std::string_view name) { return std::string(kRotationPrefix) + std::string(name); };
   if (metadata_.unsignedValue(key("version")) != 1) throw GgufError("unsupported prism.hadamard.version");
-  if (metadata_.unsignedValue(key("block_size")) != GGUF_ROTATION_BLOCK ||
+  const uint64_t blockSize = metadata_.unsignedValue(key("block_size")).value_or(0);
+  if ((blockSize != GGUF_ROTATION_BLOCK && blockSize != 128) ||
       metadata_.stringValue(key("transform")) != "normalized-sylvester-walsh-hadamard" ||
       metadata_.stringValue(key("axis")) != "input-last-dimension" ||
       metadata_.stringValue(key("sign_mode")) != "explicit")
     throw GgufError("unsupported rotation: the kernels run explicit signs and normalized Sylvester "
-                    "Walsh-Hadamard blocks of " + std::to_string(GGUF_ROTATION_BLOCK) + " inputs");
+                    "Walsh-Hadamard blocks of 128 or 1024 inputs");
   GgufRotation rotation;
+  rotation.blockSize = static_cast<uint32_t>(blockSize);
   rotation.valueHeadsGrouped = metadata_.unsignedValue(key("gdn_v_grouped")).value_or(0) != 0;
   const auto widths = numericArray(key("sign_widths")), values = numericArray(key("sign_values"));
   if (!widths || !values || widths->empty()) throw GgufError("rotation signs are missing");
   size_t at = 0;
   for (const double width : *widths) {
     if (!(width > 0) || width != std::floor(width) || width > std::numeric_limits<uint32_t>::max() ||
-        uint64_t(width) % GGUF_ROTATION_BLOCK || width > double(values->size() - at))
+        uint64_t(width) % blockSize || width > double(values->size() - at))
       throw GgufError("invalid rotation sign width");
     auto [signs, inserted] = rotation.signs.emplace(uint32_t(width), std::vector<int8_t>{});
     if (!inserted) throw GgufError("duplicate rotation sign width");
@@ -352,7 +358,8 @@ std::optional<GgufRotation> GgufFile::readRotation() const {
     if (found == names_.end()) return;
     for (const std::string &tensorName : found->second) {
       const GgufTensor &tensor = require(tensorName);
-      if (tensor.dims.size() != 2 || tensor.columns() > std::numeric_limits<uint32_t>::max() ||
+      if ((tensor.dims.size() != 2 && !(blockSize == 128 && tensor.dims.size() == 3)) ||
+          tensor.columns() > std::numeric_limits<uint32_t>::max() ||
           !rotation.signs.contains(uint32_t(tensor.columns())))
         throw GgufError("no rotation signs of the width of " + tensorName);
       if (!into.insert(tensorName).second) throw GgufError("rotation names a tensor twice: " + tensorName);

@@ -11,6 +11,7 @@
 #include "LinearNumerics.hpp"
 #include "metal/abi/QuantFormat.h"
 #include "metal/abi/QuantTables.h"
+#include "metal/abi/GyroTables.h"
 
 #include <algorithm>
 #include <cmath>
@@ -31,7 +32,7 @@ enum Fmt { Q4K = GGUF_FMT_Q4K, IQ4XS = GGUF_FMT_IQ4XS, IQ4NL = GGUF_FMT_IQ4NL, Q
            IQ2XXS = GGUF_FMT_IQ2XXS, IQ2XS = GGUF_FMT_IQ2XS, IQ2S = GGUF_FMT_IQ2S, IQ1S = GGUF_FMT_IQ1S,
            IQ1M = GGUF_FMT_IQ1M, Q40 = GGUF_FMT_Q40, Q41 = GGUF_FMT_Q41, MXFP4 = GGUF_FMT_MXFP4,
            PQ20 = GGUF_FMT_PQ20, PTQ10 = GGUF_FMT_PTQ10, NVFP4 = GGUF_FMT_NVFP4, FP8 = GGUF_FMT_FP8, Q50 = GGUF_FMT_Q50, Q51 = GGUF_FMT_Q51,
-           BF16 = GGUF_FMT_BF16, F16 = GGUF_FMT_F16, Q20 = GGUF_FMT_Q20, FMT_COUNT = GGUF_FMT_COUNT };
+           BF16 = GGUF_FMT_BF16, F16 = GGUF_FMT_F16, Q20 = GGUF_FMT_Q20, TQK6 = GGUF_FMT_TQK6, TQK7 = GGUF_FMT_TQK7, FMT_COUNT = GGUF_FMT_COUNT };
 inline const char *fmtName(uint32_t f) { return kQuantFormats[f].name; }
 // The format of kQuantFormats name `name`, FMT_COUNT for none.
 inline Fmt fmtNamed(const std::string &name) {
@@ -301,7 +302,7 @@ inline std::uniform_real_distribution<float> scaleRange(Fmt f) {
     case IQ3S: case IQ3XXS: return std::uniform_real_distribution<float>(0.0001f, 0.0005f);
     case IQ2XXS: case IQ2XS: case IQ2S: return std::uniform_real_distribution<float>(0.0002f, 0.001f);
     case IQ1S: case IQ1M: return std::uniform_real_distribution<float>(0.001f, 0.008f);
-    case PTQ10: case PQ20: case Q20: return std::uniform_real_distribution<float>(0.004f, 0.03f);
+    case TQK6: case TQK7: case PTQ10: case PQ20: case Q20: return std::uniform_real_distribution<float>(0.004f, 0.03f);
     // Tensor scales: an NVFP4 block's scale is 1 to 60 of them, and an E4M3 value at most 448.
     case NVFP4: return std::uniform_real_distribution<float>(0.000008f, 0.00006f);
     case FP8: return std::uniform_real_distribution<float>(0.00002f, 0.00012f);
@@ -496,6 +497,24 @@ inline void groupPack(Fmt f, const uint8_t *row, uint32_t g, float vals[32], uin
       }
       packBits(lo, 2, p0); return;
     }
+    case TQK6: case TQK7: {
+      const uint32_t bits = f == TQK6 ? 6 : 7;
+      const uint8_t *q = blk + 2;
+      uint16_t d; memcpy(&d, blk, 2);
+      for (uint32_t e = 0; e < 32; ++e) {
+        const uint32_t t = (32*j + e) / 4, off = (31-t)*bits;
+        uint32_t state = 0;
+        for (uint32_t bit = 0; bit < 15; ++bit) {
+          const uint32_t pos = (off+bit) % (32*bits);
+          state |= uint32_t((q[pos/8] >> (pos%8)) & 1) << bit;
+        }
+        const uint32_t hash = state * uint32_t(0x9e3779b1);
+        const uint32_t idx = (e%4)<2 ? (hash>>21) : ((hash>>10)&2047);
+        vals[e] = h2f(d)*h2f(kGyroHyb[2*idx + e%2]);
+      }
+      for (uint32_t b = 0; b < bits+2; ++b) p0[b] = q[((3-j)*bits+b)%(4*bits)];
+      return;
+    }
     case PTQ10: {
       const uint32_t block = g / 4, j = g % 4;
       const uint8_t *ptq = row + block * 28;
@@ -648,7 +667,7 @@ inline void metaPack(Fmt f, const uint8_t *row, uint32_t unit, uint8_t *dst) {
   switch (f) {
     // The block's leading fields.
     case Q4K: case Q5K: case IQ4XS: case IQ4NL: case Q80: case IQ3S: case IQ3XXS: case IQ2XXS: case IQ2XS: case IQ2S:
-    case IQ1S: case Q40: case Q41: case Q50: case Q51: case MXFP4: case PQ20: case Q20:
+    case IQ1S: case Q40: case Q41: case Q50: case Q51: case MXFP4: case PQ20: case Q20: case TQK6: case TQK7:
       memcpy(dst, blk, fi.meta_bytes); return;
     case PTQ10: memcpy(dst, blk + 26, 2); return;
     case Q6K: memcpy(dst, blk + kQ6KScales, 16); memcpy(dst + 16, blk + kQ6KD, 2); dst[18] = dst[19] = 0; return;
@@ -715,7 +734,7 @@ constexpr std::pair<Fmt, const char *> kGgmlSymbols[] = {
     {IQ2S, "dequantize_row_iq2_s"},   {IQ1S, "dequantize_row_iq1_s"},     {IQ1M, "dequantize_row_iq1_m"},
     {Q40, "dequantize_row_q4_0"},     {Q41, "dequantize_row_q4_1"},       {MXFP4, "dequantize_row_mxfp4"},
     {PQ20, "dequantize_row_pq2_0"},   {PTQ10, "dequantize_row_ptq1_0"},   {Q50, "dequantize_row_q5_0"},       {Q51, "dequantize_row_q5_1"},
-    {BF16, "ggml_bf16_to_fp32_row"},  {F16, "ggml_fp16_to_fp32_row"},     {Q20, "dequantize_row_q2_0"}};
+    {BF16, "ggml_bf16_to_fp32_row"},  {F16, "ggml_fp16_to_fp32_row"},     {Q20, "dequantize_row_q2_0"}, {TQK6, "dequantize_row_tqk6"}, {TQK7, "dequantize_row_tqk7"}};
 static_assert([] {
   uint32_t formats = 0;
   for (uint32_t f = 0; f < GGUF_FMT_COUNT; ++f) formats += !quant_loader_format(f);

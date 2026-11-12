@@ -1,6 +1,7 @@
 #pragma once
 #include "metal/abi/QuantFormat.h"
 #include "metal/abi/QuantTables.h"
+#include "metal/abi/GyroTables.h"
 #include <metal_stdlib>
 using namespace metal;
 
@@ -527,6 +528,32 @@ template <uint F> struct FmtTwoBit {
   static uint4 codes(Chunk q) { return (uint4(q) >> uint4(0, 4, 8, 12)) & 0x00030003u; }
   static QuantCoef coef(Meta mt, ushort) { return {float2(float(as_type<half>(mt)))}; }
 };
+// TQK6/7: each group keeps its reversed stream slice and two circular
+// lookahead bytes. Read individual bytes: TQK7 groups need not be aligned.
+template <uint F, uint Bits> struct FmtGyro {
+  QUANT_FORMAT(F, QuantFloat16, 0, 128, false);
+  typedef half Value;
+  struct Payload { uchar bytes[Bits + 2]; };
+  typedef uint4 Chunk; typedef ushort Meta;
+  static Payload load(device uchar *p0, device uchar *) {
+    Payload p; for (uint i = 0; i < Bits + 2; ++i) p.bytes[i] = p0[i]; return p;
+  }
+  static Meta loadMeta(device uchar *m) { return *((device ushort *)m); }
+  static uint pair(Payload p, uint t, uint h) {
+    const uint off = (7 - t) * Bits, at = off / 8;
+    const uint w = uint(p.bytes[at]) | (uint(p.bytes[at+1]) << 8) | (uint(p.bytes[at+2]) << 16);
+    const uint x = ((w >> (off % 8)) & 32767u) * 0x9e3779b1u;
+    const uint i = h ? ((x >> 10) & 2047u) : (x >> 21);
+    return uint(kGyroHyb[2*i]) | (uint(kGyroHyb[2*i+1]) << 16);
+  }
+  static Chunk chunk(Payload p, ushort c) { return uint4(pair(p,c,0),pair(p,c,1),pair(p,c+4,0),pair(p,c+4,1)); }
+  static Chunk loadChunk(device uchar *p0, device uchar *p1, ushort c) { return chunk(load(p0,p1),c); }
+  static uint4 values(Chunk q) { return q; }
+  static QuantCoef coef(Meta d, ushort) { return {float2(float(as_type<half>(d)))}; }
+};
+typedef FmtGyro<GGUF_FMT_TQK6, 6> FmtTQK6;
+typedef FmtGyro<GGUF_FMT_TQK7, 7> FmtTQK7;
+
 // PTQ1_0 is repacked losslessly into seven bytes per 32-value group. The
 // independent groups let the common GEMM tiles decode their 32 columns
 // without reading neighboring groups; the shared FP16 scale is per 128.
@@ -664,7 +691,7 @@ QUANT_AFFINE_GROUPS(8)
   X(FmtAF5G64, af5g64) X(FmtAF5G128, af5g128) X(FmtAF6G32, af6g32) X(FmtAF6G64, af6g64) X(FmtAF6G128, af6g128)    \
   X(FmtAF8G32, af8g32) X(FmtAF8G64, af8g64) X(FmtAF8G128, af8g128) X(FmtNVFP4, nvfp4) X(FmtFP8, fp8)            \
   X(FmtQ50, q50) X(FmtQ51, q51) X(FmtBF16, bf16) X(FmtQ20, q20) X(FmtPTQ10, ptq10)
-#define QUANT_FORMATS(X) QUANT_REGISTER_FORMATS(X) X(FmtF16, f16)
+#define QUANT_FORMATS(X) QUANT_REGISTER_FORMATS(X) X(FmtF16, f16) X(FmtTQK6, tqk6) X(FmtTQK7, tqk7)
 
 // Runs body(F()) with the format type of run-time format id `format` (GGUF_FMT_*), for kernels whose tiles pick
 // their tensor, and so its format, at run time: any format (quant_format_switch), or one of the register tile's

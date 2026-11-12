@@ -744,6 +744,13 @@ print('Ready test server',flush=True)
         self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "2048")
 
     def test_option21_uses_the_q2_model_the_local_draft_and_its_own_cache(self):
+        df = self.root / "bin" / "df"
+        df.write_text(
+            "#!/bin/sh\n"
+            "echo 'Filesystem 1024-blocks Used Available Capacity Mounted on'\n"
+            "echo '/dev/disk9s1 1048576 1 41943040 0% /private/tmp'\n"
+        )
+        df.chmod(0o755)
         draft = self.root / "draft"
         draft.mkdir()
         (draft / "config.json").write_text("{}")
@@ -772,14 +779,62 @@ print('Ready test server',flush=True)
             "--prefill-chunk-tokens": "2048",
             "--kv-format": "int8",
             "--state-format": "bf16",
+            "--max-cache-disk": str(2 * 1024**3),
         }.items():
             self.assertEqual(args[args.index(flag) + 1], value)
         option21_cache = args[args.index("--cache-dir") + 1]
-        self.assertTrue(option21_cache.endswith("flash-next-option21-q2-0-bf16-dflash2"), option21_cache)
+        self.assertTrue(
+            option21_cache.endswith("flash-next-option21-q2-0-bf16-dflash2"),
+            option21_cache,
+        )
         self.assertNotEqual(option21_cache, stock_cache)
 
+    def test_option22_streams_the_exact_gyro_with_an_isolated_cache(self):
+        model = self.root / "gyro.gguf"
+        with model.open("wb") as stream:
+            stream.truncate(58487015808)
+        result = self.run_launcher(
+            "22",
+            SPLASH_FLASH_NEXT_GYRO_MODEL=str(model),
+            SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.draft()),
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        for flag, value in {
+            "--model": str(model),
+            "--served-model-name": "qwen3.8-flash-next-gyro-s-splash",
+            "--draft-model": str(self.root / "bf16-draft"),
+            "--prefill-chunk-tokens": "512",
+            "--max-memory": "10G",
+            "--expert-memory": "auto",
+            "--ple-memory": "64M",
+            "--max-active-requests": "1",
+            "--max-cache-disk": str(2 * 1024**3),
+        }.items():
+            self.assertEqual(args[args.index(flag) + 1], value)
+        self.assertTrue(
+            args[args.index("--cache-dir") + 1].endswith("flash-next-option22-gyro-s")
+        )
+
+    def test_option22_rejects_partial_downloads_before_mutating_config(self):
+        model = self.root / "gyro.gguf"
+        before = self.config.read_bytes()
+        for downloading in (False, True):
+            with model.open("wb") as stream:
+                stream.truncate(58487015808 if downloading else 128)
+            if downloading:
+                model.with_suffix(".gguf.aria2").write_bytes(b"download checkpoint")
+            result = self.run_launcher("22", SPLASH_FLASH_NEXT_GYRO_MODEL=str(model))
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("download is incomplete", result.stderr)
+            self.assertEqual(self.config.read_bytes(), before)
+            self.assertFalse((self.root / "attempts").exists())
+
     def test_option21_requires_the_cached_bf16_draft(self):
-        r = self.run_launcher("21", SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.root / "absent-draft"))
+        r = self.run_launcher(
+            "21", SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.root / "absent-draft")
+        )
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("BF16 DFlash2 draft", r.stderr)
         self.assertFalse((self.root / "argv.json").exists())
@@ -914,9 +969,7 @@ print('Ready test server',flush=True)
                 self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
                 args = json.loads((self.root / "argv.json").read_text())
                 self.assertEqual(args[args.index("--max-memory") + 1], "10G")
-                self.assertEqual(
-                    args[args.index("--prefill-chunk-tokens") + 1], "1024"
-                )
+                self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "1024")
                 self.assertIn("keep the 16 GiB preset", r.stdout)
                 self.assertNotIn("option 21 holds that pair", r.stdout)
 
@@ -1062,7 +1115,7 @@ print('Ready test server',flush=True)
 
     def test_option20_rejects_hermes_and_out_of_range_selection(self):
         before = self.config.read_bytes()
-        for args in (["--hermes", "20"], ["--direct", "22"], ["--direct", "9x"]):
+        for args in (["--hermes", "20"], ["--direct", "23"], ["--direct", "9x"]):
             r = subprocess.run(
                 ["bash", LAUNCHER, *args],
                 env=self.env,

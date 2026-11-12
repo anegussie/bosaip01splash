@@ -24,6 +24,7 @@ constexpr uint32_t kVerifyRows = ExecutionLimits::targetVerifyRows;
 // Whether the register tile takes every routed and shared expert weight of a
 // MoE block (ops::MoeShape::registerFormats).
 bool registerTakes(const ops::BlockMoeWeights &block) {
+  if (block.gateUpRotationSigns || block.downRotationSigns) return false;
   for (const ops::BlockExpertProjection *projection : {&block.gate, &block.up, &block.down})
     for (const ops::QuantizedSegment *s : {&projection->routed, &projection->shared})
       if (!s->isFloat() && !quant_register_tensor(s->formatId, s->inputSize)) return false;

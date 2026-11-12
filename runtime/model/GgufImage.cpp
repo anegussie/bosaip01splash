@@ -61,7 +61,7 @@ bool floatProjectionType(uint32_t type) { return floatType(type) || type == ggml
 bool routerType(uint32_t type) { return floatProjectionType(type) || (quantizedType(type) && type != ggml::kF16); }
 // A tensor of F32 rows (floatRows): F32, or BF16 or Q8_0, which widen or
 // decode to it.
-bool floatRowType(uint32_t type) { return floatProjectionType(type) || type == ggml::kQ8_0; }
+bool floatRowType(uint32_t type) { return floatProjectionType(type) || type == ggml::kQ8_0 || type == 14; }
 
 // The header type of the image of a table a family adds (planImages), beside
 // the layers' 0 and 1 (GDN and full attention) and the head's 2.
@@ -291,7 +291,7 @@ public:
     if (tensor->rows() != rows || tensor->columns() != columns)
       throw GgufError("expected an F32, BF16 or Q8_0 [" + std::to_string(rows) + ", " + std::to_string(columns) +
                       "] tensor: " + name);
-    const bool widen = tensor->type == ggml::kBF16, dequantize = tensor->type == ggml::kQ8_0;
+    const bool widen = tensor->type == ggml::kBF16, dequantize = tensor->type == ggml::kQ8_0 || tensor->type == 14;
     if (withDescriptor)
       image_.descriptor(ggml::kF32, rows, columns, {}, {rows * columns * sizeof(float), 0, 0}, name);
     image_.copy(tensorRows(*tensor, rows, tensor->bytes / rows),
@@ -671,7 +671,19 @@ std::vector<Image> familyImages(const GgufFile &file, const QwenTargetDimensions
 // grouped.
 void requireRotation(const GgufFile &file, const QwenTargetDimensions &g, const std::vector<Image> &images) {
   const GgufRotation &rotation = *file.rotation();
-  if (g.ffnKind == QwenFfnKind::SparseMoe) throw GgufError("rotated weights are supported for dense targets only");
+  if (g.ffnKind == QwenFfnKind::SparseMoe) {
+    if (!g.hyperConnected() || rotation.blockSize != 128 || !rotation.tables.empty())
+      throw GgufError("Gyro MoE rotation requires 128-wide blocks and unrotated tables");
+    std::set<std::string, std::less<>> expected;
+    for (uint32_t i = 0; i < g.layers; ++i)
+      for (const char *projection : {"gate", "up", "down"})
+        expected.insert("blk." + std::to_string(i) + ".ffn_" + projection + "_exps.weight");
+    if (rotation.weights != expected)
+      throw GgufError("Gyro rotation must name exactly every routed gate, up and down tensor");
+    return;
+  }
+  if (rotation.blockSize != GGUF_ROTATION_BLOCK)
+    throw GgufError("dense rotation requires 1024-wide blocks");
   if (!rotation.valueHeadsGrouped)
     throw GgufError("rotated GDN inputs must keep their value heads grouped (prism.hadamard.gdn_v_grouped)");
   std::set<std::string, std::less<>> repacked;
@@ -873,7 +885,8 @@ std::vector<Image> planImages(const GgufFile &file, std::string_view architectur
 
 StreamedRows tableRows(const GgufFile &file, const std::string &name, uint64_t columns) {
   const GgufTensor &tensor = file.require(name);
-  if (file.rotation()) throw GgufError("the tables of a rotated GGUF do not stream: " + name);
+  if (file.rotation() && file.rotation()->tables.contains(name))
+    throw GgufError("a rotated table does not stream: " + name);
   // A table's image holds its rows as stored (Builder::nativeTable,
   // copiedRows), but for NVFP4's, which the writer rebuilds.
   if (!embeddingType(tensor.type) || tensor.type == ggml::kNVFP4)

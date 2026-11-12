@@ -136,6 +136,27 @@ an FP8 weight's F32 or BF16 `.weight_scale` is the tensor's `g` or, `[rows,
 
 ## GGUF targets
 
+Gyro-S Flash-Next (`agentionai/Qwen3.8-Flash-Next-Gyro-GGUF`,
+`Qwen3.8-Flash-Next-Gyro-S-TQ1_0.gguf`) uses the custom TQK6 and TQK7
+formats, not the standard ternary format suggested by its filename. Splash
+reads their compressed 128-weight blocks directly from SSD with
+`--expert-memory auto`. The Metal repacker keeps each group's trellis bits
+plus two circular lookahead bytes; the cached representation uses 2.125
+bits per weight for TQK6 and 2.375 for TQK7, including FP16 scales.
+The original SSD rows remain 1.625 and 1.875 bits per weight.
+
+The loader requires `agention.trellis.state_bits=15` and the exact Hyb
+codebook. For this architecture, `prism.hadamard.*` must declare 128-wide
+normalized Sylvester-Walsh-Hadamard blocks, explicit signs, and every routed
+gate, up and down tensor. Metal applies `H(Dx)` before gate/up and after
+SiLU multiplication before down. Shared experts, routers, attention and
+embedding tables retain their original basis. Gyro experts use the staged
+Metal tile, preserving the FP16 codebook values. PLE rows can stream through
+`--ple-memory 64M`; Q6_K hyperconnection injection weights decode to F32
+while loading. TQ2_T and TQP formats used by other Gyro variants are not
+supported by this implementation.
+
+
 `--model unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_M` selects the repository's
 root-level `.gguf` file (a lower-case extension, as the native loader requires)
 for that variant: the file named with the model name its GGUFs share, then
@@ -154,7 +175,7 @@ and lists every unsupported tensor in one error:
 - the MoE router: F32, BF16 or any of the linears' quantized formats (not
   F16), which the float projection runs as stored, a quantized one as its
   native rows (as an MLX target's quantized router loads);
-- the shared-expert scalar gate: F32, BF16 or Q8_0, loaded as the F32 values
+- the shared-expert scalar gate: F32, BF16, Q8_0 or Q6_K, loaded as the F32 values
   it holds;
 - the GDN convolution, decay and time-step bias: F32;
 - GDN alpha and beta: each any of the linears' formats or F32. Two of one

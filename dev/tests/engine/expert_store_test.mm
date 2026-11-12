@@ -577,8 +577,30 @@ int streamedFaultBeforeRound(const std::string &metallibPath, const MoeShape &sh
 // Mixed formats share the largest layer arena when separate caches do not fit.
 // Cross-format evictions, repeated layers, prefill/decode and idle restoration
 // must preserve the exact resident result and count the physical arena once.
-int sharedFormatArena(MetalBackend &backend, const MoeShape &shape, const std::filesystem::path &directory) {
-  const Model trunk = makeModel(backend, shape, Q4K, true), head = makeModel(backend, shape, Q80, true);
+int sharedFormatArena(MetalBackend &backend, const MoeShape &shape, const std::filesystem::path &directory,
+                      bool gyro = false) {
+  const auto model = [&](bool head) {
+    Model m = makeModel(backend, shape, head ? Q80 : Q4K, true);
+    if (!gyro) return m;
+    for (uint32_t p = 0; p < 3; ++p) {
+      const Fmt format = (p == 2 || head) ? TQK7 : TQK6;
+      m.formats[p] = format;
+      m.routed[p] = quantized(backend, format,
+          shape.experts * (p == 2 ? shape.hiddenSize : shape.expertIntermediateSize),
+          p == 2 ? shape.expertIntermediateSize : shape.hiddenSize);
+    }
+    m.weights.gate.routed = m.routed[0].segment;
+    m.weights.up.routed = m.routed[1].segment;
+    m.weights.down.routed = m.routed[2].segment;
+    m.weights.chunks = splash::ops::residentExpertChunks(m.weights);
+    std::vector<int8_t> inputSigns(shape.hiddenSize), downSigns(shape.expertIntermediateSize);
+    for (auto &s : inputSigns) s = rng() & 1 ? 1 : -1;
+    for (auto &s : downSigns) s = rng() & 1 ? 1 : -1;
+    m.weights.gateUpRotationSigns = upload(backend, inputSigns.data(), inputSigns.size(), "Gyro input signs");
+    m.weights.downRotationSigns = upload(backend, downSigns.data(), downSigns.size(), "Gyro down signs");
+    return m;
+  };
+  const Model trunk = model(false), head = model(true);
   ExpertFile trunkFile(trunk, directory / "shared-trunk.bin"), headFile(head, directory / "shared-head.bin");
   StreamedBlocks blocks = trunkFile.blocks;
   blocks.blocks.push_back(headFile.blocks.blocks.front());
@@ -1597,12 +1619,19 @@ int streamedSourceChanges(const std::string &metallibPath, const MoeShape &shape
 
 int main(int argc, const char *argv[]) {
   @autoreleasepool {
-    if (argc != 2) {
+    if (argc != 2 && !(argc == 3 && std::string_view(argv[2]) == "--gyro")) {
       std::cerr << "usage: expert_store_test <metallib>\n";
       return 2;
     }
     try {
       MetalBackend backend(argv[1]);
+      if (argc == 3) {
+        const splash::test::TemporaryDirectory gyroDirectory("splash-gyro-expert-store");
+        const int failures = sharedFormatArena(backend, {256, 16, 4, 640}, gyroDirectory.path(), true);
+        std::cout << "Gyro SSD streaming: " << (failures ? "FAIL" : "PASS") << '\n';
+        return failures ? 1 : 0;
+      }
+
       const splash::test::TemporaryDirectory directory("expert-store");
       int failures = 0;
       for (const MoeShape &shape : kShapes) {

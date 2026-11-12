@@ -13,6 +13,11 @@ splash.metallib. The tests' CPU reference,
 dev/tests/engine/GgufFormatReference.hpp, decodes the same blocks as ggml's
 dequantize_row_* (ggml/src/ggml-quants.c).
 
+The Gyro Hyb codebook in runtime/metal/abi/GyroTables.h and TQK6/TQK7
+decoding follow halo-box/strix-llama.cpp ggml/src/ggml-common.h and
+ggml-quants.c (https://github.com/halo-box/strix-llama.cpp), under the
+same license below.
+
 MIT License
 
 Copyright (c) 2023-2026 The ggml authors

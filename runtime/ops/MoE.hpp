@@ -218,6 +218,8 @@ struct BlockMoeWeights final {
   const MoeExpertStream *stream = nullptr;
   uint32_t streamBlock = 0;
   ExpertChunks chunks = {};
+  metal::MetalBuffer gateUpRotationSigns;
+  metal::MetalBuffer downRotationSigns;
 };
 
 // The one chunk of a block whose routed segments hold all its `slots`

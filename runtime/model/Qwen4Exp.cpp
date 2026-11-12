@@ -5,6 +5,8 @@
 #include "model/SparseRowStore.hpp"
 
 #include <cmath>
+#include <cstring>
+#include <map>
 #include <optional>
 #include <span>
 #include <string>
@@ -110,6 +112,13 @@ Qwen4ExpWeights loadQwen4ExpWeights(metal::MetalBackend &backend, Qwen4ExpLayout
         // The PLE hash first, from the GGUF's metadata, before any image loads.
         result.pleHash = readPleHash(gguf.file(), layout);
         result.layers.reserve(layout.layers);
+        std::map<uint32_t, metal::MetalBuffer> rotationSigns;
+        if (gguf.rotation())
+          for (const auto &[width, signs] : gguf.rotation()->signs) {
+            auto buffer = backend.allocateBuffer(width, metal::BufferStorage::Shared, "Gyro rotation signs");
+            std::memcpy(buffer.contents(), signs.data(), signs.size());
+            rotationSigns.emplace(width, std::move(buffer));
+          }
         const uint32_t streams = layout.streamWidth();
         for (uint32_t index = 0; index < layout.layers; ++index) {
           const bool fullAttention = layout.isFullAttentionLayer(index);
@@ -120,6 +129,10 @@ Qwen4ExpWeights loadQwen4ExpWeights(metal::MetalBackend &backend, Qwen4ExpLayout
           if (fullAttention) layer.indexer = readIndexer(file, layout);
           layer.ffnHyper = readHyper(file, layout, true, "ffn-hyper");
           layer.ffn = readMoeBlock(file, layout, experts, index);
+          if (gguf.rotation()) {
+            layer.ffn.gateUpRotationSigns = rotationSigns.at(layout.hiddenSize);
+            layer.ffn.downRotationSigns = rotationSigns.at(layout.expertIntermediateSize);
+          }
           if (index == layout.pleLayer) {
             Qwen4PleWeights ple;
             ple.key = format.projection(file, streams, layout.pleWidth(), "ple-key");

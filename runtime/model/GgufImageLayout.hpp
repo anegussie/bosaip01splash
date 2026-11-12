@@ -28,7 +28,7 @@ inline constexpr std::string_view kGgufImageMagic = "MDGG0001";
 inline constexpr uint64_t kGgufBlockColumns = 256;
 // The unit a quantized tensor's width in `format` is a multiple of.
 [[nodiscard]] inline constexpr uint64_t ggufColumnUnit(const QuantFormat &format) {
-  return quant_column_unit(format.block_elements);
+  return (format.ggml_type == 145 || format.ggml_type == 146) ? 128 : quant_column_unit(format.block_elements);
 }
 
 // A tensor's descriptor section: its seven 32-bit fields from byte 0, then

@@ -6,6 +6,7 @@
 #include "metal/CommandGraph.hpp"
 #include "metal/MetalBackend.hpp"
 #include "metal/abi/Gguf.h"
+#include "metal/abi/GgufRepack.h"
 
 #include <array>
 #include <cstdint>
@@ -58,6 +59,19 @@ int main(int argc, char **argv) {
           const Packed planes = repack(f, native, N, K, &values);
           const MetalBuffer w0 = upload(backend, planes.w0), meta = upload(backend, planes.meta);
           const MetalBuffer w1 = kQuantFormats[f].plane1_bytes ? upload(backend, planes.w1) : meta;
+          if (f == TQK6 || f == TQK7) {
+            const auto source = upload(backend, native);
+            const uint32_t metaOffset = static_cast<uint32_t>(planes.w0.size());
+            const auto prepared = sharedBuffer(backend, metaOffset + planes.meta.size());
+            CommandGraph repackGraph;
+            repackGraph.add("gguf_repack", {source, prepared},
+              GgufRepackParams{N, K, uint32_t(f), rowBytes(f,K), metaOffset, metaOffset},
+              {N*(K/32)/256,1,1}, {256,1,1});
+            static_cast<void>(backend.submitCommandAsync(repackGraph.dispatches()).wait());
+            failures += std::memcmp(prepared.contents(), planes.w0.data(), planes.w0.size()) != 0;
+            failures += std::memcmp(static_cast<const uint8_t *>(prepared.contents())+metaOffset,
+                                    planes.meta.data(), planes.meta.size()) != 0;
+          }
           const MetalBuffer output = sharedBuffer(backend, uint64_t{N} * K * 2);
           std::vector<std::string> kernels{fmtName(f)};
           if (f == PTQ10) kernels.push_back("ptq10_lookup");
