@@ -12,3 +12,5 @@ dist/
 app/.build/
 install/download-token
 /Ternary-Bonsai-2-27B-gguf/*.gguf
+# Raw runs from the benchmark harness; the write-ups in dev/benchmarks carry the numbers.
+dev/benchmarks/results/
