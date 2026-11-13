@@ -2,8 +2,10 @@
 // at the 35B's shape (hidden 2048, 256 experts, top 8, intermediate 512), Qwen3.8-Flash-Next's (hidden 2560, 512
 // experts, top 10, intermediate 640) or Flint's (hidden 2048, 256 experts, top 6 by a sigmoid router, intermediate
 // 512, an ungated shared expert of two 512-wide slices), by default in the 35B UD-Q4_K_M's formats (Q4_K gate/up and
-// Q5_K down experts, a Q8_0 shared expert) with an F32 router:
-//   gguf-moe-benchmark <metallib> [35b|flash-next|flint] [rounds] [gate/up format] [down format] [shared format]
+// Q5_K down experts, a Q8_0 shared expert) with an F32 router. Flash-Next defaults
+// to Q2_0 routed experts; its mixed shared projections can be selected separately:
+//   gguf-moe-benchmark <metallib> [35b|flash-next|flint] [rounds] [gate/up format] [down format]
+//                      [shared gate format] [shared up format] [shared down format]
 // - decode steps of one to four lanes of 8 rows on the device's plan and on the other GGUF tile, each row routed to
 //   top-k experts drawn at random from all of them (random) or, per lane of 8 rows, from a pool of three times top-k
 //   (pooled: the rows of a verify sharing their experts), with the share of the plan's expert tiles that run the
@@ -71,7 +73,7 @@ void allocate(MetalBackend &backend, MoeBuffers &m, const MoePlan &plan) {
 enum class Routing { Random, Pooled };
 
 int timing(MetalBackend &backend, const MoeShape &shape, uint32_t rounds, Fmt gateUpFormat, Fmt downFormat,
-           Fmt sharedFormat) {
+           Fmt sharedGateFormat, Fmt sharedUpFormat, Fmt sharedDownFormat) {
   const uint32_t H = shape.hiddenSize, I = shape.expertIntermediateSize, E = shape.experts,
                  topK = shape.expertsPerToken;
   std::mt19937 local(9);
@@ -88,11 +90,14 @@ int timing(MetalBackend &backend, const MoeShape &shape, uint32_t rounds, Fmt ga
   // An ungated block's weights carry no scalar gate.
   const QuantizedSegment sharedGateSegment =
       shape.sharedGate ? floatSegment(backend, sharedGate, 1, H) : QuantizedSegment{};
-  BlockMoeWeights gguf{routerSegment, sharedGateSegment,
-                       {planes(gateUpFormat, E * I, H), planes(sharedFormat, shape.sharedSlices * I, H)},
-                       {planes(gateUpFormat, E * I, H), planes(sharedFormat, shape.sharedSlices * I, H)},
-                       {planes(downFormat, E * H, I), planes(sharedFormat, shape.sharedSlices * H, I)},
-                       splash::model::residentExpertSlots(backend, E), E};
+  BlockMoeWeights gguf{};
+  gguf.router = routerSegment;
+  gguf.sharedScalarGate = sharedGateSegment;
+  gguf.gate = {planes(gateUpFormat, E * I, H), planes(sharedGateFormat, shape.sharedSlices * I, H)};
+  gguf.up = {planes(gateUpFormat, E * I, H), planes(sharedUpFormat, shape.sharedSlices * I, H)};
+  gguf.down = {planes(downFormat, E * H, I), planes(sharedDownFormat, shape.sharedSlices * H, I)};
+  gguf.slotTable = splash::model::residentExpertSlots(backend, E);
+  gguf.slots = E;
   gguf.chunks = splash::ops::residentExpertChunks(gguf);
   // Rows whose expert e scores 4 x[e]: the first E inputs rank the experts, the row's routes at 1 - 0.05 rank and the
   // others below 0.05.
@@ -159,7 +164,8 @@ int timing(MetalBackend &backend, const MoeShape &shape, uint32_t rounds, Fmt ga
          backend.capabilities().deviceName.c_str(), backend.capabilities().appleGpuFamily,
          backend.capabilities().gpuCoreCount, H, I, E, topK,
          shape.router == splash::ops::MoeRouter::Softmax ? "softmax" : "sigmoid", shape.sharedSlices,
-         shape.sharedGate ? " gated" : "", fmtName(gateUpFormat), fmtName(downFormat), fmtName(sharedFormat), rounds);
+         shape.sharedGate ? " gated" : "", fmtName(gateUpFormat), fmtName(downFormat), fmtName(sharedGateFormat), rounds);
+  printf("  shared formats gate=%s up=%s down=%s\n", fmtName(sharedGateFormat), fmtName(sharedUpFormat), fmtName(sharedDownFormat));
   // Prefill chunks first: they also bring the GPU clocks up for the short decode layers.
   for (const uint32_t rows : kPrefillRows) {
     const MoePlan plan = plans.moePrefill(shape, rows);
@@ -215,20 +221,22 @@ int timing(MetalBackend &backend, const MoeShape &shape, uint32_t rounds, Fmt ga
 int main(int argc, const char *argv[]) {
   @autoreleasepool {
     const std::string shapeName = argc > 2 ? argv[2] : "35b";
-    const Fmt gateUp = argc > 4 ? fmtNamed(argv[4]) : Q4K, down = argc > 5 ? fmtNamed(argv[5]) : Q5K,
-              shared = argc > 6 ? fmtNamed(argv[6]) : Q80;
-    if (argc < 2 || argc > 7 || (shapeName != "35b" && shapeName != "flash-next" && shapeName != "flint") ||
-        gateUp == FMT_COUNT || down == FMT_COUNT || shared == FMT_COUNT) {
+    const bool flashNext = shapeName == "flash-next", flint = shapeName == "flint";
+    const Fmt gateUp = argc > 4 ? fmtNamed(argv[4]) : (flashNext ? Q20 : Q4K), down = argc > 5 ? fmtNamed(argv[5]) : (flashNext ? Q20 : Q5K),
+              shared = argc > 6 ? fmtNamed(argv[6]) : Q80,
+              sharedUp = argc > 7 ? fmtNamed(argv[7]) : shared,
+              sharedDown = argc > 8 ? fmtNamed(argv[8]) : shared;
+    if (argc < 2 || argc > 9 || (shapeName != "35b" && shapeName != "flash-next" && shapeName != "flint") ||
+        gateUp == FMT_COUNT || down == FMT_COUNT || shared == FMT_COUNT || sharedUp == FMT_COUNT || sharedDown == FMT_COUNT) {
       std::cerr << "usage: gguf-moe-benchmark <metallib> [35b|flash-next|flint] [rounds] [gate/up format] "
-                   "[down format] [shared format]\n";
+                   "[down format] [shared gate format] [shared up format] [shared down format]\n";
       return 2;
     }
-    const bool flashNext = shapeName == "flash-next", flint = shapeName == "flint";
     const uint32_t H = flashNext ? 2560 : 2048, I = flashNext ? 640 : 512;
     // gate and up hold most of the routed expert weights.
     MoeShape shape{H, flashNext ? 512u : 256u, flashNext ? 10u : flint ? 6u : 8u, I, uint32_t(gateUp),
                    quant_register_tensor(gateUp, H) && quant_register_tensor(down, I) &&
-                       quant_register_tensor(shared, H) && quant_register_tensor(shared, I)};
+                       quant_register_tensor(shared, H) && quant_register_tensor(sharedUp, H) && quant_register_tensor(sharedDown, I)};
     if (flint) {
       shape.router = splash::ops::MoeRouter::SigmoidNormalized;
       shape.sharedSlices = 2;
@@ -236,7 +244,7 @@ int main(int argc, const char *argv[]) {
     }
     try {
       MetalBackend backend(argv[1]);
-      return timing(backend, shape, argc > 3 ? std::stoul(argv[3]) : 20, gateUp, down, shared);
+      return timing(backend, shape, argc > 3 ? std::stoul(argv[3]) : 20, gateUp, down, shared, sharedUp, sharedDown);
     } catch (const std::exception &error) {
       std::cerr << "gguf-moe-benchmark: " << error.what() << '\n';
       return 1;

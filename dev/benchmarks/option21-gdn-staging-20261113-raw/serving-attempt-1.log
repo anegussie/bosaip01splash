@@ -1,0 +1,13 @@
+[smoke-A/pre-cold] prompt=2060 cached=0 prefill=398.15 tok/s ttft=5.176s decode=6.36 tok/s cycles=2 tpc=1.5 correct=True thermal=nominal->nominal clean=True
+PRODUCTION RESTORED: original binary, context, chunk, identity and logging
+Traceback (most recent call last):
+  File "/Users/mymac/splash/splash/dev/benchmarks/option21-gdn-staging-20261113-raw/serving.py", line 82, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/Users/mymac/splash/splash/dev/benchmarks/option21-gdn-staging-20261113-raw/serving.py", line 56, in main
+    r.probe(client,directory,'pre-cold',prompt,96,False)
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mymac/splash/splash/dev/benchmarks/option21-chunk-context-20261113-raw/run.py", line 141, in probe
+    assert row['clean'] and row['correct'] and row['semantic_correct'], f'{name}: correctness/contention gate'
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: pre-cold: correctness/contention gate

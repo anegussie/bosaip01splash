@@ -1,0 +1,6 @@
+[
+  "/Users/mymac/splash/splash/build/validation/option21-gdn-staging-20261113/gdn-compare",
+  "/Users/mymac/splash/splash/build/validation/option21-gdn-staging-20261113/baseline/splash.metallib",
+  "--compare",
+  "/Users/mymac/splash/splash/build/validation/option21-gdn-staging-20261113/candidate/splash.metallib"
+]

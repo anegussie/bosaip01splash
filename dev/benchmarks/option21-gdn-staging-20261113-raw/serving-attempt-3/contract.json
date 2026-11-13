@@ -1,0 +1,28 @@
+{
+  "model": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0",
+  "context": 102400,
+  "chunk": 2048,
+  "max_memory": 11596411699,
+  "kv": "int8",
+  "state": "bf16",
+  "smoke_prompt": 2048,
+  "timed_prompt": 8192,
+  "output_budget": 128,
+  "warmup_budget": 96,
+  "smoke_evidence": "/Users/mymac/splash/splash/dev/benchmarks/option21-gdn-staging-20261113-raw/serving-attempt-2",
+  "order": [
+    "A1",
+    "B1",
+    "B2",
+    "A2"
+  ],
+  "A": "FP32 staging",
+  "B": "BF16 staging",
+  "workload": "explicit ORCHID and integer-sequence copying, executable Python smoke",
+  "temperature": 1.0,
+  "top_p": 0.95,
+  "cold": "zero reused prefix, warmed model and filesystem caches",
+  "executable_sha256": "5b29bd9a5c71ab5cf2ada1cd42fc51c0ffdf2a209073a60c4d8d049ac79d3388",
+  "baseline_library_sha256": "cae45f1a2be9d8abd7b22e24dbb540dd1451367168f7dbff960427f187ad6007",
+  "candidate_library_sha256": "ee630f921ac73685497dcdd960bd047906fc863439a8ef850d4696473f2249dd"
+}

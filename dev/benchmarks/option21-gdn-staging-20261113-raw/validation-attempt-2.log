@@ -1,0 +1,9 @@
+Production stopped; running GPU gates
+PASS gdn-baseline-reference
+PASS gdn-candidate-reference
+PASS gdn-cross-library
+PASS attention-current-profile
+PASS moe-q20-smoke
+PASS moe-mixed-shared-smoke
+PASS actual-model-profile
+PRODUCTION RESTORED: original binary, context, chunk, identity and logging

@@ -1,0 +1,23 @@
+[smoke-A/pre-cold] prompt=2060 cached=0 prefill=379.71 tok/s ttft=5.425s decode=17.63 tok/s cycles=12 tpc=7.917 correct=True thermal=nominal->nominal clean=True
+[smoke-A/pre-reuse] prompt=2060 cached=2048 prefill=15.25 tok/s ttft=0.786s decode=17.63 tok/s cycles=12 tpc=7.917 correct=True thermal=nominal->nominal clean=True
+[smoke-A/code-3] prompt=48 cached=0 prefill=23.24 tok/s ttft=2.067s decode=16.49 tok/s cycles=19 tpc=4.421 correct=True thermal=nominal->nominal clean=True
+[smoke-A-restart/pre-restored] prompt=2060 cached=2048 prefill=14.87 tok/s ttft=0.806s decode=22.88 tok/s cycles=12 tpc=7.917 correct=True thermal=nominal->nominal clean=True
+SMOKE PASS A
+[smoke-B/pre-cold] prompt=2060 cached=0 prefill=377.42 tok/s ttft=5.458s decode=17.64 tok/s cycles=12 tpc=7.917 correct=True thermal=nominal->fair clean=True
+[smoke-B/pre-reuse] prompt=2060 cached=2048 prefill=14.42 tok/s ttft=0.832s decode=17.67 tok/s cycles=12 tpc=7.917 correct=True thermal=nominal->nominal clean=True
+[smoke-B/code-3] prompt=48 cached=0 prefill=22.84 tok/s ttft=2.101s decode=16.98 tok/s cycles=13 tpc=5.385 correct=True thermal=nominal->nominal clean=True
+[smoke-B-restart/pre-restored] prompt=2060 cached=2048 prefill=13.2 tok/s ttft=0.909s decode=22.8 tok/s cycles=12 tpc=7.917 correct=True thermal=nominal->nominal clean=True
+SMOKE PASS B
+[A1/pre-warm] prompt=2060 cached=0 prefill=376.81 tok/s ttft=5.466s decode=17.8 tok/s cycles=8 tpc=7.875 correct=True thermal=nominal->nominal clean=True
+PRODUCTION RESTORED: original binary, context, chunk, identity and logging
+Traceback (most recent call last):
+  File "/Users/mymac/splash/splash/dev/benchmarks/option21-gdn-staging-20261113-raw/serving.py", line 86, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/Users/mymac/splash/splash/dev/benchmarks/option21-gdn-staging-20261113-raw/serving.py", line 74, in main
+    r.probe(client,directory,'pre-warm',prompt,64,False)
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mymac/splash/splash/dev/benchmarks/option21-chunk-context-20261113-raw/run.py", line 141, in probe
+    assert row['clean'] and row['correct'] and row['semantic_correct'], f'{name}: correctness/contention gate'
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: pre-warm: correctness/contention gate

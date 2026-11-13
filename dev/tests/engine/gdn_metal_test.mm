@@ -792,16 +792,75 @@ void run(const std::string &metallib) {
   std::cout << "gdn_metal_test passed\n";
 }
 
+// Exact cross-library comparison; inputs stay bf16 and the recurrence fp32.
+void compareLibraries(const std::string &baseline, const std::string &candidate) {
+  MetalBackend a(baseline), b(candidate);
+  for (const GdnShape &shape : splash::test::familyGdnShapes()) {
+    for (bool float32Norm : {false, true}) {
+      for (GdnStateFormat format : {GdnStateFormat::Float32, GdnStateFormat::BFloat16}) {
+        for (uint32_t tokens : {1u, 15u, 16u, 17u, 37u, 1000u, 2048u}) {
+          const auto make = [&](MetalBackend &backend) {
+            GdnPrefillBuffers buffers = randomPrefill(backend, shape, tokens, float32Norm);
+            if (format == GdnStateFormat::BFloat16) {
+              const uint64_t elements = buffers.recurrentIn.sizeBytes() / sizeof(float);
+              MetalBuffer state = shared(backend, elements * 2, "bf16 comparison state");
+              for (uint64_t i = 0; i < elements; ++i)
+                data<uint16_t>(state)[i] = toBf16(data<float>(buffers.recurrentIn)[i]);
+              buffers = prefillBuffers(backend, shape, tokens, buffers.packed, buffers.convolutionIn,
+                                       state, buffers.convolutionWeights, buffers.decayWeights,
+                                       buffers.timeBias, buffers.mixerNorm);
+            }
+            return buffers;
+          };
+          GdnPrefillBuffers x = make(a), y = make(b);
+          submitPrefill(a, x, shape, tokens, "baseline comparison", GdnHeadOrder::Grouped, format);
+          submitPrefill(b, y, shape, tokens, "candidate comparison", GdnHeadOrder::Grouped, format);
+          for (auto member : {&GdnPrefillBuffers::convolutionOut, &GdnPrefillBuffers::recurrentOut,
+                              &GdnPrefillBuffers::recurrentRows, &GdnPrefillBuffers::hidden}) {
+            const MetalBuffer &left = x.*member, &right = y.*member;
+            require(left.sizeBytes() == right.sizeBytes() &&
+                        std::memcmp(left.contents(), right.contents(), left.sizeBytes()) == 0,
+                    "GDN cross-library byte mismatch at " + std::to_string(tokens) + " rows");
+          }
+          std::cout << "gdn_compare exact packed=" << shape.packedWidth << " rows=" << tokens
+                    << " state=" << (format == GdnStateFormat::BFloat16 ? "bf16" : "fp32")
+                    << " norm=" << (float32Norm ? "fp32" : "bf16") << '\n';
+          if (float32Norm || (tokens != 1000 && tokens != 2048)) continue;
+          CommandGraph ga, gb;
+          GDN::addPrefill(ga, a, x, shape, tokens, format, GdnHeadOrder::Grouped);
+          GDN::addPrefill(gb, b, y, shape, tokens, format, GdnHeadOrder::Grouped);
+          for (uint32_t warm = 0; warm < 3; ++warm) {
+            (void)a.submit(ga.dispatches()[1]);
+            (void)b.submit(gb.dispatches()[1]);
+          }
+          for (uint32_t round = 0; round < 3; ++round) {
+            for (uint32_t arm : {0u, 1u, 1u, 0u}) {
+              MetalBackend &backend = arm ? b : a;
+              const CommandGraph &graph = arm ? gb : ga;
+              const double milliseconds = backend.submit(graph.dispatches()[1]).gpuSeconds * 1000.0;
+              std::cout << "gdn_scan_gpu_ms packed=" << shape.packedWidth << " rows=" << tokens
+                        << " state=" << (format == GdnStateFormat::BFloat16 ? "bf16" : "fp32")
+                        << " round=" << round << " arm=" << arm << " ms=" << milliseconds << '\n';
+            }
+          }
+        }
+      }
+    }
+  }
+  std::cout << "gdn_cross_library comparison passed\n";
+}
+
 } // namespace
 
 int main(int argc, const char *argv[]) {
   @autoreleasepool {
-    if (argc != 2) {
-      std::cerr << "usage: gdn_metal_test <metallib>\n";
+    if (argc != 2 && !(argc == 4 && std::string(argv[2]) == "--compare")) {
+      std::cerr << "usage: gdn_metal_test <metallib> [--compare candidate_metallib]\n";
       return 2;
     }
     try {
-      run(argv[1]);
+      if (argc == 4) compareLibraries(argv[1], argv[3]);
+      else run(argv[1]);
     } catch (const std::exception &error) {
       std::cerr << "FAIL: unexpected exception: " << error.what() << '\n';
       return 1;

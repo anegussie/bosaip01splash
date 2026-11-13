@@ -12,7 +12,9 @@ constant constexpr uint GdnScanBlock = 16;
 // even as it is stored at the chunk's end. A lane owns sixteen key
 // columns of one row, so eight lanes share a row and each key-dimension dot
 // product costs three shuffle steps; a simdgroup covers four rows. Blocks of
-// GdnScanBlock tokens of q and k (widened to fp32), v, decay and beta are
+// GdnScanBlock tokens of q, k and v stay bf16 in threadgroup memory;
+// decay and beta stay fp32. Values widen only where the fp32 recurrence reads
+// them, preserving the exact input values while halving q/k/v staging. They are
 // staged in threadgroup memory while the following block is prefetched into
 // registers, so the dependent per-token chain reads only threadgroup memory.
 // The math is the decode recurrence; only the summation order of the dot
@@ -22,8 +24,8 @@ inline void gdn_scan_prefill_phase(
     device const bfloat *q, device const bfloat *k, device const bfloat *v,
     device const float *decay, device const bfloat *beta,
     device const State *state_in, device State *state_out,
-    device bfloat *output, uint tokens, threadgroup float *keys,
-    threadgroup float *queries, threadgroup float *values,
+    device bfloat *output, uint tokens, threadgroup bfloat *keys,
+    threadgroup bfloat *queries, threadgroup bfloat *values,
     threadgroup float *gates, uint group, uint thread_index, uint lane,
     uint simd_group) {
   constexpr uint Columns = 16;
@@ -94,16 +96,16 @@ inline void gdn_scan_prefill_phase(
     for (uint n = 0; n < 2; ++n) {
       const uint element = (n * Threads + thread_index) * 8;
       for (uint h = 0; h < 2; ++h) {
-        reinterpret_cast<threadgroup float4 *>(keys + element)[h] =
-            float4(key_fetch[n][h]);
-        reinterpret_cast<threadgroup float4 *>(queries + element)[h] =
-            float4(query_fetch[n][h]);
+        reinterpret_cast<threadgroup bfloat4 *>(keys + element)[h] =
+            key_fetch[n][h];
+        reinterpret_cast<threadgroup bfloat4 *>(queries + element)[h] =
+            query_fetch[n][h];
       }
     }
     if (thread_index < 32) {
       for (uint h = 0; h < 2; ++h) {
-        reinterpret_cast<threadgroup float4 *>(values + thread_index * 8)[h] =
-            float4(value_fetch[h]);
+        reinterpret_cast<threadgroup bfloat4 *>(values + thread_index * 8)[h] =
+            value_fetch[h];
       }
     }
     if (thread_index < Block) {
@@ -122,24 +124,24 @@ inline void gdn_scan_prefill_phase(
     const uint count = min(Block, tokens - start);
     for (uint t = 0; t < count; ++t) {
       const float d = gates[t], b = gates[Block + t];
-      const threadgroup float4 *key = reinterpret_cast<const threadgroup float4 *>(
+      const threadgroup bfloat4 *key = reinterpret_cast<const threadgroup bfloat4 *>(
           keys + t * HeadDim + column);
-      const threadgroup float4 *query =
-          reinterpret_cast<const threadgroup float4 *>(queries + t * HeadDim +
+      const threadgroup bfloat4 *query =
+          reinterpret_cast<const threadgroup bfloat4 *>(queries + t * HeadDim +
                                                        column);
       float4 partial = 0.0f;
       for (uint c = 0; c < Columns / 4; ++c) {
         state[c] *= d;
-        partial = fma(state[c], key[c], partial);
+        partial = fma(state[c], float4(key[c]), partial);
       }
       float memory = (partial.x + partial.y) + (partial.z + partial.w);
       for (uint s = 1; s < LanesPerRow; s <<= 1)
         memory += simd_shuffle_xor(memory, s);
-      const float delta = (values[t * Rows + row] - memory) * b;
+      const float delta = (float(values[t * Rows + row]) - memory) * b;
       partial = 0.0f;
       for (uint c = 0; c < Columns / 4; ++c) {
-        state[c] = fma(key[c], delta, state[c]);
-        partial = fma(state[c], query[c], partial);
+        state[c] = fma(float4(key[c]), delta, state[c]);
+        partial = fma(state[c], float4(query[c]), partial);
       }
       float result = (partial.x + partial.y) + (partial.z + partial.w);
       for (uint s = 1; s < LanesPerRow; s <<= 1)
@@ -176,9 +178,9 @@ inline void gdn_scan_prefill_phase(
       uint thread_index [[thread_index_in_threadgroup]],                      \
       uint lane [[thread_index_in_simdgroup]],                                \
       uint simd_group [[simdgroup_index_in_threadgroup]]) {                   \
-    threadgroup float keys[GdnScanBlock * HeadDim];                           \
-    threadgroup float queries[GdnScanBlock * HeadDim];                        \
-    threadgroup float values[GdnScanBlock * SPLASH_GDN_SCAN_STATE_ROWS];    \
+    threadgroup bfloat keys[GdnScanBlock * HeadDim];                           \
+    threadgroup bfloat queries[GdnScanBlock * HeadDim];                        \
+    threadgroup bfloat values[GdnScanBlock * SPLASH_GDN_SCAN_STATE_ROWS];    \
     threadgroup float gates[2 * GdnScanBlock];                                \
     gdn_scan_prefill_phase<KeyHeads, ValueHeads, HeadDim, State>(             \
         q, k, v, decay, beta, state_in, state_out, output, params.tokens,     \

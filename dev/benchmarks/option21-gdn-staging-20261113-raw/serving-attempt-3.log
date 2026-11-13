@@ -1,0 +1,17 @@
+[A1/pre-warm] prompt=2060 cached=0 prefill=378.49 tok/s ttft=5.442s decode=17.61 tok/s cycles=12 tpc=7.917 correct=True thermal=nominal->nominal clean=True
+[A1/pre-cold] prompt=8204 cached=0 prefill=426.54 tok/s ttft=19.233s decode=22.29 tok/s cycles=16 tpc=7.938 correct=True thermal=nominal->nominal clean=True
+[A1/pre-reuse] prompt=8204 cached=8192 prefill=14.63 tok/s ttft=0.82s decode=24.53 tok/s cycles=16 tpc=7.938 correct=True thermal=nominal->fair clean=True
+TIMED PASS A1
+[B1/pre-warm] prompt=2060 cached=0 prefill=381.93 tok/s ttft=5.394s decode=17.64 tok/s cycles=12 tpc=7.917 correct=True thermal=nominal->nominal clean=True
+[B1/pre-cold] prompt=8204 cached=0 prefill=431.42 tok/s ttft=19.015s decode=22.31 tok/s cycles=16 tpc=7.938 correct=True thermal=nominal->fair clean=True
+[B1/pre-reuse] prompt=8204 cached=8192 prefill=13.94 tok/s ttft=0.86s decode=24.56 tok/s cycles=16 tpc=7.938 correct=True thermal=nominal->nominal clean=True
+TIMED PASS B1
+[B2/pre-warm] prompt=2060 cached=0 prefill=380.09 tok/s ttft=5.419s decode=17.68 tok/s cycles=12 tpc=7.917 correct=True thermal=nominal->nominal clean=True
+[B2/pre-cold] prompt=8204 cached=0 prefill=427.76 tok/s ttft=19.178s decode=22.27 tok/s cycles=16 tpc=7.938 correct=True thermal=nominal->fair clean=True
+[B2/pre-reuse] prompt=8204 cached=8192 prefill=14.27 tok/s ttft=0.84s decode=24.66 tok/s cycles=16 tpc=7.938 correct=True thermal=nominal->nominal clean=True
+TIMED PASS B2
+[A2/pre-warm] prompt=2060 cached=0 prefill=377.61 tok/s ttft=5.455s decode=17.68 tok/s cycles=12 tpc=7.917 correct=True thermal=nominal->nominal clean=True
+[A2/pre-cold] prompt=8204 cached=0 prefill=423.4 tok/s ttft=19.376s decode=22.29 tok/s cycles=16 tpc=7.938 correct=True thermal=nominal->fair clean=True
+[A2/pre-reuse] prompt=8204 cached=8192 prefill=14.8 tok/s ttft=0.81s decode=24.57 tok/s cycles=16 tpc=7.938 correct=True thermal=nominal->nominal clean=True
+TIMED PASS A2
+PRODUCTION RESTORED: original binary, context, chunk, identity and logging

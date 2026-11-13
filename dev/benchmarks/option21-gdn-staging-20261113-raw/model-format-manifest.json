@@ -1,0 +1,908 @@
+{
+  "model_root": "install/models/.resolved/974a9097bfe4bac04bb2a2e140d198f4cfdfced31d44091318906778ad109439",
+  "top_k": 4096,
+  "layers": {
+    "0": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q50",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "iq4xs",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "1": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q20",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q20"
+    },
+    "2": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q40",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "iq4xs",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q20"
+    },
+    "3": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q40",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q20"
+    },
+    "4": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q20",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q20"
+    },
+    "5": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q40",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q6k"
+    },
+    "6": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q20",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q4k"
+    },
+    "7": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q20",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q20"
+    },
+    "8": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q50",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q20"
+    },
+    "9": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q20",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "iq4xs",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q20"
+    },
+    "10": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "iq4nl",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "11": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q20",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "iq4xs",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "12": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q20",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q3k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q20"
+    },
+    "13": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q20",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q4k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "14": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q80",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q3k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "15": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q50",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "16": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q40",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q3k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "17": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q40",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q20"
+    },
+    "18": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q40",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "iq4xs"
+    },
+    "19": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q40",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "20": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q20",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q3k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q20"
+    },
+    "21": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q40",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q4k"
+    },
+    "22": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q20",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "iq4xs"
+    },
+    "23": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "iq4nl",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q4k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q4k"
+    },
+    "24": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q50",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q3k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q5k"
+    },
+    "25": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q20",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "26": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "iq4nl",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "27": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q20",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q3k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q20"
+    },
+    "28": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q40",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q6k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "29": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q50",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "30": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q20",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q3k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "iq4xs"
+    },
+    "31": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q40",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q4k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q20"
+    },
+    "32": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q40",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q4k"
+    },
+    "33": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q20",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q3k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "34": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q40",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q4k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q20"
+    },
+    "35": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q20",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "36": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q20",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q4k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q4k"
+    },
+    "37": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q50",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "iq4xs",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q4k"
+    },
+    "38": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q40",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "iq4xs",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "39": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "iq4nl",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q3k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "iq4xs"
+    },
+    "40": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "iq4nl",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q4k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "41": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q40",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q3k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "42": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q40",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "43": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "iq4nl",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q20",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "iq4xs"
+    },
+    "44": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "iq4nl",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q3k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "45": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q50",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q3k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "46": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q40",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q5k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q3k"
+    },
+    "47": {
+      "ffn_down_exps": "q20",
+      "ffn_down_shexp": "q80",
+      "ffn_gate_exps": "q20",
+      "ffn_gate_shexp": "q3k",
+      "ffn_up_exps": "q20",
+      "ffn_up_shexp": "q5k"
+    }
+  },
+  "groups": [
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q20",
+        "ffn_up_shexp": "q20",
+        "ffn_down_shexp": "q20"
+      },
+      "layers": [
+        1,
+        4,
+        7
+      ],
+      "count": 3
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q3k",
+        "ffn_up_shexp": "q20",
+        "ffn_down_shexp": "q20"
+      },
+      "layers": [
+        12,
+        20,
+        27
+      ],
+      "count": 3
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q20",
+        "ffn_up_shexp": "q20",
+        "ffn_down_shexp": "q40"
+      },
+      "layers": [
+        3,
+        17
+      ],
+      "count": 2
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q20",
+        "ffn_up_shexp": "q3k",
+        "ffn_down_shexp": "iq4nl"
+      },
+      "layers": [
+        10,
+        26
+      ],
+      "count": 2
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q20",
+        "ffn_up_shexp": "q3k",
+        "ffn_down_shexp": "q50"
+      },
+      "layers": [
+        15,
+        29
+      ],
+      "count": 2
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q3k",
+        "ffn_up_shexp": "q3k",
+        "ffn_down_shexp": "q40"
+      },
+      "layers": [
+        16,
+        41
+      ],
+      "count": 2
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q20",
+        "ffn_up_shexp": "q3k",
+        "ffn_down_shexp": "q40"
+      },
+      "layers": [
+        19,
+        42
+      ],
+      "count": 2
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q20",
+        "ffn_up_shexp": "q4k",
+        "ffn_down_shexp": "q40"
+      },
+      "layers": [
+        21,
+        32
+      ],
+      "count": 2
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q20",
+        "ffn_up_shexp": "q3k",
+        "ffn_down_shexp": "q20"
+      },
+      "layers": [
+        25,
+        35
+      ],
+      "count": 2
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q4k",
+        "ffn_up_shexp": "q20",
+        "ffn_down_shexp": "q40"
+      },
+      "layers": [
+        31,
+        34
+      ],
+      "count": 2
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "iq4xs",
+        "ffn_up_shexp": "q3k",
+        "ffn_down_shexp": "q50"
+      },
+      "layers": [
+        0
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "iq4xs",
+        "ffn_up_shexp": "q20",
+        "ffn_down_shexp": "q40"
+      },
+      "layers": [
+        2
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q20",
+        "ffn_up_shexp": "q6k",
+        "ffn_down_shexp": "q40"
+      },
+      "layers": [
+        5
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q20",
+        "ffn_up_shexp": "q4k",
+        "ffn_down_shexp": "q20"
+      },
+      "layers": [
+        6
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q20",
+        "ffn_up_shexp": "q20",
+        "ffn_down_shexp": "q50"
+      },
+      "layers": [
+        8
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "iq4xs",
+        "ffn_up_shexp": "q20",
+        "ffn_down_shexp": "q20"
+      },
+      "layers": [
+        9
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "iq4xs",
+        "ffn_up_shexp": "q3k",
+        "ffn_down_shexp": "q20"
+      },
+      "layers": [
+        11
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q4k",
+        "ffn_up_shexp": "q3k",
+        "ffn_down_shexp": "q20"
+      },
+      "layers": [
+        13
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q3k",
+        "ffn_up_shexp": "q3k",
+        "ffn_down_shexp": "q80"
+      },
+      "layers": [
+        14
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q20",
+        "ffn_up_shexp": "iq4xs",
+        "ffn_down_shexp": "q40"
+      },
+      "layers": [
+        18
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q20",
+        "ffn_up_shexp": "iq4xs",
+        "ffn_down_shexp": "q20"
+      },
+      "layers": [
+        22
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q4k",
+        "ffn_up_shexp": "q4k",
+        "ffn_down_shexp": "iq4nl"
+      },
+      "layers": [
+        23
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q3k",
+        "ffn_up_shexp": "q5k",
+        "ffn_down_shexp": "q50"
+      },
+      "layers": [
+        24
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q6k",
+        "ffn_up_shexp": "q3k",
+        "ffn_down_shexp": "q40"
+      },
+      "layers": [
+        28
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q3k",
+        "ffn_up_shexp": "iq4xs",
+        "ffn_down_shexp": "q20"
+      },
+      "layers": [
+        30
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q3k",
+        "ffn_up_shexp": "q3k",
+        "ffn_down_shexp": "q20"
+      },
+      "layers": [
+        33
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q4k",
+        "ffn_up_shexp": "q4k",
+        "ffn_down_shexp": "q20"
+      },
+      "layers": [
+        36
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "iq4xs",
+        "ffn_up_shexp": "q4k",
+        "ffn_down_shexp": "q50"
+      },
+      "layers": [
+        37
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "iq4xs",
+        "ffn_up_shexp": "q3k",
+        "ffn_down_shexp": "q40"
+      },
+      "layers": [
+        38
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q3k",
+        "ffn_up_shexp": "iq4xs",
+        "ffn_down_shexp": "iq4nl"
+      },
+      "layers": [
+        39
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q4k",
+        "ffn_up_shexp": "q3k",
+        "ffn_down_shexp": "iq4nl"
+      },
+      "layers": [
+        40
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q20",
+        "ffn_up_shexp": "iq4xs",
+        "ffn_down_shexp": "iq4nl"
+      },
+      "layers": [
+        43
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q3k",
+        "ffn_up_shexp": "q3k",
+        "ffn_down_shexp": "iq4nl"
+      },
+      "layers": [
+        44
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q3k",
+        "ffn_up_shexp": "q3k",
+        "ffn_down_shexp": "q50"
+      },
+      "layers": [
+        45
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q5k",
+        "ffn_up_shexp": "q3k",
+        "ffn_down_shexp": "q40"
+      },
+      "layers": [
+        46
+      ],
+      "count": 1
+    },
+    {
+      "formats": {
+        "ffn_gate_exps": "q20",
+        "ffn_up_exps": "q20",
+        "ffn_down_exps": "q20",
+        "ffn_gate_shexp": "q3k",
+        "ffn_up_shexp": "q5k",
+        "ffn_down_shexp": "q80"
+      },
+      "layers": [
+        47
+      ],
+      "count": 1
+    }
+  ]
+}

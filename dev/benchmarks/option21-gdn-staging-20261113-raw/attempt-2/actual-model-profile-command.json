@@ -1,0 +1,21 @@
+[
+  "/Users/mymac/splash/splash/build/validation/option21-gdn-staging-20261113/baseline/engine-tests/decode-profile",
+  "/Users/mymac/splash/splash/build/validation/option21-gdn-staging-20261113/baseline/splash.metallib",
+  "/Users/mymac/splash/splash/install/models/.resolved/974a9097bfe4bac04bb2a2e140d198f4cfdfced31d44091318906778ad109439",
+  "--prompt-tokens",
+  "8192",
+  "--cycles",
+  "1",
+  "--max-lanes",
+  "1",
+  "--prefill-chunk-tokens",
+  "2048",
+  "--state-format",
+  "bf16",
+  "--kv-format",
+  "int8",
+  "--expert-memory",
+  "2G",
+  "--ple-memory",
+  "64M"
+]

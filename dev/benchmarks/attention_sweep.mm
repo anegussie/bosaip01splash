@@ -17,6 +17,7 @@
 //                        [--lanes 1,4] [--repeat N] [--phases both|verify|prefill]
 //                        [--compare-metallib PATH] [--kv-format int8|bf16]
 //                        [--extent-pages N] [--qsa shared|independent|overlapping|pages|indexer]
+//                        [--qsa-top-blocks N] (default 1024, four tokens per block)
 //                        [--located]
 //
 // flint-window and flint-full are Flint's two kinds of layers: 32 query heads
@@ -24,8 +25,8 @@
 // that attend a window of the 512 keys before each row and 14 that attend
 // the whole history (ops::AttentionVariant).
 //
-// fn is Qwen3.8-Flash-Next's GQA-12 attention, whose rows attend past 512
-// complete blocks of four tokens only to the 512 blocks their QSA bitmap
+// fn is Qwen3.8-Flash-Next's GQA-12 attention, whose rows attend past the selected
+// number of complete blocks of four tokens only to the blocks their QSA bitmap
 // names and their own (kernels/shared/block_indexer.metal); its tiles attend the
 // union of their rows' blocks, which the graph lists from the bitmaps first
 // (ops::PagedAttention::addBlockLists). --qsa makes such bitmaps: blocks
@@ -102,12 +103,13 @@ constexpr uint32_t kLayer = 1;
 // attention layers.
 constexpr uint32_t kModelLayers27b = 16, kModelLayers35b = 10, kModelLayers122b = 12, kModelLayersFn = 12,
                    kModelLayersFlint = 49;
-// Qwen3.8-Flash-Next's QSA: the indexer's top_k of 2048 tokens in blocks of 4.
-constexpr uint32_t kQsaTopBlocks = 512, kQsaBlockTokens = SPLASH_ATTENTION_BLOCK_TOKENS;
-// --qsa overlapping: the blocks a tile's rows choose theirs from, three times
-// a row's, which makes unions of about 1,500 blocks, those Flash-Next's
-// verify steps make at 126K-252K tokens of real text and code.
-constexpr uint32_t kQsaOverlapBlocks = 3 * kQsaTopBlocks;
+// Match the current Flash-Next indexer: 1024 blocks, or top_k=4096 tokens.
+// --qsa-top-blocks permits explicit comparisons with the earlier 512-block profile.
+constexpr uint32_t kQsaBlockTokens = SPLASH_ATTENTION_BLOCK_TOKENS;
+uint32_t qsaTopBlocks = 1024;
+// --qsa overlapping: rows choose from a shared pool three times their selection
+// size. The earlier 512-block profile produced unions of about 1,500 blocks;
+// the pool scales with --qsa-top-blocks.
 
 bool isFlint(const std::string &shape) { return shape == "flint-window" || shape == "flint-full"; }
 
@@ -146,8 +148,8 @@ uint32_t mix(uint32_t value) {
 }
 
 // The QSA bitmaps of a case's rows, words per row: lane l's verify rows from
-// row 8 l, a prefill chunk's from row 0. A row with at most kQsaTopBlocks
-// complete blocks attends causally; past that to the kQsaTopBlocks of them
+// row 8 l, a prefill chunk's from row 0. A row with at most qsaTopBlocks
+// complete blocks attends causally; past that to the qsaTopBlocks of them
 // whose mix under `pattern` is least, and to its own block.
 // The words of a case's QSA bitmaps per row: a bit per block of its longest
 // lane and its tail block.
@@ -168,26 +170,26 @@ std::vector<uint32_t> qsaBitmaps(const AttentionFixturePlan &plan, const std::st
       const auto take = [&](uint32_t block) { out[block / 32] |= 1u << (block % 32); };
       const uint32_t complete = (plan.histories[lane] + row + 1) / kQsaBlockTokens;
       take(complete);
-      if (complete <= kQsaTopBlocks) {
+      if (complete <= qsaTopBlocks) {
         for (uint32_t block = 0; block < complete; ++block) take(block);
         continue;
       }
       // Pages: whole pages alike for every row; shared: blocks alike for
       // every row; independent: blocks of each row's own; overlapping: each
-      // row's own of the kQsaOverlapBlocks blocks alike for every row.
+      // row's own of the (3 * qsaTopBlocks) blocks alike for every row.
       keyed.clear();
       for (uint32_t block = 0; block < complete; ++block)
         keyed.emplace_back(pattern == "pages"         ? mix(block / 8)
                            : pattern == "independent" ? mix(block ^ mix(row + lane * 65536))
                                                       : mix(block),
                            block);
-      if (pattern == "overlapping" && keyed.size() > kQsaOverlapBlocks) {
-        std::nth_element(keyed.begin(), keyed.begin() + kQsaOverlapBlocks, keyed.end());
-        keyed.resize(kQsaOverlapBlocks);
+      if (pattern == "overlapping" && keyed.size() > (3 * qsaTopBlocks)) {
+        std::nth_element(keyed.begin(), keyed.begin() + (3 * qsaTopBlocks), keyed.end());
+        keyed.resize((3 * qsaTopBlocks));
         for (auto &[key, block] : keyed) key = mix(block ^ mix(row + lane * 65536));
       }
-      std::nth_element(keyed.begin(), keyed.begin() + kQsaTopBlocks, keyed.end());
-      for (uint32_t index = 0; index < kQsaTopBlocks; ++index) take(keyed[index].second);
+      std::nth_element(keyed.begin(), keyed.begin() + qsaTopBlocks, keyed.end());
+      for (uint32_t index = 0; index < qsaTopBlocks; ++index) take(keyed[index].second);
     }
   return bits;
 }
@@ -331,7 +333,7 @@ QsaBlocks qsaBlocks(metal::MetalBackend &backend, const AttentionFixturePlan &pl
   QsaBlocks result;
   if (!words) return result;
   result.lists = prefill ? kv::prefillAttentionTiles(plan.rows) : plan.lanes;
-  const uint32_t stride = kVerifyRows * (kQsaTopBlocks + 1);
+  const uint32_t stride = kVerifyRows * (qsaTopBlocks + 1);
   result.bitmaps = sharedBuffer<uint32_t>(backend, uint64_t{plan.lanes} * plan.rows * words, "attention-sweep-qsa");
   std::ranges::copy(bitmaps, static_cast<uint32_t *>(result.bitmaps.contents()));
   result.words = words;
@@ -393,7 +395,7 @@ metal::CommandGraph caseGraph(const AttentionFixture &fixture, bool prefill, con
   const AttentionFixturePlan &plan = fixture.plan();
   metal::CommandGraph graph;
   if (const QsaIndexer *indexer = qsa.indexer ? &*qsa.indexer : nullptr) {
-    const ops::IndexerRows rows{plan.rows, indexer->firstPositions, {indexer->tables, 0}, kQsaTopBlocks, qsa.words,
+    const ops::IndexerRows rows{plan.rows, indexer->firstPositions, {indexer->tables, 0}, qsaTopBlocks, qsa.words,
                                 qsa.words * 32};
     BlockIndexer::addProject(graph, indexer->query, indexer->key, {indexer->norm, true}, indexer->ropeCos,
                              indexer->ropeSin, indexer->queries, indexer->keys, rows);
@@ -587,7 +589,7 @@ int main(int argc, const char *argv[]) {
                    "[--lanes LIST] [--repeat N] [--phases both|verify|prefill] "
                    "[--compare-metallib PATH] [--kv-format int8|bf16] "
                    "[--extent-pages N] [--qsa shared|independent|overlapping|pages|indexer] "
-                   "[--located]\n";
+                   "[--located] [--qsa-top-blocks N]\n";
       return 64;
     }
     std::vector<uint32_t> histories{0, 2048, 8192, 16384, 32768, 65536, 131072};
@@ -599,7 +601,7 @@ int main(int argc, const char *argv[]) {
     uint32_t extentPages = 0;
     kv::Format format = kv::Format::Int8;
     std::string comparisonLibrary, phases = "both", qsa;
-    bool located = false;
+    bool located = false, explicitTopBlocks = false;
     for (int index = 2; index < argc; ++index) {
       const std::string option(argv[index]);
       if (option == "--located") {
@@ -623,6 +625,10 @@ int main(int argc, const char *argv[]) {
         format = value == "int8" ? kv::Format::Int8 : kv::Format::BFloat16;
       }
       else if (option == "--compare-metallib") comparisonLibrary = value;
+      else if (option == "--qsa-top-blocks") {
+        qsaTopBlocks = parseCount(value, 1, kv::kMaximumPhysicalTokens / kQsaBlockTokens, option);
+        explicitTopBlocks = true;
+      }
       else if (option == "--qsa") {
         qsa = value;
         if (qsa != "shared" && qsa != "independent" && qsa != "overlapping" && qsa != "pages" && qsa != "indexer")
@@ -650,6 +656,8 @@ int main(int argc, const char *argv[]) {
     }
     if (!qsa.empty() && std::ranges::find(shapes, std::string("fn")) == shapes.end())
       throw std::invalid_argument("--qsa needs --shapes with fn");
+    if (explicitTopBlocks && qsa.empty())
+      throw std::invalid_argument("--qsa-top-blocks needs --qsa");
     if (located && qsa.empty())
       throw std::invalid_argument("--located needs --qsa");
     for (const std::string &shape : shapes) {
@@ -685,7 +693,7 @@ int main(int argc, const char *argv[]) {
       std::cerr << "\n" << name << "  (" << geometry.queryHeads << " query heads, "
                 << geometry.kvHeads << " KV heads, d=" << geometry.headDimension
                 << ", extents of " << shapeExtentPages << " pages"
-                << (shapeQsa.empty() ? "" : ", QSA " + shapeQsa) << ")\n";
+                << (shapeQsa.empty() ? "" : ", QSA " + shapeQsa + ", top_blocks=" + std::to_string(qsaTopBlocks)) << ")\n";
       for (uint32_t history : histories) {
         auto report = [&](bool prefill, uint32_t lane) {
           // Only a verify with lists reads its blocks through locations.

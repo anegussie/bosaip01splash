@@ -1,0 +1,18 @@
+[
+  "/Users/mymac/splash/splash/build/validation/option21-gdn-staging-20261113/baseline/engine-tests/attention-sweep",
+  "/Users/mymac/splash/splash/build/validation/option21-gdn-staging-20261113/baseline/splash.metallib",
+  "--shapes",
+  "fn",
+  "--histories",
+  "8192,32768,102400",
+  "--lanes",
+  "1",
+  "--phases",
+  "prefill",
+  "--repeat",
+  "3",
+  "--qsa",
+  "indexer",
+  "--qsa-top-blocks",
+  "1024"
+]

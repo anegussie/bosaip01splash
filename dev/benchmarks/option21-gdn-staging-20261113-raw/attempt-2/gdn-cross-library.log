@@ -1,0 +1,305 @@
+gdn_compare exact packed=16640 rows=1 state=fp32 norm=bf16
+gdn_compare exact packed=16640 rows=15 state=fp32 norm=bf16
+gdn_compare exact packed=16640 rows=16 state=fp32 norm=bf16
+gdn_compare exact packed=16640 rows=17 state=fp32 norm=bf16
+gdn_compare exact packed=16640 rows=37 state=fp32 norm=bf16
+gdn_compare exact packed=16640 rows=1000 state=fp32 norm=bf16
+gdn_scan_gpu_ms packed=16640 rows=1000 state=fp32 round=0 arm=0 ms=3.78267
+gdn_scan_gpu_ms packed=16640 rows=1000 state=fp32 round=0 arm=1 ms=3.38525
+gdn_scan_gpu_ms packed=16640 rows=1000 state=fp32 round=0 arm=1 ms=3.38479
+gdn_scan_gpu_ms packed=16640 rows=1000 state=fp32 round=0 arm=0 ms=3.78233
+gdn_scan_gpu_ms packed=16640 rows=1000 state=fp32 round=1 arm=0 ms=3.78013
+gdn_scan_gpu_ms packed=16640 rows=1000 state=fp32 round=1 arm=1 ms=3.38362
+gdn_scan_gpu_ms packed=16640 rows=1000 state=fp32 round=1 arm=1 ms=3.41279
+gdn_scan_gpu_ms packed=16640 rows=1000 state=fp32 round=1 arm=0 ms=3.78283
+gdn_scan_gpu_ms packed=16640 rows=1000 state=fp32 round=2 arm=0 ms=3.78271
+gdn_scan_gpu_ms packed=16640 rows=1000 state=fp32 round=2 arm=1 ms=3.38537
+gdn_scan_gpu_ms packed=16640 rows=1000 state=fp32 round=2 arm=1 ms=3.384
+gdn_scan_gpu_ms packed=16640 rows=1000 state=fp32 round=2 arm=0 ms=3.78175
+gdn_compare exact packed=16640 rows=2048 state=fp32 norm=bf16
+gdn_scan_gpu_ms packed=16640 rows=2048 state=fp32 round=0 arm=0 ms=7.76933
+gdn_scan_gpu_ms packed=16640 rows=2048 state=fp32 round=0 arm=1 ms=6.97638
+gdn_scan_gpu_ms packed=16640 rows=2048 state=fp32 round=0 arm=1 ms=6.91354
+gdn_scan_gpu_ms packed=16640 rows=2048 state=fp32 round=0 arm=0 ms=7.73571
+gdn_scan_gpu_ms packed=16640 rows=2048 state=fp32 round=1 arm=0 ms=7.73512
+gdn_scan_gpu_ms packed=16640 rows=2048 state=fp32 round=1 arm=1 ms=6.91612
+gdn_scan_gpu_ms packed=16640 rows=2048 state=fp32 round=1 arm=1 ms=7.04342
+gdn_scan_gpu_ms packed=16640 rows=2048 state=fp32 round=1 arm=0 ms=7.85283
+gdn_scan_gpu_ms packed=16640 rows=2048 state=fp32 round=2 arm=0 ms=7.73863
+gdn_scan_gpu_ms packed=16640 rows=2048 state=fp32 round=2 arm=1 ms=6.96775
+gdn_scan_gpu_ms packed=16640 rows=2048 state=fp32 round=2 arm=1 ms=6.94675
+gdn_scan_gpu_ms packed=16640 rows=2048 state=fp32 round=2 arm=0 ms=7.73575
+gdn_compare exact packed=16640 rows=1 state=bf16 norm=bf16
+gdn_compare exact packed=16640 rows=15 state=bf16 norm=bf16
+gdn_compare exact packed=16640 rows=16 state=bf16 norm=bf16
+gdn_compare exact packed=16640 rows=17 state=bf16 norm=bf16
+gdn_compare exact packed=16640 rows=37 state=bf16 norm=bf16
+gdn_compare exact packed=16640 rows=1000 state=bf16 norm=bf16
+gdn_scan_gpu_ms packed=16640 rows=1000 state=bf16 round=0 arm=0 ms=3.90596
+gdn_scan_gpu_ms packed=16640 rows=1000 state=bf16 round=0 arm=1 ms=3.43279
+gdn_scan_gpu_ms packed=16640 rows=1000 state=bf16 round=0 arm=1 ms=3.43275
+gdn_scan_gpu_ms packed=16640 rows=1000 state=bf16 round=0 arm=0 ms=3.90375
+gdn_scan_gpu_ms packed=16640 rows=1000 state=bf16 round=1 arm=0 ms=3.90496
+gdn_scan_gpu_ms packed=16640 rows=1000 state=bf16 round=1 arm=1 ms=3.52633
+gdn_scan_gpu_ms packed=16640 rows=1000 state=bf16 round=1 arm=1 ms=3.45904
+gdn_scan_gpu_ms packed=16640 rows=1000 state=bf16 round=1 arm=0 ms=3.90708
+gdn_scan_gpu_ms packed=16640 rows=1000 state=bf16 round=2 arm=0 ms=3.90663
+gdn_scan_gpu_ms packed=16640 rows=1000 state=bf16 round=2 arm=1 ms=3.43279
+gdn_scan_gpu_ms packed=16640 rows=1000 state=bf16 round=2 arm=1 ms=3.42963
+gdn_scan_gpu_ms packed=16640 rows=1000 state=bf16 round=2 arm=0 ms=3.93313
+gdn_compare exact packed=16640 rows=2048 state=bf16 norm=bf16
+gdn_scan_gpu_ms packed=16640 rows=2048 state=bf16 round=0 arm=0 ms=7.9905
+gdn_scan_gpu_ms packed=16640 rows=2048 state=bf16 round=0 arm=1 ms=7.02612
+gdn_scan_gpu_ms packed=16640 rows=2048 state=bf16 round=0 arm=1 ms=7.048
+gdn_scan_gpu_ms packed=16640 rows=2048 state=bf16 round=0 arm=0 ms=7.99113
+gdn_scan_gpu_ms packed=16640 rows=2048 state=bf16 round=1 arm=0 ms=7.98996
+gdn_scan_gpu_ms packed=16640 rows=2048 state=bf16 round=1 arm=1 ms=7.14875
+gdn_scan_gpu_ms packed=16640 rows=2048 state=bf16 round=1 arm=1 ms=7.08833
+gdn_scan_gpu_ms packed=16640 rows=2048 state=bf16 round=1 arm=0 ms=8.04088
+gdn_scan_gpu_ms packed=16640 rows=2048 state=bf16 round=2 arm=0 ms=7.99242
+gdn_scan_gpu_ms packed=16640 rows=2048 state=bf16 round=2 arm=1 ms=7.02883
+gdn_scan_gpu_ms packed=16640 rows=2048 state=bf16 round=2 arm=1 ms=7.04063
+gdn_scan_gpu_ms packed=16640 rows=2048 state=bf16 round=2 arm=0 ms=8.05842
+gdn_compare exact packed=16640 rows=1 state=fp32 norm=fp32
+gdn_compare exact packed=16640 rows=15 state=fp32 norm=fp32
+gdn_compare exact packed=16640 rows=16 state=fp32 norm=fp32
+gdn_compare exact packed=16640 rows=17 state=fp32 norm=fp32
+gdn_compare exact packed=16640 rows=37 state=fp32 norm=fp32
+gdn_compare exact packed=16640 rows=1000 state=fp32 norm=fp32
+gdn_compare exact packed=16640 rows=2048 state=fp32 norm=fp32
+gdn_compare exact packed=16640 rows=1 state=bf16 norm=fp32
+gdn_compare exact packed=16640 rows=15 state=bf16 norm=fp32
+gdn_compare exact packed=16640 rows=16 state=bf16 norm=fp32
+gdn_compare exact packed=16640 rows=17 state=bf16 norm=fp32
+gdn_compare exact packed=16640 rows=37 state=bf16 norm=fp32
+gdn_compare exact packed=16640 rows=1000 state=bf16 norm=fp32
+gdn_compare exact packed=16640 rows=2048 state=bf16 norm=fp32
+gdn_compare exact packed=12544 rows=1 state=fp32 norm=bf16
+gdn_compare exact packed=12544 rows=15 state=fp32 norm=bf16
+gdn_compare exact packed=12544 rows=16 state=fp32 norm=bf16
+gdn_compare exact packed=12544 rows=17 state=fp32 norm=bf16
+gdn_compare exact packed=12544 rows=37 state=fp32 norm=bf16
+gdn_compare exact packed=12544 rows=1000 state=fp32 norm=bf16
+gdn_scan_gpu_ms packed=12544 rows=1000 state=fp32 round=0 arm=0 ms=2.54596
+gdn_scan_gpu_ms packed=12544 rows=1000 state=fp32 round=0 arm=1 ms=2.28404
+gdn_scan_gpu_ms packed=12544 rows=1000 state=fp32 round=0 arm=1 ms=2.28646
+gdn_scan_gpu_ms packed=12544 rows=1000 state=fp32 round=0 arm=0 ms=2.55054
+gdn_scan_gpu_ms packed=12544 rows=1000 state=fp32 round=1 arm=0 ms=2.54475
+gdn_scan_gpu_ms packed=12544 rows=1000 state=fp32 round=1 arm=1 ms=2.28571
+gdn_scan_gpu_ms packed=12544 rows=1000 state=fp32 round=1 arm=1 ms=2.289
+gdn_scan_gpu_ms packed=12544 rows=1000 state=fp32 round=1 arm=0 ms=2.54429
+gdn_scan_gpu_ms packed=12544 rows=1000 state=fp32 round=2 arm=0 ms=2.54413
+gdn_scan_gpu_ms packed=12544 rows=1000 state=fp32 round=2 arm=1 ms=2.2845
+gdn_scan_gpu_ms packed=12544 rows=1000 state=fp32 round=2 arm=1 ms=2.28362
+gdn_scan_gpu_ms packed=12544 rows=1000 state=fp32 round=2 arm=0 ms=2.54679
+gdn_compare exact packed=12544 rows=2048 state=fp32 norm=bf16
+gdn_scan_gpu_ms packed=12544 rows=2048 state=fp32 round=0 arm=0 ms=5.25533
+gdn_scan_gpu_ms packed=12544 rows=2048 state=fp32 round=0 arm=1 ms=4.65708
+gdn_scan_gpu_ms packed=12544 rows=2048 state=fp32 round=0 arm=1 ms=4.77037
+gdn_scan_gpu_ms packed=12544 rows=2048 state=fp32 round=0 arm=0 ms=5.19638
+gdn_scan_gpu_ms packed=12544 rows=2048 state=fp32 round=1 arm=0 ms=5.20113
+gdn_scan_gpu_ms packed=12544 rows=2048 state=fp32 round=1 arm=1 ms=4.66808
+gdn_scan_gpu_ms packed=12544 rows=2048 state=fp32 round=1 arm=1 ms=4.65183
+gdn_scan_gpu_ms packed=12544 rows=2048 state=fp32 round=1 arm=0 ms=5.20067
+gdn_scan_gpu_ms packed=12544 rows=2048 state=fp32 round=2 arm=0 ms=5.23058
+gdn_scan_gpu_ms packed=12544 rows=2048 state=fp32 round=2 arm=1 ms=4.66212
+gdn_scan_gpu_ms packed=12544 rows=2048 state=fp32 round=2 arm=1 ms=4.81121
+gdn_scan_gpu_ms packed=12544 rows=2048 state=fp32 round=2 arm=0 ms=5.19979
+gdn_compare exact packed=12544 rows=1 state=bf16 norm=bf16
+gdn_compare exact packed=12544 rows=15 state=bf16 norm=bf16
+gdn_compare exact packed=12544 rows=16 state=bf16 norm=bf16
+gdn_compare exact packed=12544 rows=17 state=bf16 norm=bf16
+gdn_compare exact packed=12544 rows=37 state=bf16 norm=bf16
+gdn_compare exact packed=12544 rows=1000 state=bf16 norm=bf16
+gdn_scan_gpu_ms packed=12544 rows=1000 state=bf16 round=0 arm=0 ms=2.64838
+gdn_scan_gpu_ms packed=12544 rows=1000 state=bf16 round=0 arm=1 ms=2.31225
+gdn_scan_gpu_ms packed=12544 rows=1000 state=bf16 round=0 arm=1 ms=2.31171
+gdn_scan_gpu_ms packed=12544 rows=1000 state=bf16 round=0 arm=0 ms=2.62662
+gdn_scan_gpu_ms packed=12544 rows=1000 state=bf16 round=1 arm=0 ms=2.62762
+gdn_scan_gpu_ms packed=12544 rows=1000 state=bf16 round=1 arm=1 ms=2.31754
+gdn_scan_gpu_ms packed=12544 rows=1000 state=bf16 round=1 arm=1 ms=2.3165
+gdn_scan_gpu_ms packed=12544 rows=1000 state=bf16 round=1 arm=0 ms=2.62508
+gdn_scan_gpu_ms packed=12544 rows=1000 state=bf16 round=2 arm=0 ms=2.69012
+gdn_scan_gpu_ms packed=12544 rows=1000 state=bf16 round=2 arm=1 ms=2.315
+gdn_scan_gpu_ms packed=12544 rows=1000 state=bf16 round=2 arm=1 ms=2.338
+gdn_scan_gpu_ms packed=12544 rows=1000 state=bf16 round=2 arm=0 ms=2.62354
+gdn_compare exact packed=12544 rows=2048 state=bf16 norm=bf16
+gdn_scan_gpu_ms packed=12544 rows=2048 state=bf16 round=0 arm=0 ms=5.3675
+gdn_scan_gpu_ms packed=12544 rows=2048 state=bf16 round=0 arm=1 ms=4.8235
+gdn_scan_gpu_ms packed=12544 rows=2048 state=bf16 round=0 arm=1 ms=4.71775
+gdn_scan_gpu_ms packed=12544 rows=2048 state=bf16 round=0 arm=0 ms=5.36783
+gdn_scan_gpu_ms packed=12544 rows=2048 state=bf16 round=1 arm=0 ms=5.40437
+gdn_scan_gpu_ms packed=12544 rows=2048 state=bf16 round=1 arm=1 ms=4.72075
+gdn_scan_gpu_ms packed=12544 rows=2048 state=bf16 round=1 arm=1 ms=4.91175
+gdn_scan_gpu_ms packed=12544 rows=2048 state=bf16 round=1 arm=0 ms=5.36717
+gdn_scan_gpu_ms packed=12544 rows=2048 state=bf16 round=2 arm=0 ms=5.36463
+gdn_scan_gpu_ms packed=12544 rows=2048 state=bf16 round=2 arm=1 ms=4.71954
+gdn_scan_gpu_ms packed=12544 rows=2048 state=bf16 round=2 arm=1 ms=4.735
+gdn_scan_gpu_ms packed=12544 rows=2048 state=bf16 round=2 arm=0 ms=5.36921
+gdn_compare exact packed=12544 rows=1 state=fp32 norm=fp32
+gdn_compare exact packed=12544 rows=15 state=fp32 norm=fp32
+gdn_compare exact packed=12544 rows=16 state=fp32 norm=fp32
+gdn_compare exact packed=12544 rows=17 state=fp32 norm=fp32
+gdn_compare exact packed=12544 rows=37 state=fp32 norm=fp32
+gdn_compare exact packed=12544 rows=1000 state=fp32 norm=fp32
+gdn_compare exact packed=12544 rows=2048 state=fp32 norm=fp32
+gdn_compare exact packed=12544 rows=1 state=bf16 norm=fp32
+gdn_compare exact packed=12544 rows=15 state=bf16 norm=fp32
+gdn_compare exact packed=12544 rows=16 state=bf16 norm=fp32
+gdn_compare exact packed=12544 rows=17 state=bf16 norm=fp32
+gdn_compare exact packed=12544 rows=37 state=bf16 norm=fp32
+gdn_compare exact packed=12544 rows=1000 state=bf16 norm=fp32
+gdn_compare exact packed=12544 rows=2048 state=bf16 norm=fp32
+gdn_compare exact packed=20736 rows=1 state=fp32 norm=bf16
+gdn_compare exact packed=20736 rows=15 state=fp32 norm=bf16
+gdn_compare exact packed=20736 rows=16 state=fp32 norm=bf16
+gdn_compare exact packed=20736 rows=17 state=fp32 norm=bf16
+gdn_compare exact packed=20736 rows=37 state=fp32 norm=bf16
+gdn_compare exact packed=20736 rows=1000 state=fp32 norm=bf16
+gdn_scan_gpu_ms packed=20736 rows=1000 state=fp32 round=0 arm=0 ms=5.09479
+gdn_scan_gpu_ms packed=20736 rows=1000 state=fp32 round=0 arm=1 ms=4.511
+gdn_scan_gpu_ms packed=20736 rows=1000 state=fp32 round=0 arm=1 ms=4.485
+gdn_scan_gpu_ms packed=20736 rows=1000 state=fp32 round=0 arm=0 ms=5.02512
+gdn_scan_gpu_ms packed=20736 rows=1000 state=fp32 round=1 arm=0 ms=5.02275
+gdn_scan_gpu_ms packed=20736 rows=1000 state=fp32 round=1 arm=1 ms=4.52167
+gdn_scan_gpu_ms packed=20736 rows=1000 state=fp32 round=1 arm=1 ms=4.48533
+gdn_scan_gpu_ms packed=20736 rows=1000 state=fp32 round=1 arm=0 ms=5.08575
+gdn_scan_gpu_ms packed=20736 rows=1000 state=fp32 round=2 arm=0 ms=5.02154
+gdn_scan_gpu_ms packed=20736 rows=1000 state=fp32 round=2 arm=1 ms=4.52887
+gdn_scan_gpu_ms packed=20736 rows=1000 state=fp32 round=2 arm=1 ms=4.48538
+gdn_scan_gpu_ms packed=20736 rows=1000 state=fp32 round=2 arm=0 ms=5.02225
+gdn_compare exact packed=20736 rows=2048 state=fp32 norm=bf16
+gdn_scan_gpu_ms packed=20736 rows=2048 state=fp32 round=0 arm=0 ms=10.312
+gdn_scan_gpu_ms packed=20736 rows=2048 state=fp32 round=0 arm=1 ms=9.31867
+gdn_scan_gpu_ms packed=20736 rows=2048 state=fp32 round=0 arm=1 ms=9.16754
+gdn_scan_gpu_ms packed=20736 rows=2048 state=fp32 round=0 arm=0 ms=10.2748
+gdn_scan_gpu_ms packed=20736 rows=2048 state=fp32 round=1 arm=0 ms=10.3081
+gdn_scan_gpu_ms packed=20736 rows=2048 state=fp32 round=1 arm=1 ms=9.26179
+gdn_scan_gpu_ms packed=20736 rows=2048 state=fp32 round=1 arm=1 ms=9.17037
+gdn_scan_gpu_ms packed=20736 rows=2048 state=fp32 round=1 arm=0 ms=10.3229
+gdn_scan_gpu_ms packed=20736 rows=2048 state=fp32 round=2 arm=0 ms=10.3287
+gdn_scan_gpu_ms packed=20736 rows=2048 state=fp32 round=2 arm=1 ms=9.18829
+gdn_scan_gpu_ms packed=20736 rows=2048 state=fp32 round=2 arm=1 ms=9.16483
+gdn_scan_gpu_ms packed=20736 rows=2048 state=fp32 round=2 arm=0 ms=10.3198
+gdn_compare exact packed=20736 rows=1 state=bf16 norm=bf16
+gdn_compare exact packed=20736 rows=15 state=bf16 norm=bf16
+gdn_compare exact packed=20736 rows=16 state=bf16 norm=bf16
+gdn_compare exact packed=20736 rows=17 state=bf16 norm=bf16
+gdn_compare exact packed=20736 rows=37 state=bf16 norm=bf16
+gdn_compare exact packed=20736 rows=1000 state=bf16 norm=bf16
+gdn_scan_gpu_ms packed=20736 rows=1000 state=bf16 round=0 arm=0 ms=5.30171
+gdn_scan_gpu_ms packed=20736 rows=1000 state=bf16 round=0 arm=1 ms=4.54683
+gdn_scan_gpu_ms packed=20736 rows=1000 state=bf16 round=0 arm=1 ms=4.65658
+gdn_scan_gpu_ms packed=20736 rows=1000 state=bf16 round=0 arm=0 ms=5.19488
+gdn_scan_gpu_ms packed=20736 rows=1000 state=bf16 round=1 arm=0 ms=5.19758
+gdn_scan_gpu_ms packed=20736 rows=1000 state=bf16 round=1 arm=1 ms=4.552
+gdn_scan_gpu_ms packed=20736 rows=1000 state=bf16 round=1 arm=1 ms=4.5445
+gdn_scan_gpu_ms packed=20736 rows=1000 state=bf16 round=1 arm=0 ms=5.19587
+gdn_scan_gpu_ms packed=20736 rows=1000 state=bf16 round=2 arm=0 ms=5.326
+gdn_scan_gpu_ms packed=20736 rows=1000 state=bf16 round=2 arm=1 ms=4.573
+gdn_scan_gpu_ms packed=20736 rows=1000 state=bf16 round=2 arm=1 ms=4.54425
+gdn_scan_gpu_ms packed=20736 rows=1000 state=bf16 round=2 arm=0 ms=5.196
+gdn_compare exact packed=20736 rows=2048 state=bf16 norm=bf16
+gdn_scan_gpu_ms packed=20736 rows=2048 state=bf16 round=0 arm=0 ms=10.6346
+gdn_scan_gpu_ms packed=20736 rows=2048 state=bf16 round=0 arm=1 ms=9.42958
+gdn_scan_gpu_ms packed=20736 rows=2048 state=bf16 round=0 arm=1 ms=9.32337
+gdn_scan_gpu_ms packed=20736 rows=2048 state=bf16 round=0 arm=0 ms=10.771
+gdn_scan_gpu_ms packed=20736 rows=2048 state=bf16 round=1 arm=0 ms=10.7393
+gdn_scan_gpu_ms packed=20736 rows=2048 state=bf16 round=1 arm=1 ms=9.30658
+gdn_scan_gpu_ms packed=20736 rows=2048 state=bf16 round=1 arm=1 ms=9.37292
+gdn_scan_gpu_ms packed=20736 rows=2048 state=bf16 round=1 arm=0 ms=10.6843
+gdn_scan_gpu_ms packed=20736 rows=2048 state=bf16 round=2 arm=0 ms=10.6351
+gdn_scan_gpu_ms packed=20736 rows=2048 state=bf16 round=2 arm=1 ms=9.32642
+gdn_scan_gpu_ms packed=20736 rows=2048 state=bf16 round=2 arm=1 ms=9.43025
+gdn_scan_gpu_ms packed=20736 rows=2048 state=bf16 round=2 arm=0 ms=10.6841
+gdn_compare exact packed=20736 rows=1 state=fp32 norm=fp32
+gdn_compare exact packed=20736 rows=15 state=fp32 norm=fp32
+gdn_compare exact packed=20736 rows=16 state=fp32 norm=fp32
+gdn_compare exact packed=20736 rows=17 state=fp32 norm=fp32
+gdn_compare exact packed=20736 rows=37 state=fp32 norm=fp32
+gdn_compare exact packed=20736 rows=1000 state=fp32 norm=fp32
+gdn_compare exact packed=20736 rows=2048 state=fp32 norm=fp32
+gdn_compare exact packed=20736 rows=1 state=bf16 norm=fp32
+gdn_compare exact packed=20736 rows=15 state=bf16 norm=fp32
+gdn_compare exact packed=20736 rows=16 state=bf16 norm=fp32
+gdn_compare exact packed=20736 rows=17 state=bf16 norm=fp32
+gdn_compare exact packed=20736 rows=37 state=bf16 norm=fp32
+gdn_compare exact packed=20736 rows=1000 state=bf16 norm=fp32
+gdn_compare exact packed=20736 rows=2048 state=bf16 norm=fp32
+gdn_compare exact packed=16512 rows=1 state=fp32 norm=bf16
+gdn_compare exact packed=16512 rows=15 state=fp32 norm=bf16
+gdn_compare exact packed=16512 rows=16 state=fp32 norm=bf16
+gdn_compare exact packed=16512 rows=17 state=fp32 norm=bf16
+gdn_compare exact packed=16512 rows=37 state=fp32 norm=bf16
+gdn_compare exact packed=16512 rows=1000 state=fp32 norm=bf16
+gdn_scan_gpu_ms packed=16512 rows=1000 state=fp32 round=0 arm=0 ms=3.78312
+gdn_scan_gpu_ms packed=16512 rows=1000 state=fp32 round=0 arm=1 ms=3.4875
+gdn_scan_gpu_ms packed=16512 rows=1000 state=fp32 round=0 arm=1 ms=3.38233
+gdn_scan_gpu_ms packed=16512 rows=1000 state=fp32 round=0 arm=0 ms=3.78296
+gdn_scan_gpu_ms packed=16512 rows=1000 state=fp32 round=1 arm=0 ms=3.78296
+gdn_scan_gpu_ms packed=16512 rows=1000 state=fp32 round=1 arm=1 ms=3.38325
+gdn_scan_gpu_ms packed=16512 rows=1000 state=fp32 round=1 arm=1 ms=3.38554
+gdn_scan_gpu_ms packed=16512 rows=1000 state=fp32 round=1 arm=0 ms=3.78187
+gdn_scan_gpu_ms packed=16512 rows=1000 state=fp32 round=2 arm=0 ms=3.78133
+gdn_scan_gpu_ms packed=16512 rows=1000 state=fp32 round=2 arm=1 ms=3.41342
+gdn_scan_gpu_ms packed=16512 rows=1000 state=fp32 round=2 arm=1 ms=3.38375
+gdn_scan_gpu_ms packed=16512 rows=1000 state=fp32 round=2 arm=0 ms=3.78237
+gdn_compare exact packed=16512 rows=2048 state=fp32 norm=bf16
+gdn_scan_gpu_ms packed=16512 rows=2048 state=fp32 round=0 arm=0 ms=7.73483
+gdn_scan_gpu_ms packed=16512 rows=2048 state=fp32 round=0 arm=1 ms=6.90958
+gdn_scan_gpu_ms packed=16512 rows=2048 state=fp32 round=0 arm=1 ms=7.01412
+gdn_scan_gpu_ms packed=16512 rows=2048 state=fp32 round=0 arm=0 ms=7.73683
+gdn_scan_gpu_ms packed=16512 rows=2048 state=fp32 round=1 arm=0 ms=7.9035
+gdn_scan_gpu_ms packed=16512 rows=2048 state=fp32 round=1 arm=1 ms=7.05975
+gdn_scan_gpu_ms packed=16512 rows=2048 state=fp32 round=1 arm=1 ms=6.93188
+gdn_scan_gpu_ms packed=16512 rows=2048 state=fp32 round=1 arm=0 ms=7.73713
+gdn_scan_gpu_ms packed=16512 rows=2048 state=fp32 round=2 arm=0 ms=7.73712
+gdn_scan_gpu_ms packed=16512 rows=2048 state=fp32 round=2 arm=1 ms=6.94113
+gdn_scan_gpu_ms packed=16512 rows=2048 state=fp32 round=2 arm=1 ms=6.95054
+gdn_scan_gpu_ms packed=16512 rows=2048 state=fp32 round=2 arm=0 ms=7.73587
+gdn_compare exact packed=16512 rows=1 state=bf16 norm=bf16
+gdn_compare exact packed=16512 rows=15 state=bf16 norm=bf16
+gdn_compare exact packed=16512 rows=16 state=bf16 norm=bf16
+gdn_compare exact packed=16512 rows=17 state=bf16 norm=bf16
+gdn_compare exact packed=16512 rows=37 state=bf16 norm=bf16
+gdn_compare exact packed=16512 rows=1000 state=bf16 norm=bf16
+gdn_scan_gpu_ms packed=16512 rows=1000 state=bf16 round=0 arm=0 ms=3.90733
+gdn_scan_gpu_ms packed=16512 rows=1000 state=bf16 round=0 arm=1 ms=3.50067
+gdn_scan_gpu_ms packed=16512 rows=1000 state=bf16 round=0 arm=1 ms=3.46613
+gdn_scan_gpu_ms packed=16512 rows=1000 state=bf16 round=0 arm=0 ms=3.97663
+gdn_scan_gpu_ms packed=16512 rows=1000 state=bf16 round=1 arm=0 ms=3.9065
+gdn_scan_gpu_ms packed=16512 rows=1000 state=bf16 round=1 arm=1 ms=3.43017
+gdn_scan_gpu_ms packed=16512 rows=1000 state=bf16 round=1 arm=1 ms=3.43325
+gdn_scan_gpu_ms packed=16512 rows=1000 state=bf16 round=1 arm=0 ms=3.90758
+gdn_scan_gpu_ms packed=16512 rows=1000 state=bf16 round=2 arm=0 ms=3.90812
+gdn_scan_gpu_ms packed=16512 rows=1000 state=bf16 round=2 arm=1 ms=3.43313
+gdn_scan_gpu_ms packed=16512 rows=1000 state=bf16 round=2 arm=1 ms=3.44471
+gdn_scan_gpu_ms packed=16512 rows=1000 state=bf16 round=2 arm=0 ms=3.93025
+gdn_compare exact packed=16512 rows=2048 state=bf16 norm=bf16
+gdn_scan_gpu_ms packed=16512 rows=2048 state=bf16 round=0 arm=0 ms=8.02612
+gdn_scan_gpu_ms packed=16512 rows=2048 state=bf16 round=0 arm=1 ms=7.05804
+gdn_scan_gpu_ms packed=16512 rows=2048 state=bf16 round=0 arm=1 ms=7.02662
+gdn_scan_gpu_ms packed=16512 rows=2048 state=bf16 round=0 arm=0 ms=7.98975
+gdn_scan_gpu_ms packed=16512 rows=2048 state=bf16 round=1 arm=0 ms=7.98912
+gdn_scan_gpu_ms packed=16512 rows=2048 state=bf16 round=1 arm=1 ms=7.04458
+gdn_scan_gpu_ms packed=16512 rows=2048 state=bf16 round=1 arm=1 ms=7.02396
+gdn_scan_gpu_ms packed=16512 rows=2048 state=bf16 round=1 arm=0 ms=7.98962
+gdn_scan_gpu_ms packed=16512 rows=2048 state=bf16 round=2 arm=0 ms=7.99379
+gdn_scan_gpu_ms packed=16512 rows=2048 state=bf16 round=2 arm=1 ms=7.13613
+gdn_scan_gpu_ms packed=16512 rows=2048 state=bf16 round=2 arm=1 ms=7.141
+gdn_scan_gpu_ms packed=16512 rows=2048 state=bf16 round=2 arm=0 ms=7.98888
+gdn_compare exact packed=16512 rows=1 state=fp32 norm=fp32
+gdn_compare exact packed=16512 rows=15 state=fp32 norm=fp32
+gdn_compare exact packed=16512 rows=16 state=fp32 norm=fp32
+gdn_compare exact packed=16512 rows=17 state=fp32 norm=fp32
+gdn_compare exact packed=16512 rows=37 state=fp32 norm=fp32
+gdn_compare exact packed=16512 rows=1000 state=fp32 norm=fp32
+gdn_compare exact packed=16512 rows=2048 state=fp32 norm=fp32
+gdn_compare exact packed=16512 rows=1 state=bf16 norm=fp32
+gdn_compare exact packed=16512 rows=15 state=bf16 norm=fp32
+gdn_compare exact packed=16512 rows=16 state=bf16 norm=fp32
+gdn_compare exact packed=16512 rows=17 state=bf16 norm=fp32
+gdn_compare exact packed=16512 rows=37 state=bf16 norm=fp32
+gdn_compare exact packed=16512 rows=1000 state=bf16 norm=fp32
+gdn_compare exact packed=16512 rows=2048 state=bf16 norm=fp32
+gdn_cross_library comparison passed

@@ -1,0 +1,141 @@
+device Apple M5, 8192 prompt tokens, 1 cycles per width, bf16 state, 2048-token chunks, up to 1 lane(s)
+
+== prefill 8192 rows: 21004.15 ms fused, 19443.30 ms as 6442 separate dispatches ==
+Separate-dispatch stage attribution (not fused stage latency):
+  unscoped                 19443.301 ms 100.0%
+pipeline                                                                 count     gpu_ms  share
+moe_expert_load                                                          768.0   3583.170  18.4%
+moe_expert_gguf_m32_gate_up_mixed                                        136.0   2271.490  11.7%
+gguf_prefill_q3k_a                                                       164.0   1857.543   9.6%
+prefill_attention_q8_sparse_kv2_g12                                       48.0   1684.757   8.7%
+moe_expert_gguf_m32_a                                                    192.0   1671.061   8.6%
+gguf_prefill_iq4xs_a                                                     160.0   1356.265   7.0%
+prefill_gdn_scan_bf16_state                                              144.0   1228.714   6.3%
+gguf_prefill_q80_a                                                       776.0   1050.716   5.4%
+moe_expert_gguf_m32_gate_up                                               56.0    912.361   4.7%
+gguf_prefill_q4k_a                                                       104.0    654.378   3.4%
+hyper_connection_combine                                                 384.0    519.540   2.7%
+hyper_connection_norm_loaded                                             388.0    430.027   2.2%
+moe_combine                                                              192.0    282.738   1.5%
+gguf_prefill_q20_a                                                        28.0    282.215   1.5%
+hyper_connection_mix                                                     388.0    278.568   1.4%
+moe_gather_rows                                                          192.0    248.734   1.3%
+gguf_float_na_bf16_f32                                                   240.0    202.348   1.0%
+gguf_prefill_q5k_a                                                        44.0    198.847   1.0%
+gguf_prefill_q6k_a                                                        40.0    168.204   0.9%
+prefill_gdn_prepare_p16512                                               144.0    124.294   0.6%
+prefill_gdn_gate_p16512_f32                                              144.0     89.423   0.5%
+prefill_attention_sparse_reduce_kv2_g12                                   48.0     67.552   0.3%
+prefill_attention_qkv_kv2_g12_f32                                         48.0     58.798   0.3%
+gguf_float_na_bf16_bf16                                                  144.0     30.838   0.2%
+prefill_attention_gate_kv2_g12                                            48.0     26.719   0.1%
+block_indexer_select                                                     192.0     25.594   0.1%
+gguf_prefill_af4g64_a                                                      6.0     24.201   0.1%
+block_indexer_score                                                      192.0     23.561   0.1%
+moe_route_select_f32_e512                                                192.0     23.029   0.1%
+gguf_prefill_bf16_a                                                        4.0     11.045   0.1%
+ngram_embedding_conv                                                       4.0      9.539   0.0%
+ngram_embedding_gate                                                       4.0      9.174   0.0%
+prefill_attention_q8_store_kv2_vt                                         48.0      8.428   0.0%
+hyper_connection_low                                                     388.0      5.266   0.0%
+moe_group_routes_e512                                                    192.0      4.583   0.0%
+gguf_decode_q5k_m8_a_f32                                                   1.0      4.055   0.0%
+hyper_connection_stream_mean                                               5.0      3.960   0.0%
+block_indexer_project                                                     48.0      3.727   0.0%
+hyper_connection_init                                                      4.0      2.957   0.0%
+gguf_embed_q3k                                                             4.0      1.151   0.0%
+prefill_draft_context_kv                                                   5.0      1.143   0.0%
+gguf_embed_iq4nl                                                           4.0      0.944   0.0%
+attention_block_lists                                                     24.0      0.545   0.0%
+block_indexer_pool                                                        48.0      0.477   0.0%
+prefill_draft_context_store                                                1.0      0.248   0.0%
+norm_rms                                                                   1.0      0.235   0.0%
+block_indexer_pending                                                     48.0      0.089   0.0%
+rope_build_tables                                                          4.0      0.026   0.0%
+decode_sample_argmax_sharded                                               1.0      0.018   0.0%
+copy_rows_bf16                                                             1.0      0.002   0.0%
+decode_sample_argmax_reduce                                                1.0      0.002   0.0%
+
+B1 decode cycle: median fused gpu 420.23 ms, wall 421.03 ms, 1 command(s) per cycle
+
+== B1 decode cycle: 420.23 ms fused, 170.23 ms as 1583 separate dispatches ==
+Separate-dispatch stage attribution (not fused stage latency):
+  draft                        0.005 ms   0.0%
+  draft_forward                3.520 ms   2.1%
+  draft_selector               0.148 ms   0.1%
+  draft_vocabulary             3.406 ms   2.0%
+  target_verify              163.149 ms  95.8%
+pipeline                                                                 count     gpu_ms  share
+target_verify/moe_expert_load                                             48.0     94.391  55.5%
+target_verify/moe_expert_gguf_m8_gate_up_mixed                            34.0     12.966   7.6%
+target_verify/gguf_decode_fused_m16                                       48.0     10.893   6.4%
+target_verify/moe_expert_gguf_m8_a                                        48.0      9.045   5.3%
+target_verify/moe_expert_gguf_m8_gate_up                                  14.0      5.030   3.0%
+target_verify/gguf_decode_sg_q80_l1_a                                     97.0      3.794   2.2%
+target_verify/verify_attention_q8_sparse_kv2_g12                          12.0      3.644   2.1%
+target_verify/gguf_decode_q5k_m8_a_f32                                     1.0      3.563   2.1%
+draft_vocabulary/gguf_decode_q5k_m8_a_f32                                  1.0      3.401   2.0%
+target_verify/gguf_decode_q80_m8_a                                        97.0      3.388   2.0%
+target_verify/gguf_float_bf16_f32                                        107.0      2.783   1.6%
+target_verify/verify_gdn_fused_p16512_f32_bf16_state                      36.0      2.333   1.4%
+draft_forward/gguf_decode_af4g64_m8_a                                     20.0      1.998   1.2%
+target_verify/gguf_decode_iq4xs_m8_a                                      17.0      1.842   1.1%
+target_verify/gguf_decode_q4k_m8_a                                        15.0      1.546   0.9%
+target_verify/hyper_connection_norm_quarters                              96.0      0.953   0.6%
+target_verify/gguf_decode_q5k_m8_a                                         7.0      0.838   0.5%
+target_verify/gguf_decode_q6k_m8_a                                         6.0      0.817   0.5%
+draft_forward/draft_attention_bf16_split                                   5.0      0.552   0.3%
+target_verify/verify_attention_sparse_reduce_kv2_g12                      12.0      0.530   0.3%
+draft_forward/gguf_decode_af4g64_m8_g                                      5.0      0.521   0.3%
+target_verify/moe_route_select_f32_e512                                   95.0      0.461   0.3%
+target_verify/hyper_connection_combine                                    96.0      0.431   0.3%
+target_verify/decode_linear_gguf_prepare                                  97.0      0.424   0.2%
+target_verify/gguf_decode_q3k_m8_a                                         3.0      0.371   0.2%
+target_verify/hyper_connection_mix                                        97.0      0.365   0.2%
+target_verify/gguf_decode_af4g64_m8_a                                      6.0      0.349   0.2%
+target_verify/moe_combine                                                 48.0      0.334   0.2%
+target_verify/moe_gather_rows                                             48.0      0.276   0.2%
+target_verify/gguf_float_bf16_bf16                                        36.0      0.249   0.1%
+target_verify/moe_group_routes_verified_e512                              48.0      0.216   0.1%
+target_verify/block_indexer_score                                         12.0      0.207   0.1%
+target_verify/hyper_connection_low                                        97.0      0.187   0.1%
+draft_forward/gguf_decode_sg_af4g64_l1_a                                  10.0      0.171   0.1%
+target_verify/verify_attention_gate_kv2_g12                               12.0      0.129   0.1%
+target_verify/gguf_decode_q20_m16_a                                        1.0      0.118   0.1%
+target_verify/gguf_decode_bf16_m8_a                                        1.0      0.115   0.1%
+draft_selector/draft_select_top16_sharded                                  1.0      0.112   0.1%
+draft_forward/draft_attention_bf16_reduce                                  5.0      0.111   0.1%
+target_verify/block_indexer_select                                        12.0      0.097   0.1%
+target_verify/verify_attention_qkv_kv2_g12_f32                            12.0      0.091   0.1%
+draft_forward/norm_rms_table16_decode                                     10.0      0.069   0.0%
+target_verify/attention_block_lists                                       12.0      0.066   0.0%
+target_verify/decode_sample_argmax_sharded                                 1.0      0.064   0.0%
+draft_forward/draft_conv                                                  20.0      0.056   0.0%
+target_verify/block_indexer_pool                                          12.0      0.038   0.0%
+target_verify/verify_attention_q8_store_kv2_vt                            12.0      0.038   0.0%
+draft_forward/draft_attention_qkv                                          5.0      0.033   0.0%
+target_verify/ngram_embedding_gate                                         1.0      0.029   0.0%
+target_verify/block_indexer_project                                       12.0      0.028   0.0%
+target_verify/ngram_embedding_hash                                         1.0      0.021   0.0%
+target_verify/hyper_connection_stream_mean                                 5.0      0.018   0.0%
+target_verify/draft_context_kv_commit                                      5.0      0.015   0.0%
+target_verify/gguf_embed_q3k                                               1.0      0.012   0.0%
+target_verify/ngram_embedding_conv                                         1.0      0.012   0.0%
+draft_selector/draft_select_edges                                          1.0      0.011   0.0%
+draft_selector/gguf_decode_sg_af4g64_l1_a                                  1.0      0.011   0.0%
+target_verify/hyper_connection_norm_loaded                                 1.0      0.011   0.0%
+draft_forward/draft_attention_reorder                                      5.0      0.009   0.0%
+draft_selector/draft_select_dflash                                         1.0      0.007   0.0%
+draft_vocabulary/norm_rms                                                  1.0      0.006   0.0%
+target_verify/norm_rms                                                     1.0      0.005   0.0%
+target_verify/ngram_embedding_commit                                       1.0      0.004   0.0%
+draft_selector/draft_verify_rows                                           1.0      0.004   0.0%
+target_verify/block_indexer_commit                                         1.0      0.003   0.0%
+target_verify/decode_accept_dflash                                         1.0      0.003   0.0%
+draft/gguf_embed_q3k                                                       1.0      0.003   0.0%
+target_verify/gguf_embed_iq4nl                                             1.0      0.003   0.0%
+draft_selector/decode_linear_gguf_prepare                                  1.0      0.002   0.0%
+target_verify/hyper_connection_init                                        1.0      0.002   0.0%
+draft/rope_build_tables                                                    1.0      0.002   0.0%
+target_verify/decode_sample_argmax_reduce                                  1.0      0.002   0.0%
+target_verify/verify_input_tokens                                          1.0      0.002   0.0%

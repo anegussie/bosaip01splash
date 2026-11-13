@@ -1,0 +1,14 @@
+Apple M5, GPU family 10, 8 cores: MoE 2560x640, 512 experts, top 10, softmax router, 1 shared slice(s) gated, q20/q20/q3k, median GPU ms per layer of 1 rounds
+  shared formats gate=q3k up=q20 down=q20
+  prefill chunk of   64 rows: staged 5.7410
+  prefill chunk of  128 rows: staged 8.7802
+  prefill chunk of  256 rows: staged 11.6317
+  prefill chunk of  512 rows: staged 12.6439
+  prefill chunk of 2048 rows: staged 31.4444
+  decode  8 rows: | random staged 1.0581 (98% column) | pooled staged 0.6327 (43% column)
+  decode 16 rows: | random staged 1.8617 (97% column) | pooled staged 1.2051 (41% column)
+  decode 24 rows: | random staged 2.6339 (96% column) | pooled staged 1.7158 (40% column)
+  decode 32 rows: | random staged 3.2985 (93% column) | pooled staged 2.2020 (40% column)
+  prefill 2048: gguf_float_na_f32_f32 1.8625 moe_combine 1.4616 moe_expert_gguf_m32_a 9.4292 moe_expert_gguf_m32_gate_up_mixed 17.5614 moe_gather_rows 1.4536 moe_group_routes_e512 0.0232 moe_route_select_f32_e512 0.1877
+  decode 8: gguf_float_f32_f32 0.0522 moe_combine 0.0075 moe_expert_gguf_m8_a 0.3108 moe_expert_gguf_m8_gate_up_mixed 0.6199 moe_gather_rows 0.0071 moe_group_routes_e512 0.0088 moe_route_select_f32_e512 0.0049
+  decode 32: gguf_float_na_f32_f32 0.0991 moe_combine 0.0232 moe_expert_gguf_m8_a 1.0614 moe_expert_gguf_m8_gate_up_mixed 2.0263 moe_gather_rows 0.0218 moe_group_routes_e512 0.0037 moe_route_select_f32_e512 0.0068

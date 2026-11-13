@@ -1,0 +1,27 @@
+Production stopped; running GPU gates
+PRODUCTION RESTORED: original binary, context, chunk, identity and logging
+Traceback (most recent call last):
+  File "/Users/mymac/splash/splash/dev/benchmarks/option21-gdn-staging-20261113-raw/validate.py", line 113, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/Users/mymac/splash/splash/dev/benchmarks/option21-gdn-staging-20261113-raw/validate.py", line 95, in main
+    run('gdn-baseline-reference',[test,BASE/'splash.metallib'])
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mymac/splash/splash/dev/benchmarks/option21-gdn-staging-20261113-raw/validate.py", line 28, in run
+    save(name+'-command.json',command)
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mymac/splash/splash/dev/benchmarks/option21-gdn-staging-20261113-raw/validate.py", line 24, in save
+    (OUT/name).write_text(json.dumps(value,indent=2)+'\n')
+                          ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.9/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 242, in dumps
+    **kw).encode(obj)
+          ~~~~~~^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.9/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/encoder.py", line 202, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.9/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/encoder.py", line 263, in iterencode
+    return _iterencode(o, 0)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.9/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/encoder.py", line 182, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+                    f'is not JSON serializable')
+TypeError: Object of type PosixPath is not JSON serializable
+when serializing list item 0

@@ -1,0 +1,51 @@
+{
+  "A/pre-cold": {
+    "prefill_tok_s": 424.97,
+    "sse_ttft_seconds": 19.3045,
+    "decode_tok_s": 22.29,
+    "wall_seconds": 25.003
+  },
+  "A/pre-reuse": {
+    "prefill_tok_s": 14.715,
+    "sse_ttft_seconds": 0.815,
+    "decode_tok_s": 24.55,
+    "wall_seconds": 5.9895
+  },
+  "B/pre-cold": {
+    "prefill_tok_s": 429.59000000000003,
+    "sse_ttft_seconds": 19.0965,
+    "decode_tok_s": 22.29,
+    "wall_seconds": 24.793999999999997
+  },
+  "B/pre-reuse": {
+    "prefill_tok_s": 14.105,
+    "sse_ttft_seconds": 0.85,
+    "decode_tok_s": 24.61,
+    "wall_seconds": 6.013
+  },
+  "cold_pp_gain_percent": 1.0871355625102996,
+  "swapout_page_deltas": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "kv_demotion_deltas": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ]
+}
