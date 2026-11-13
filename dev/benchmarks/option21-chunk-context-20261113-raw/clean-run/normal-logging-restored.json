@@ -1,0 +1,24 @@
+{
+  "server_pid": 59223,
+  "monitor_pid": 59295,
+  "monitor_reused": false,
+  "log": "/Users/mymac/.local/state/llama-server/qwen3.8-flash-next-q2-0-dflash2-bf16-splash-20261113-131118.log",
+  "telemetry": "/Users/mymac/.local/state/llama-server/qwen3.8-flash-next-q2-0-dflash2-bf16-splash-20261113-131118.log.jsonl",
+  "identity": {
+    "cache": {
+      "loaded_model_layout_sha256": "2ebce4e685fc08cc9fb1ab284f0890a5edbd5528d27ea99934567265dcb21e2a",
+      "build_id": "src-433b2b80c2a22e0e9fd76bf9250538ac1f40d84a1cfb7df9ad5608761ecbc5e3",
+      "dtype": "q8s8_f32_scale_per_token_head_k_token_major_v_token_major",
+      "block_tokens": 32,
+      "rope_scaling": null
+    },
+    "kv": {
+      "target_model_sha256": "3f3e7524730db37fda357dda755e951d01c05a4f839a48316ed38d0f57a9b3d0",
+      "format": "int8",
+      "quantization": "symmetric_int8",
+      "scale_type": "float32",
+      "key_layout": "token_major",
+      "value_layout": "token_major"
+    }
+  }
+}

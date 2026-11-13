@@ -56,6 +56,8 @@ if [[ -z "${SPLASH_FLASH_NEXT_MAX_MEMORY:-}" ]]; then
   SPLASH_FLASH_NEXT_MAX_MEMORY_DEFAULTED=1
 fi
 SPLASH_FLASH_NEXT_MAX_MEMORY="${SPLASH_FLASH_NEXT_MAX_MEMORY:-10G}"
+# Option 21 favors routine-work throughput; explicit shared/Q2 overrides still win.
+SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT="${SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT:-${SPLASH_FLASH_NEXT_REASONING_EFFORT:-none}}"
 SPLASH_FLASH_NEXT_REASONING_EFFORT="${SPLASH_FLASH_NEXT_REASONING_EFFORT:-low}"
 SPLASH_FLASH_NEXT_MAX_CACHE_DISK="${SPLASH_FLASH_NEXT_MAX_CACHE_DISK:-16G}"
 # Option 21's Q2_0 target has a small persistent-cache default for low-disk Macs.
@@ -285,7 +287,7 @@ print_models() {
   echo "   Download cache: ${SPLASH_FLASH_NEXT_HF_HUB_CACHE}"
   echo "   Separate option-20 prefix cache: ${SPLASH_FLASH_NEXT_MAX_CACHE_DISK} | persistent: ${SPLASH_FLASH_NEXT_PERSISTENT_CACHE}"
   echo "21) Qwen3.8 Flash-Next GSQ-RCO Q2_0 - Splash with local BF16 DFlash2${splash_status}"
-  echo "   ${SPLASH_FLASH_NEXT_MAX_CONTEXT} server context | ${SPLASH_FLASH_NEXT_MAX_TOKENS} output tokens | ${SPLASH_FLASH_NEXT_Q2_MAX_MEMORY} Metal cap | reasoning ${SPLASH_FLASH_NEXT_REASONING_EFFORT}"
+  echo "   ${SPLASH_FLASH_NEXT_MAX_CONTEXT} server context | ${SPLASH_FLASH_NEXT_MAX_TOKENS} output tokens | ${SPLASH_FLASH_NEXT_Q2_MAX_MEMORY} Metal cap | reasoning ${SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT}"
   echo "   INT8 KV | BF16 state | text only | ${SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE} | expert memory ${SPLASH_FLASH_NEXT_EXPERT_MEMORY} | ${SPLASH_FLASH_NEXT_Q2_PREFILL_CHUNK_TOKENS}-token prefill chunks | PLE row cache ${SPLASH_FLASH_NEXT_PLE_MEMORY}"
   echo "   Source: ${SPLASH_FLASH_NEXT_Q2_MODEL_ID} | local BF16 DFlash2 draft: ${SPLASH_FLASH_NEXT_DFLASH2_MODEL}"
   echo "   Option 21 uses option 20's 16 GiB preset; if a 2,048-token chunk trips the 5 s Metal event window the launcher retries with 10G and 1,024-token chunks"
@@ -891,6 +893,15 @@ sync_opencode_splash() {
          max_tokens: ([2048, $output] | min), reasoning_effort: "none",
          chat_template_kwargs: ((.chat_template_kwargs // {}) + {enable_thinking: false})
        })
+     elif $alias == "qwen3.8-flash-next-q2-0-dflash2-bf16-splash" then
+       .provider["local-llama"].models[$alias].reasoning = true |
+       .provider["local-llama"].models[$alias].options.reasoning_effort = $reasoning_effort |
+       .provider["local-llama"].models[$alias].options.chat_template_kwargs.enable_thinking = ($reasoning_effort != "none") |
+       .provider["local-llama"].models[$alias].variants["bounded-compaction"] |= ((. // {}) + {
+         max_tokens: ([2048, $output] | min), reasoning_effort: "none",
+         chat_template_kwargs: ((.chat_template_kwargs // {}) + {enable_thinking: false})
+       }) |
+       .provider["local-llama"].models[$alias].modalities = {input: ["text"], output: ["text"]}
      elif $alias == "qwen3.8-flash-next-iq3-xxs-splash" then
        .provider["local-llama"].models[$alias].reasoning = true |
        .provider["local-llama"].models[$alias].modalities = {input: ["text"], output: ["text"]} |
@@ -1823,6 +1834,7 @@ case "$choice" in
       SPLASH_BONSAI_PERSISTENT_CACHE="$SPLASH_FLASH_NEXT_PERSISTENT_CACHE"
       SPLASH_BONSAI_CACHE_DIR="$SPLASH_FLASH_NEXT_CACHE_DIR"
       if [[ "$choice" == "21" ]]; then
+        SPLASH_FLASH_NEXT_REASONING_EFFORT="$SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT"
         SPLASH_BONSAI_MAX_CACHE_DISK="$SPLASH_FLASH_NEXT_Q2_MAX_CACHE_DISK"
         SPLASH_BONSAI_MODEL_ID="$SPLASH_FLASH_NEXT_Q2_MODEL_ID"
         SPLASH_BONSAI_ALIAS="qwen3.8-flash-next-q2-0-dflash2-bf16-splash"

@@ -1,0 +1,29 @@
+[transformers] PyTorch was not found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
+10:53:43 Loading · ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0
+[transformers] You are using a model of type `qwen4_exp` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+[transformers] The tokenizer you are loading from '/Users/mymac/splash/splash/install/models/.resolved/974a9097bfe4bac04bb2a2e140d198f4cfdfced31d44091318906778ad109439/tokenizer' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+10:53:44 Chat template · patched to render later system messages in place (the original template rejects them), generation prompt 5-7 tokens
+10:53:46 Weights loaded in 2.14 s.
+10:53:48 Weights loaded again in 1.96 s.
+10:53:48 Table per_layer_token_embd.weight streams from its file: 27465 MiB stay on the SSD; row cache of 504370 rows in 63 MiB; 32 readers.
+10:53:48 Routed experts stream from their files: 1786 slots for 24576 experts (7%) in 2354 MiB, a store of 2804 MiB in 2 chunks, all that --expert-memory auto leaves it beside the floors and the KV kept resident; while memory is short it gives chunks back down to its floor, 2443 MiB, 85% of its slots.
+10:53:48 Decode cycles verify the rows the verify budget chooses (--verify-rows auto, as ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0 is a MoE target): greedy and seeded outputs can differ from run to run.
+10:53:48 SSD cache: up to 3.0 GiB of persistent files in /Users/mymac/splash/splash/build/validation/option21-chunk-context-20261113-clean/prefix-smoke-2048-lu700frh/ec05b8e13b54db8ae16760c9dc535a21 (its quota, while its volume has room beyond the 10.0 GiB it keeps free); KV pages of 416 KiB and states of 59 MiB, a state's write staging through 59 MiB of the memory plan; --max-cache-disk 0 turns it off.
+10:53:48 Kernel policy for GPU family 10 with 8 cores.
+10:53:48 Long requests keep their KV on the SSD cache: 223296 tokens of context (bound: disk; window 262144, resident 155641, spilled 262144, disk 223296); a request whose KV fits 1199 MiB stays in memory; hot block cache 780 MiB (floor 780 MiB); history staging in 1 buffers; SSD room for active KV 3.0 GiB.
+10:53:48 Persistent cache /Users/mymac/splash/splash/build/validation/option21-chunk-context-20261113-clean/prefix-smoke-2048-lu700frh/ec05b8e13b54db8ae16760c9dc535a21: took back 0 restore points over 0 KV blocks (0 MiB); left 0 copies behind.
+10:53:56 Memory: growth paused; waiting=0; suspended=0
+10:53:56 Expert store gave back a chunk of 361 MiB while memory is short, in 26.8 ms: 236 experts moved below it and 274 evicted; 1 of 2 chunks hold 1512 slots.
+10:53:57 Ready · ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0 · context 128K · text only · http://127.0.0.1:1236
+10:54:01 Started · input 8,204 · cached 0 · effort absent → none · enable_thinking false · thinking off
+10:54:22 Thermal state: nominal → fair
+10:54:42 Done · input 8,204 · cached 0 · output 512 · prefill 8,204/18.99s · PP 432.1 tok/s · decode 511/21.71s · TTFT 19.0s · TTFT_with_frontend_queue 19.0s · TPS 23.5 tok/s · request=1 · finish=length · frontend_queue=0.000s · native_queue=0.000s · native_wall=40.695s · 7.8 tok/cycle
+10:55:56 Thermal state: fair → nominal
+10:56:00 Started · input 8,204 · cached 8,192 · effort absent → none · enable_thinking false · thinking off
+10:56:22 Done · input 8,204 · cached 8,192 · output 512 · prefill 12/0.90s · PP 13.3 tok/s · decode 511/21.62s · TTFT 0.9s · TTFT_with_frontend_queue 0.9s · TPS 23.6 tok/s · request=2 · finish=length · frontend_queue=0.000s · native_queue=0.035s · native_wall=22.561s · 7.8 tok/cycle
+10:56:30 Started · input 48 · cached 0 · effort absent → none · enable_thinking false · thinking off
+10:56:37 Done · input 48 · cached 0 · output 76 · prefill 48/2.05s · PP 23.5 tok/s · decode 75/4.99s · TTFT 2.0s · TTFT_with_frontend_queue 2.0s · TPS 15.0 tok/s · request=3 · finish=stop · frontend_queue=0.000s · native_queue=0.000s · native_wall=7.040s · 4.7 tok/cycle
+10:56:46 Started · input 32,780 · cached 0 · effort absent → none · enable_thinking false · thinking off
+10:56:49 Thermal state: nominal → fair
+10:58:49 Done · input 32,780 · cached 0 · output 512 · prefill 32,780/96.49s · PP 339.7 tok/s · decode 511/26.64s · TTFT 96.5s · TTFT_with_frontend_queue 96.5s · TPS 19.2 tok/s · request=4 · finish=length · frontend_queue=0.000s · native_queue=0.000s · native_wall=123.125s · 7.9 tok/cycle
+10:58:54 Stopping · releasing engine resources

@@ -1,0 +1,17 @@
+test_option21_context_fallback_is_bounded (__main__.Option14) ... ok
+test_option21_context_fallback_preserves_explicit_limits (__main__.Option14) ... ok
+test_option21_default_context_retries_at_measured_ceiling (__main__.Option14) ... ok
+test_option21_explicit_cap_outside_the_stock_set_keeps_the_chunk (__main__.Option14) ... ok
+test_option21_explicit_raised_pair_still_reaches_the_engine (__main__.Option14) ... ok
+test_option21_falls_back_to_the_stock_chunk_after_a_warmup_timeout (__main__.Option14) ... ok
+test_option21_fast_defaults_preserve_reasoning_and_context_overrides (__main__.Option14) ... ok
+test_option21_fast_profile_survives_context_and_prefix_cache_changes (__main__.Option14) ... ok
+test_option21_requires_the_cached_bf16_draft (__main__.Option14) ... ok
+test_option21_shares_the_raised_pair_option_20_uses (__main__.Option14) ... ok
+test_option21_streamed_override_note_names_the_pair_it_holds (__main__.Option14) ... ok
+test_option21_uses_the_q2_model_the_local_draft_and_its_own_cache (__main__.Option14) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 9.455s
+
+OK

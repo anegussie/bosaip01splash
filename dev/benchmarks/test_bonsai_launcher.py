@@ -805,6 +805,39 @@ print('Ready test server',flush=True)
             option21_cache,
         )
         self.assertNotEqual(option21_cache, stock_cache)
+        self.assertEqual(args[args.index("--default-reasoning-effort") + 1], "none")
+        config = json.loads(self.config.read_text())
+        model = config["provider"]["local-llama"]["models"][
+            "qwen3.8-flash-next-q2-0-dflash2-bf16-splash"
+        ]
+        self.assertEqual(model["limit"], {"context": 129024, "output": 1024})
+        self.assertFalse(model["options"]["chat_template_kwargs"]["enable_thinking"])
+        self.assertEqual(model["options"]["reasoning_effort"], "none")
+        self.assertEqual(config["agent"]["general"]["reasoningEffort"], "none")
+
+    def test_option21_fast_defaults_preserve_reasoning_and_context_overrides(self):
+        for variable, effort in (
+            ("SPLASH_FLASH_NEXT_REASONING_EFFORT", "low"),
+            ("SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT", "medium"),
+        ):
+            with self.subTest(variable=variable):
+                result = self.run_launcher(
+                    "21",
+                    SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.draft()),
+                    SPLASH_FLASH_NEXT_MAX_CONTEXT="32768",
+                    SPLASH_FLASH_NEXT_OPENCODE_CONTEXT="30000",
+                    **{variable: effort},
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                args = json.loads((self.root / "argv.json").read_text())
+                self.assertEqual(args[args.index("--default-reasoning-effort") + 1], effort)
+                config = json.loads(self.config.read_text())
+                model = config["provider"]["local-llama"]["models"][
+                    "qwen3.8-flash-next-q2-0-dflash2-bf16-splash"
+                ]
+                self.assertEqual(model["limit"]["context"], 30000)
+                self.assertTrue(model["options"]["chat_template_kwargs"]["enable_thinking"])
+                self.assertEqual(config["agent"]["general"]["reasoningEffort"], effort)
 
     def test_option22_streams_the_exact_gyro_with_an_isolated_cache(self):
         model = self.root / "gyro.gguf"
