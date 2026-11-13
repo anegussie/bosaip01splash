@@ -44,6 +44,14 @@ measures in itself.
 Probes: warmup (40 records), `cold_8k` (500 records, 96 output), `decode_512`
 (a code-review prompt, 512 output), `cached_8k` (same 500 records again).
 
+Reasoning is turned off in the probes (`chat_template_kwargs: {"enable_thinking":
+false}`), the same setting the option 21 context runs used. It matters more than
+any of the arms: with reasoning tokens the draft accepts about 3-4 rows per
+cycle, without them 7, so a thinking-on probe decodes at roughly half the rate of
+a thinking-off one on the same engine. The first run of this harness left thinking
+on, so its decode numbers are the low-acceptance regime, not the shipped one.
+`--thinking` turns it back on when you want that regime measured.
+
 ## Rounds
 
 | Round | Arm | Chunk | Resident experts | Decode tok/s | ms/token | Tok/cycle | Cold prefill s | Cached prefill s | Expert ms/token | Expert reads/token | Hit rate |
@@ -83,6 +91,46 @@ Prefill is the open question. Option 21 exists for prefill throughput, and the
 kernel sweep says 2,048-token chunks beat 1,024-token chunks because a wider
 chunk shares the expert dequantization across more rows. This run cannot tell how
 much of that is lost; the cold-prefill spread is too large to conclude anything.
+
+## Against the earlier option 21 runs
+
+The same engine on an idle machine, thinking off, cold prefill, before the
+indexer change (`qwen38-option21-readahead-performance-20261112.md`, original
+engine, `top_k` 2048):
+
+| Filled prompt | PP tok/s | Decode TPS |
+|---:|---:|---:|
+| 4,108 | 412.5 | 23.99 |
+| 8,204 | 440.3 | 22.85 |
+| 16,396 | 412.9 | 23.22 |
+
+The same probes on the live `top_k` 4096 / chunk 2048 server, cold, thinking off:
+
+| Filled prompt | PP tok/s | Decode TPS | Tok/cycle |
+|---:|---:|---:|---:|
+| 3,275 | 252.2 | 16.04 | 7.38 |
+| 6,733 | 244.9 | 18.89 | 7.38 |
+| 13,611 | 243.9 | 19.07 | 7.38 |
+
+Prefill is about 40% below the earlier figures and decode about 20% below. Three
+things are mixed into that gap and only one of them is the indexer:
+
+- Expert residency is 1,512 slots now, against 1,784 before the change. The hot KV
+  floor rose from 390 MiB to 780 MiB and the store gave back its second chunk
+  (`1 of 2 chunks hold 1512 slots`), with only 1.26 GiB of host spare.
+- The disk is 98% full and the SSD cache is at 3.17 of its 3.22 GiB quota, so KV
+  that the pinned hot floor pushes out has somewhere less pleasant to go.
+- Prompt length: the earlier table measured 8,204 tokens; the wider indexer scans
+  every block of history, so its cost grows with context while its attention cost
+  does not.
+
+Chunk 1024 is not the answer to the prefill gap. The chunk sweep in
+`qwen38-option21-chunk-2048-20261110.md` measured 282 tok/s at 1,024 chunks against
+411.8 at 2,048 for the same 8,204-token prompt, and this run's means point the same
+way (297.7 tok/s baseline against 188.1 with 1,024). The ABBA noise on prefill,
+55%, is larger than any real difference: the ceiling doc itself measured the same
+config ranging 252-412 tok/s minutes apart, so prefill cannot be settled by a
+four-round ABBA on this machine. Decode can.
 
 ## Next
 

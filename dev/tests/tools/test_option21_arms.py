@@ -63,36 +63,56 @@ class Option21ArmsTests(unittest.TestCase):
 
     def test_probe_reads_the_timings_the_response_carries(self):
         original = option21_arms.chat
-        option21_arms.chat = lambda url, model, prompt, max_tokens: {
-            "seconds": 107.0,
-            "payload": {
-                "usage": {"prompt_tokens": 11362},
-                "timings": {
-                    "prompt_n": 11362,
-                    "prompt_ms": 51850.0,
-                    "predicted_n": 95,
-                    "predicted_ms": 7760.0,
-                    "cache_n": 0,
-                },
-                "metrics": {
-                    "cache": {"matched_tokens": 0},
-                    "speculation": {
-                        "cycles": 25,
-                        "drafted_tokens": 75,
-                        "accepted_draft_tokens": 70,
+        calls = []
+        option21_arms.chat = lambda url, model, prompt, max_tokens, thinking: (
+            calls.append((max_tokens, thinking)) or {
+                "seconds": 107.0,
+                "payload": {
+                    "usage": {"prompt_tokens": 11362},
+                    "timings": {
+                        "prompt_n": 11362,
+                        "prompt_ms": 51850.0,
+                        "predicted_n": 95,
+                        "predicted_ms": 7760.0,
+                        "cache_n": 0,
                     },
+                    "metrics": {
+                        "cache": {"matched_tokens": 0},
+                        "speculation": {
+                            "cycles": 25,
+                            "drafted_tokens": 75,
+                            "accepted_draft_tokens": 70,
+                        },
+                    },
+                    "choices": [{"finish_reason": "length", "message": {"content": "ORCHID"}}],
                 },
-                "choices": [{"finish_reason": "length", "message": {"content": "ORCHID"}}],
-            },
-        }
+            }
+        )
         try:
             measured = option21_arms.probe("http://127.0.0.1:1235", None, "cold_8k", "records", 500, 96)
         finally:
             option21_arms.chat = original
+        self.assertEqual(calls, [(96, False)])
         self.assertEqual(measured["prefill_ms"], 51850.0)
         self.assertEqual(measured["output_tokens"], 95)
         self.assertEqual(measured["cycles"], 25)
         self.assertEqual(measured["finish"], "length")
+
+    def test_probes_turn_off_reasoning_unless_asked(self):
+        seen = []
+
+        def fake(url, model, prompt, max_tokens, thinking):
+            seen.append(thinking)
+            return {"seconds": 1.0, "payload": {"timings": {}, "usage": {}, "choices": [{"message": {"content": ""}}]}}
+
+        original = option21_arms.chat
+        option21_arms.chat = fake
+        try:
+            option21_arms.probe("http://x", None, "cold_8k", "records", 1, 1)
+            option21_arms.probe("http://x", None, "cold_8k", "records", 1, 1, True)
+        finally:
+            option21_arms.chat = original
+        self.assertEqual(seen, [False, True])
 
     def test_round_metrics_reads_decode_and_prefill_out_of_the_probes(self):
         probes = [

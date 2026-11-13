@@ -59,6 +59,13 @@ ARMS = {
 # A short warm-up, then one cold prefill, one decode-heavy turn, and the same
 # prefill again to see how much of a warm prefix the engine reuses. Output
 # length is fixed so decode work is comparable across arms.
+#
+# Thinking is off by default. It is the biggest single determinant of decode
+# speed here: with reasoning tokens the draft accepts about 3 rows per cycle,
+# with them off about 7, so a thinking-on probe decodes at roughly half the rate
+# of a thinking-off one. The option-21 context runs in
+# qwen38-option21-performance-20261112.md used thinking off, temperature 1.0 and
+# top_p 0.95, so the probes use the same settings to be comparable.
 WARMUP = ("warmup", "records", 40, 32)
 PROBES = (
     ("cold_8k", "records", 500, 96),
@@ -97,13 +104,33 @@ def fetch(url: str) -> dict:
         return json.load(response)
 
 
-def chat(url: str, model: str | None, prompt: str, max_tokens: int) -> dict:
+def wait_idle(url: str, limit: int = 300) -> None:
+    """The engine runs one request at a time, so a probe that queues behind
+    another client's request measures queue time, not the engine. Refuse to
+    measure while the server is busy."""
+    started = time.monotonic()
+    while True:
+        snapshot = fetch(url)
+        if not snapshot.get("active_requests"):
+            return
+        if time.monotonic() - started > limit:
+            raise RuntimeError(
+                f"server is still serving {snapshot['active_requests']} request(s) "
+                f"after {limit} s"
+            )
+        time.sleep(3)
+
+
+def chat(url: str, model: str | None, prompt: str, max_tokens: int, thinking: bool = False) -> dict:
     body = {
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": max_tokens,
-        "temperature": 0,
+        "temperature": 1.0,
+        "top_p": 0.95,
         "stream": False,
     }
+    if not thinking:
+        body["chat_template_kwargs"] = {"enable_thinking": False}
     if model:
         body["model"] = model
     request = urllib.request.Request(
@@ -112,7 +139,7 @@ def chat(url: str, model: str | None, prompt: str, max_tokens: int) -> dict:
         headers={"Content-Type": "application/json"},
     )
     started = time.monotonic()
-    with urllib.request.urlopen(request, timeout=1800) as response:
+    with urllib.request.urlopen(request, timeout=1200) as response:
         payload = json.load(response)
     return {"seconds": time.monotonic() - started, "payload": payload}
 
@@ -172,10 +199,12 @@ def difference(before: dict, after: dict) -> dict:
     return delta
 
 
-def probe(url: str, model: str | None, name: str, kind: str, records: int, max_tokens: int) -> dict:
+def probe(
+    url: str, model: str | None, name: str, kind: str, records: int, max_tokens: int, thinking: bool = False
+) -> dict:
     """One probe. The response carries its own timings, which count engine work
     only, so a probe queued behind another client's request is not miscounted."""
-    result = chat(url, model, prompt_for(kind, records), max_tokens)
+    result = chat(url, model, prompt_for(kind, records), max_tokens, thinking)
     payload = result["payload"]
     timings = payload.get("timings", {})
     speculation = payload.get("metrics", {}).get("speculation", {})
@@ -352,9 +381,14 @@ def build_env(arm: str, port: int, cache: Path, log_dir: Path) -> dict:
 
 def run_round(arm: str, args, number: int) -> dict:
     """Run a round, and run it again if another client shared the machine while
-    it was running. A round measured against foreign load is not comparable."""
+    it was running or a probe could not complete. A round measured against
+    foreign load, or cut short, is not comparable to the others."""
     for attempt in range(1, args.attempts + 1):
-        row = single_round(arm, args, number)
+        try:
+            row = single_round(arm, args, number)
+        except (OSError, urllib.error.URLError, RuntimeError) as error:
+            print(f"{arm} round {number}: attempt {attempt} failed: {error}", flush=True)
+            continue
         if row["foreign_requests"] == 0 or attempt == args.attempts:
             return row
         print(
@@ -362,20 +396,25 @@ def run_round(arm: str, args, number: int) -> dict:
             f"client during the round, rerunning",
             flush=True,
         )
-    return row
+    raise RuntimeError(f"{arm} round {number} did not complete in {args.attempts} attempts")
 
 
 def single_round(arm: str, args, number: int) -> dict:
     url = args.url
     # The launcher names its cache from the directory around this path, so each
-    # round gets its own cold cache instead of inheriting the last round's.
-    cache = args.results / "rounds" / f"{arm}-{number}" / "scratch"
+    # round gets its own cold cache instead of inheriting the last round's. An
+    # attempt also starts clean, otherwise a rerun would reuse the prefix the
+    # first attempt wrote and report a warm prefill as a cold one.
+    round_dir = args.results / "rounds" / f"{arm}-{number}"
+    shutil.rmtree(round_dir, ignore_errors=True)
+    cache = round_dir / "scratch"
     log = args.results / f"{arm}-{number}-launcher.log"
     env = build_env(arm, args.port, cache, args.results)
     with launched_server(arm, env, url, log, args.cooldown, args.port) as ready:
         before = counters(ready)
+        wait_idle(url)
         probes = [
-            probe(url, args.model, name, kind, records, tokens)
+            probe(url, args.model, name, kind, records, tokens, args.thinking)
             for name, kind, records, tokens in (WARMUP,) + PROBES
         ]
         measured = probes[1:]
@@ -445,6 +484,11 @@ def main() -> int:
     )
     parser.add_argument("--port", type=int, default=1235)
     parser.add_argument(
+        "--thinking",
+        action="store_true",
+        help="let the model reason in the probes, which halves decode throughput",
+    )
+    parser.add_argument(
         "--model",
         default="",
         help="served model name; empty asks the server's own default",
@@ -475,11 +519,14 @@ def main() -> int:
             parser.error(f"unknown arm {arm}; known: {', '.join(ARMS)}")
 
     if args.attach:
+        before = counters(fetch(args.url))
+        wait_idle(args.url)
         probes = [
-            probe(args.url, args.model, name, kind, records, tokens)
+            probe(args.url, args.model, name, kind, records, tokens, args.thinking)
             for name, kind, records, tokens in PROBES
         ]
-        print(json.dumps(round_metrics(probes), indent=2))
+        after = counters(fetch(args.url))
+        print(json.dumps(round_metrics(probes, difference(before, after)), indent=2))
         return 0
 
     order = ["baseline"] + [arm for arm in candidates for _ in range(2)] + ["baseline"]
