@@ -31,9 +31,10 @@ SPLASH_QWEN36_MAX_CACHE_DISK="${SPLASH_QWEN36_MAX_CACHE_DISK:-2G}"
 SPLASH_QWEN36_PERSISTENT_CACHE="${SPLASH_QWEN36_PERSISTENT_CACHE:-1}"
 SPLASH_QWEN36_CACHE_DIR="${SPLASH_QWEN36_CACHE_DIR:-$HOME/Library/Caches/Splash/qwen36-option18}"
 SPLASH_QWEN36_IQ3_MODEL_ID="unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS"
-SPLASH_QWEN36_IQ3_MAX_CONTEXT="${SPLASH_QWEN36_IQ3_MAX_CONTEXT:-80K}"
+# 64K keeps the 35B INT8 KV extents inside the 10G Metal cap on a 16 GiB Air; 80K admitted whole KV extents only at the legacy 8G floor.
+SPLASH_QWEN36_IQ3_MAX_CONTEXT="${SPLASH_QWEN36_IQ3_MAX_CONTEXT:-64K}"
 SPLASH_QWEN36_IQ3_MAX_MEMORY="${SPLASH_QWEN36_IQ3_MAX_MEMORY:-10G}"
-SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS="${SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS:-512}"
+SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS="${SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS:-2048}"
 SPLASH_QWEN36_IQ3_OPENCODE_CONTEXT="${SPLASH_QWEN36_IQ3_OPENCODE_CONTEXT:-auto}"
 splash_qwen36_iq3_default_output=0
 [[ -n "${SPLASH_QWEN36_IQ3_MAX_TOKENS:-}" ]] || splash_qwen36_iq3_default_output=1
@@ -56,12 +57,28 @@ if [[ -z "${SPLASH_FLASH_NEXT_MAX_MEMORY:-}" ]]; then
   SPLASH_FLASH_NEXT_MAX_MEMORY_DEFAULTED=1
 fi
 SPLASH_FLASH_NEXT_MAX_MEMORY="${SPLASH_FLASH_NEXT_MAX_MEMORY:-10G}"
-# Option 21 favors routine-work throughput; explicit shared/Q2 overrides still win.
-SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT="${SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT:-${SPLASH_FLASH_NEXT_REASONING_EFFORT:-none}}"
+# Option 21 reasons at xhigh by default; an explicit Q2 value wins, then the
+# shared Flash-Next effort, then this default.
+SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT="${SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT:-${SPLASH_FLASH_NEXT_REASONING_EFFORT:-xhigh}}"
 SPLASH_FLASH_NEXT_REASONING_EFFORT="${SPLASH_FLASH_NEXT_REASONING_EFFORT:-low}"
 SPLASH_FLASH_NEXT_MAX_CACHE_DISK="${SPLASH_FLASH_NEXT_MAX_CACHE_DISK:-16G}"
 # Option 21's Q2_0 target has a small persistent-cache default for low-disk Macs.
 SPLASH_FLASH_NEXT_Q2_MAX_CACHE_DISK="${SPLASH_FLASH_NEXT_Q2_MAX_CACHE_DISK:-3G}"
+# Option 21 answers with thinking on, so its output window has to hold the
+# reasoning as well as the reply: it defaults to 2048 rather than option 20's
+# 1024. An explicit SPLASH_FLASH_NEXT_MAX_TOKENS still wins for both options.
+if (( splash_flash_next_default_output )); then
+  SPLASH_FLASH_NEXT_Q2_MAX_TOKENS="${SPLASH_FLASH_NEXT_Q2_MAX_TOKENS:-2048}"
+else
+  SPLASH_FLASH_NEXT_Q2_MAX_TOKENS="${SPLASH_FLASH_NEXT_Q2_MAX_TOKENS:-$SPLASH_FLASH_NEXT_MAX_TOKENS}"
+fi
+# --thinking-token-budget caps the reasoning tokens of a request that sets none,
+# so an xhigh turn cannot spend the whole output window thinking. 0 turns it off.
+SPLASH_FLASH_NEXT_Q2_THINKING_TOKEN_BUDGET="${SPLASH_FLASH_NEXT_Q2_THINKING_TOKEN_BUDGET:-${SPLASH_FLASH_NEXT_THINKING_TOKEN_BUDGET:-1500}}"
+# OpenCode's context_worker and general_worker run many short turns (compaction,
+# lookups, subagents). They default to a lower effort than the main agents so a
+# chat does not pay xhigh on every one of them.
+SPLASH_FLASH_NEXT_WORKER_REASONING_EFFORT="${SPLASH_FLASH_NEXT_WORKER_REASONING_EFFORT:-low}"
 SPLASH_FLASH_NEXT_PERSISTENT_CACHE="${SPLASH_FLASH_NEXT_PERSISTENT_CACHE:-1}"
 SPLASH_FLASH_NEXT_CACHE_DIR="${SPLASH_FLASH_NEXT_CACHE_DIR:-$HOME/Library/Caches/Splash/flash-next-option20-iq3-xxs}"
 SPLASH_FLASH_NEXT_EXPERT_MEMORY="${SPLASH_FLASH_NEXT_EXPERT_MEMORY:-auto}"
@@ -287,7 +304,7 @@ print_models() {
   echo "   Download cache: ${SPLASH_FLASH_NEXT_HF_HUB_CACHE}"
   echo "   Separate option-20 prefix cache: ${SPLASH_FLASH_NEXT_MAX_CACHE_DISK} | persistent: ${SPLASH_FLASH_NEXT_PERSISTENT_CACHE}"
   echo "21) Qwen3.8 Flash-Next GSQ-RCO Q2_0 - Splash with local BF16 DFlash2${splash_status}"
-  echo "   ${SPLASH_FLASH_NEXT_MAX_CONTEXT} server context | ${SPLASH_FLASH_NEXT_MAX_TOKENS} output tokens | ${SPLASH_FLASH_NEXT_Q2_MAX_MEMORY} Metal cap | reasoning ${SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT}"
+  echo "   ${SPLASH_FLASH_NEXT_MAX_CONTEXT} server context | ${SPLASH_FLASH_NEXT_Q2_MAX_TOKENS} output tokens | ${SPLASH_FLASH_NEXT_Q2_MAX_MEMORY} Metal cap | reasoning ${SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT} | thinking budget ${SPLASH_FLASH_NEXT_Q2_THINKING_TOKEN_BUDGET}"
   echo "   INT8 KV | BF16 state | text only | ${SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE} | expert memory ${SPLASH_FLASH_NEXT_EXPERT_MEMORY} | ${SPLASH_FLASH_NEXT_Q2_PREFILL_CHUNK_TOKENS}-token prefill chunks | PLE row cache ${SPLASH_FLASH_NEXT_PLE_MEMORY}"
   echo "   Source: ${SPLASH_FLASH_NEXT_Q2_MODEL_ID} | local BF16 DFlash2 draft: ${SPLASH_FLASH_NEXT_DFLASH2_MODEL}"
   echo "   Option 21 uses option 20's 16 GiB preset; if a 2,048-token chunk trips the 5 s Metal event window the launcher retries with 10G and 1,024-token chunks"
@@ -845,6 +862,7 @@ sync_opencode_splash() {
     --arg alias "$SPLASH_BONSAI_ALIAS" \
     --arg display_name "$SPLASH_BONSAI_DISPLAY_NAME" \
     --arg reasoning_effort "${splash_reasoning_effort:-none}" \
+    --arg worker_reasoning_effort "${splash_worker_reasoning_effort:-${splash_reasoning_effort:-none}}" \
     --argjson temperature "${splash_temperature:-0.7}" \
     --argjson top_p "${splash_top_p:-0.80}" \
     --arg base_url "http://${HOST}:${PORT}/v1" \
@@ -870,9 +888,10 @@ sync_opencode_splash() {
      .agent.general_worker.temperature = (.agent.general_worker.temperature // $temperature) |
      .agent.general_worker.top_p = $top_p |
      .agent |= with_entries(
-       if .key == "router" or .key == "general" or .key == "long_analysis" or
-          .key == "context_worker" or .key == "general_worker"
-       then .value.reasoningEffort = $reasoning_effort else . end
+       if .key == "router" or .key == "general" or .key == "long_analysis"
+       then .value.reasoningEffort = $reasoning_effort
+       elif .key == "context_worker" or .key == "general_worker"
+       then .value.reasoningEffort = $worker_reasoning_effort else . end
      ) |
      .compaction = ((.compaction // {}) + {
        auto: true, keep: {tokens: ([1536, (($context - $output) / 2 | floor)] | min)}, buffer: $output
@@ -1835,6 +1854,7 @@ case "$choice" in
       SPLASH_BONSAI_CACHE_DIR="$SPLASH_FLASH_NEXT_CACHE_DIR"
       if [[ "$choice" == "21" ]]; then
         SPLASH_FLASH_NEXT_REASONING_EFFORT="$SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT"
+        SPLASH_BONSAI_MAX_TOKENS="$SPLASH_FLASH_NEXT_Q2_MAX_TOKENS"
         SPLASH_BONSAI_MAX_CACHE_DISK="$SPLASH_FLASH_NEXT_Q2_MAX_CACHE_DISK"
         SPLASH_BONSAI_MODEL_ID="$SPLASH_FLASH_NEXT_Q2_MODEL_ID"
         SPLASH_BONSAI_ALIAS="qwen3.8-flash-next-q2-0-dflash2-bf16-splash"
@@ -1843,6 +1863,7 @@ case "$choice" in
         # Same cap and chunk as option 20 on this host; the fallback in the
         # launch loop halves the chunk if the warmup trips the Metal window.
         splash_flash_next_q2_profile
+        SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=1
       fi
       SPLASH_BONSAI_STATE_FORMAT=bf16
       SPLASH_BONSAI_PREFILL_CHUNK_TOKENS="$SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS"
@@ -1882,12 +1903,26 @@ case "$choice" in
         none|low|medium|xhigh) ;;
         *) echo "SPLASH_FLASH_NEXT_REASONING_EFFORT must be none, low, medium or xhigh." >&2; exit 1 ;;
       esac
+      if ! [[ "$SPLASH_FLASH_NEXT_Q2_THINKING_TOKEN_BUDGET" =~ ^[0-9]+$ ]]; then
+        echo "SPLASH_FLASH_NEXT_Q2_THINKING_TOKEN_BUDGET must be a whole number of tokens, or 0 for no cap." >&2
+        exit 1
+      fi
+      if (( choice == 21 )) &&
+         (( SPLASH_FLASH_NEXT_Q2_THINKING_TOKEN_BUDGET >= SPLASH_FLASH_NEXT_Q2_MAX_TOKENS )); then
+        echo "   Thinking budget ${SPLASH_FLASH_NEXT_Q2_THINKING_TOKEN_BUDGET} leaves nothing of option 21's ${SPLASH_FLASH_NEXT_Q2_MAX_TOKENS}-token output window for the reply: raise SPLASH_FLASH_NEXT_Q2_MAX_TOKENS or lower the budget."
+      fi
+      if ! [[ "$SPLASH_FLASH_NEXT_WORKER_REASONING_EFFORT" =~ ^(none|low|medium|xhigh)$ ]]; then
+        echo "SPLASH_FLASH_NEXT_WORKER_REASONING_EFFORT must be none, low, medium or xhigh." >&2
+        exit 1
+      fi
       if [[ "$SPLASH_FLASH_NEXT_HF_HUB_CACHE" != /* ]]; then
         echo "SPLASH_FLASH_NEXT_HF_HUB_CACHE must be an absolute path on the intended model drive." >&2
         exit 1
       fi
       export HF_HUB_CACHE="$SPLASH_FLASH_NEXT_HF_HUB_CACHE"
       splash_reasoning_effort="$SPLASH_FLASH_NEXT_REASONING_EFFORT"
+      splash_worker_reasoning_effort="$SPLASH_FLASH_NEXT_WORKER_REASONING_EFFORT"
+      [[ "$splash_reasoning_effort" != "none" ]] || splash_worker_reasoning_effort="none"
       if [[ "$splash_reasoning_effort" != "none" ]]; then
         splash_temperature=1.0
         splash_top_p=0.95
@@ -2018,6 +2053,12 @@ case "$choice" in
     fi
     splash_cache_args=()
     splash_cache_mode="off"
+    splash_thinking_args=()
+    splash_thinking_budget_report="none"
+    if (( choice == 21 )) && (( SPLASH_FLASH_NEXT_Q2_THINKING_TOKEN_BUDGET > 0 )); then
+      splash_thinking_args=(--thinking-token-budget "$SPLASH_FLASH_NEXT_Q2_THINKING_TOKEN_BUDGET")
+      splash_thinking_budget_report="$SPLASH_FLASH_NEXT_Q2_THINKING_TOKEN_BUDGET"
+    fi
     if (( splash_cache_disk_limit > 0 )); then
       splash_cache_free="$(splash_volume_free_bytes "$SPLASH_BONSAI_CACHE_DIR")"
       if ! [[ "$splash_cache_free" =~ ^[0-9]+$ ]] ||
@@ -2067,9 +2108,9 @@ case "$choice" in
     fi
     printf 'Native inference concurrency: %s (FIFO queue across clients; no worker tool-call budget)\n' "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
     printf 'Memory safety: run ONE OpenCode job at a time; multiple chats create queue waits and memory replay. Close unused memory-heavy apps before long jobs.\n' | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
-    printf 'Launcher: model=%s alias=%s binary=%s server_context=%s client_context=%s output=%s reasoning=%s kv=int8 state=%s prefill_chunk=%s cache_disk=%s cache_mode=%s resource_wait=%ss host=%s port=%s\n' \
+    printf 'Launcher: model=%s alias=%s binary=%s server_context=%s client_context=%s output=%s reasoning=%s thinking_budget=%s kv=int8 state=%s prefill_chunk=%s cache_disk=%s cache_mode=%s resource_wait=%ss host=%s port=%s\n' \
       "$SPLASH_BONSAI_MODEL_ID" "$SPLASH_BONSAI_ALIAS" "$SPLASH_BIN" "$SPLASH_BONSAI_MAX_CONTEXT" \
-      "$SPLASH_BONSAI_OPENCODE_CONTEXT" "$SPLASH_BONSAI_MAX_TOKENS" "$splash_reasoning_effort" "$SPLASH_BONSAI_STATE_FORMAT" "$SPLASH_BONSAI_PREFILL_CHUNK_TOKENS" "$SPLASH_BONSAI_MAX_CACHE_DISK" "$splash_cache_mode" "$SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT" "$HOST" "$PORT" |
+      "$SPLASH_BONSAI_OPENCODE_CONTEXT" "$SPLASH_BONSAI_MAX_TOKENS" "$splash_reasoning_effort" "$splash_thinking_budget_report" "$SPLASH_BONSAI_STATE_FORMAT" "$SPLASH_BONSAI_PREFILL_CHUNK_TOKENS" "$SPLASH_BONSAI_MAX_CACHE_DISK" "$splash_cache_mode" "$SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT" "$HOST" "$PORT" |
       timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
     if [[ "$splash_cache_mode" == "persistent" ]]; then
       printf 'Prefix cache kept across restarts: %s\n' "$SPLASH_BONSAI_CACHE_DIR" | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
@@ -2112,6 +2153,7 @@ case "$choice" in
         --max-cache-disk "$splash_cache_disk_limit" \
         ${splash_model_args[@]+"${splash_model_args[@]}"} \
         ${splash_cache_args[@]+"${splash_cache_args[@]}"} \
+        ${splash_thinking_args[@]+"${splash_thinking_args[@]}"} \
         >&3 2>&1 &
       splash_server_pid=$!
       if wait "$splash_server_pid"; then splash_status=0; else splash_status=$?; fi

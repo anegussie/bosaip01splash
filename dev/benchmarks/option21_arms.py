@@ -54,6 +54,11 @@ ARMS = {
     "baseline": {},
     "chunk1024": {"SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS": "1024"},
     "context64k": {"SPLASH_FLASH_NEXT_MAX_CONTEXT": "65536"},
+    # Reasoning arms need --thinking: they compare the efforts option 21 can
+    # serve (low, medium, xhigh) with the thinking budget in place.
+    "reasoning_low": {"SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT": "low"},
+    "reasoning_medium": {"SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT": "medium"},
+    "reasoning_xhigh": {"SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT": "xhigh"},
 }
 
 # A short warm-up, then one cold prefill, one decode-heavy turn, and the same
