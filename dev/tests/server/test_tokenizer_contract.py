@@ -2,7 +2,7 @@ import io
 import unittest
 from unittest import mock
 
-from dev.tests.server_fixtures import unprepared_hold
+from dev.tests.server_fixtures import READY, console_written, unprepared_hold
 from server import constraints as generation_constraints
 from server import server
 from server.chat_format import QWEN
@@ -21,27 +21,66 @@ class TokenizerContractTests(unittest.TestCase):
             get_vocab=mock.Mock(return_value=vocabulary),
             encode=mock.Mock(side_effect=lambda text, **_: [vocabulary[text]]),
             eos_token_id=248046,
+            # A fast backend that adds no token: nothing to keep from text.
+            backend_tokenizer=mock.Mock(
+                get_added_tokens_decoder=mock.Mock(return_value={})
+            ),
         )
 
     def test_padded_model_vocabulary_need_not_have_a_token_at_every_index(self):
         generation_constraints.validate_tokenizer(self.tokenizer(), QWEN)
+        generation_constraints.check_capabilities(self.tokenizer(), QWEN, READY)
 
-    def test_mismatched_stop_or_thinking_tokens_are_rejected(self):
-        for token in ("<|endoftext|>", "<|im_end|>", "</think>", "<tool_call>"):
+    def test_mismatched_thinking_or_call_tokens_are_rejected(self):
+        for token in ("</think>", "<tool_call>"):
             with self.subTest(token=token):
                 tokenizer = self.tokenizer()
                 tokenizer.get_vocab()[token] += 1
                 with self.assertRaisesRegex(
-                    server.engine_runtime.EngineUnhealthy, "native token"
+                    generation_constraints.TokenizerContractError, "native token"
                 ):
                     generation_constraints.validate_tokenizer(tokenizer, QWEN)
+
+    def test_stop_texts_must_be_the_engines_stop_tokens(self):
+        """Its stop texts encode as the stop tokens the engine's Ready names."""
+        for token in ("<|endoftext|>", "<|im_end|>"):
+            with self.subTest(token=token):
+                tokenizer = self.tokenizer()
+                tokenizer.get_vocab()[token] += 1
+                generation_constraints.validate_tokenizer(tokenizer, QWEN)
+                with self.assertRaisesRegex(
+                    generation_constraints.TokenizerContractError, "stops at"
+                ):
+                    generation_constraints.check_capabilities(tokenizer, QWEN, READY)
 
     def test_normalizer_cannot_split_a_native_special_token(self):
         tokenizer = self.tokenizer()
         tokenizer.encode.return_value = [1, 2]
         tokenizer.encode.side_effect = None
         with self.assertRaisesRegex(
-            server.engine_runtime.EngineUnhealthy, "native token"
+            generation_constraints.TokenizerContractError, "native token"
+        ):
+            generation_constraints.validate_tokenizer(tokenizer, QWEN)
+
+    def test_added_tokens_the_server_cannot_quote_are_rejected(self):
+        tokenizer = self.tokenizer()
+        tokenizer.backend_tokenizer = None
+        with self.assertRaisesRegex(
+            generation_constraints.TokenizerContractError, "fast tokenizer"
+        ):
+            generation_constraints.validate_tokenizer(tokenizer, QWEN)
+        tokenizer = self.tokenizer()
+        tokenizer.backend_tokenizer.get_added_tokens_decoder.return_value = {
+            248046: mock.Mock(
+                content="<|im_end|>",
+                normalized=False,
+                lstrip=False,
+                rstrip=True,
+                single_word=False,
+            )
+        }
+        with self.assertRaisesRegex(
+            generation_constraints.TokenizerContractError, "literal text"
         ):
             generation_constraints.validate_tokenizer(tokenizer, QWEN)
 
@@ -51,15 +90,17 @@ class TokenizerContractTests(unittest.TestCase):
                 tokenizer = self.tokenizer()
                 tokenizer.get_vocab()["community-token"] = token_id
                 with self.assertRaisesRegex(
-                    server.engine_runtime.EngineUnhealthy, "vocabulary"
+                    generation_constraints.TokenizerContractError, "vocabulary"
                 ):
-                    generation_constraints.validate_tokenizer(tokenizer, QWEN)
+                    generation_constraints.check_capabilities(tokenizer, QWEN, READY)
 
     def test_eos_configuration_must_match_a_native_stop_token(self):
         tokenizer = self.tokenizer()
         tokenizer.eos_token_id = 0
-        with self.assertRaisesRegex(server.engine_runtime.EngineUnhealthy, "EOS token"):
-            generation_constraints.validate_tokenizer(tokenizer, QWEN)
+        with self.assertRaisesRegex(
+            generation_constraints.TokenizerContractError, "EOS token"
+        ):
+            generation_constraints.check_capabilities(tokenizer, QWEN, READY)
 
     def test_startup_rejects_tokenizer_before_starting_the_native_worker(self):
         args = server.parse_args(["model", "--model", "owner/model"])
@@ -82,6 +123,7 @@ class TokenizerContractTests(unittest.TestCase):
         ):
             server.main()
         self.assertEqual(raised.exception.code, 1)
+        console_written()
         self.assertIn("tokenizer must encode", stderr.getvalue())
         native.assert_not_called()
         http.server_activate.assert_not_called()

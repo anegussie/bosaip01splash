@@ -1,6 +1,8 @@
 import random
+import unicodedata
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 from unittest import mock
 
 from tokenizers import (
@@ -15,9 +17,10 @@ from tokenizers import (
 )
 from transformers import PreTrainedTokenizerFast
 
-from server import judgments
+from dev.tests.server_fixtures import NATIVE_CONTEXT
 from server.chat_format import QWEN
-from server.tokenization import PromptTokenizer, tokenizable
+from server.dialects import scoring
+from server.tokenization import PromptTokenizer, tokenizable, unquoted
 
 
 def tokenizer():
@@ -46,7 +49,9 @@ def tokenizer():
 class PromptTokenizationTests(unittest.TestCase):
     def setUp(self):
         self.tokenizer = tokenizer()
-        self.cache = PromptTokenizer(self.tokenizer, QWEN.message_boundary)
+        self.cache = PromptTokenizer(
+            self.tokenizer, QWEN.message_boundary, NATIVE_CONTEXT
+        )
         self.assertTrue(self.cache.enabled)
 
     def assert_encoding(self, text, cache=None):
@@ -86,7 +91,7 @@ class PromptTokenizationTests(unittest.TestCase):
         # Encoding text and a label equals the split's tokens followed by the
         # encoded end and label, so a label extends the whole text's tokens
         # by its token exactly when it so extends the end's: a slot check
-        # need encode only the end (judgments.encode_prompt).
+        # need encode only the end (scoring.encode_prompt).
         randomizer = random.Random(1234)
         fragments = [
             "e\u0301",
@@ -130,18 +135,16 @@ class PromptTokenizationTests(unittest.TestCase):
         consumed.backend_tokenizer.add_special_tokens(
             [AddedToken("hello<|im_end", normalized=False)]
         )
-        stripping = tokenizer()
-        stripping.backend_tokenizer.add_special_tokens(
-            [AddedToken("<|im_end|>", normalized=False, rstrip=True)]
-        )
         for name, t, text in (
             ("no marker", self.tokenizer, "Hello world!"),
             ("consumed marker", consumed, "hello<|im_end|>suffix"),
-            ("stripping marker", stripping, "Hello<|im_end|> suffix"),
         ):
             with self.subTest(name):
                 self.assertEqual(
-                    PromptTokenizer(t, QWEN.message_boundary).split(text), ([], text)
+                    PromptTokenizer(t, QWEN.message_boundary, NATIVE_CONTEXT).split(
+                        text
+                    ),
+                    ([], text),
                 )
 
     def test_slot_checks_encode_only_the_prompt_end(self):
@@ -154,16 +157,17 @@ class PromptTokenizationTests(unittest.TestCase):
             {"role": "system", "content": "Choose one."},
             {"role": "user", "content": "Release notes 中文 e\u0301. " * 2000},
         ]
-        labels = judgments.slot_labels(self.tokenizer)[:26]
+        labels = scoring.slot_labels(self.tokenizer)[:26]
         encode = self.tokenizer.encode
+        tokens = self.cache.tokens
         encoded = []
 
-        def counted(text, **options):
+        def counted(text):
             encoded.append(text)
-            return encode(text, **options)
+            return tokens(text)
 
-        with mock.patch.object(self.tokenizer, "encode", counted):
-            ids, slots, prompt = judgments.encode_prompt(
+        with mock.patch.object(self.cache, "tokens", counted):
+            ids, slots, prompt = scoring.encode_prompt(
                 self.cache,
                 template,
                 messages,
@@ -180,16 +184,59 @@ class PromptTokenizationTests(unittest.TestCase):
         )
         end = "\n<|im_start|>assistant\n"
         self.assertTrue(prompt.endswith("<|im_end|>" + end))
-        # The end, each label, and each label after the end.
+        # The prompt up to its end once, the end, and each label after the
+        # end.
         self.assertEqual(
             sorted(encoded),
-            sorted([end, *labels, *(end + label for label in labels)]),
+            sorted([prompt[: -len(end)], end, *(end + label for label in labels)]),
+        )
+
+    def test_storage_holds_four_prompts_of_the_served_context(self):
+        # Even text CPython stores at 4 bytes a character, as it does once
+        # the text holds an emoji: each prompt stays and is read again.
+        prompts = [
+            f"<|im_start|>user\n{i} " + "Hello world!" * 400 + " \U0001f680<|im_end|>"
+            for i in range(4)
+        ]
+        context = max(
+            len(self.tokenizer(prompt, add_special_tokens=False)["input_ids"])
+            for prompt in prompts
+        )
+        cache = PromptTokenizer(self.tokenizer, QWEN.message_boundary, context)
+        for prompt in prompts:
+            self.assert_encoding(prompt, cache)
+        for prompt in prompts:
+            self.assert_encoding(prompt + "\n<|im_start|>assistant\n", cache)
+        self.assertEqual(cache.stats()["entries"], 4)
+        self.assertEqual(cache.stats()["hits"], 4)
+
+    def test_interleaved_conversations_each_reuse_their_newest_prompt(self):
+        # Agents interleave more conversations than there are lanes, each
+        # waiting on its tool between turns: every next turn finds its own.
+        prompts = [
+            f"<|im_start|>user\n{i} " + "Hello world!" * 400 + "<|im_end|>\n"
+            for i in range(8)
+        ]
+        for prompt in prompts:
+            self.assert_encoding(prompt + "<|im_start|>assistant\n")
+        for i, prompt in enumerate(prompts):
+            self.assert_encoding(
+                prompt
+                + f"<|im_start|>assistant\n{i}<|im_end|>\n"
+                + "<|im_start|>user\nnext<|im_end|>\n<|im_start|>assistant\n"
+            )
+        stats = self.cache.stats()
+        self.assertEqual(
+            (stats["hits"], stats["misses"], stats["evictions"], stats["entries"]),
+            (8, 8, 0, 8),
         )
 
     def test_concurrent_requests_eviction_and_oversized_prefix(self):
         self.enterContext(mock.patch.object(PromptTokenizer, "CAPACITY", 2))
-        self.enterContext(mock.patch.object(PromptTokenizer, "BUDGET_BYTES", 40000))
-        cache = PromptTokenizer(self.tokenizer, QWEN.message_boundary)
+        self.enterContext(mock.patch.object(PromptTokenizer, "BUDGET_PROMPTS", 2))
+        # Two prompts of 833 tokens: 39,984 bytes.
+        cache = PromptTokenizer(self.tokenizer, QWEN.message_boundary, 833)
+        budget = cache.stats()["budget_bytes"]
         prompts = [
             "<|im_start|>user\n" + str(i) + " Hello world!" * 400 + "<|im_end|>\n"
             for i in range(8)
@@ -203,7 +250,11 @@ class PromptTokenizationTests(unittest.TestCase):
         self.assertEqual(results, expected * 3)
         stats = cache.stats()
         self.assertLessEqual(stats["entries"], 2)
-        self.assertLessEqual(stats["bytes"], 40000)
+        self.assertLessEqual(stats["bytes"], budget)
+        # Each encode looked up its prompt, and each of the 8 kept in turn
+        # but no longer kept was evicted.
+        self.assertEqual(stats["hits"] + stats["misses"], 24)
+        self.assertGreaterEqual(stats["evictions"], 8 - stats["entries"])
         before = stats["bytes"]
         self.assert_encoding("x" * 50000 + "<|im_end|>tail", cache)
         self.assertEqual(cache.stats()["bytes"], before)
@@ -239,59 +290,120 @@ class PromptTokenizationTests(unittest.TestCase):
             self.assert_encoding(text)
         self.assertEqual(self.cache.stats()["entries"], 0)
 
-    def test_unsupported_normalization_and_stripping_tokens_fall_back(self):
-        for mode in ("normalizer", "strip", "overlap", "dropout"):
-            with self.subTest(mode=mode):
-                t = tokenizer()
-                if mode == "normalizer":
-                    t.backend_tokenizer.normalizer = normalizers.Prepend(" ")
-                elif mode == "strip":
-                    t.backend_tokenizer.add_special_tokens(
-                        [AddedToken("<|im_end|>", normalized=False, rstrip=True)]
-                    )
-                elif mode == "overlap":
-                    t.backend_tokenizer.add_special_tokens(
-                        [AddedToken("<|im_end|>suffix", normalized=False)]
-                    )
-                else:
-                    t.backend_tokenizer.model.dropout = 0.1
-                cache = PromptTokenizer(t, QWEN.message_boundary)
-                self.assertFalse(cache.enabled)
-                if mode == "dropout":
-                    # Check fallback rather than comparing two random encodes.
-                    t.backend_tokenizer.model.dropout = None
-                text = "Hello world!" * 500 + "<|im_end|>suffix e\u0301"
-                self.assertEqual(
-                    cache.encode(text), t(text, add_special_tokens=False)["input_ids"]
-                )
-                self.assertEqual(cache.stats()["entries"], 0)
+    def test_a_marker_inside_another_added_token_is_no_boundary(self):
+        t = tokenizer()
+        t.backend_tokenizer.add_special_tokens(
+            [AddedToken("<|im_end|>suffix", normalized=False)]
+        )
+        cache = PromptTokenizer(t, QWEN.message_boundary, NATIVE_CONTEXT)
+        self.assertFalse(cache.enabled)
+        text = "Hello world!" * 500 + "<|im_end|>suffix e\u0301"
+        self.assertEqual(
+            cache.encode(text), t(text, add_special_tokens=False)["input_ids"]
+        )
+        self.assertEqual(cache.stats()["entries"], 0)
 
     def test_partial_marker_consumed_by_another_added_token_is_not_cached(self):
         self.tokenizer.backend_tokenizer.add_special_tokens(
             [AddedToken("hello<|im_end", normalized=False)]
         )
-        cache = PromptTokenizer(self.tokenizer, QWEN.message_boundary)
+        cache = PromptTokenizer(self.tokenizer, QWEN.message_boundary, NATIVE_CONTEXT)
         self.assertTrue(cache.enabled)
         text = "Hello world!" * 500 + "hello<|im_end|>suffix"
         self.assert_encoding(text, cache)
         self.assertEqual(cache.stats()["entries"], 0)
 
-    def test_input_start_sensitive_pretokenizer_falls_back(self):
-        backend = Tokenizer(models.BPE())
-        backend.pre_tokenizer = pre_tokenizers.Metaspace(prepend_scheme="first")
-        backend.post_processor = processors.ByteLevel(trim_offsets=False)
-        backend.train_from_iterator(
+    def test_a_tokenizer_whose_added_tokens_cannot_be_quoted_is_refused(self):
+        # A tokenizer that could not keep an added token out of the text a
+        # client sent is refused, not served with the token left in: one
+        # without a fast backend, one that finds an added token with the
+        # spaces beside it, or one whose pipeline reads a segment by where it
+        # stands in the whole text.
+        metaspace = Tokenizer(models.BPE())
+        metaspace.pre_tokenizer = pre_tokenizers.Metaspace(prepend_scheme="first")
+        metaspace.train_from_iterator(
             ["hello world tail"],
             trainers.BpeTrainer(vocab_size=50, show_progress=False),
         )
-        backend.add_special_tokens([AddedToken("<|im_end|>", normalized=False)])
-        t = PreTrainedTokenizerFast(tokenizer_object=backend)
-        cache = PromptTokenizer(t, QWEN.message_boundary)
-        self.assertFalse(cache.enabled)
-        prefix, tail = "hello world " * 500 + "<|im_end|>", "tail"
-        expected = t(prefix + tail, add_special_tokens=False)["input_ids"]
-        split = t(prefix, add_special_tokens=False)["input_ids"]
-        split += t(tail, add_special_tokens=False)["input_ids"]
-        self.assertNotEqual(split, expected)
-        self.assertEqual(cache.encode(prefix + tail), expected)
-        self.assertEqual(cache.stats()["entries"], 0)
+        metaspace.add_special_tokens([AddedToken("<|im_end|>", normalized=False)])
+        metaspace = PreTrainedTokenizerFast(tokenizer_object=metaspace)
+        # The text after the marker does not encode there as it does alone.
+        whole = metaspace("hello<|im_end|>tail", add_special_tokens=False)
+        self.assertNotEqual(
+            whole["input_ids"][-1:],
+            metaspace("tail", add_special_tokens=False)["input_ids"][-1:],
+        )
+
+        def changed(change):
+            t = tokenizer()
+            change(t.backend_tokenizer)
+            return t
+
+        def added(text, **options):
+            return lambda backend: backend.add_special_tokens(
+                [AddedToken(text, **options)]
+            )
+
+        for name, t, reason in (
+            ("slow", SimpleNamespace(), "fast tokenizer"),
+            ("pre-tokenizer", metaspace, "on its own"),
+            (
+                "normalizer",
+                changed(
+                    lambda backend: setattr(
+                        backend, "normalizer", normalizers.Prepend(" ")
+                    )
+                ),
+                "on its own",
+            ),
+            (
+                "dropout",
+                changed(lambda backend: setattr(backend.model, "dropout", 0.1)),
+                "on its own",
+            ),
+            (
+                "stripping",
+                changed(added("<|im_end|>", normalized=False, rstrip=True)),
+                "literal text",
+            ),
+            ("one character", changed(added("\u00a7", normalized=False)), "quoted"),
+        ):
+            with self.subTest(name), self.assertRaisesRegex(ValueError, reason):
+                PromptTokenizer(t, QWEN.message_boundary, NATIVE_CONTEXT)
+
+    def test_a_token_add_tokens_adds_is_the_templates_and_never_a_clients(self):
+        """A fine-tune's add_tokens adds a normalized token, which the
+        tokenizer finds in the normalized text: the template's encodes as the
+        tokenizer encodes it, and a client's, spelled as the token or as NFC
+        reads it, U+212A for its K, encodes as text (such a tokenizer was
+        refused at startup, which 1.6.1 served)."""
+        t = tokenizer()
+        t.add_tokens(["<tasK>"])
+        token_id = t.convert_tokens_to_ids("<tasK>")
+        self.assertTrue(
+            t.backend_tokenizer.get_added_tokens_decoder()[token_id].normalized
+        )
+        cache = PromptTokenizer(t, QWEN.message_boundary, NATIVE_CONTEXT)
+        history = "<|im_start|>system\n" + "Release notes. " * 400 + "<|im_end|>\n"
+        template = history + "<|im_start|>assistant\n<tasK>Hello world!<|im_end|>"
+        # The second encodes from the first's tokens.
+        for _ in range(2):
+            self.assertEqual(
+                cache.encode(template),
+                t(template, add_special_tokens=False)["input_ids"],
+            )
+        self.assertGreater(cache.stats()["reused_tokens"], 0)
+        for spelling, sent in (
+            ("literal", "say <tasK> now"),
+            ("Kelvin sign", "say <tas\u212a> now"),
+        ):
+            with self.subTest(spelling):
+                rendered = (
+                    template + "\n<|im_start|>user\n" + cache.quote(sent) + "<|im_end|>"
+                )
+                tokens = cache.encode(rendered)
+                self.assertEqual(tokens.count(token_id), 1)
+                self.assertEqual(
+                    t.decode(tokens),
+                    unicodedata.normalize("NFC", unquoted(rendered)),
+                )

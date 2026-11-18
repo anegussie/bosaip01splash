@@ -830,13 +830,17 @@ print('Ready test server',flush=True)
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 args = json.loads((self.root / "argv.json").read_text())
-                self.assertEqual(args[args.index("--default-reasoning-effort") + 1], effort)
+                self.assertEqual(
+                    args[args.index("--default-reasoning-effort") + 1], effort
+                )
                 config = json.loads(self.config.read_text())
                 model = config["provider"]["local-llama"]["models"][
                     "qwen3.8-flash-next-q2-0-dflash2-bf16-splash"
                 ]
                 self.assertEqual(model["limit"]["context"], 30000)
-                self.assertTrue(model["options"]["chat_template_kwargs"]["enable_thinking"])
+                self.assertTrue(
+                    model["options"]["chat_template_kwargs"]["enable_thinking"]
+                )
                 self.assertEqual(config["agent"]["general"]["reasoningEffort"], effort)
 
     def test_option22_streams_the_exact_gyro_with_an_isolated_cache(self):

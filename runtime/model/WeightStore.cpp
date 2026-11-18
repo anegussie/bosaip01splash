@@ -3,6 +3,7 @@
 #include "Checked.hpp"
 #include "metal/abi/Gguf.h"
 #include "model/GgufFile.hpp"
+#include "model/GgufImage.hpp"
 #include "model/GgufImageLayout.hpp"
 
 #include <CommonCrypto/CommonDigest.h>
@@ -32,8 +33,20 @@ uint64_t sectionStart(uint64_t offset) {
 struct WeightFile::Impl {
     metal::MetalBackend *backend = nullptr;
     metal::MetalBuffer base;
+    std::shared_ptr<const std::vector<gguf::Fill>> planned;
     WeightFileRecord record;
     uint64_t offset = kHeaderBytes;
+
+    // The `bytes` bytes at `offset` of the image as a reader parses them:
+    // its memory's, or, while it holds none, those its plan writes there;
+    // null where neither holds them.
+    [[nodiscard]] const uint8_t *parsed(uint64_t at, uint64_t bytes) const {
+        if (const auto *contents = static_cast<const uint8_t *>(base.contents())) return contents + at;
+        if (planned)
+            for (const gguf::Fill &fill : *planned)
+                if (fill.offset == at && fill.bytes.size() == bytes) return fill.bytes.data();
+        return nullptr;
+    }
 };
 
 namespace {
@@ -53,15 +66,17 @@ void checkWeightHeader(const uint8_t *header, uint64_t bytes, std::string_view e
 WeightFile::WeightFile(metal::MetalBackend &backend, metal::MetalBuffer image,
                        std::string relativePath, std::string_view expectedMagic,
                        uint32_t expectedLayer, uint32_t expectedType,
-                       uint64_t declaredBytes, std::string contentIdentity)
+                       uint64_t declaredBytes, std::string contentIdentity,
+                       std::shared_ptr<const std::vector<gguf::Fill>> planned)
     : impl_(std::make_unique<Impl>()) {
-    const auto *header = static_cast<const uint8_t *>(image.contents());
+    impl_->base = std::move(image);
+    impl_->planned = std::move(planned);
+    const uint8_t *header = impl_->parsed(0, kHeaderBytes);
     if (!header) throw WeightStoreError("weight image is not host visible: " + relativePath);
-    checkWeightHeader(header, image.sizeBytes(), expectedMagic, expectedLayer, expectedType, relativePath);
+    checkWeightHeader(header, impl_->base.sizeBytes(), expectedMagic, expectedLayer, expectedType, relativePath);
     impl_->backend = &backend;
     impl_->record = {std::move(relativePath), std::string(expectedMagic), expectedLayer, expectedType,
                      declaredBytes, std::move(contentIdentity)};
-    impl_->base = std::move(image);
 }
 
 WeightFile::WeightFile(WeightFile &&) noexcept = default;
@@ -80,6 +95,14 @@ metal::MetalBuffer WeightFile::section(uint64_t bytes,
     }
     impl_->offset = end;
     return impl_->backend->view(impl_->base, start, bytes);
+}
+
+std::span<const uint8_t> WeightFile::read(uint64_t bytes, std::string_view label) {
+    const uint64_t start = sectionStart(impl_->offset);
+    static_cast<void>(section(bytes, label));
+    const uint8_t *parsed = impl_->parsed(start, bytes);
+    if (!parsed) throw WeightStoreError("weight image section is not host visible: " + std::string(label));
+    return {parsed, bytes};
 }
 
 void WeightFile::finish() {
@@ -104,11 +127,9 @@ ops::NormWeights readNorm(WeightFile &file, uint32_t width, bool float32,
 
 namespace {
 GgufTensorDescriptor readGgufDescriptor(WeightFile &file, std::string_view label) {
-    metal::MetalBuffer section = file.section(GgufTensorDescriptor::kBytes, std::string(label) + "-desc");
-    const uint8_t *bytes = static_cast<const uint8_t *>(section.contents());
-    if (!bytes) throw WeightStoreError("GGUF descriptor is not host visible");
-    const GgufTensorDescriptor d = GgufTensorDescriptor::decode(
-        std::span<const uint8_t, GgufTensorDescriptor::kBytes>(bytes, GgufTensorDescriptor::kBytes));
+    const std::span<const uint8_t> bytes = file.read(GgufTensorDescriptor::kBytes, std::string(label) + "-desc");
+    const GgufTensorDescriptor d =
+        GgufTensorDescriptor::decode(bytes.first<GgufTensorDescriptor::kBytes>());
     if (!d.outputSize || !d.inputSize) throw WeightStoreError("GGUF tensor is empty: " + std::string(label));
     return d;
 }
@@ -179,12 +200,12 @@ ops::EmbeddingWeights readBlockEmbedding(WeightFile &file, uint32_t outputSize, 
     const GgufTensorDescriptor d = readGgufDescriptor(file, label);
     if (d.outputSize != outputSize || d.inputSize != inputSize)
         throw WeightStoreError("GGUF embedding does not match the layout: " + std::string(label));
-    // Rows as stored, of whole native blocks.
+    // Rows as stored, which the gather reads.
     const uint32_t format = gguf_format_of(d.type);
-    if (format == GGUF_FMT_COUNT || d.inputSize % kQuantFormats[format].block_elements)
-        throw WeightStoreError("GGUF embedding rows are not native GGUF blocks: " + std::string(label));
-    return {outputSize, inputSize,
-            ops::NativeRows(readRows(file, d, ggufRowBytes(kQuantFormats[format], d.inputSize), label), format)};
+    const uint64_t rowBytes = quant_stored_row_bytes(format, d.inputSize);
+    if (!rowBytes)
+        throw WeightStoreError("GGUF embedding rows are not whole blocks of a GGUF format: " + std::string(label));
+    return {outputSize, inputSize, ops::StoredRows(readRows(file, d, rowBytes, label), format)};
 }
 
 std::string weightManifestFingerprint(

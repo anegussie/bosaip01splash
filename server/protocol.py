@@ -8,6 +8,7 @@ the bytes both sides agree on.
 from __future__ import annotations
 
 import array
+import hashlib
 import math
 import struct
 import sys
@@ -15,11 +16,11 @@ from dataclasses import dataclass, fields
 from enum import IntEnum, IntFlag
 from typing import TypeAlias
 
-PROTOCOL_VERSION = 11
+PROTOCOL_VERSION = 14
 # A frame is its header, the magic, the protocol version, the frame type and
 # the payload length, then the payload.
 FRAME_HEADER_BYTES = 16
-STATUS_SCHEMA_VERSION = 6
+STATUS_SCHEMA_VERSION = 8
 # Score-only requests carry 2..255 distinct option token ids and produce no
 # generated tokens; a successful score DoneEvent returns one raw
 # final-position logit per requested token, in request order.
@@ -39,6 +40,11 @@ MAX_PROMPT_TOKENS = 1 << 20
 MAX_LOGICAL_OUTPUT_TOKENS = 1 << 20
 MAX_TOKEN_BATCH = 4096
 MAX_SIMULATION_TOKENS = 32
+# The parent of a mask request's first simulation token, its tree's root.
+NO_PARENT = 0xFFFFFFFF
+# The most words of a mask response's forced tokens: a row and a token for as
+# many tokens as a request simulates, after each of its rows.
+MAX_FORCED_WORDS = 2 * (MAX_SIMULATION_TOKENS + 1) * MAX_SIMULATION_TOKENS
 MAX_IMAGE_SPANS = 64
 MAX_MASK_WORDS = 1 << 20
 
@@ -48,11 +54,14 @@ _HEADER = struct.Struct("<4sHHQ")
 _REQUEST_HEAD = struct.Struct("<QBBQQ")
 _REQUEST = struct.Struct(_REQUEST_HEAD.format + "IIIffIffffQIIIQQIII")
 _IMAGE_SPAN = struct.Struct("<IIIIQQ")
-_CANCEL = struct.Struct("<Q")
-_MASK_RESPONSE = struct.Struct("<QQI")
+# Cancel and Stop: one request id.
+_REQUEST_END = struct.Struct("<Q")
+# Request id, mask request id, mask words, forced token words.
+_MASK_RESPONSE = struct.Struct("<QQII")
 _STATUS_REQUEST = struct.Struct("<Q")
 _RELEASE_REQUEST = struct.Struct("<Q")
-_READY = struct.Struct("<IIB")
+# Concurrent requests, context, vision, vocabulary, mask rows, stop count.
+_READY = struct.Struct("<IIBIII")
 _START = struct.Struct("<QII")
 _PROMPT_PROGRESS = struct.Struct("<QIQ")
 _TOKENS = struct.Struct("<QII")
@@ -60,6 +69,10 @@ _MASK_REQUEST = struct.Struct("<QQII")
 _DONE = struct.Struct("<QBBIIQQQIIIII")
 _ERROR = struct.Struct("<BBIQII")
 _STATUS_JSON = struct.Struct("<Q")
+# Kind, bound, required bytes, budget bytes, plan context, message bytes.
+_START_FAILED = struct.Struct("<BBQQII")
+# Steps done, steps.
+_WARMING = struct.Struct("<II")
 
 assert (
     array.array("I").itemsize == 4
@@ -69,11 +82,13 @@ assert (
 assert _HEADER.size == FRAME_HEADER_BYTES
 assert _REQUEST.size == 114
 assert _IMAGE_SPAN.size == 32
-assert _READY.size == 9
+assert _READY.size == 21
 assert _START.size == 16
 assert _DONE.size == 62
 assert _ERROR.size == 22
 assert _STATUS_JSON.size == 8
+assert _START_FAILED.size == 26
+assert _WARMING.size == 8
 
 REQUEST_FIXED_BYTES = _REQUEST.size
 IMAGE_SPAN_BYTES = _IMAGE_SPAN.size
@@ -85,6 +100,7 @@ class FrameType(IntEnum):
     MASK_RESPONSE = 0x0003
     STATUS_REQUEST = 0x0004
     RELEASE_REQUEST = 0x0005
+    STOP = 0x0006
 
     READY = 0x0100
     START = 0x0101
@@ -94,6 +110,8 @@ class FrameType(IntEnum):
     ERROR = 0x0105
     STATUS_JSON = 0x0107
     PROMPT_PROGRESS = 0x0108
+    START_FAILED = 0x0109
+    WARMING = 0x010A
 
 
 # The frame types the engine sends; the others are the server's.
@@ -107,6 +125,8 @@ _EVENT_TYPES = frozenset(
         FrameType.ERROR,
         FrameType.STATUS_JSON,
         FrameType.PROMPT_PROGRESS,
+        FrameType.START_FAILED,
+        FrameType.WARMING,
     }
 )
 
@@ -280,7 +300,7 @@ class RequestFrame:
     # when unknown. It must leave at least one prompt token.
     generation_prompt_tokens: int
     flags: RequestFlag
-    # The request's cache_salt hashed to 128 bits (Frontend._cache_salt);
+    # The request's cache_salt hashed to 128 bits (request_fields.cache_salt);
     # zero without one.
     cache_salt: int
     # Only a request that generates inside a thinking block has one; a score
@@ -294,11 +314,26 @@ class CancelFrame:
 
 
 @dataclass(slots=True, frozen=True)
+class StopFrame:
+    """A client stop-condition match: the engine finishes the request as
+    Stop, a completion, or cancels it before its first token; a Done frame
+    still ends it."""
+
+    request_id: int
+
+
+@dataclass(slots=True, frozen=True)
 class MaskResponseFrame:
     request_id: int
     mask_request_id: int
     # Little-endian uint32 words, words_per_mask per mask row.
     mask_words: bytes
+    # Pairs of a mask row and a token the grammar forces after the row's
+    # path, the rows ascending and each row's tokens in order, at most as
+    # many a row as a request simulates (Ready's mask_rows less one), which
+    # keeps a response within the words the engine takes (Protocol.cpp's
+    # forcedWords).
+    forced_tokens: tuple[int, ...]
 
 
 @dataclass(slots=True, frozen=True)
@@ -315,12 +350,31 @@ class ReleaseRequestFrame:
     correlation_id: int
 
 
+# Sent before Ready once the engine holds its weights, as its warm-up begins
+# and as each step ends: on the first start after an update the warm-up also
+# prepares the GPU's programs, and the 27B's start then took 118 s on a 48 GB
+# M5 Pro.
+@dataclass(slots=True, frozen=True)
+class WarmingEvent:
+    # The steps done, those memory kept from running among them, of all.
+    steps_done: int
+    steps: int
+
+
 @dataclass(slots=True, frozen=True)
 class ReadyEvent:
     max_concurrent_requests: int
+    # The context this start serves: the one asked for, or what its plan
+    # holds; a relaunch may serve less than the first engine did.
     max_context_tokens: int
     # Requests may carry image spans; false for a model serving without vision.
     vision: bool
+    # The target's logit rows a token mask covers; the rows of one mask
+    # request, before the anchor and after each of a verify block's rows; and
+    # the tokens that end generation.
+    vocabulary_size: int
+    mask_rows: int
+    stop_token_ids: tuple[int, ...]
 
 
 @dataclass(slots=True, frozen=True)
@@ -351,14 +405,19 @@ class MaskRequestEvent:
     mask_request_id: int
     words_per_mask: int
     simulation_tokens: tuple[int, ...]
+    # Each token's parent, the index of the token before it on its path;
+    # the first token's is NO_PARENT. A parent comes before its child.
+    parents: tuple[int, ...]
 
     @property
     def mask_rows(self) -> int:
-        """Rows before and after each simulated context token.
+        """Rows before the first simulated token and after each token's path.
 
         The initial request carries no tokens and therefore has one row. A
-        verify request carries ``(pending_anchor, *draft_proposals)``; its
-        target-logit rows consume masks beginning at row one.
+        verify request carries its verify block's tree: its rows' tokens in
+        preorder, the pending anchor first, each with its parent row; its
+        target-logit rows consume masks beginning at row one, a row's mask
+        the one after its own path.
         """
         return len(self.simulation_tokens) + 1
 
@@ -413,12 +472,50 @@ class StatusJsonEvent:
     json: bytes
 
 
+# Why a start failed, for the restart decision and the app's words; the values
+# are runtime/engine/Protocol.hpp's.
+class StartFailureKind(IntEnum):
+    INTERNAL = 0
+    HOST_MEMORY = 1
+    DRIVER_ALLOCATION = 2
+    MEMORY_BUDGET = 3
+    CONTEXT_BUDGET = 4
+    CONFIGURATION = 5
+    MODEL = 6
+    DEVICE = 7
+    # A start command failed for want of GPU memory: another process holds
+    # what the model's commands need; a retry would take it from that process.
+    COMMAND_MEMORY = 8
+
+
+# What bounds a shortfall: the Metal budget the Mac gives, the one
+# --max-memory set, or the SSD cache's room for spilled KV.
+class ShortfallBound(IntEnum):
+    DEVICE_MEMORY = 0
+    MAX_MEMORY = 1
+    DISK = 2
+
+
+# Sent in place of Ready by a start that fails. The shortfall is all zero but
+# for MEMORY_BUDGET, which sets the bytes, and CONTEXT_BUDGET, the context
+# its plan holds.
+@dataclass(slots=True, frozen=True)
+class StartFailedEvent:
+    kind: StartFailureKind
+    bound: ShortfallBound
+    required_bytes: int
+    budget_bytes: int
+    plan_context_tokens: int
+    message: bytes
+
+
 ClientMessage: TypeAlias = (
     RequestFrame
     | CancelFrame
     | MaskResponseFrame
     | StatusRequestFrame
     | ReleaseRequestFrame
+    | StopFrame
 )
 EngineEvent: TypeAlias = (
     ReadyEvent
@@ -429,6 +526,31 @@ EngineEvent: TypeAlias = (
     | DoneEvent
     | ErrorEvent
     | StatusJsonEvent
+    | StartFailedEvent
+    | WarmingEvent
+)
+
+
+# The supervision budgets the server and the engine time each other by, in
+# milliseconds (runtime/Supervision.hpp; protocol_golden.txt "supervision"
+# pins them).
+@dataclass(slots=True, frozen=True)
+class Supervision:
+    command_timeout_ms: int
+    loop_stall_ms: int
+    stop_ms: int
+    probation_ms: int
+    start_retry_window_ms: int
+    mask_wait_ms: int
+
+
+SUPERVISION = Supervision(
+    command_timeout_ms=120_000,
+    loop_stall_ms=30_000,
+    stop_ms=15_000,
+    probation_ms=60_000,
+    start_retry_window_ms=30_000,
+    mask_wait_ms=5_000,
 )
 
 
@@ -561,16 +683,21 @@ def _payload_bounds(frame_type: FrameType) -> tuple[int, int]:
         case FrameType.REQUEST:
             # Image pixels dominate prompt tokens; the frame limit is the bound.
             bounds = (_REQUEST.size, MAX_FRAME_PAYLOAD_BYTES)
-        case FrameType.CANCEL:
-            bounds = (_CANCEL.size, _CANCEL.size)
+        case FrameType.CANCEL | FrameType.STOP:
+            bounds = (_REQUEST_END.size, _REQUEST_END.size)
         case FrameType.MASK_RESPONSE:
-            bounds = (_MASK_RESPONSE.size, _MASK_RESPONSE.size + MAX_MASK_WORDS * 4)
+            bounds = (
+                _MASK_RESPONSE.size,
+                _MASK_RESPONSE.size + (MAX_MASK_WORDS + MAX_FORCED_WORDS) * 4,
+            )
         case FrameType.STATUS_REQUEST:
             bounds = (_STATUS_REQUEST.size, _STATUS_REQUEST.size)
         case FrameType.RELEASE_REQUEST:
             bounds = (_RELEASE_REQUEST.size, _RELEASE_REQUEST.size)
         case FrameType.READY:
-            bounds = (_READY.size, _READY.size)
+            # The stop tokens are the target's, inside its vocabulary; the
+            # frame limit is the bound.
+            bounds = (_READY.size, MAX_FRAME_PAYLOAD_BYTES)
         case FrameType.PROMPT_PROGRESS:
             bounds = (_PROMPT_PROGRESS.size, _PROMPT_PROGRESS.size)
         case FrameType.START:
@@ -578,9 +705,10 @@ def _payload_bounds(frame_type: FrameType) -> tuple[int, int]:
         case FrameType.TOKENS:
             bounds = (_TOKENS.size, _TOKENS.size + MAX_TOKEN_BATCH * 4)
         case FrameType.MASK_REQUEST:
+            # A token and its parent each.
             bounds = (
                 _MASK_REQUEST.size,
-                _MASK_REQUEST.size + MAX_SIMULATION_TOKENS * 4,
+                _MASK_REQUEST.size + MAX_SIMULATION_TOKENS * 8,
             )
         case FrameType.DONE:
             bounds = (_DONE.size, _DONE.size + MAX_SCORE_TOKENS * 4)
@@ -588,6 +716,10 @@ def _payload_bounds(frame_type: FrameType) -> tuple[int, int]:
             bounds = (_ERROR.size, _ERROR.size + MAX_ERROR_STRING_BYTES * 2)
         case FrameType.STATUS_JSON:
             bounds = (_STATUS_JSON.size, _STATUS_JSON.size + MAX_STATUS_JSON_BYTES)
+        case FrameType.START_FAILED:
+            bounds = (_START_FAILED.size, _START_FAILED.size + MAX_ERROR_STRING_BYTES)
+        case FrameType.WARMING:
+            bounds = (_WARMING.size, _WARMING.size)
     return bounds[0], min(bounds[1], MAX_FRAME_PAYLOAD_BYTES)
 
 
@@ -857,14 +989,16 @@ def _request_frame(request: RequestFrame) -> bytearray:
     return frame
 
 
-def _cancel_frame(cancel: CancelFrame) -> bytearray:
+def _request_end_frame(frame_type: FrameType, request_id: object) -> bytearray:
+    """A Cancel or Stop frame: one non-zero request id."""
+    name = frame_type.name.lower()
     try:
-        if not _u64(cancel.request_id, "cancel request id"):
-            raise ValueError("cancel request id must be non-zero")
+        if not _u64(request_id, f"{name} request id"):
+            raise ValueError(f"{name} request id must be non-zero")
     except ValueError as error:
         _fail_request(IssueCode.INVALID_REQUEST_ID, str(error))
-    frame = _frame(FrameType.CANCEL, _CANCEL.size)
-    _CANCEL.pack_into(frame, FRAME_HEADER_BYTES, cancel.request_id)
+    frame = _frame(frame_type, _REQUEST_END.size)
+    _REQUEST_END.pack_into(frame, FRAME_HEADER_BYTES, request_id)
     return frame
 
 
@@ -879,15 +1013,29 @@ def _mask_response_frame(response: MaskResponseFrame) -> bytearray:
         _fail_request(IssueCode.INVALID_REQUEST_ID, str(error), request_id)
     try:
         mask = _mask_payload(response.mask_words)
+        forced = _words(response.forced_tokens, "forced tokens").tobytes()
         if not mask or len(mask) // 4 > MAX_MASK_WORDS:
             raise ValueError("mask response word count exceeds its limit")
+        if len(forced) // 4 > MAX_FORCED_WORDS or len(forced) % 8:
+            raise ValueError(
+                "mask response forced tokens are not pairs within their limit"
+            )
     except ValueError as error:
         _fail_request(IssueCode.LIMIT_EXCEEDED, str(error), request_id)
-    frame = _frame(FrameType.MASK_RESPONSE, _MASK_RESPONSE.size + len(mask))
-    _MASK_RESPONSE.pack_into(
-        frame, FRAME_HEADER_BYTES, request_id, mask_request_id, len(mask) // 4
+    frame = _frame(
+        FrameType.MASK_RESPONSE, _MASK_RESPONSE.size + len(mask) + len(forced)
     )
-    frame[FRAME_HEADER_BYTES + _MASK_RESPONSE.size :] = mask
+    _MASK_RESPONSE.pack_into(
+        frame,
+        FRAME_HEADER_BYTES,
+        request_id,
+        mask_request_id,
+        len(mask) // 4,
+        len(forced) // 4,
+    )
+    start = FRAME_HEADER_BYTES + _MASK_RESPONSE.size
+    frame[start : start + len(mask)] = mask
+    frame[start + len(mask) :] = forced
     return frame
 
 
@@ -911,6 +1059,38 @@ def _release_request_frame(request: ReleaseRequestFrame) -> bytearray:
     return frame
 
 
+# What a request's fingerprint leaves out: what differs between a request and
+# its retry (its id, priority, deadlines and seed, random per request unless
+# the client sets it), and the pixels its image spans' digests name.
+_UNFINGERPRINTED = frozenset(
+    {
+        "request_id",
+        "priority",
+        "absolute_deadline_unix_micros",
+        "remaining_deadline_micros",
+        "seed",
+        "image_pixels",
+    }
+)
+_TOKEN_FIELDS = frozenset({"prompt_tokens", "score_tokens"})
+
+
+def request_fingerprint(request: RequestFrame) -> bytes:
+    """The SHA-256 of what a request asks the engine, which its retries share:
+    every field but those _UNFINGERPRINTED names."""
+    digest = hashlib.sha256()
+    for field in fields(RequestFrame):
+        if field.name in _UNFINGERPRINTED:
+            continue
+        value = getattr(request, field.name)
+        if field.name in _TOKEN_FIELDS:
+            digest.update(f"{field.name}:{len(value)}:".encode())
+            digest.update(array.array("I", value))
+        else:
+            digest.update(f"{field.name}:{value!r};".encode())
+    return digest.digest()
+
+
 def serialize_message(message: ClientMessage) -> bytearray:
     """Validate and serialize one client message as a whole frame, built in
     one buffer: a request's image pixels are copied once."""
@@ -918,13 +1098,15 @@ def serialize_message(message: ClientMessage) -> bytearray:
         if isinstance(message, RequestFrame):
             return _request_frame(message)
         if isinstance(message, CancelFrame):
-            return _cancel_frame(message)
+            return _request_end_frame(FrameType.CANCEL, message.request_id)
         if isinstance(message, MaskResponseFrame):
             return _mask_response_frame(message)
         if isinstance(message, StatusRequestFrame):
             return _status_request_frame(message)
         if isinstance(message, ReleaseRequestFrame):
             return _release_request_frame(message)
+        if isinstance(message, StopFrame):
+            return _request_end_frame(FrameType.STOP, message.request_id)
     except MemoryError as error:
         raise ProtocolError(
             _allocation_issue("allocation failed while serializing a client frame")
@@ -1014,13 +1196,48 @@ def _tail(
 
 def _decode_event(frame: Frame) -> EngineEvent:
     frame_type, payload = _checked_frame(frame)
+    if frame_type is FrameType.WARMING:
+        steps_done, steps = _WARMING.unpack(payload)
+        if not steps or steps_done > steps:
+            _fatal(IssueCode.INVALID_COUNT, "warming steps are invalid")
+        return WarmingEvent(steps_done, steps)
     if frame_type is FrameType.READY:
-        concurrent, context, vision = _READY.unpack(payload)
+        concurrent, context, vision, vocabulary, rows, stop_count = _READY.unpack_from(
+            payload
+        )
+        stops = _tail(payload, _READY.size, stop_count, "I", "stop token", 0)
         if vision > 1:
             _fatal(IssueCode.INVALID_ENUM_VALUE, "ready vision must be a boolean")
-        if not concurrent or not context:
-            _fatal(IssueCode.INVALID_COUNT, "ready event capacities must be non-zero")
-        return ReadyEvent(concurrent, context, bool(vision))
+        if not concurrent or not context or not vocabulary or not rows or not stops:
+            _fatal(
+                IssueCode.INVALID_COUNT,
+                "ready event capacities and stop tokens must be non-zero",
+            )
+        if max(stops) >= vocabulary:
+            _fatal(
+                IssueCode.INVALID_COUNT,
+                "ready event stop token is outside the vocabulary",
+            )
+        return ReadyEvent(concurrent, context, bool(vision), vocabulary, rows, stops)
+    if frame_type is FrameType.START_FAILED:
+        kind, bound, required, budget, plan_context, message_bytes = (
+            _START_FAILED.unpack_from(payload)
+        )
+        if message_bytes != len(payload) - _START_FAILED.size:
+            _fatal(
+                IssueCode.INVALID_PAYLOAD_LENGTH,
+                "start failure message length does not match the frame payload",
+            )
+        try:
+            kind = StartFailureKind(kind)
+            bound = ShortfallBound(bound)
+        except ValueError:
+            _fatal(
+                IssueCode.INVALID_ENUM_VALUE, "start failure kind or bound is invalid"
+            )
+        return StartFailedEvent(
+            kind, bound, required, budget, plan_context, payload[_START_FAILED.size :]
+        )
     if frame_type is FrameType.START:
         request_id, lane, matched = _START.unpack(payload)
         if not request_id:
@@ -1059,13 +1276,25 @@ def _decode_event(frame: Frame) -> EngineEvent:
         request_id, mask_request_id, words_per_mask, count = _MASK_REQUEST.unpack_from(
             payload
         )
-        tokens = _tail(
-            payload, _MASK_REQUEST.size, count, "I", "simulation token", request_id
+        values = _tail(
+            payload, _MASK_REQUEST.size, 2 * count, "I", "simulation token", request_id
         )
+        tokens, parents = values[:count], values[count:]
         if not request_id or not mask_request_id:
             _fatal(
                 IssueCode.INVALID_REQUEST_ID,
                 "mask request ids must be non-zero",
+                request_id,
+            )
+        # The first token is the tree's root, and every other follows one
+        # before it.
+        if parents and (
+            parents[0] != NO_PARENT
+            or any(parent >= row for row, parent in enumerate(parents) if row)
+        ):
+            _fatal(
+                IssueCode.INVALID_CONSTRAINT,
+                "mask request tokens are not a tree whose parents come first",
                 request_id,
             )
         if not words_per_mask:
@@ -1080,7 +1309,9 @@ def _decode_event(frame: Frame) -> EngineEvent:
                 "mask request output would exceed the mask limit",
                 request_id,
             )
-        return MaskRequestEvent(request_id, mask_request_id, words_per_mask, tokens)
+        return MaskRequestEvent(
+            request_id, mask_request_id, words_per_mask, tokens, parents
+        )
     if frame_type is FrameType.DONE:
         (
             request_id,

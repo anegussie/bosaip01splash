@@ -126,7 +126,9 @@ def wait_idle(url: str, limit: int = 300) -> None:
         time.sleep(3)
 
 
-def chat(url: str, model: str | None, prompt: str, max_tokens: int, thinking: bool = False) -> dict:
+def chat(
+    url: str, model: str | None, prompt: str, max_tokens: int, thinking: bool = False
+) -> dict:
     body = {
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": max_tokens,
@@ -205,7 +207,13 @@ def difference(before: dict, after: dict) -> dict:
 
 
 def probe(
-    url: str, model: str | None, name: str, kind: str, records: int, max_tokens: int, thinking: bool = False
+    url: str,
+    model: str | None,
+    name: str,
+    kind: str,
+    records: int,
+    max_tokens: int,
+    thinking: bool = False,
 ) -> dict:
     """One probe. The response carries its own timings, which count engine work
     only, so a probe queued behind another client's request is not miscounted."""
@@ -251,7 +259,8 @@ def round_metrics(probes: list[dict], round_delta: dict) -> dict:
         "cold_prefill_tokens": cold["input_tokens"],
         "cached_prefill_tokens": cached["cached_tokens"],
         "cached_prefill_seconds": cached["prefill_ms"] / 1000.0,
-        "expert_work_ms_per_output_token": round_delta["expert_work_ms"] / expert_tokens,
+        "expert_work_ms_per_output_token": round_delta["expert_work_ms"]
+        / expert_tokens,
         "expert_reads_per_output_token": round_delta["expert_reads"] / expert_tokens,
         "expert_hit_rate": (
             (round_delta["expert_routed"] - round_delta["expert_reads"])
@@ -303,7 +312,9 @@ def stop(process: subprocess.Popen) -> None:
 def engine_processes(ps_output: str | None = None) -> list[int]:
     """PIDs of the launcher and engine that hold the machine right now."""
     if ps_output is None:
-        ps_output = subprocess.check_output(["ps", "-ax", "-o", "pid,command"], text=True)
+        ps_output = subprocess.check_output(
+            ["ps", "-ax", "-o", "pid,command"], text=True
+        )
     pids = []
     for line in ps_output.splitlines():
         parts = line.split(None, 1)
@@ -392,7 +403,9 @@ def run_round(arm: str, args, number: int) -> dict:
         try:
             row = single_round(arm, args, number)
         except (OSError, urllib.error.URLError, RuntimeError) as error:
-            print(f"{arm} round {number}: attempt {attempt} failed: {error}", flush=True)
+            print(
+                f"{arm} round {number}: attempt {attempt} failed: {error}", flush=True
+            )
             continue
         if row["foreign_requests"] == 0 or attempt == args.attempts:
             return row
@@ -401,7 +414,9 @@ def run_round(arm: str, args, number: int) -> dict:
             f"client during the round, rerunning",
             flush=True,
         )
-    raise RuntimeError(f"{arm} round {number} did not complete in {args.attempts} attempts")
+    raise RuntimeError(
+        f"{arm} round {number} did not complete in {args.attempts} attempts"
+    )
 
 
 def single_round(arm: str, args, number: int) -> dict:
@@ -473,7 +488,9 @@ def verdict(rounds: list[dict], candidate: str) -> dict:
         return {}
     result = {}
     for metric in LOWER_IS_BETTER:
-        samples = [[row["metrics"][metric]] for row in baseline[:1] + arms + baseline[1:]]
+        samples = [
+            [row["metrics"][metric]] for row in baseline[:1] + arms + baseline[1:]
+        ]
         result[metric] = abba.compare_samples(samples)
     result["answers"] = {
         arm: all(all(row["answers"].values()) for row in rows)
@@ -541,9 +558,13 @@ def main() -> int:
             rounds.append(run_round(arm, args, number))
         finally:
             # A round's KV spill cache is gigabytes; only 16 GiB of the disk is free.
-            shutil.rmtree(args.results / "rounds" / f"{arm}-{number}", ignore_errors=True)
+            shutil.rmtree(
+                args.results / "rounds" / f"{arm}-{number}", ignore_errors=True
+            )
     results = {
-        "machine": subprocess.check_output(["sysctl", "-n", "hw.memsize"], text=True).strip(),
+        "machine": subprocess.check_output(
+            ["sysctl", "-n", "hw.memsize"], text=True
+        ).strip(),
         "order": order,
         "rounds": rounds,
         "verdicts": {arm: verdict(rounds, arm) for arm in candidates},

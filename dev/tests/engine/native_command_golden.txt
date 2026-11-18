@@ -9,6 +9,8 @@
 # (dev/tests/engine/native_arguments_test.cpp checks each line).
 
 defaults |  | auto auto
+prefill_chunk | --prefill-chunk-tokens 256 | auto auto --prefill-chunk-tokens 256
+resource_wait | --resource-wait-timeout 60 | auto auto --resource-wait-timeout 60
 limits | --max-context 100K --max-memory 32G | 102400 34359738368
 disk_auto | --max-cache-disk auto | auto auto
 disk_off | --max-cache-disk 0 | auto auto 0
@@ -28,12 +30,16 @@ image_patches_rounded | --max-image-pixels 1000000 | auto auto --max-image-patch
 image_patches_default | --max-image-pixels 4194304 | auto auto
 idle_sleep | --allow-idle-sleep | auto auto --idle-sleep allow
 disable_ane | --disable-ane | auto auto --ane off
-prefill_chunk | --prefill-chunk-tokens 256 | auto auto --prefill-chunk-tokens 256
-resource_wait | --resource-wait-timeout 60 | auto auto --resource-wait-timeout 60
+activations_bf16 | --activations bf16 | auto auto --activations bf16
+activations_auto | --activations auto | auto auto
 verify_rows_all | --verify-rows all | auto auto --verify-rows all
 verify_rows_auto | --verify-rows auto | auto auto
+kv_format_default | --kv-format int8 | auto auto
+state_format_default | --state-format fp32 | auto auto
+cached_states_exact | --cached-states exact | auto auto --cached-states exact
+cached_states_default | --cached-states int8 | auto auto
 relaunch |  | auto auto --relaunch-context 61433
-relaunch_limits | --max-context 100K --max-memory 32G | 102400 34359738368
+relaunch_limits | --max-context 100K --max-memory 32G | 102400 34359738368 --relaunch-context 61433
 yarn | --max-context 1M | 1000000 auto
 yarn_double | --max-context 512K | 524288 auto
 ple_memory | --ple-memory 2G | auto auto --ple-memory 2147483648

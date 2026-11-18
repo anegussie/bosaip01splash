@@ -26,8 +26,8 @@ from dev.tests.server_fixtures import (
     make_frontend,
     stays_connected,
 )
-from server import judgments
 from server import server as api
+from server.dialects import scoring
 
 TURNS_TEMPLATE = (
     "{% for message in messages %}<|im_start|>{{ message.role }}\n"
@@ -56,7 +56,9 @@ def byte_tokenizer(template):
 class BoundaryCountingTokenizer(CharTokenizer):
     """Counts whole-prompt tokenizations: one to prepare the prompt plus
     one per answer-slot boundary check. An optional clock advances on each
-    of them so a test can expire a deadline inside the boundary pass."""
+    of them so a test can expire a deadline inside the boundary pass. A
+    frontend's startup probe encodes the generation prompts, which this
+    tokenizer renders as its whole prompt, so a test counts from `serving`."""
 
     def __init__(self, clock=None, step=0.0):
         super().__init__()
@@ -77,6 +79,12 @@ class BoundaryCountingTokenizer(CharTokenizer):
             if self.clock is not None:
                 self.clock[0] += self.step
         return super().encode(text, **kwargs)
+
+    def serving(self, app):
+        """`app`, the frontend or harness built over this tokenizer, with
+        the count at zero."""
+        self.prompt_encodes = 0
+        return app
 
 
 class JudgmentTests(HarnessTestCase):
@@ -280,7 +288,9 @@ class JudgmentTests(HarnessTestCase):
     def test_judgment_deadline_stops_the_slot_boundary_pass(self):
         clock = [100.0]
         tokenizer = BoundaryCountingTokenizer(clock, 0.5)
-        app = make_frontend(tokenizer, None, "test-model", 8192, 10, 2, vision=True)
+        app = tokenizer.serving(
+            make_frontend(tokenizer, None, "test-model", 8192, 10, 2, vision=True)
+        )
         body = judgment_body(
             options=[
                 {"id": f"opt{index}", "description": f"case {index}"}
@@ -293,7 +303,9 @@ class JudgmentTests(HarnessTestCase):
             mock.patch.object(api.time, "monotonic", side_effect=lambda: clock[0]),
             self.assertRaises(api.APIError) as error,
         ):
-            app.prepare_judgment(body, deadline=deadline, disconnected=stays_connected)
+            scoring.prepare_judgment(
+                app, body, deadline=deadline, disconnected=stays_connected
+            )
         self.assertEqual(
             (error.exception.status, error.exception.code), (504, "request_timeout")
         )
@@ -302,7 +314,9 @@ class JudgmentTests(HarnessTestCase):
 
     def test_client_disconnect_stops_the_slot_boundary_pass(self):
         tokenizer = BoundaryCountingTokenizer()
-        app = make_frontend(tokenizer, None, "test-model", 8192, 10, 2, vision=True)
+        app = tokenizer.serving(
+            make_frontend(tokenizer, None, "test-model", 8192, 10, 2, vision=True)
+        )
         body = judgment_body(
             options=[
                 {"id": f"opt{index}", "description": f"case {index}"}
@@ -312,8 +326,8 @@ class JudgmentTests(HarnessTestCase):
         # Connected through admission and the first boundary check.
         disconnected = iter((False, False, True))
         with self.assertRaises(ConnectionResetError):
-            app.prepare_judgment(
-                body, deadline=FOREVER, disconnected=lambda: next(disconnected)
+            scoring.prepare_judgment(
+                app, body, deadline=FOREVER, disconnected=lambda: next(disconnected)
             )
         # The prepare pass and one boundary check, and the slot returned.
         self.assertEqual(tokenizer.prompt_encodes, 2)
@@ -321,9 +335,12 @@ class JudgmentTests(HarnessTestCase):
 
     def test_judgment_context_budget_precedes_the_slot_boundary_pass(self):
         tokenizer = BoundaryCountingTokenizer()
-        app = make_frontend(tokenizer, None, "test-model", 8, 10, 2, vision=True)
+        app = tokenizer.serving(
+            make_frontend(tokenizer, None, "test-model", 8, 10, 2, vision=True)
+        )
         with self.assertRaises(api.APIError) as error:
-            app.prepare_judgment(
+            scoring.prepare_judgment(
+                app,
                 judgment_body(
                     options=[
                         {"id": f"opt{index}", "description": f"case {index}"}
@@ -399,7 +416,7 @@ class JudgmentTests(HarnessTestCase):
     def test_systemone_render_failure_is_a_request_error(self):
         class QuestionRenderFails(CharTokenizer):
             def apply_chat_template(self, messages, **kwargs):
-                if messages[0].get("content") == judgments.SYSTEMONE_SYSTEM:
+                if messages[0].get("content") == scoring.SYSTEMONE_SYSTEM:
                     raise ValueError("the template cannot render this question")
                 return super().apply_chat_template(messages, **kwargs)
 
@@ -433,7 +450,7 @@ class JudgmentTests(HarnessTestCase):
             queue_size=1,
             timeout=1,
         )
-        judgments.slot_labels(harness.tokenizer)
+        scoring.slot_labels(harness.tokenizer)
         status, _, payload = harness.request(
             "POST",
             "/v1/systemone",
@@ -449,7 +466,7 @@ class JudgmentTests(HarnessTestCase):
         )
         self.assertEqual(status, 504, payload)
         self.assertEqual(len(runtime.requests), 2)
-        self.assertTrue(blocked.cancelled.is_set())
+        self.assertTrue(blocked.ended.is_set())
         self.assertEqual(runtime.cancel_count, 1)
 
     def test_systemone_sends_the_cache_salt(self):
@@ -482,7 +499,7 @@ class JudgmentTests(HarnessTestCase):
         harness = self.harness(runtime, tokenizer=CharTokenizer(), max_context=8192)
         fitting = {
             f"q{index}": {"type": "choice", "criteria": {"only": None}}
-            for index in range(judgments.MAX_SYSTEMONE_QUESTIONS)
+            for index in range(scoring.MAX_SYSTEMONE_QUESTIONS)
         }
         status, _, payload = harness.request(
             "POST",
@@ -491,7 +508,7 @@ class JudgmentTests(HarnessTestCase):
         )
         self.assertEqual(status, 200, payload)
         self.assertEqual(
-            len(json.loads(payload)["answers"]), judgments.MAX_SYSTEMONE_QUESTIONS
+            len(json.loads(payload)["answers"]), scoring.MAX_SYSTEMONE_QUESTIONS
         )
         status, _, payload = harness.request(
             "POST",
@@ -515,7 +532,9 @@ class JudgmentTests(HarnessTestCase):
 
         runtime = FakeRuntime()
         tokenizer = PaddedPromptTokenizer()
-        harness = self.harness(runtime, tokenizer=tokenizer, max_context=700_000)
+        harness = tokenizer.serving(
+            self.harness(runtime, tokenizer=tokenizer, max_context=700_000)
+        )
         status, _, payload = harness.request(
             "POST",
             "/v1/systemone",

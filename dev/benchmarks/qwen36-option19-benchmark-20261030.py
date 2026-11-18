@@ -105,8 +105,16 @@ def measure(key, payload, check=None):
     delta = {k: after["metrics"][k] - before["metrics"][k] for k in METRICS}
     prompt_tokens = reply["usage"]["prompt_tokens"]
     gen_tokens = reply["usage"]["completion_tokens"]
-    pp_tok_s = delta["prefill_input_tokens"] / (delta["prefill_wall_ms"] / 1000) if delta["prefill_wall_ms"] > 0 else 0
-    tg_tok_s = delta["decode_output_tokens"] / (delta["decode_wall_ms"] / 1000) if delta["decode_wall_ms"] > 0 else 0
+    pp_tok_s = (
+        delta["prefill_input_tokens"] / (delta["prefill_wall_ms"] / 1000)
+        if delta["prefill_wall_ms"] > 0
+        else 0
+    )
+    tg_tok_s = (
+        delta["decode_output_tokens"] / (delta["decode_wall_ms"] / 1000)
+        if delta["decode_wall_ms"] > 0
+        else 0
+    )
     # TTFT: time from request start to first content token
     ttft = elapsed  # approximate (full request time); exact TTFT needs streaming
     row = {
@@ -144,7 +152,9 @@ def main():
     print(f"Max context: {status['maximum_context_tokens']}")
     print(f"Model: {status['identity']['cache']['build_id']}")
     assert status["ready"], "Server not ready"
-    assert status["maximum_context_tokens"] == 81920, f"Expected 81920 context, got {status['maximum_context_tokens']}"
+    assert status["maximum_context_tokens"] == 81920, (
+        f"Expected 81920 context, got {status['maximum_context_tokens']}"
+    )
 
     record = {
         "measurement": "Qwen3.6-35B-A3B UD-IQ3_XXS option-19 benchmark",
@@ -154,7 +164,9 @@ def main():
         "model_build": status["identity"]["cache"]["build_id"],
         "model_kv": status["identity"]["kv"]["format"],
         "model_state": status["memory_plan"]["model"]["state_format"],
-        "budget_bytes": status["memory_plan"]["budget"]["configured_memory_limit_bytes"],
+        "budget_bytes": status["memory_plan"]["budget"][
+            "configured_memory_limit_bytes"
+        ],
         "phases": [],
     }
 
@@ -178,7 +190,10 @@ def main():
                     "description": "Add two integers.",
                     "parameters": {
                         "type": "object",
-                        "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}},
+                        "properties": {
+                            "a": {"type": "integer"},
+                            "b": {"type": "integer"},
+                        },
                         "required": ["a", "b"],
                         "additionalProperties": False,
                     },
@@ -203,13 +218,24 @@ def main():
         r2 = measure("smoke-tool-result", tool_payload)
         assert re.search(r"\b42\b", r2["response"]["choices"][0]["message"]["content"])
     else:
-        print("Tool call: model returned content instead of tool_calls (tool-use not enabled)")
+        print(
+            "Tool call: model returned content instead of tool_calls (tool-use not enabled)"
+        )
 
     # Streaming smoke
     print("\n=== STREAMING SMOKE ===")
-    before = request()
-    stream_payload = body([{"role": "user", "content": "Reply exactly STREAM_OK."}], 32, stream=True, stream_options={"include_usage": True})
-    req = urllib.request.Request(URL + "/v1/chat/completions", json.dumps(stream_payload).encode(), {"Content-Type": "application/json"})
+    request()
+    stream_payload = body(
+        [{"role": "user", "content": "Reply exactly STREAM_OK."}],
+        32,
+        stream=True,
+        stream_options={"include_usage": True},
+    )
+    req = urllib.request.Request(
+        URL + "/v1/chat/completions",
+        json.dumps(stream_payload).encode(),
+        {"Content-Type": "application/json"},
+    )
     started = time.monotonic()
     events = []
     content = ""
@@ -230,10 +256,14 @@ def main():
                 if text and ttft is None:
                     ttft = time.monotonic() - started
                 content += text
-    after = request()
+    request()
     assert done and content.strip() == "STREAM_OK", f"Streaming failed: {content}"
     print(f"Streaming TTFT: {ttft:.3f}s, content: {content.strip()}")
-    streaming_result = {"ttft_s": round(ttft, 3), "content": content.strip(), "done": done}
+    streaming_result = {
+        "ttft_s": round(ttft, 3),
+        "content": content.strip(),
+        "done": done,
+    }
 
     record["smoke_passed"] = True
     record["streaming"] = streaming_result
@@ -244,7 +274,7 @@ def main():
     trials_per_depth = 3
 
     for depth in depths:
-        print(f"\n=== DEPTH: {depth} tokens ({depth/1024:.0f}K) ===")
+        print(f"\n=== DEPTH: {depth} tokens ({depth / 1024:.0f}K) ===")
         phase = {"name": f"{depth}", "runs": []}
         record["phases"].append(phase)
 
@@ -262,8 +292,15 @@ def main():
         ctx_text = recall_context_text(4096)
         coding_payload = body(
             [
-                {"role": "system", "content": "Return only the requested Python function's code. Use no imports and no commentary."},
-                {"role": "user", "content": ctx_text + "\n\nTask: Write a merge_intervals function that merges overlapping intervals in a list of [start, end] pairs."},
+                {
+                    "role": "system",
+                    "content": "Return only the requested Python function's code. Use no imports and no commentary.",
+                },
+                {
+                    "role": "user",
+                    "content": ctx_text
+                    + "\n\nTask: Write a merge_intervals function that merges overlapping intervals in a list of [start, end] pairs.",
+                },
             ],
             limit=384,
             top_p=0.8,
@@ -271,19 +308,32 @@ def main():
         )
         r = measure("coding-merge_intervals", coding_payload)
         check_proc = subprocess.run(
-            [sys.executable, str(ROOT / "bonsai_coding.py"), "--check", "merge_intervals"],
+            [
+                sys.executable,
+                str(ROOT / "bonsai_coding.py"),
+                "--check",
+                "merge_intervals",
+            ],
             input=r["response"]["choices"][0]["message"]["content"],
             capture_output=True,
             text=True,
             timeout=3,
         )
         r["coding_correct"] = check_proc.returncode == 0
-        r["coding_error"] = check_proc.stderr[-1200:] if check_proc.returncode != 0 else ""
+        r["coding_error"] = (
+            check_proc.stderr[-1200:] if check_proc.returncode != 0 else ""
+        )
         print(f"Coding merge_intervals: {'PASS' if r['coding_correct'] else 'FAIL'}")
 
         # Prose task
         prose_payload = body(
-            [{"role": "user", "content": ctx_text + "\n\nWrite a concise technical explanation of the cache mechanism in 3 paragraphs, around 150 words."}],
+            [
+                {
+                    "role": "user",
+                    "content": ctx_text
+                    + "\n\nWrite a concise technical explanation of the cache mechanism in 3 paragraphs, around 150 words.",
+                }
+            ],
             limit=256,
         )
         r2 = measure("prose-explanation", prose_payload)
@@ -315,7 +365,9 @@ def main():
 
     for phase in record["phases"]:
         depth = int(phase["name"])
-        cold_runs = [r for r in phase["runs"] if "trial" in r["key"] and "cached" not in r["key"]]
+        cold_runs = [
+            r for r in phase["runs"] if "trial" in r["key"] and "cached" not in r["key"]
+        ]
         cached_runs = [r for r in phase["runs"] if "cached" in r["key"]]
 
         if cold_runs:
@@ -328,11 +380,17 @@ def main():
                 "cold_mean_tg_tok_s": round(sum(cold_tg) / len(cold_tg), 1),
                 "cold_median_tg_tok_s": round(sorted(cold_tg)[len(cold_tg) // 2], 1),
                 "cold_mean_s": round(sum(cold_ttft) / len(cold_ttft), 2),
-                "cached_mean_s": round(sum(r["seconds"] for r in cached_runs) / len(cached_runs), 2) if cached_runs else None,
+                "cached_mean_s": round(
+                    sum(r["seconds"] for r in cached_runs) / len(cached_runs), 2
+                )
+                if cached_runs
+                else None,
                 "coding_passed": all(r.get("coding_correct", False) for r in cold_runs),
             }
             d_k = f"{depth // 1024}K"
-            print(f"{d_k}: cold pp={summary['depths'][depth]['cold_mean_pp_tok_s']} tok/s tg={summary['depths'][depth]['cold_mean_tg_tok_s']} tok/s mean={summary['depths'][depth]['cold_mean_s']}s")
+            print(
+                f"{d_k}: cold pp={summary['depths'][depth]['cold_mean_pp_tok_s']} tok/s tg={summary['depths'][depth]['cold_mean_tg_tok_s']} tok/s mean={summary['depths'][depth]['cold_mean_s']}s"
+            )
 
     save(OUT / "summary.json", summary)
     print(f"\nResults saved to: {OUT}")

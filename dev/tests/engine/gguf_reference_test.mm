@@ -126,7 +126,10 @@ int main(int argc, char **argv) {
     }
     const Goldens hashes = goldens(argv[1], @"gguf_dequantization");
     for (uint32_t f = 0; f < GGUF_FMT_COUNT; ++f)
-      if (!quant_loader_format(f)) checkFormat(ggml, hashes, Fmt(f));
+      // The upstream GGML goldens have no Gyro trellis formats; those are
+      // checked against their independent Metal decoder in gguf-dequant.
+      if (!quant_loader_format(f) && f != GGUF_FMT_TQK6 && f != GGUF_FMT_TQK7)
+        checkFormat(ggml, hashes, Fmt(f));
     checkBlockNvfp4(ggml, hashes);
     checkQ8_0Quantization(ggml, goldens(argv[1], @"gguf_quantization"));
     checkMlx(argv[2]);

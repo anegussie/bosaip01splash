@@ -125,7 +125,11 @@ def wait_idle(limit: float = 900.0) -> tuple[float, bool, int]:
         else:
             quiet += 1
             if quiet >= 3:
-                return round(time.monotonic() - started, 3), started_blocked, foreign_samples
+                return (
+                    round(time.monotonic() - started, 3),
+                    started_blocked,
+                    foreign_samples,
+                )
         time.sleep(0.5)
     raise RuntimeError("server did not become idle")
 
@@ -183,7 +187,7 @@ def run_probe(out: Path, name: str, prompt: str, max_tokens: int, phase: str) ->
             line = raw.decode("utf-8", "replace").strip()
             if not line.startswith("data:"):
                 continue
-            payload = line[len("data:"):].strip()
+            payload = line[len("data:") :].strip()
             if payload == "[DONE]":
                 complete = True
                 break
@@ -214,17 +218,26 @@ def run_probe(out: Path, name: str, prompt: str, max_tokens: int, phase: str) ->
     time.sleep(5.0)  # cooldown between probes
 
     text = "".join(text_parts)
-    contended_samples = sum(1 for s in samples if s["active_requests"] > 1 or s["waiting"] or s["suspended"])
-    completed_delta = (after["requests_completed"] or 0) - (before["requests_completed"] or 0)
+    contended_samples = sum(
+        1 for s in samples if s["active_requests"] > 1 or s["waiting"] or s["suspended"]
+    )
+    completed_delta = (after["requests_completed"] or 0) - (
+        before["requests_completed"] or 0
+    )
     speculation = (metrics or {}).get("speculation", {})
     latency = (metrics or {}).get("request_latency", {})
     cache_metrics = (metrics or {}).get("cache", {})
-    decode_tokens = (timings or {}).get("predicted_n") or (usage or {}).get("completion_tokens", 0)
+    decode_tokens = (timings or {}).get("predicted_n") or (usage or {}).get(
+        "completion_tokens", 0
+    )
     cycles = speculation.get("cycles")
     record = {
         "name": name,
         "phase": phase,
-        "clean": foreign == 0 and not blocked and contended_samples == 0 and completed_delta == 1,
+        "clean": foreign == 0
+        and not blocked
+        and contended_samples == 0
+        and completed_delta == 1,
         "foreign_active_samples": foreign,
         "contended_samples": contended_samples,
         "requests_completed_delta": completed_delta,
@@ -236,7 +249,9 @@ def run_probe(out: Path, name: str, prompt: str, max_tokens: int, phase: str) ->
         "prompt_tokens": (timings or {}).get("prompt_n"),
         "completion_tokens": (usage or {}).get("completion_tokens", decode_tokens),
         "cached_tokens": (timings or {}).get("cache_n"),
-        "prefill_tokens": (metrics or {}).get("prefill", {}).get("tokens", (timings or {}).get("prompt_n")),
+        "prefill_tokens": (metrics or {})
+        .get("prefill", {})
+        .get("tokens", (timings or {}).get("prompt_n")),
         "prefill_ms": (timings or {}).get("prompt_ms"),
         "prefill_tok_s": round((timings or {}).get("prompt_per_second", 0), 2),
         "ttft_ms": latency.get("ttft_ms"),
@@ -252,9 +267,7 @@ def run_probe(out: Path, name: str, prompt: str, max_tokens: int, phase: str) ->
             if speculation.get("drafted_tokens")
             else None
         ),
-        "tokens_per_cycle": (
-            decode_tokens / cycles if cycles else None
-        ),
+        "tokens_per_cycle": (decode_tokens / cycles if cycles else None),
         "cache_status": cache_metrics.get("status"),
         "matched_tokens": cache_metrics.get("matched_tokens"),
         "finish_reason": finish_reason,
@@ -317,7 +330,9 @@ def run_trial(out: Path, trial: int, reversed_order: bool) -> list[dict]:
     if not smoke_cold["correct"] or not smoke_reuse["correct"]:
         raise SystemExit(f"trial {trial}: smoke correctness gate failed")
     if (smoke_reuse["cached_tokens"] or 0) < 320:
-        raise SystemExit(f"trial {trial}: smoke reuse gate failed cached={smoke_reuse['cached_tokens']}")
+        raise SystemExit(
+            f"trial {trial}: smoke reuse gate failed cached={smoke_reuse['cached_tokens']}"
+        )
 
     prompt_4k = build_prompt(uuid.uuid4().hex[:8], 4019)
     print(f"trial {trial}: 4k prompt tokens={tokenize(prompt_4k)}")
@@ -348,7 +363,9 @@ def main() -> None:
 
     instance = http_json("GET", "/status")["instance"]
     preflight = status_snapshot()
-    (out / "preflight.json").write_text(json.dumps({"instance": instance, "status": preflight}, indent=2))
+    (out / "preflight.json").write_text(
+        json.dumps({"instance": instance, "status": preflight}, indent=2)
+    )
     print(
         f"server pid={instance['pid']} model={instance['model']} build={instance.get('build_id')} "
         f"pressure={preflight['memory_pressure']} thermal={preflight['thermal_state']} "
@@ -402,13 +419,19 @@ def main() -> None:
                 f"coding decode mean {statistics.mean(values):.2f} tok/s "
                 f"(range {min(values):.2f}-{max(values):.2f})"
             )
-            prefill_values = [r["prefill_tok_s"] for r in rows if r["name"].startswith("4k-cold")]
+            prefill_values = [
+                r["prefill_tok_s"] for r in rows if r["name"].startswith("4k-cold")
+            ]
             if prefill_values:
-                lines.append(f"4k cold prefill mean {statistics.mean(prefill_values):.2f} tok/s")
+                lines.append(
+                    f"4k cold prefill mean {statistics.mean(prefill_values):.2f} tok/s"
+                )
         drafted = sum(r["draft_n"] or 0 for r in rows)
         accepted = sum(r["draft_n_accepted"] or 0 for r in rows)
         if drafted:
-            lines.append(f"draft acceptance {accepted}/{drafted} ({accepted / drafted * 100:.1f}%)")
+            lines.append(
+                f"draft acceptance {accepted}/{drafted} ({accepted / drafted * 100:.1f}%)"
+            )
         foreign = sum(r["foreign_active_samples"] for r in rows)
         lines.append(f"foreign active samples during probes: {foreign}")
         thermals = sorted({r["thermal_state_after"] for r in rows})

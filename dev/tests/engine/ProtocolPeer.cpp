@@ -130,7 +130,9 @@ FrameType write(Writer &out, const MaskResponseFrame &response) {
   out.u64(response.requestId);
   out.u64(response.maskRequestId);
   out.u32(static_cast<uint32_t>(response.maskWords.size()));
+  out.u32(static_cast<uint32_t>(response.forcedTokens.size()));
   out.words(response.maskWords);
+  out.words(response.forcedTokens);
   return FrameType::MaskResponse;
 }
 
@@ -142,6 +144,11 @@ FrameType write(Writer &out, const StatusRequestFrame &request) {
 FrameType write(Writer &out, const ReleaseRequestFrame &request) {
   out.u64(request.correlationId);
   return FrameType::ReleaseRequest;
+}
+
+FrameType write(Writer &out, const StopFrame &stop) {
+  out.u64(stop.requestId);
+  return FrameType::Stop;
 }
 
 struct Header {
@@ -168,6 +175,9 @@ EngineEvent decodeEvent(FrameType type, Reader &in) {
     event.maxConcurrentRequests = in.u32();
     event.maxContextTokens = in.u32();
     event.vision = in.u8() != 0;
+    event.vocabularySize = in.u32();
+    event.maskRows = in.u32();
+    event.stopTokens = in.words(in.u32());
     return event;
   }
   case FrameType::Start: {
@@ -196,7 +206,9 @@ EngineEvent decodeEvent(FrameType type, Reader &in) {
     event.requestId = in.u64();
     event.maskRequestId = in.u64();
     event.wordsPerMask = in.u32();
-    event.simulationTokens = in.words(in.u32());
+    const uint32_t count = in.u32();
+    event.simulationTokens = in.words(count);
+    event.parents = in.words(count);
     return event;
   }
   case FrameType::Done: {
@@ -228,10 +240,26 @@ EngineEvent decodeEvent(FrameType type, Reader &in) {
     event.message = in.text(messageBytes);
     return event;
   }
+  case FrameType::StartFailed: {
+    StartFailedEvent event;
+    event.kind = static_cast<StartFailureKind>(in.u8());
+    event.shortfall.bound = static_cast<ShortfallBound>(in.u8());
+    event.shortfall.requiredBytes = in.u64();
+    event.shortfall.budgetBytes = in.u64();
+    event.shortfall.planContextTokens = in.u32();
+    event.message = in.text(in.u32());
+    return event;
+  }
   case FrameType::StatusJson: {
     StatusJsonEvent event;
     event.correlationId = in.u64();
     event.json = in.rest();
+    return event;
+  }
+  case FrameType::Warming: {
+    WarmingEvent event;
+    event.stepsDone = in.u32();
+    event.steps = in.u32();
     return event;
   }
   default:

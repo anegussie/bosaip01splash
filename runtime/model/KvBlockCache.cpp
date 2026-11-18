@@ -32,7 +32,7 @@ const KvBlockCacheOptions &checked(const kv::Layout &layout, uint32_t extentPage
   if (!layout.spillable()) throw std::invalid_argument("the hot block cache needs a layout that can spill");
   if (options.format.layout() != layout)
     throw std::invalid_argument("the hot block cache's slot format is another layout's");
-  if (!options.readers || !options.laneSlots || !extentPages)
+  if (!options.readers || !options.shape.laneSlots() || !extentPages)
     throw std::invalid_argument("the hot block cache needs readers, lane slots and extents");
   return options;
 }
@@ -41,10 +41,6 @@ const KvBlockCacheOptions &checked(const kv::Layout &layout, uint32_t extentPage
 kv::Layout withoutIndex(kv::Layout layout) {
   layout.indexDimension = 0;
   return layout;
-}
-
-uint32_t extentsFor(uint64_t slots, uint32_t extentSlots) noexcept {
-  return static_cast<uint32_t>((slots + extentSlots - 1) / extentSlots);
 }
 
 } // namespace
@@ -82,6 +78,7 @@ struct KvBlockCache::Impl {
     metal::MetalBuffer lists, counts, locations;
     uint32_t stride = 0;
     uint32_t list = 0;
+    uint32_t laneLists = 0;
     std::vector<std::shared_ptr<const KvPageSources>> sources;
   };
 
@@ -93,10 +90,11 @@ struct KvBlockCache::Impl {
   }
   // required(n), in whole extents.
   [[nodiscard]] uint32_t floorExtents(uint32_t lanes) const noexcept {
-    return lanes ? extentsFor(uint64_t{lanes + 1} * laneSlots, extentSlots) : 0;
+    return KvBlockCache::floorExtents(lanes, shape, pages.extentPages());
   }
-  // Allocates extents up to `held` extents, or none of them.
-  [[nodiscard]] ModelMemoryAdmission grow(uint32_t held);
+  // Allocates extents up to `held` extents under one admission of `admit`,
+  // or none of them.
+  [[nodiscard]] metal::AllocationResult grow(uint32_t held, const metal::AllocationAdmission &admit);
   // The directory and the location pages of `held` extents.
   void place(uint32_t held);
   // Extents and the directory change between commands only: no slot moves
@@ -111,9 +109,10 @@ struct KvBlockCache::Impl {
   void readSpan(uint32_t layer, const Span &span) const;
 
   metal::MetalBackend &backend;
+  const metal::AllocationAdmission admission;
   const kv::SlotFormat format;
   const std::shared_ptr<SsdReaders> readers;
-  const uint32_t laneSlots;
+  const SparseKvShape shape;
   const uint32_t extentSlots;
   const uint32_t targetExtents;
   kv::PageStorage pages;
@@ -148,26 +147,34 @@ struct KvBlockCache::Impl {
 
 KvBlockCache::Impl::Impl(metal::MetalBackend &backend, metal::AllocationAdmission admission,
                          const kv::Layout &layout, uint32_t extentPages, const KvBlockCacheOptions &options)
-    : backend(backend), format(checked(layout, extentPages, options).format), readers(options.readers),
-      laneSlots(options.laneSlots), extentSlots(extentPages << kPlaceBits),
-      targetExtents(static_cast<uint32_t>(options.targetBytes /
-                                          (uint64_t{extentPages} * layout.kvBytesPerModelPage()))),
+    : backend(backend), admission(admission), format(checked(layout, extentPages, options).format),
+      readers(options.readers), shape(options.shape), extentSlots(extentPages << kPlaceBits),
+      targetExtents(KvBlockCache::targetExtents(layout, extentPages, options.targetBytes)),
       pages(backend, std::move(admission), withoutIndex(layout),
-            std::max(targetExtents, floorExtents(kLanes)) * extentPages, extentPages),
-      locationPages(backend.allocateBuffer(uint64_t{pages.pageCount()} * sizeof(SplashKvPage),
+            static_cast<uint32_t>(KvBlockCache::mostPages(layout, extentPages, options.shape, options.targetBytes)),
+            extentPages),
+      locationPages(backend.allocateBuffer(tableBytes(layout, options.shape, options.targetBytes),
                                            metal::BufferStorage::Shared, "kv-block-cache/location-pages")),
       recordBytes(format.recordBytes()), zeros(recordBytes),
       directory(layout.attentionLayers, SlotRecycler(0)) {}
 
-ModelMemoryAdmission KvBlockCache::Impl::grow(uint32_t held) {
+metal::AllocationResult KvBlockCache::Impl::grow(uint32_t held, const metal::AllocationAdmission &admit) {
   requireNoCommand();
-  for (uint32_t extent = extents; extent < held; ++extent)
-    if (const metal::AllocationResult result = pages.allocateExtent(extent); !result) {
-      for (uint32_t allocated = extents; allocated < extent; ++allocated) pages.releaseExtent(allocated);
-      return {.ok = false, .allocationFailure = result.failure};
+  // One admission of every extent it lacks, so that a refusal asks for all
+  // of them; a driver's refusal of one gives back those allocated before.
+  uint32_t allocated = extents;
+  const metal::AllocationResult result = admit(uint64_t{held - extents} * pages.extentBytes(), [&] {
+    try {
+      for (; allocated < held; ++allocated)
+        static_cast<void>(pages.allocateExtent(allocated, kv::PageForm::Full, metal::admittedWithin));
+    } catch (const metal::MetalAllocationError &) {
+      while (allocated > extents) pages.releaseExtent(--allocated);
+      throw;
     }
+  });
+  if (!result) return result;
   place(held);
-  return {.ok = true};
+  return {};
 }
 
 void KvBlockCache::Impl::place(uint32_t held) {
@@ -219,35 +226,38 @@ void KvBlockCache::Impl::resolve(uint32_t layer, const Resolve &resolve, KvReadS
   ++stats.resolves;
   misses.clear();
   uint32_t pinned = 0;
+  // Every list of each lane's tiles, an empty one past its rows.
   for (uint32_t lane = 0; lane < resolve.sources.size(); ++lane) {
-    const uint64_t list = uint64_t{resolve.list} + lane;
-    const uint32_t entries = std::min(counts[list], resolve.stride);
-    const uint32_t *entry = lists + list * resolve.stride;
-    uint32_t *location = locations + list * resolve.stride;
     const KvPageSources *sources = resolve.sources[lane].get();
-    stats.entries += entries;
-    for (uint32_t index = 0; index < entries; ++index) {
-      const uint32_t block = entry[index] >> SPLASH_ATTENTION_BLOCK_ROW_BITS;
-      const KvPageSource *source = sources ? &(*sources)[block >> kPlaceBits] : nullptr;
-      if (!source || !source->indexed()) {
-        location[index] = SPLASH_ATTENTION_PAGED;
-        ++stats.paged;
-        continue;
-      }
-      if (!source->copy) throw std::logic_error("a page that holds only its index has no tier copy");
-      const uint64_t key = source->copy->id() << kPlaceBits | (block & kPlaceMask);
-      if (const std::optional<uint32_t> slot = slots.find(key)) {
-        pinned += !slots.pinned(*slot, load);
-        slots.touch(*slot, load, false);
-        location[index] = *slot;
-        ++stats.hits;
-      } else {
-        misses.push_back({key, source, block & kPlaceMask, lane, &location[index]});
+    for (uint32_t tile = 0; tile < resolve.laneLists; ++tile) {
+      const uint64_t list = resolve.list + uint64_t{lane} * resolve.laneLists + tile;
+      const uint32_t entries = std::min(counts[list], resolve.stride);
+      const uint32_t *entry = lists + list * resolve.stride;
+      uint32_t *location = locations + list * resolve.stride;
+      stats.entries += entries;
+      for (uint32_t index = 0; index < entries; ++index) {
+        const uint32_t block = entry[index] >> SPLASH_ATTENTION_BLOCK_ROW_BITS;
+        const KvPageSource *source = sources ? &(*sources)[block >> kPlaceBits] : nullptr;
+        if (!source || !source->indexed()) {
+          location[index] = SPLASH_ATTENTION_PAGED;
+          ++stats.paged;
+          continue;
+        }
+        if (!source->copy) throw std::logic_error("a page that holds only its index has no tier copy");
+        const uint64_t key = source->copy->id() << kPlaceBits | (block & kPlaceMask);
+        if (const std::optional<uint32_t> slot = slots.find(key)) {
+          pinned += !slots.pinned(*slot, load);
+          slots.touch(*slot, load, false);
+          location[index] = *slot;
+          ++stats.hits;
+        } else {
+          misses.push_back({key, source, block & kPlaceMask, lane, &location[index]});
+        }
       }
     }
   }
-  // Each lane holding a floor selects at most laneSlots blocks, and the
-  // floors leave laneSlots more: a resolve past them is a bug.
+  // Each lane holding a floor selects at most laneSlots blocks, which the
+  // floors hold, and a spare more: a resolve past them is a bug.
   if (misses.size() > slots.size() - pinned)
     throw std::logic_error("a resolve misses more blocks than the hot block cache has slots it does not use");
   reads.clear();
@@ -310,21 +320,39 @@ KvBlockCache::~KvBlockCache() = default;
 ModelMemoryAdmission KvBlockCache::reserveLane(uint32_t stateLane) {
   Impl &impl = *impl_;
   if (stateLane >= kLanes) throw std::out_of_range("the hot block cache has no such lane");
-  if (impl.floors[stateLane]) return {.ok = true};
+  if (holdsLane(stateLane)) return {.ok = true};
   if (const uint32_t held = impl.floorExtents(impl.floorLanes() + 1); held > impl.extents)
-    if (const ModelMemoryAdmission admission = impl.grow(held); !admission.granted()) return admission;
+    if (const metal::AllocationResult result = impl.grow(held, impl.admission); !result)
+      return {.ok = false, .allocationFailure = result.failure};
   impl.floors[stateLane] = true;
   return {.ok = true};
+}
+
+bool KvBlockCache::holdsLane(uint32_t stateLane) const { return impl_->floors.at(stateLane); }
+
+bool KvBlockCache::readsAboveFloor() const noexcept {
+  const Impl &impl = *impl_;
+  return impl.floorLanes() && impl.targetExtents > impl.floorExtents(impl.floorLanes());
+}
+
+uint64_t KvBlockCache::lanesShortfallBytes(uint32_t lanes) const {
+  const Impl &impl = *impl_;
+  if (!lanes) return 0;
+  // Extents no lane reads above the floors held are a Start's to take
+  // (rebuild-only), so the waiting floors count only on those that are read.
+  const uint32_t kept = readsAboveFloor() ? impl.extents : impl.floorExtents(impl.floorLanes());
+  const uint32_t held = impl.floorExtents(impl.floorLanes() + lanes);
+  return held > kept ? uint64_t{held - kept} * impl.pages.extentBytes() : 0;
 }
 
 void KvBlockCache::releaseLane(uint32_t stateLane) noexcept {
   if (stateLane < kLanes) impl_->floors[stateLane] = false;
 }
 
-ModelMemoryAdmission KvBlockCache::growTowardTarget() {
+metal::AllocationResult KvBlockCache::growTowardTarget(const metal::AllocationAdmission &admit) {
   Impl &impl = *impl_;
-  if (!impl.floorLanes() || impl.extents >= impl.targetExtents) return {.ok = true};
-  return impl.grow(impl.extents + 1);
+  if (!impl.floorLanes() || impl.extents >= impl.targetExtents) return {};
+  return impl.grow(impl.extents + 1, admit);
 }
 
 uint64_t KvBlockCache::releaseAboveFloor() {
@@ -338,21 +366,27 @@ uint64_t KvBlockCache::releaseAboveFloor() {
   return impl.pages.extentBytes();
 }
 
+uint64_t KvBlockCache::extentBytes() const noexcept { return impl_->pages.extentBytes(); }
+
+uint64_t KvBlockCache::floorBytes(uint32_t lanes) const noexcept {
+  return uint64_t{impl_->floorExtents(lanes)} * impl_->pages.extentBytes();
+}
+
 ops::AttentionBlocks KvBlockCache::addResolve(metal::CommandGraph &graph, uint32_t layer,
                                               std::span<const std::shared_ptr<const KvPageSources>> lanes,
-                                              const ops::AttentionBlocks &blocks,
+                                              const ops::AttentionBlocks &blocks, uint32_t laneLists,
                                               const metal::MetalBuffer &locations,
                                               std::shared_ptr<KvReadStats> stats) {
   const Impl &impl = *impl_;
-  const uint64_t entries = (uint64_t{blocks.list} + lanes.size()) * blocks.stride;
-  if (layer >= impl.format.layout().attentionLayers || lanes.empty() || lanes.size() > kLanes || !blocks.stride ||
-      !stats)
+  const uint64_t lists = blocks.list + uint64_t{laneLists} * lanes.size(), entries = lists * blocks.stride;
+  if (layer >= impl.format.layout().attentionLayers || lanes.empty() || lanes.size() > kLanes || !laneLists ||
+      !blocks.stride || !stats)
     throw std::invalid_argument("invalid hot block cache resolve");
   if (!blocks.lists.contents() || !blocks.counts.contents() || !locations.contents() ||
       blocks.lists.sizeBytes() < entries * sizeof(uint32_t) || locations.sizeBytes() < entries * sizeof(uint32_t) ||
-      blocks.counts.sizeBytes() < (uint64_t{blocks.list} + lanes.size()) * sizeof(uint32_t))
+      blocks.counts.sizeBytes() < lists * sizeof(uint32_t))
     throw std::invalid_argument("a resolve's lists, counts and locations are not CPU-visible or too small");
-  Impl::Resolve resolve{blocks.lists, blocks.counts, locations, blocks.stride, blocks.list,
+  Impl::Resolve resolve{blocks.lists, blocks.counts, locations, blocks.stride, blocks.list, laneLists,
                         {lanes.begin(), lanes.end()}};
   // A decode step's resolves come every layer and most end within a
   // millisecond, about as long as an idle GPU takes to come back to speed.
@@ -364,7 +398,10 @@ ops::AttentionBlocks KvBlockCache::addResolve(metal::CommandGraph &graph, uint32
                impl->resume.add(nanoseconds(timing.resumeSeconds));
              },
              metal::HostStepGpu::Awake);
-  return {blocks.lists, blocks.counts, blocks.stride, blocks.list, locations, impl.locationPages};
+  ops::AttentionBlocks located = blocks;
+  located.locations = locations;
+  located.locationPages = impl.locationPages;
+  return located;
 }
 
 std::vector<KvReadFailure> KvBlockCache::takeFailures() {
@@ -380,16 +417,19 @@ std::vector<KvReadFailure> KvBlockCache::takeFailures() {
   return failures;
 }
 
-void KvBlockCache::mergeStats(const KvReadStats &stats) {
-  // Under the directory's lock, which the host steps that counted held.
+uint64_t KvBlockCache::mergeStats(const KvReadStats &stats) {
+  // Under the directory's lock, which the host steps that count hold: a
+  // dropped command's steps can still be running.
   const std::lock_guard lock(impl_->mutex);
   impl_->totals += stats;
+  return stats.readBytes;
 }
 
 KvBlockCacheStats KvBlockCache::stats() const {
   const Impl &impl = *impl_;
   const uint64_t extentBytes = impl.pages.extentBytes();
   return {.bytes = impl.extents * extentBytes,
+          .tableBytes = impl.locationPages.sizeBytes(),
           .targetBytes = impl.targetExtents * extentBytes,
           .floorBytes = impl.floorExtents(impl.floorLanes()) * extentBytes,
           .slotsPerLayer = impl.extents * impl.extentSlots,

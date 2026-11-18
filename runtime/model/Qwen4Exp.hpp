@@ -76,6 +76,7 @@ struct Qwen4ExpLayout final : QwenHybridLayout {
                           .fullAttentionPeriod = 4,
                           .maskToken = 248077,
                           .stopTokens = {248044, 248046},
+                          .draftVocabulary = kQwenDraftVocabulary,
                           .ffnKind = QwenFfnKind::SparseMoe,
                           .experts = 512,
                           .expertsPerToken = 10,
@@ -96,8 +97,6 @@ struct Qwen4ExpLayout final : QwenHybridLayout {
                           .pleHeadDimension = 160,
                           .pleConvolutionTaps = 4},
                          "Qwen3.8-Flash-Next"} {}
-  // A family of the architecture.
-  constexpr explicit Qwen4ExpLayout(const QwenHybridLayout &family) : QwenHybridLayout(family) {}
   bool operator==(const Qwen4ExpLayout &) const = default;
 };
 
@@ -118,8 +117,9 @@ static_assert(Qwen4ExpLayout{}.indexerHeads == BLOCK_INDEXER_HEADS &&
 // The longest n-gram the PLE hash mixes (metal/abi/NgramEmbedding.h).
 inline constexpr uint32_t kPleMaximumNgram = NGRAM_EMBEDDING_MAXIMUM_NGRAM;
 
-// The hash of the PLE n-gram embedding, from the GGUF's metadata: the multiplier of each n-gram position (0 past
-// pleNgram), each head's table rows and the table's rows.
+// The hash of the PLE n-gram embedding, from the GGUF's metadata: the
+// multiplier of each n-gram position (0 past pleNgram), each head's table
+// rows and the table's rows.
 struct Qwen4PleHash final {
   std::array<uint64_t, kPleMaximumNgram> multipliers{};
   std::vector<uint32_t> headOffsets;
@@ -175,7 +175,7 @@ struct Qwen4ExpWeights final : QwenTargetWeightsBase {
   std::vector<Qwen4ExpLayerWeights> layers;
   // The last mix, which feeds the head in place of a final norm.
   Qwen4HyperWeights finalHyper;
-  // The PLE table's native rows of pleHeadDimension values; empty when the
+  // The PLE table's rows as stored, of pleHeadDimension values; empty when the
   // table streams from its file (--ple-memory), where streamedTable reads
   // the rows of pleFormat a step gathers.
   ops::EmbeddingWeights pleTable;
@@ -187,16 +187,17 @@ struct Qwen4ExpWeights final : QwenTargetWeightsBase {
                                                   const QwenTargetFiles &files);
 
 // The family's target (model/Qwen4ExpTarget.hpp), whose prefill commands run
-// up to `prefillChunks` chunks; the step scratch it keeps itself, with the
-// rows of a streamed PLE table of `tableRowBytes` each (zero: the table
-// loads); and the projections its hyper-connection mixes, QSA indexers and
-// PLE layer dispatch (qwenTargetGeometry).
+// up to `prefillChunks` chunks; the step scratch a target of its layout keeps
+// itself, with the rows of a streamed PLE table of `tableRowBytes` each
+// (zero: the table loads); and the projections its hyper-connection mixes,
+// QSA indexers and PLE layer dispatch (qwenTargetGeometry).
 [[nodiscard]] std::unique_ptr<QwenTarget> makeQwenTarget(const Qwen4ExpWeights &weights,
                                                          const QwenTargetGeometry &geometry,
                                                          metal::MetalBackend &backend,
                                                          const ops::ExecutionPlans &operators,
-                                                         uint32_t prefillChunks, uint32_t prefillRows = ExecutionLimits::prefillTokenBudget);
-[[nodiscard]] QwenTargetScratchBytes qwenTargetScratchBytes(const Qwen4ExpWeights &weights,
+                                                         uint32_t prefillChunks,
+                                                         uint32_t prefillRows = ExecutionLimits::prefillTokenBudget);
+[[nodiscard]] QwenTargetScratchBytes qwenTargetScratchBytes(const Qwen4ExpLayout &layout,
                                                             const QwenTargetGeometry &geometry,
                                                             uint32_t prefillChunks, uint64_t tableRowBytes,
                                                             uint32_t prefillRows = ExecutionLimits::prefillTokenBudget);

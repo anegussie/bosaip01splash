@@ -2,7 +2,7 @@
 #include "metal/abi/KernelABI.h"
 #include "metal/kernels/common/gguf_embedding_formats.h"
 
-// The gather of rows of native blocks (ops/Embedding.cpp) of a format of common/gguf_embedding_formats.h, each
+// The gather of rows as stored (ops::StoredRows) of a format of common/gguf_embedding_formats.h, each
 // element its decode as T: bf16, the token gathers', or fp32, the F32 values load-time widening writes
 // (model/GgufPreparation.cpp). Inlined, with the format's decode, so every gather stays one function (the compiler
 // otherwise keeps Q6_K's as a call).
@@ -22,32 +22,14 @@ __attribute__((always_inline)) inline void gguf_embedding(device const uint *tok
                    uint index [[thread_position_in_grid]]) { \
     gguf_embedding<F>(tokens, table, output, p, index); \
   }
-// Two gathers per gguf_embedding_format (metal/abi/Gguf.h), named by its kQuantFormats token: gguf_embed_<token>
+// Two gathers per GGUF format (metal/abi/QuantFormat.h), named by its kQuantFormats token: gguf_embed_<token>
 // into bf16 and gguf_embed_f32_<token> into fp32.
 #define GGUF_EMBEDDING_FORMAT(f, F) GGUF_GATHER(gguf_embed_##f, F, bfloat) GGUF_GATHER(gguf_embed_f32_##f, F, float)
 GGUF_EMBEDDING_FORMATS(GGUF_EMBEDDING_FORMAT)
 #undef GGUF_EMBEDDING_FORMAT
 #undef GGUF_GATHER
 
-// A verify step's input tokens, SPLASH_TARGET_VERIFY_ROWS per lane: the
-// lane's anchor, row 0 of its draft input, then the draft's proposals, each
-// clamped into the vocabulary.
-kernel void verify_input_tokens(
-    device const uint *draft_input [[buffer(0)]],
-    device const uint *draft_tokens [[buffer(1)]],
-    device uint *verify_input [[buffer(2)]],
-    constant VerifyInputBatchParams &params [[buffer(3)]],
-    uint index [[thread_position_in_grid]]) {
-  uint batch = index / SPLASH_TARGET_VERIFY_ROWS;
-  uint row = index % SPLASH_TARGET_VERIFY_ROWS;
-  uint token = row == 0
-                   ? draft_input[batch * SPLASH_TARGET_VERIFY_ROWS]
-                   : draft_tokens[batch * SPLASH_DRAFT_PROPOSAL_TOKENS +
-                                  row - 1];
-  verify_input[index] = min(token, params.vocabulary - 1u);
-}
-
-// Each lane's mask rows of its draft input, rows 1 to SPLASH_TARGET_VERIFY_ROWS - 1 (the
+// Each lane's mask rows of its draft input, rows 1 to SPLASH_DRAFT_QUERY_ROWS - 1 (the
 // rows after its anchor), set to the mask embedding the draft's checkpoint ships
 // (ops/Embedding.cpp addDraftMaskRows): x a span of 256 columns, y the mask row, z the lane.
 kernel void draft_mask_rows(
@@ -59,5 +41,5 @@ kernel void draft_mask_rows(
   const uint column = group.x * 256 + thread_index;
   if (column >= params.width)
     return;
-  rows[(ulong(group.z) * SPLASH_TARGET_VERIFY_ROWS + 1 + group.y) * params.width + column] = mask[column];
+  rows[(ulong(group.z) * SPLASH_DRAFT_QUERY_ROWS + 1 + group.y) * params.width + column] = mask[column];
 }

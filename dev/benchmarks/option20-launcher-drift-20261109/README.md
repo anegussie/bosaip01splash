@@ -15,4 +15,4 @@ Files here:
 - `startllamacpp.sh.synced` the launcher that replaced it
 - `drift.diff` the exact difference between the two, which is the 150K variant plus the menu ranges
 
-Rollback: `cp dev/benchmarks/option20-launcher-drift-20261109/startllamacpp.sh.drifted ~/startllamacpp.sh`. That reinstates the 150K variant and the untested launcher behaviour, and the launcher tests will fail again.
+Rollback: `(cd dev/benchmarks/option20-launcher-drift-20261109 && cp startllamacpp.sh.drifted ~/startllamacpp.sh)`. That reinstates the 150K variant and the untested launcher behaviour, and the launcher tests will fail again.

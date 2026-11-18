@@ -1,9 +1,11 @@
 #include "ProtocolPeer.hpp"
 #include "TestChecks.hpp"
+#include "Supervision.hpp"
 #include "engine/Protocol.hpp"
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <fstream>
@@ -25,6 +27,7 @@ namespace {
 using namespace splash::protocol;
 using splash::ConstraintMode;
 using splash::ImageSpan;
+using splash::kNoMaskParent;
 using splash::RequestIgnoreEndOfSequence;
 using splash::SamplingParameters;
 using splash::ThinkingBudget;
@@ -224,23 +227,48 @@ const std::vector<std::pair<std::string, ClientMessage>> &clientMessages() {
       {"request_ignore_eos", exampleIgnoreEosRequest()},
       {"request_progress", exampleProgressRequest()},
       {"cancel", CancelFrame{91}},
+      // Mask row 1 forces two tokens after its path, row 2 one.
       {"mask_response",
-       MaskResponseFrame{91, 7, {0xffffffffU, 0, 0xa5a5a5a5U}}},
+       MaskResponseFrame{91, 7, {0xffffffffU, 0, 0xa5a5a5a5U}, {1, 40, 1, 41, 2, 50}}},
       {"status_request", StatusRequestFrame{808}},
       {"release_request", ReleaseRequestFrame{808}},
+      {"stop", StopFrame{91}},
   };
   return messages;
 }
 
 const std::vector<std::pair<std::string, EngineEvent>> &engineEvents() {
   static const std::vector<std::pair<std::string, EngineEvent>> events{
-      {"ready", ReadyEvent{4, 524'288, false}},
-      {"ready_vision", ReadyEvent{4, 524'288, true}},
+      {"ready",
+       ReadyEvent{4, 524'288, false, 248'320, {248'044, 248'046}, 9}},
+      {"ready_vision", ReadyEvent{4, 524'288, true, 150'144,
+                                  {150'001, 150'003, 150'005, 150'018}, 9}},
+      {"start_failed_memory",
+       StartFailedEvent{StartFailureKind::MemoryBudget,
+                        {ShortfallBound::MaxMemory, 10'858'659'840ULL,
+                         1'073'741'824ULL, 0},
+                        "the plan's floors require 10858659840 bytes but the "
+                        "Metal memory budget is 1073741824 bytes"}},
+      {"start_failed_context",
+       StartFailedEvent{StartFailureKind::ContextBudget,
+                        {ShortfallBound::Disk, 0, 0, 73'721},
+                        "--max-context 262144 exceeds the 73721 tokens the "
+                        "model and the SSD cache's room for its KV allow"}},
+      {"start_failed_host",
+       StartFailedEvent{StartFailureKind::HostMemory,
+                        {},
+                        "the host has too little free memory to start"}},
+      {"start_failed_command_memory",
+       StartFailedEvent{StartFailureKind::CommandMemory,
+                        {},
+                        "a start command ran out of GPU memory"}},
+      {"warming", WarmingEvent{3, 9}},
       {"start", StartEvent{91, 2, 4096}},
       {"prompt_progress", PromptProgressEvent{91, 2048, 123456}},
       {"tokens", TokensEvent{91, 17, {10, 11, 12}}},
-      {"mask_request_initial", MaskRequestEvent{91, 6, 4, {}}},
-      {"mask_request_verify", MaskRequestEvent{91, 7, 4, {101, 102, 103}}},
+      {"mask_request_initial", MaskRequestEvent{91, 6, 4, {}, {}}},
+      // A verify block's tree: the anchor, and two rows that follow it.
+      {"mask_request_verify", MaskRequestEvent{91, 7, 4, {101, 102, 103}, {kNoMaskParent, 0, 0}}},
       {"done", DoneEvent{91, EngineFinishReason::Stop, 4096, 512, 1000, 2000,
                          3500, {}, 64, {350, 280, 50}}},
       {"done_scored", DoneEvent{91, EngineFinishReason::Stop, 4096, 0, 1000, 0,
@@ -286,12 +314,32 @@ std::map<std::string, std::vector<uint8_t>> readGolden(const char *path) {
   return golden;
 }
 
-// Each client frame the server writes decodes to its message, and each event
-// serializes to exactly the bytes the server decodes.
+// The supervision budgets the server and the engine time each other by, as
+// the golden's "supervision" line holds them: little-endian u32 milliseconds.
+std::vector<uint8_t> supervisionBudgets() {
+  std::vector<uint8_t> bytes;
+  for (std::chrono::milliseconds budget :
+       {splash::supervision::kCommandTimeout, splash::supervision::kLoopStall,
+        splash::supervision::kStop, splash::supervision::kProbation,
+        splash::supervision::kStartRetryWindow, splash::supervision::kMaskWait}) {
+    const auto value = static_cast<uint32_t>(budget.count());
+    for (uint32_t shift = 0; shift < 32; shift += 8)
+      bytes.push_back(static_cast<uint8_t>(value >> shift));
+  }
+  return bytes;
+}
+
+// Each client frame the server writes decodes to its message, each event
+// serializes to exactly the bytes the server decodes, and the server times
+// the engine by the engine's own budgets.
 void testGoldenVectors(const char *path) {
   constexpr std::string_view test = "golden vectors";
   const auto golden = readGolden(path);
-  CHECK(test, golden.size() == clientMessages().size() + engineEvents().size());
+  CHECK(test, golden.size() ==
+                  clientMessages().size() + engineEvents().size() + 1);
+  const auto supervision = golden.find("supervision");
+  CHECK(test, supervision != golden.end() &&
+                  supervision->second == supervisionBudgets());
   for (const auto &[name, expected] : clientMessages()) {
     const auto found = golden.find(name);
     const auto decoded = found == golden.end()
@@ -989,6 +1037,11 @@ void testBoundedArbitraryStatusJsonAndFrames() {
   expectEventIssue(test, tooLarge, IssueCode::LimitExceeded, limits);
   expectEventIssue(test, StatusJsonEvent{1, ""}, IssueCode::LimitExceeded,
                    limits);
+  expectEventIssue(test,
+                   StartFailedEvent{StartFailureKind::Internal, {},
+                                    std::string(limits.maxErrorStringBytes + 1,
+                                                'x')},
+                   IssueCode::LimitExceeded, limits);
 
   RequestFrame oversized = exampleRequest();
   oversized.promptTokens.assign(limits.maxFramePayloadBytes / 4, 7);
@@ -1018,12 +1071,35 @@ void testFailureTaxonomy() {
   invalid.sampling.topP = 0.0f;
   expectRequestIssue(test, invalid, IssueCode::InvalidSampling);
 
-  expectEventIssue(test, ReadyEvent{0, 4096, false}, IssueCode::InvalidCount);
+  // A warm-up has steps, and no more of them done than it has.
+  expectEventIssue(test, WarmingEvent{0, 0}, IssueCode::InvalidCount);
+  expectEventIssue(test, WarmingEvent{10, 9}, IssueCode::InvalidCount);
+  expectEventIssue(test, ReadyEvent{0, 4096, false, 64, {1}, 9},
+                   IssueCode::InvalidCount);
+  // Ready names the tokens that end generation, each inside the vocabulary.
+  expectEventIssue(test, ReadyEvent{4, 4096, false, 64, {}, 9},
+                   IssueCode::InvalidCount);
+  expectEventIssue(test, ReadyEvent{4, 4096, false, 64, {1, 64}, 9},
+                   IssueCode::InvalidCount);
+  expectEventIssue(test, ReadyEvent{4, 4096, false, 64, {1}, 0},
+                   IssueCode::InvalidCount);
+  StartFailedEvent unknownKind;
+  unknownKind.kind = static_cast<StartFailureKind>(9);
+  expectEventIssue(test, unknownKind, IssueCode::InvalidEnumValue);
+  StartFailedEvent unknownBound;
+  unknownBound.shortfall.bound = static_cast<ShortfallBound>(3);
+  expectEventIssue(test, unknownBound, IssueCode::InvalidEnumValue);
   expectEventIssue(test, StartEvent{8, ExecutionLimits::maximumBatchWidth, 0},
                    IssueCode::InvalidCount);
   expectEventIssue(test,
                    TokensEvent{8, std::numeric_limits<uint32_t>::max(), {1}},
                    IssueCode::IntegerOverflow);
+  // A mask request's tokens are a tree: a parent each, the first the root,
+  // and every other one's before it.
+  expectEventIssue(test, MaskRequestEvent{8, 1, 4, {101, 102}, {kNoMaskParent}}, IssueCode::InvalidCount);
+  expectEventIssue(test, MaskRequestEvent{8, 1, 4, {101, 102}, {0, 0}}, IssueCode::InvalidConstraint);
+  expectEventIssue(test, MaskRequestEvent{8, 1, 4, {101, 102, 103}, {kNoMaskParent, 0, 2}},
+                   IssueCode::InvalidConstraint);
   expectEventIssue(test,
                    ErrorEvent{FailureClass::RequestError, 0, false, "bad", ""},
                    IssueCode::InvalidErrorClassification);
@@ -1057,10 +1133,22 @@ void testUnnamedRequestFailuresAreFatal() {
          fourTokens);
   expect(CancelFrame{0}, IssueCode::InvalidRequestId,
          FailureClass::ProtocolFatal);
-  expect(MaskResponseFrame{0, 7, {1}}, IssueCode::InvalidRequestId,
+  expect(StopFrame{0}, IssueCode::InvalidRequestId,
          FailureClass::ProtocolFatal);
-  expect(MaskResponseFrame{91, 0, {1}}, IssueCode::InvalidRequestId,
+  expect(MaskResponseFrame{0, 7, {1}, {}}, IssueCode::InvalidRequestId,
+         FailureClass::ProtocolFatal);
+  expect(MaskResponseFrame{91, 0, {1}, {}}, IssueCode::InvalidRequestId,
          FailureClass::RequestError);
+  // A mask response's forced tokens hold at most a row and a token for each
+  // token of the largest request, after each of its rows: four words where a
+  // request simulates one token.
+  ProtocolLimits oneToken;
+  oneToken.maxSimulationTokens = 1;
+  expect(MaskResponseFrame{91, 7, {1}, {0, 5, 1, 6, 1, 7}}, IssueCode::LimitExceeded,
+         FailureClass::RequestError, oneToken);
+  const auto fits = decodeClient(peer::serialize(MaskResponseFrame{91, 7, {1}, {0, 5, 1, 6}}), oneToken);
+  const std::vector<uint32_t> forced{0, 5, 1, 6};
+  CHECK(test, fits && std::get<MaskResponseFrame>(*fits.value).forcedTokens == forced);
 }
 
 void testInvalidLimitsAndOuterTruncation() {

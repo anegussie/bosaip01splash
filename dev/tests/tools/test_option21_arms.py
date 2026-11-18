@@ -4,7 +4,9 @@ from pathlib import Path
 from dev.benchmarks import option21_arms
 
 
-def snapshot(prefill_tokens, decode_tokens, decode_ms, reads, routed, work_ms, resident):
+def snapshot(
+    prefill_tokens, decode_tokens, decode_ms, reads, routed, work_ms, resident
+):
     return {
         "requests": {"submitted": decode_tokens, "completed": decode_tokens},
         "metrics": {
@@ -65,7 +67,8 @@ class Option21ArmsTests(unittest.TestCase):
         original = option21_arms.chat
         calls = []
         option21_arms.chat = lambda url, model, prompt, max_tokens, thinking: (
-            calls.append((max_tokens, thinking)) or {
+            calls.append((max_tokens, thinking))
+            or {
                 "seconds": 107.0,
                 "payload": {
                     "usage": {"prompt_tokens": 11362},
@@ -84,12 +87,16 @@ class Option21ArmsTests(unittest.TestCase):
                             "accepted_draft_tokens": 70,
                         },
                     },
-                    "choices": [{"finish_reason": "length", "message": {"content": "ORCHID"}}],
+                    "choices": [
+                        {"finish_reason": "length", "message": {"content": "ORCHID"}}
+                    ],
                 },
             }
         )
         try:
-            measured = option21_arms.probe("http://127.0.0.1:1235", None, "cold_8k", "records", 500, 96)
+            measured = option21_arms.probe(
+                "http://127.0.0.1:1235", None, "cold_8k", "records", 500, 96
+            )
         finally:
             option21_arms.chat = original
         self.assertEqual(calls, [(96, False)])
@@ -103,7 +110,14 @@ class Option21ArmsTests(unittest.TestCase):
 
         def fake(url, model, prompt, max_tokens, thinking):
             seen.append(thinking)
-            return {"seconds": 1.0, "payload": {"timings": {}, "usage": {}, "choices": [{"message": {"content": ""}}]}}
+            return {
+                "seconds": 1.0,
+                "payload": {
+                    "timings": {},
+                    "usage": {},
+                    "choices": [{"message": {"content": ""}}],
+                },
+            }
 
         original = option21_arms.chat
         option21_arms.chat = fake
@@ -179,21 +193,42 @@ class Option21ArmsTests(unittest.TestCase):
         self.assertEqual(option21_arms.engine_processes(listing), [12, 13])
 
     def test_answer_checks_catch_an_arm_that_trades_correctness_for_speed(self):
-        checks = option21_arms.answer_checks([
-            {"probe": "cold_8k", "content": "The final code is ORCHID."},
-            {"probe": "decode_512", "content": "def merge_intervals(intervals): ..."},
-            {"probe": "cached_8k", "content": "ORCHID"},
-        ])
-        self.assertEqual(checks, {"cold_final_code": True, "cached_final_code": True, "decode_returns_code": True})
-        broken = option21_arms.answer_checks([{"probe": "cold_8k", "content": "I do not know."}])
+        checks = option21_arms.answer_checks(
+            [
+                {"probe": "cold_8k", "content": "The final code is ORCHID."},
+                {
+                    "probe": "decode_512",
+                    "content": "def merge_intervals(intervals): ...",
+                },
+                {"probe": "cached_8k", "content": "ORCHID"},
+            ]
+        )
+        self.assertEqual(
+            checks,
+            {
+                "cold_final_code": True,
+                "cached_final_code": True,
+                "decode_returns_code": True,
+            },
+        )
+        broken = option21_arms.answer_checks(
+            [{"probe": "cold_8k", "content": "I do not know."}]
+        )
         self.assertFalse(broken["cold_final_code"])
 
     def test_verdict_compares_each_metric_abba(self):
         def row(arm, decode_ms_per_token):
             return {
                 "arm": arm,
-                "metrics": {metric: decode_ms_per_token for metric in option21_arms.LOWER_IS_BETTER},
-                "answers": {"cold_final_code": True, "cached_final_code": True, "decode_returns_code": True},
+                "metrics": {
+                    metric: decode_ms_per_token
+                    for metric in option21_arms.LOWER_IS_BETTER
+                },
+                "answers": {
+                    "cold_final_code": True,
+                    "cached_final_code": True,
+                    "decode_returns_code": True,
+                },
             }
 
         rounds = [
@@ -210,7 +245,9 @@ class Option21ArmsTests(unittest.TestCase):
         self.assertEqual(option21_arms.verdict(rounds[:3], "chunk1024"), {})
 
     def test_env_sets_only_the_arm_flags_and_the_scratch_paths(self):
-        env = option21_arms.build_env("chunk1024", 1236, Path("/tmp/cache"), Path("/tmp/logs"))
+        env = option21_arms.build_env(
+            "chunk1024", 1236, Path("/tmp/cache"), Path("/tmp/logs")
+        )
         self.assertEqual(env["SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS"], "1024")
         self.assertEqual(env["LLAMA_PORT"], "1236")
         self.assertEqual(env["SPLASH_FLASH_NEXT_CACHE_DIR"], "/tmp/cache")

@@ -97,7 +97,11 @@ def wait_idle(out, limit: float = 300.0) -> tuple[float, bool, int]:
         else:
             quiet += 1
             if quiet >= 3:
-                return round(time.monotonic() - started, 3), started_blocked, foreign_samples
+                return (
+                    round(time.monotonic() - started, 3),
+                    started_blocked,
+                    foreign_samples,
+                )
         time.sleep(0.5)
     raise RuntimeError("server did not become idle")
 
@@ -154,7 +158,7 @@ def run_probe(out: Path, name: str, prompt: str, max_tokens: int, phase: str) ->
             line = raw.decode("utf-8", "replace").strip()
             if not line.startswith("data:"):
                 continue
-            payload = line[len("data:"):].strip()
+            payload = line[len("data:") :].strip()
             if payload == "[DONE]":
                 complete = True
                 break
@@ -183,7 +187,9 @@ def run_probe(out: Path, name: str, prompt: str, max_tokens: int, phase: str) ->
     time.sleep(5.0)  # cooldown between probes
 
     text = "".join(text_parts)
-    decode_tokens = (timings or {}).get("predicted_n") or usage.get("completion_tokens", 0)
+    decode_tokens = (timings or {}).get("predicted_n") or usage.get(
+        "completion_tokens", 0
+    )
     record = {
         "name": name,
         "phase": phase,
@@ -240,7 +246,9 @@ def main() -> None:
     preflight = status_snapshot()
     instance = http_json("GET", "/status")["instance"]
     preflight_path = out / "preflight.json"
-    preflight_path.write_text(json.dumps({"instance": instance, "status": preflight}, indent=2))
+    preflight_path.write_text(
+        json.dumps({"instance": instance, "status": preflight}, indent=2)
+    )
     print(
         f"server pid={instance['pid']} model={instance['model']} "
         f"pressure={preflight['memory_pressure']} thermal={preflight['thermal_state']} "
@@ -264,7 +272,9 @@ def main() -> None:
     if not smoke_cold["correct"] or not smoke_reuse["correct"]:
         raise SystemExit("smoke correctness gate failed")
     if (smoke_reuse["cached_tokens"] or 0) < 320:
-        raise SystemExit(f"smoke reuse gate failed: cached={smoke_reuse['cached_tokens']}")
+        raise SystemExit(
+            f"smoke reuse gate failed: cached={smoke_reuse['cached_tokens']}"
+        )
     rows.extend([smoke_cold, smoke_reuse])
 
     salt_4k = uuid.uuid4().hex[:8]

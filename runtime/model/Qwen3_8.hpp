@@ -42,11 +42,10 @@ struct Qwen3_8Layout final : QwenHybridLayout {
                           .fullAttentionPeriod = 4,
                           .maskToken = 248070,
                           .stopTokens = {248044, 248046},
+                          .draftVocabulary = kQwenDraftVocabulary,
                           .ffnKind = QwenFfnKind::Dense,
                           .intermediateSize = 17408},
                          "Qwen3.8-27B"} {}
-  // A family of the architecture.
-  constexpr explicit Qwen3_8Layout(const QwenHybridLayout &family) : QwenHybridLayout(family) {}
   bool operator==(const Qwen3_8Layout &) const = default;
 };
 
@@ -58,6 +57,10 @@ struct Qwen3_8LayerWeights final {
   ops::Projection upProjection;
   ops::Projection downProjection;
 };
+
+// Its every layer's FFN is dense (QwenTarget.hpp's qwenMoeBlock).
+[[nodiscard]] const ops::BlockMoeWeights *qwenMoeBlock(const Qwen3_8LayerWeights &layer) noexcept;
+[[nodiscard]] std::optional<ops::SwiGluProjections> denseFfn(const Qwen3_8LayerWeights &layer) noexcept;
 
 using Qwen3_8Weights = QwenTargetWeights<Qwen3_8Layout, Qwen3_8LayerWeights>;
 

@@ -11,6 +11,7 @@ from unittest import mock
 from install import launcher
 from server import images, serve_options
 from server import server as api
+from server.chat_format import REASONING_EFFORTS
 from server.origins import ANY_ORIGIN
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -54,21 +55,26 @@ REFUSED_CONTEXTS = ("0", "-1", "1010001", "987K", "2M", "1.5M", "M", "bad")
 OPTIONS = {
     "--prefill-chunk-tokens": values(
         "--prefill-chunk-tokens",
-        {str(tokens): tokens for tokens in range(128, 2049, 128)},
-        ("0", "64", "129", "2049", "-128", "1.5", "many"),
+        {"128": 128, "512": 512, "2048": 2048},
+        ("0", "513", "4096"),
     ),
     "--resource-wait-timeout": values(
-        "--resource-wait-timeout",
-        {"60": 60, "4294967295": 2**32 - 1},
-        ("0", "-1", "1.5", "inf", "nan", "soon", "4294967296"),
+        "--resource-wait-timeout", {"1": 1, "60": 60}, ("0", "-1", "1.5")
     ),
     "--max-active-requests": values(
-        "--max-active-requests",
-        {"1": 1, "64": 64},
-        ("-1", "65", "1.5", "many"),
+        "--max-active-requests", {"0": 0, "1": 1, "2": 2}, ("-1", "65", "many")
     ),
+    # An address, which the bind checks, or a UNIX socket's path, which
+    # unix: alone does not give.
     "--host": values(
-        "--host", {"0.0.0.0": "0.0.0.0", "mymac.local": "mymac.local"}, ()
+        "--host",
+        {
+            "0.0.0.0": "0.0.0.0",
+            "unix:/tmp/splash.sock": "unix:/tmp/splash.sock",
+            "unix:splash.sock": "unix:splash.sock",
+            "mymac.local": "mymac.local",
+        },
+        ("unix:",),
     ),
     "--served-model-name": values(
         "--served-model-name",
@@ -80,9 +86,19 @@ OPTIONS = {
         [(["--announce-served-name", "--served-model-name=local"], True)],
         [["--announce-served-name"]],
     ),
+    "--reasoning-effort": (
+        [([f"--reasoning-effort={effort}"], effort) for effort in REASONING_EFFORTS],
+        [
+            ["--reasoning-effort="],
+            ["--reasoning-effort=off"],
+            ["--reasoning-effort=XHIGH"],
+            # It leaves no request for a default effort to set.
+            ["--reasoning-effort=none", "--default-reasoning-effort=low"],
+        ],
+    ),
     "--default-reasoning-effort": values(
         "--default-reasoning-effort",
-        {effort: effort for effort in serve_options.REASONING_EFFORTS},
+        {effort: effort for effort in REASONING_EFFORTS},
         ("", "turbo", "XHIGH"),
     ),
     "--thinking-token-budget": values(
@@ -93,11 +109,25 @@ OPTIONS = {
         {"</think>": "</think>", "Time is up.\n</think>": "Time is up.\n</think>"},
         (),
     ),
+    "--chat-template-file": values(
+        "--chat-template-file",
+        {
+            "/srv/template.jinja": Path("/srv/template.jinja"),
+            "~/template.jinja": Path.home() / "template.jinja",
+        },
+        ("", " "),
+    ),
     "--kv-format": values("--kv-format", {"int8": "int8", "bf16": "bf16"}, ("fp16",)),
     "--state-format": values(
         "--state-format", {"fp32": "fp32", "bf16": "bf16"}, ("fp16", "int8")
     ),
+    "--cached-states": values(
+        "--cached-states", {"int8": "int8", "exact": "exact"}, ("", "fp32", "Exact")
+    ),
     "--disable-ane": ([(["--disable-ane"], True)], []),
+    "--activations": values(
+        "--activations", {"auto": "auto", "bf16": "bf16"}, ("", "on", "off", "BF16")
+    ),
     "--verify-rows": values(
         "--verify-rows",
         {"auto": "auto", "all": "all"},
@@ -270,6 +300,7 @@ class ServeOptionsTests(unittest.TestCase):
         self.enterContext(mock.patch.dict(os.environ))
         for name in (
             "SPLASH_API_KEY",
+            "SPLASH_REASONING_EFFORT",
             "SPLASH_DEFAULT_REASONING_EFFORT",
             "SPLASH_THINKING_TOKEN_BUDGET",
             "SPLASH_THINKING_END_TEXT",
@@ -310,6 +341,7 @@ class ServeOptionsTests(unittest.TestCase):
 
     def test_both_parsers_check_defaults_from_the_environment(self):
         for name, value, parsed, flag in (
+            ("SPLASH_REASONING_EFFORT", "none", "none", "--reasoning-effort"),
             (
                 "SPLASH_DEFAULT_REASONING_EFFORT",
                 "low",
@@ -360,10 +392,22 @@ class ServeOptionsTests(unittest.TestCase):
                     self.assertEqual(getattr(parse(required), option.dest), [])
 
     def test_launcher_forwards_exactly_what_the_server_parses(self):
+        # Every option at once, but that the effort of every request and the
+        # default effort are refused together: each travels without the other.
+        for left_out in ("--default-reasoning-effort", "--reasoning-effort"):
+            with self.subTest(left_out=left_out):
+                self.forward_all_but(left_out)
+        # Defaults stay with the server, which reads them itself.
+        defaults = launcher.parse_args(LAUNCHER_ARGS)
+        self.assertEqual(serve_options.serve_argv(defaults), [])
+        self.assertEqual(serve_options.serve_environment(defaults), {})
+
+    def forward_all_but(self, left_out):
         launched = [
             *(
                 argument
-                for accepted, _ in OPTIONS.values()
+                for flag, (accepted, _) in OPTIONS.items()
+                if flag != left_out
                 for arguments, _ in accepted[-1:]
                 for argument in arguments
             ),
@@ -372,6 +416,13 @@ class ServeOptionsTests(unittest.TestCase):
             "--allowed-host=proxy.local",
             "--allowed-origin=tauri://localhost",
         ]
+        for flag, value in (
+            ("--prefill-chunk-tokens", "128"),
+            ("--resource-wait-timeout", "60"),
+            ("--max-active-requests", "1"),
+        ):
+            if flag != left_out:
+                launched.append(f"{flag}={value}")
         args = launcher.parse_args([*LAUNCHER_ARGS, *launched])
         argv = serve_options.serve_argv(args)
         environment = serve_options.serve_environment(args)
@@ -382,7 +433,7 @@ class ServeOptionsTests(unittest.TestCase):
             {
                 option.flag
                 for option in serve_options.SERVE_OPTIONS
-                if not option.secret
+                if not option.secret and option.flag != left_out
             },
         )
         self.assertFalse(any("secret-key" in argument for argument in argv))
@@ -393,12 +444,11 @@ class ServeOptionsTests(unittest.TestCase):
             self.assertEqual(
                 getattr(served, option.dest), getattr(args, option.dest), option.flag
             )
-        # Defaults stay with the server, which reads them itself.
-        defaults = launcher.parse_args(LAUNCHER_ARGS)
-        self.assertEqual(serve_options.serve_argv(defaults), [])
-        self.assertEqual(serve_options.serve_environment(defaults), {})
 
-    def test_serve_options_imports_only_the_standard_library(self):
+    def test_the_launcher_imports_only_the_standard_library(self):
+        """The launcher runs before the environment it sets up exists: it,
+        and the serve options it reads, import nothing beside the standard
+        library and Splash's own packages."""
         result = subprocess.run(
             [
                 sys.executable,
@@ -406,7 +456,7 @@ class ServeOptionsTests(unittest.TestCase):
                 "-S",
                 "-c",
                 "import sys; sys.path.insert(0, sys.argv[1]); "
-                "import server.serve_options; "
+                "import install.launcher; "
                 "print(sorted({name.partition('.')[0] for name in sys.modules} "
                 "- set(sys.stdlib_module_names)))",
                 str(ROOT),
@@ -416,7 +466,7 @@ class ServeOptionsTests(unittest.TestCase):
             timeout=30,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.strip(), "['__main__', 'server']")
+        self.assertEqual(result.stdout.strip(), "['__main__', 'install', 'server']")
 
     def test_server_requires_explicit_model_and_paths(self):
         model = "community/custom-splash"
@@ -467,6 +517,27 @@ class ServeOptionsTests(unittest.TestCase):
                     ),
                     [args.binary, "serve-native", args.model_root, *arguments],
                 )
+
+    def test_a_relaunch_asks_for_the_first_context_as_relaunch_context(self):
+        """A relaunch after --max-context asks for the first engine's context
+        as an automatic one does, past the native window too, and serves
+        what its plan holds of it (it required --max-context again). It keeps
+        --max-context, so that it is planned as the first engine was."""
+        model = "community/custom-splash"
+        required = [str(api.ROOT / "install/models" / model), "--model", model]
+        args = api.parse_args([*required, "--max-context", "1000000"])
+        self.assertEqual(
+            api._native_command(args, args.model_root, 1_000_000),
+            [
+                args.binary,
+                "serve-native",
+                args.model_root,
+                "1000000",
+                "auto",
+                "--relaunch-context",
+                "1000000",
+            ],
+        )
 
 
 if __name__ == "__main__":

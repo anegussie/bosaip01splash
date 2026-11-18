@@ -41,9 +41,11 @@ public:
                  metal::MetalBuffer locations);
   // A prefill command's: the history of its lane `sequence`, whose pages
   // the command reads up to page `pages` (`sources`, at the pool's
-  // `poolLayers` through `poolTable`), streams through `stream`.
+  // `poolLayers` through `poolTable`), streams through `stream` over the
+  // attention layers `layers` the command runs.
   SpilledKvReads(KvHistoryStream &stream, uint32_t sequence, std::shared_ptr<const KvPageSources> sources,
-                 uint32_t pages, metal::MetalBuffer poolTable, std::span<const SplashKvLayer> poolLayers);
+                 uint32_t pages, metal::MetalBuffer poolTable, std::span<const SplashKvLayer> poolLayers,
+                 AttentionLayers layers);
   // Ends a run end() did not.
   ~SpilledKvReads();
   SpilledKvReads(const SpilledKvReads &) = delete;
@@ -52,10 +54,11 @@ public:
   // Some lane of the command holds an Index page.
   [[nodiscard]] bool active() const noexcept;
   // After a layer's block lists, before its attention: the lists with the
-  // locations of their entries' blocks (KvBlockCache::addResolve), for the
-  // located split. Only an active one, for lists.
+  // locations of their entries' blocks (KvBlockCache::addResolve), each
+  // lane's `laneLists` lists of its tiles, for the located split. Only an
+  // active one, for lists.
   [[nodiscard]] ops::AttentionBlocks verify(metal::CommandGraph &graph, uint32_t layer,
-                                            const ops::AttentionBlocks &blocks);
+                                            const ops::AttentionBlocks &blocks, uint32_t laneLists);
   // After a prefill chunk's store: the K/V its attention reads, staged when
   // the history of `sequence` holds Index pages (KvHistoryStream), else
   // `pool`. The chunk's pages are [chunkFirstPage, chunkFirstPage +
@@ -72,10 +75,11 @@ public:
   // could not read; merges its resolves' counts into the cache's.
   void end();
   // What end() kept of every run: the blocks the command's reads could not
-  // read, each with the command's lane that needed it, and the time its GPU
-  // work waited on its history's reads (ModelBatchTicket::streamMilliseconds).
+  // read, each with the command's lane that needed it, and the bytes they
+  // brought (a decode's resolves count theirs in the cache's statistics
+  // too).
   [[nodiscard]] std::span<const KvReadFailure> failures() const noexcept { return failures_; }
-  [[nodiscard]] double streamMilliseconds() const noexcept { return streamMilliseconds_; }
+  [[nodiscard]] uint64_t readBytes() const noexcept { return readBytes_; }
 
 private:
   KvBlockCache *cache_ = nullptr;
@@ -91,13 +95,14 @@ private:
   uint32_t pages_ = 0;
   metal::MetalBuffer poolTable_;
   std::span<const SplashKvLayer> poolLayers_;
+  AttentionLayers layers_;
   // Whether this run encoded reads that end() has not ended.
   bool running_ = false;
   // The layer the streamed sequence's chunks attend through staging.
   std::optional<uint32_t> stagedLayer_;
   PrefillKv staged_;
   std::vector<KvReadFailure> failures_;
-  double streamMilliseconds_ = 0.0;
+  uint64_t readBytes_ = 0;
 };
 
 } // namespace splash::model

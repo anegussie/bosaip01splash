@@ -123,6 +123,7 @@ def ladder_tool_block(turn: int, step: int) -> str:
         )
     return "\n".join(lines)
 
+
 # Coding prompts copied from the 2026-11-06 harness: terse, no docstrings, so
 # a 128-token cap still fits one complete function.
 # Coding prompts ask for code only, with no docstrings or annotations, so the
@@ -191,14 +192,26 @@ COUNTER_FIELDS = {
     "experts_decode_read": ("streamed_experts", "decode", "read"),
     "experts_decode_read_bytes": ("streamed_experts", "decode", "read_bytes"),
     "experts_decode_ahead_read_bytes": (
-        "streamed_experts", "decode", "ahead_read_bytes"),
+        "streamed_experts",
+        "decode",
+        "ahead_read_bytes",
+    ),
     "experts_decode_ahead_used_bytes": (
-        "streamed_experts", "decode", "ahead_used_bytes"),
+        "streamed_experts",
+        "decode",
+        "ahead_used_bytes",
+    ),
     "experts_prefill_read_bytes": ("streamed_experts", "prefill", "read_bytes"),
     "experts_prefill_ahead_read_bytes": (
-        "streamed_experts", "prefill", "ahead_read_bytes"),
+        "streamed_experts",
+        "prefill",
+        "ahead_read_bytes",
+    ),
     "experts_prefill_ahead_used_bytes": (
-        "streamed_experts", "prefill", "ahead_used_bytes"),
+        "streamed_experts",
+        "prefill",
+        "ahead_used_bytes",
+    ),
     "kv_pages_allocated": ("kv", "pages_allocated"),
     "kv_pages_active": ("kv", "pages_active"),
     "kv_pages_cache": ("kv", "pages_cache"),
@@ -249,6 +262,7 @@ COUNTER_FIELDS = {
     "metal_peak_bytes": ("memory_actual", "peak_bytes"),
 }
 
+
 # Non-counter fields that describe what the server is configured to do.
 def profile_of_record(status: dict) -> dict:
     plan = status.get("memory_plan", {})
@@ -262,7 +276,8 @@ def profile_of_record(status: dict) -> dict:
         "instance": status.get("instance"),
         "build_id": identity.get("cache", {}).get("build_id"),
         "loaded_model_layout_sha256": identity.get("cache", {}).get(
-            "loaded_model_layout_sha256"),
+            "loaded_model_layout_sha256"
+        ),
         "target_model_sha256": identity.get("kv", {}).get("target_model_sha256"),
         "maximum_context_tokens": status.get("maximum_context_tokens"),
         "prefill_chunk_tokens": plan.get("prefill_chunk_tokens"),
@@ -285,8 +300,11 @@ def profile_of_record(status: dict) -> dict:
         "expert_floor_bytes": experts.get("floor_bytes"),
         "expert_slot_count": experts.get("slot_count"),
         "expert_count": experts.get("expert_count"),
-        "env": {k: v for k, v in sorted(__import__("os").environ.items())
-                if k.startswith("SPLASH_")},
+        "env": {
+            k: v
+            for k, v in sorted(__import__("os").environ.items())
+            if k.startswith("SPLASH_")
+        },
     }
 
 
@@ -304,7 +322,9 @@ def counters(status: dict) -> dict:
     for name, path in COUNTER_FIELDS.items():
         value = deep_get(status, *path)
         out[name] = value if isinstance(value, (int, float)) else 0
-    out["decode_batches_by_width"] = deep_get(status, "scheduler", "decode_batches_by_width")
+    out["decode_batches_by_width"] = deep_get(
+        status, "scheduler", "decode_batches_by_width"
+    )
     return out
 
 
@@ -321,8 +341,12 @@ def scalar_state(status: dict) -> dict:
         "kv_pages_free": deep_get(status, "kv", "pages_free"),
         "kv_pages_cache": deep_get(status, "kv", "pages_cache"),
         "disk_used_bytes": deep_get(status, "disk", "used_bytes"),
-        "host_available_bytes": deep_get(status, "memory_governor", "host_available_bytes"),
-        "host_headroom_bytes": deep_get(status, "memory_governor", "host_headroom_bytes"),
+        "host_available_bytes": deep_get(
+            status, "memory_governor", "host_available_bytes"
+        ),
+        "host_headroom_bytes": deep_get(
+            status, "memory_governor", "host_headroom_bytes"
+        ),
         "growth_allowed": deep_get(status, "memory_governor", "growth_allowed"),
         "metal_allocated_bytes": deep_get(status, "memory_actual", "allocated_bytes"),
         "metal_peak_bytes": deep_get(status, "memory_actual", "peak_bytes"),
@@ -361,7 +385,7 @@ def build_prompt(client: Client, kind: str, salt: str) -> tuple[str, int]:
     """
     target = PROMPT_TARGETS.get(kind)
     if target is None and kind.startswith("pre-"):
-        target = int(kind[len("pre-"):])
+        target = int(kind[len("pre-") :])
     if target is None:
         raise SystemExit(f"unknown prompt kind {kind}")
     if kind in ("smoke", "4k") or kind.startswith("pre-"):
@@ -383,7 +407,9 @@ def build_prompt(client: Client, kind: str, salt: str) -> tuple[str, int]:
                 continue
             base_tokens, base_prompt = sized(0, repeat)
             deficit = target - base_tokens
-            for pad_count in {0, deficit - 3, deficit - 2, deficit - 4} & set(range(0, len(PAD_WORDS) + 1)):
+            for pad_count in {0, deficit - 3, deficit - 2, deficit - 4} & set(
+                range(0, len(PAD_WORDS) + 1)
+            ):
                 tokens, candidate = sized(pad_count, repeat)
                 if tokens == target:
                     exact = (tokens, candidate)
@@ -461,7 +487,8 @@ def run_code_check(name: str, prompt: str, text: str) -> dict:
         path = handle.name
     try:
         run = subprocess.run(
-            [sys.executable, "-I", path], capture_output=True, text=True, timeout=10)
+            [sys.executable, "-I", path], capture_output=True, text=True, timeout=10
+        )
         result = {
             "correct": run.returncode == 0,
             "returncode": run.returncode,
@@ -493,9 +520,16 @@ def smoke_gate_ok(text: str) -> bool:
     return counted >= 20
 
 
-def run_probe(client: Client, out: Path, name: str, prompt: str, max_tokens: int,
-              phase: str, thermal_gate: str | None,
-              messages: list[dict] | None = None) -> dict:
+def run_probe(
+    client: Client,
+    out: Path,
+    name: str,
+    prompt: str,
+    max_tokens: int,
+    phase: str,
+    thermal_gate: str | None,
+    messages: list[dict] | None = None,
+) -> dict:
     gate = wait_quiet(client, 900.0, thermal_gate)
     before_status = client.status()
     before = counters(before_status)
@@ -538,7 +572,7 @@ def run_probe(client: Client, out: Path, name: str, prompt: str, max_tokens: int
             line = raw.decode("utf-8", "replace").strip()
             if not line.startswith("data:"):
                 continue
-            payload = line[len("data:"):].strip()
+            payload = line[len("data:") :].strip()
             if payload == "[DONE]":
                 complete = True
                 break
@@ -571,21 +605,34 @@ def run_probe(client: Client, out: Path, name: str, prompt: str, max_tokens: int
     speculation = (metrics or {}).get("speculation", {})
     latency = (metrics or {}).get("request_latency", {})
     cache_metrics = (metrics or {}).get("cache", {})
-    decode_tokens = (metrics or {}).get("decode", {}).get(
-        "tokens", (timings or {}).get("predicted_n") or (usage or {}).get("completion_tokens", 0))
-    prefill_tokens = (metrics or {}).get("prefill", {}).get(
-        "tokens", (timings or {}).get("prompt_n"))
+    decode_tokens = (
+        (metrics or {})
+        .get("decode", {})
+        .get(
+            "tokens",
+            (timings or {}).get("predicted_n")
+            or (usage or {}).get("completion_tokens", 0),
+        )
+    )
+    prefill_tokens = (
+        (metrics or {})
+        .get("prefill", {})
+        .get("tokens", (timings or {}).get("prompt_n"))
+    )
     cycles = speculation.get("cycles") or delta["decode_batches"]
     decode_wall_ms = delta["decode_wall_ms"]
     decode_tps = (
         delta["decode_output_tokens"] * 1000 / decode_wall_ms
-        if decode_wall_ms > 0 else None
+        if decode_wall_ms > 0
+        else None
     )
     completion = (usage or {}).get("completion_tokens", decode_tokens)
     drafted = delta["drafted_tokens"]
     accepted = delta["accepted_draft_tokens"]
 
-    contended = sum(1 for s in samples if s["active_requests"] > 1 or s["waiting"] or s["suspended"])
+    contended = sum(
+        1 for s in samples if s["active_requests"] > 1 or s["waiting"] or s["suspended"]
+    )
     record = {
         "name": name,
         "phase": phase,
@@ -614,7 +661,9 @@ def run_probe(client: Client, out: Path, name: str, prompt: str, max_tokens: int
         "contended_samples": contended,
         "status_samples": len(samples),
         "wall_seconds": round(wall, 3),
-        "sse_ttft_seconds": round(first_token_at, 3) if first_token_at is not None else None,
+        "sse_ttft_seconds": round(first_token_at, 3)
+        if first_token_at is not None
+        else None,
         "ttft_ms": latency.get("ttft_ms"),
         "queue_to_start_ms": latency.get("queue_to_start_ms"),
         "prefill_ms": (timings or {}).get("prompt_ms"),
@@ -627,7 +676,8 @@ def run_probe(client: Client, out: Path, name: str, prompt: str, max_tokens: int
         "cycles": cycles,
         "tokens_per_cycle": round(decode_tokens / cycles, 3) if cycles else None,
         "cycle_ms_from_counters": (
-            round(delta["decode_cycle_ms"] / cycles, 2) if cycles else None),
+            round(delta["decode_cycle_ms"] / cycles, 2) if cycles else None
+        ),
         "draft_n": (timings or {}).get("draft_n"),
         "draft_n_accepted": (timings or {}).get("draft_n_accepted"),
         "drafted_delta": drafted,
@@ -635,21 +685,37 @@ def run_probe(client: Client, out: Path, name: str, prompt: str, max_tokens: int
         "acceptance_rate": round(accepted / drafted, 4) if drafted else None,
         "expert_read_bytes_per_output_token": (
             round(delta["experts_decode_read_bytes"] / decode_tokens, 1)
-            if decode_tokens and delta["experts_decode_read_bytes"] else None),
+            if decode_tokens and delta["experts_decode_read_bytes"]
+            else None
+        ),
         "expert_ahead_used_over_read_prefill": (
-            round(delta["experts_prefill_ahead_used_bytes"]
-                  / delta["experts_prefill_ahead_read_bytes"], 3)
-            if delta["experts_prefill_ahead_read_bytes"] else None),
+            round(
+                delta["experts_prefill_ahead_used_bytes"]
+                / delta["experts_prefill_ahead_read_bytes"],
+                3,
+            )
+            if delta["experts_prefill_ahead_read_bytes"]
+            else None
+        ),
         "expert_ahead_used_over_read_decode": (
-            round(delta["experts_decode_ahead_used_bytes"]
-                  / delta["experts_decode_ahead_read_bytes"], 3)
-            if delta["experts_decode_ahead_read_bytes"] else None),
+            round(
+                delta["experts_decode_ahead_used_bytes"]
+                / delta["experts_decode_ahead_read_bytes"],
+                3,
+            )
+            if delta["experts_decode_ahead_read_bytes"]
+            else None
+        ),
         "table_prefill_stage_ms_mean": (
             round(delta["table_prefill_stage_ms"] / delta["table_prefill_samples"], 2)
-            if delta["table_prefill_samples"] else None),
+            if delta["table_prefill_samples"]
+            else None
+        ),
         "table_decode_stage_ms_mean": (
             round(delta["table_decode_stage_ms"] / delta["table_decode_samples"], 2)
-            if decode_tokens and delta["table_decode_samples"] else None),
+            if decode_tokens and delta["table_decode_samples"]
+            else None
+        ),
         "cache_status": cache_metrics.get("status"),
         "matched_tokens": cache_metrics.get("matched_tokens"),
         "spill_whole_pages_delta": delta["spill_whole_pages"],
@@ -666,9 +732,11 @@ def run_probe(client: Client, out: Path, name: str, prompt: str, max_tokens: int
         "metal_peak_bytes_before": before["metal_peak_bytes"],
         "metal_peak_bytes_after": after["metal_peak_bytes"],
         "metal_peak_bytes_during": max(
-            (s["metal_peak_bytes"] or 0 for s in samples), default=0),
+            (s["metal_peak_bytes"] or 0 for s in samples), default=0
+        ),
         "metal_allocated_bytes_during_max": max(
-            (s["metal_allocated_bytes"] or 0 for s in samples), default=0),
+            (s["metal_allocated_bytes"] or 0 for s in samples), default=0
+        ),
         "memory_pressure_before": before_state["memory_pressure"],
         "memory_pressure_after": after_state["memory_pressure"],
         "thermal_state_before": gate["thermal_state_before"],
@@ -702,9 +770,16 @@ def run_probe(client: Client, out: Path, name: str, prompt: str, max_tokens: int
     return record
 
 
-def run_trial(client: Client, out: Path, trial: int, groups: list[str],
-              thermal_gate: str | None, prefill_sizes: list[int] | None = None,
-              ladder_turns: int = 0, ladder_step: int = 1200) -> list[dict]:
+def run_trial(
+    client: Client,
+    out: Path,
+    trial: int,
+    groups: list[str],
+    thermal_gate: str | None,
+    prefill_sizes: list[int] | None = None,
+    ladder_turns: int = 0,
+    ladder_step: int = 1200,
+) -> list[dict]:
     trial_dir = out / f"trial{trial}"
     trial_dir.mkdir(parents=True, exist_ok=True)
     rows: list[dict] = []
@@ -714,47 +789,109 @@ def run_trial(client: Client, out: Path, trial: int, groups: list[str],
         salt = uuid.uuid4().hex[:8]
         prompt, tokens = build_prompt(client, "smoke", salt)
         print(f"trial {trial}: smoke prompt tokens={tokens}")
-        cold = run_probe(client, trial_dir, "smoke-cold", prompt, SMOKE_MAX_TOKENS, f"trial{trial}", thermal_gate)
-        reuse = run_probe(client, trial_dir, "smoke-reuse", prompt, SMOKE_MAX_TOKENS, f"trial{trial}", thermal_gate)
+        cold = run_probe(
+            client,
+            trial_dir,
+            "smoke-cold",
+            prompt,
+            SMOKE_MAX_TOKENS,
+            f"trial{trial}",
+            thermal_gate,
+        )
+        reuse = run_probe(
+            client,
+            trial_dir,
+            "smoke-reuse",
+            prompt,
+            SMOKE_MAX_TOKENS,
+            f"trial{trial}",
+            thermal_gate,
+        )
         if not cold["correct"] or not reuse["correct"]:
             raise SystemExit(f"trial {trial}: smoke correctness gate failed")
         if (reuse["cached_tokens"] or 0) < tokens - 32:
             raise SystemExit(
                 f"trial {trial}: smoke reuse gate failed cached={reuse['cached_tokens']} "
-                f"of {tokens}")
+                f"of {tokens}"
+            )
         rows += [cold, reuse]
 
     if "4k" in groups or "full" in groups:
         salt = uuid.uuid4().hex[:8]
         prompt, tokens = build_prompt(client, "4k", salt)
         print(f"trial {trial}: 4k prompt tokens={tokens}")
-        cold = run_probe(client, trial_dir, "4k-cold", prompt, SMOKE_MAX_TOKENS, f"trial{trial}", thermal_gate)
-        reuse = run_probe(client, trial_dir, "4k-reuse", prompt, SMOKE_MAX_TOKENS, f"trial{trial}", thermal_gate)
+        cold = run_probe(
+            client,
+            trial_dir,
+            "4k-cold",
+            prompt,
+            SMOKE_MAX_TOKENS,
+            f"trial{trial}",
+            thermal_gate,
+        )
+        reuse = run_probe(
+            client,
+            trial_dir,
+            "4k-reuse",
+            prompt,
+            SMOKE_MAX_TOKENS,
+            f"trial{trial}",
+            thermal_gate,
+        )
         if (reuse["cached_tokens"] or 0) < tokens - 128:
-            print(f"trial {trial}: WARNING 4k reuse cached={reuse['cached_tokens']} of {tokens}")
+            print(
+                f"trial {trial}: WARNING 4k reuse cached={reuse['cached_tokens']} of {tokens}"
+            )
         rows += [cold, reuse]
 
     if "coding" in groups or "full" in groups:
-        order = ["code-3", "code-2", "code-1"] if reversed_order else ["code-1", "code-2", "code-3"]
+        order = (
+            ["code-3", "code-2", "code-1"]
+            if reversed_order
+            else ["code-1", "code-2", "code-3"]
+        )
         for name in order:
             prompt, tokens = build_prompt(client, name, uuid.uuid4().hex[:8])
-            row = run_probe(client, trial_dir, name, prompt, CODE_MAX_TOKENS, f"trial{trial}", thermal_gate)
+            row = run_probe(
+                client,
+                trial_dir,
+                name,
+                prompt,
+                CODE_MAX_TOKENS,
+                f"trial{trial}",
+                thermal_gate,
+            )
             if not row["correct"]:
                 raise SystemExit(
-                    f"trial {trial}: {name} correctness failed: {row['diagnostic']}")
+                    f"trial {trial}: {name} correctness failed: {row['diagnostic']}"
+                )
             rows.append(row)
 
     if "prefill" in groups:
         # Cold measures dense prefill; the identical prompt right after measures
         # what prefix reuse actually saves at the same size.
-        for size in (prefill_sizes or PREFILL_SIZES):
+        for size in prefill_sizes or PREFILL_SIZES:
             kind = f"pre-{size}"
             prompt, tokens = build_prompt(client, kind, uuid.uuid4().hex[:8])
             print(f"trial {trial}: prefill {size} prompt tokens={tokens}")
-            cold = run_probe(client, trial_dir, f"pre-{size}-cold", prompt,
-                             PREFILL_MAX_TOKENS, f"trial{trial}", thermal_gate)
-            reuse = run_probe(client, trial_dir, f"pre-{size}-reuse", prompt,
-                              PREFILL_MAX_TOKENS, f"trial{trial}", thermal_gate)
+            cold = run_probe(
+                client,
+                trial_dir,
+                f"pre-{size}-cold",
+                prompt,
+                PREFILL_MAX_TOKENS,
+                f"trial{trial}",
+                thermal_gate,
+            )
+            reuse = run_probe(
+                client,
+                trial_dir,
+                f"pre-{size}-reuse",
+                prompt,
+                PREFILL_MAX_TOKENS,
+                f"trial{trial}",
+                thermal_gate,
+            )
             rows += [cold, reuse]
 
     if "ladder" in groups:
@@ -767,20 +904,32 @@ def run_trial(client: Client, out: Path, trial: int, groups: list[str],
         salt = uuid.uuid4().hex[:8]
         conversation: list[dict] = [
             {"role": "system", "content": LADDER_SYSTEM},
-            {"role": "user", "content": f"Fix the failing cache test in the repo. Benchmark salt: {salt}"},
+            {
+                "role": "user",
+                "content": f"Fix the failing cache test in the repo. Benchmark salt: {salt}",
+            },
         ]
         for turn in range(ladder_turns):
             block = ladder_turn_block(turn, ladder_step)
             conversation.append({"role": "user", "content": block})
             prompt = block
-            row = run_probe(client, trial_dir, f"turn-{turn + 1}", prompt,
-                            LADDER_MAX_TOKENS, f"trial{trial}", thermal_gate,
-                            messages=list(conversation))
+            row = run_probe(
+                client,
+                trial_dir,
+                f"turn-{turn + 1}",
+                prompt,
+                LADDER_MAX_TOKENS,
+                f"trial{trial}",
+                thermal_gate,
+                messages=list(conversation),
+            )
             row["ladder_turn"] = turn + 1
             row["ladder_step_tokens"] = ladder_step
             rows.append(row)
             conversation.append({"role": "assistant", "content": LADDER_REPLY})
-            conversation.append({"role": "tool", "content": ladder_tool_block(turn, ladder_step)})
+            conversation.append(
+                {"role": "tool", "content": ladder_tool_block(turn, ladder_step)}
+            )
 
     (trial_dir / "matrix-results.json").write_text(json.dumps({"rows": rows}, indent=2))
     return rows
@@ -810,7 +959,8 @@ def summarize(rows: list[dict]) -> list[str]:
         lines.append(
             f"coding decode mean {statistics.mean(values):.2f} tok/s "
             f"(range {min(values):.2f}-{max(values):.2f}), "
-            f"tokens/cycle mean {statistics.mean(tpc):.3f}")
+            f"tokens/cycle mean {statistics.mean(tpc):.3f}"
+        )
     cold = [r["prefill_tok_s"] for r in rows if r["name"] == "4k-cold"]
     reuse = [r["sse_ttft_seconds"] for r in rows if r["name"] == "4k-reuse"]
     if cold:
@@ -820,15 +970,19 @@ def summarize(rows: list[dict]) -> list[str]:
     prefill = [r for r in rows if r["name"].startswith("pre-")]
     if prefill:
         lines.append("")
-        lines.append("Prompt processing by prompt size (cold = dense prefill, "
-                     "reuse = same prompt right after):")
+        lines.append(
+            "Prompt processing by prompt size (cold = dense prefill, "
+            "reuse = same prompt right after):"
+        )
         sizes = sorted({int(r["name"].split("-")[1]) for r in prefill}, reverse=True)
         for size in sizes:
             cold = next((r for r in prefill if r["name"] == f"pre-{size}-cold"), None)
             reuse = next((r for r in prefill if r["name"] == f"pre-{size}-reuse"), None)
             if not cold or not reuse:
                 continue
-            speedup = (cold["sse_ttft_seconds"] or 0) / max(reuse["sse_ttft_seconds"] or 0, 0.001)
+            speedup = (cold["sse_ttft_seconds"] or 0) / max(
+                reuse["sse_ttft_seconds"] or 0, 0.001
+            )
             lines.append(
                 f"- {size}: cold prefill {cold['prefill_tok_s']} tok/s in "
                 f"{cold['prefill_ms']} ms (TTFT {cold['sse_ttft_seconds']} s); reuse TTFT "
@@ -836,7 +990,8 @@ def summarize(rows: list[dict]) -> list[str]:
                 f"{reuse['cached_tokens']}, disk KV read-back "
                 f"{reuse['cache_kv_disk_hit_tokens_delta']} tokens, spill pages "
                 f"{reuse['spill_whole_pages_delta']}, kv pages free "
-                f"{reuse['kv_pages_free_before']}")
+                f"{reuse['kv_pages_free_before']}"
+            )
     coded_ladder = [r for r in rows if r["name"].startswith("turn-")]
     if coded_ladder:
         lines.append("")
@@ -848,19 +1003,30 @@ def summarize(rows: list[dict]) -> list[str]:
                 f"({100.0 * cached / max(row['prompt_tokens'] or 1, 1):.0f}%), TTFT "
                 f"{row['sse_ttft_seconds']} s, prefill {row['prefill_tok_s']} tok/s, "
                 f"disk KV read-back {row['cache_kv_disk_hit_tokens_delta']} tokens, "
-                f"spill pages {row['spill_whole_pages_delta']}")
+                f"spill pages {row['spill_whole_pages_delta']}"
+            )
     drafted = sum(r["drafted_delta"] for r in rows)
     accepted = sum(r["accepted_delta"] for r in rows)
     if drafted:
-        lines.append(f"draft acceptance {accepted}/{drafted} ({accepted / drafted * 100:.1f}%)")
-    lines.append(f"probes marked clean: {sum(1 for r in rows if r['clean'])}/{len(rows)}")
+        lines.append(
+            f"draft acceptance {accepted}/{drafted} ({accepted / drafted * 100:.1f}%)"
+        )
     lines.append(
-        f"spill whole-page restores during probes: {sum(r['spill_whole_pages_delta'] for r in rows)}")
+        f"probes marked clean: {sum(1 for r in rows if r['clean'])}/{len(rows)}"
+    )
+    lines.append(
+        f"spill whole-page restores during probes: {sum(r['spill_whole_pages_delta'] for r in rows)}"
+    )
     lines.append(
         "disk KV read-back tokens during probes: "
-        f"{sum(r['cache_kv_disk_hit_tokens_delta'] for r in rows)}")
-    lines.append("thermal states: " + ", ".join(sorted({
-        state for row in rows for state in row["thermal_states_during"]})))
+        f"{sum(r['cache_kv_disk_hit_tokens_delta'] for r in rows)}"
+    )
+    lines.append(
+        "thermal states: "
+        + ", ".join(
+            sorted({state for row in rows for state in row["thermal_states_during"]})
+        )
+    )
     return lines
 
 
@@ -904,13 +1070,16 @@ def describe_extra_group(prefill_rows: list[dict], ladder_rows: list[dict]) -> s
             reuse = mean(by_size[size]["reuse"])
             parts.append(f"pre{size} {cold:.0f}/{reuse:.0f} tok/s")
     if ladder_rows:
-        ttfts = [row["sse_ttft_seconds"] for row in ladder_rows if row["sse_ttft_seconds"]]
+        ttfts = [
+            row["sse_ttft_seconds"] for row in ladder_rows if row["sse_ttft_seconds"]
+        ]
         cached = [
             100.0 * (row["cached_tokens"] or 0) / max(row["prompt_tokens"] or 1, 1)
             for row in ladder_rows
         ]
         parts.append(
-            f"ladder ttft {mean(ttfts):.2f}s mean, cache {mean(cached):.0f}% mean")
+            f"ladder ttft {mean(ttfts):.2f}s mean, cache {mean(cached):.0f}% mean"
+        )
     return "; ".join(parts)
 
 
@@ -949,8 +1118,12 @@ def run_summary(run: Path, label: str, overrides: str) -> dict[str, str]:
         "coding_tokens_per_cycle": f"{mean([row['tokens_per_cycle'] for row in coding]):.2f}",
         "draft_accepted": str(accepted),
         "draft_proposed": str(proposed),
-        "kv_disk_hit_tokens": str(sum(row.get("cache_kv_disk_hit_tokens_delta") or 0 for row in rows)),
-        "spill_pages": str(sum(row.get("spill_whole_pages_delta") or 0 for row in rows)),
+        "kv_disk_hit_tokens": str(
+            sum(row.get("cache_kv_disk_hit_tokens_delta") or 0 for row in rows)
+        ),
+        "spill_pages": str(
+            sum(row.get("spill_whole_pages_delta") or 0 for row in rows)
+        ),
         "clean_probes": f"{clean}/{len(rows)}",
         "thermal": thermal,
         "notes": describe_extra_group(prefill_rows, ladder_rows),
@@ -959,15 +1132,25 @@ def run_summary(run: Path, label: str, overrides: str) -> dict[str, str]:
 
 def normalize_index(index: Path) -> None:
     """Repair an index written before a column existed, so every row is aligned."""
-    lines = [line.rstrip("\n").split("\t") for line in index.read_text().splitlines() if line.strip()]
+    lines = [
+        line.rstrip("\n").split("\t")
+        for line in index.read_text().splitlines()
+        if line.strip()
+    ]
     if not lines:
         return
     header, rows = lines[0], lines[1:]
-    if header == list(INDEX_COLUMNS) and all(len(row) == len(INDEX_COLUMNS) for row in rows):
+    if header == list(INDEX_COLUMNS) and all(
+        len(row) == len(INDEX_COLUMNS) for row in rows
+    ):
         return
     rows = [list(row) + [""] * (len(INDEX_COLUMNS) - len(row)) for row in rows]
     index.write_text(
-        "\n".join(["\t".join(INDEX_COLUMNS)] + ["\t".join(row[: len(INDEX_COLUMNS)]) for row in rows]) + "\n"
+        "\n".join(
+            ["\t".join(INDEX_COLUMNS)]
+            + ["\t".join(row[: len(INDEX_COLUMNS)]) for row in rows]
+        )
+        + "\n"
     )
 
 
@@ -993,7 +1176,11 @@ def compare_runs(index_dir: Path) -> None:
     if not index.exists():
         print("No recorded experiments yet.")
         return
-    lines = [line.rstrip("\n").split("\t") for line in index.read_text().splitlines() if line.strip()]
+    lines = [
+        line.rstrip("\n").split("\t")
+        for line in index.read_text().splitlines()
+        if line.strip()
+    ]
     _, *rows = lines
     widths = {column: len(column) for column in INDEX_COLUMNS}
     for row in rows:
@@ -1001,7 +1188,10 @@ def compare_runs(index_dir: Path) -> None:
             widths[column] = max(widths[column], len(value))
 
     def line(values) -> str:
-        return "  ".join(str(value).ljust(widths[column]) for column, value in zip(INDEX_COLUMNS, values))
+        return "  ".join(
+            str(value).ljust(widths[column])
+            for column, value in zip(INDEX_COLUMNS, values)
+        )
 
     print(line(INDEX_COLUMNS))
     print(line(tuple("-" * widths[column] for column in INDEX_COLUMNS)))
@@ -1014,34 +1204,68 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--base", default=DEFAULT_BASE)
     parser.add_argument("--model", default=DEFAULT_MODEL)
-    parser.add_argument("--out", type=Path, default=Path(
-        f"/private/tmp/option20-matrix-{time.strftime('%Y%m%d-%H%M%S')}"))
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=Path(f"/private/tmp/option20-matrix-{time.strftime('%Y%m%d-%H%M%S')}"),
+    )
     parser.add_argument("--trials", type=int, default=2)
-    parser.add_argument("--group", default="full",
-                        choices=["full", "smoke", "4k", "coding", "prefill", "ladder"],
-                        help="run one probe group only, e.g. --group coding for a "
-                             "thermal-matched speculation repeat, --group prefill for "
-                             "prompt-processing scaling, --group ladder for turn reuse")
-    parser.add_argument("--sizes", default=",".join(str(s) for s in PREFILL_SIZES),
-                        help="prompt token sizes for --group prefill")
-    parser.add_argument("--turns", type=int, default=LADDER_TURNS,
-                        help="turns in --group ladder")
-    parser.add_argument("--turn-step", type=int, default=LADDER_STEP,
-                        help="tokens added per turn in --group ladder")
-    parser.add_argument("--thermal-gate", default=None, choices=[None, "nominal"],
-                        help="require thermal_state=nominal before each probe")
-    parser.add_argument("--state-label", default="auto",
-                        choices=["auto", "fresh", "longlived"],
-                        help="declares how much prior traffic the measured server "
-                             "has served; comparison across cache states is invalid")
-    parser.add_argument("--record", type=Path, default=None,
-                        help="append one row to this experiment index directory")
-    parser.add_argument("--compare", action="store_true",
-                        help="print the recorded experiment index instead of running probes")
-    parser.add_argument("--run", type=Path, default=None, help="run directory recorded with --record")
+    parser.add_argument(
+        "--group",
+        default="full",
+        choices=["full", "smoke", "4k", "coding", "prefill", "ladder"],
+        help="run one probe group only, e.g. --group coding for a "
+        "thermal-matched speculation repeat, --group prefill for "
+        "prompt-processing scaling, --group ladder for turn reuse",
+    )
+    parser.add_argument(
+        "--sizes",
+        default=",".join(str(s) for s in PREFILL_SIZES),
+        help="prompt token sizes for --group prefill",
+    )
+    parser.add_argument(
+        "--turns", type=int, default=LADDER_TURNS, help="turns in --group ladder"
+    )
+    parser.add_argument(
+        "--turn-step",
+        type=int,
+        default=LADDER_STEP,
+        help="tokens added per turn in --group ladder",
+    )
+    parser.add_argument(
+        "--thermal-gate",
+        default=None,
+        choices=[None, "nominal"],
+        help="require thermal_state=nominal before each probe",
+    )
+    parser.add_argument(
+        "--state-label",
+        default="auto",
+        choices=["auto", "fresh", "longlived"],
+        help="declares how much prior traffic the measured server "
+        "has served; comparison across cache states is invalid",
+    )
+    parser.add_argument(
+        "--record",
+        type=Path,
+        default=None,
+        help="append one row to this experiment index directory",
+    )
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        help="print the recorded experiment index instead of running probes",
+    )
+    parser.add_argument(
+        "--run", type=Path, default=None, help="run directory recorded with --record"
+    )
     parser.add_argument("--label", default=None, help="experiment name for --record")
-    parser.add_argument("--overrides", default="", help="override list stored with --record")
-    parser.add_argument("--note", default="", help="one-line context stored with --record")
+    parser.add_argument(
+        "--overrides", default="", help="override list stored with --record"
+    )
+    parser.add_argument(
+        "--note", default="", help="one-line context stored with --record"
+    )
     args = parser.parse_args()
 
     if args.compare:
@@ -1066,11 +1290,17 @@ def main() -> None:
         "state": scalar_state(status),
     }
     completed = profile["instance"].get("requests_completed")
-    completed = completed if completed is not None else deep_get(status, "requests", "completed")
+    completed = (
+        completed
+        if completed is not None
+        else deep_get(status, "requests", "completed")
+    )
     uptime = time.time() - profile["instance"]["started_at"]
     state_label = args.state_label
     if state_label == "auto":
-        state_label = "fresh" if (completed or 0) <= 3 and uptime < 1800 else "longlived"
+        state_label = (
+            "fresh" if (completed or 0) <= 3 and uptime < 1800 else "longlived"
+        )
     print(
         f"server pid={profile['instance']['pid']} model={profile['instance']['model']} "
         f"build={profile['build_id']} state={state_label} "
@@ -1083,22 +1313,34 @@ def main() -> None:
         f"headroom={preflight['state']['host_headroom_bytes']} "
         f"growth_allowed={preflight['state']['growth_allowed']}"
     )
-    (out / "preflight.json").write_text(json.dumps({
-        "profile": profile,
-        "cache_state": state_label,
-        "uptime_seconds": round(uptime, 1),
-        "requests_completed_at_preflight": completed,
-        **preflight,
-    }, indent=2))
+    (out / "preflight.json").write_text(
+        json.dumps(
+            {
+                "profile": profile,
+                "cache_state": state_label,
+                "uptime_seconds": round(uptime, 1),
+                "requests_completed_at_preflight": completed,
+                **preflight,
+            },
+            indent=2,
+        )
+    )
 
     groups = [args.group]
     all_rows: list[dict] = []
     per_trial: dict[str, list[dict]] = {}
     prefill_sizes = [int(s) for s in args.sizes.split(",")]
     for trial in range(1, args.trials + 1):
-        rows = run_trial(client, out, trial, groups, args.thermal_gate,
-                         prefill_sizes=prefill_sizes, ladder_turns=args.turns,
-                         ladder_step=args.turn_step)
+        rows = run_trial(
+            client,
+            out,
+            trial,
+            groups,
+            args.thermal_gate,
+            prefill_sizes=prefill_sizes,
+            ladder_turns=args.turns,
+            ladder_step=args.turn_step,
+        )
         per_trial[f"trial{trial}"] = rows
         for row in rows:
             labelled = dict(row)
@@ -1123,9 +1365,13 @@ def main() -> None:
     }
     (out / "matrix-results.json").write_text(json.dumps(summary, indent=2))
 
-    lines = [f"# Option 20 {args.group} matrix", "",
-             f"cache state: {state_label} | thermal gate: {args.thermal_gate or 'none'} | "
-             f"build: {profile['build_id']}", ""]
+    lines = [
+        f"# Option 20 {args.group} matrix",
+        "",
+        f"cache state: {state_label} | thermal gate: {args.thermal_gate or 'none'} | "
+        f"build: {profile['build_id']}",
+        "",
+    ]
     for label, rows in per_trial.items():
         lines.append(f"## {label}")
         lines.extend(summarize(rows))
@@ -1143,7 +1389,9 @@ def main() -> None:
         parts.append(f"4k reuse TTFT {recorded['fourk_reuse_ttft']} s")
     if recorded.get("notes"):
         parts.append(recorded["notes"])
-    parts.append(f"draft acceptance {recorded['draft_accepted']}/{recorded['draft_proposed']}")
+    parts.append(
+        f"draft acceptance {recorded['draft_accepted']}/{recorded['draft_proposed']}"
+    )
     parts.append(f"spill pages {recorded['spill_pages']}")
     parts.append(f"disk KV read-back {recorded['kv_disk_hit_tokens']} tokens")
     parts.append(f"clean {recorded['clean_probes']}")

@@ -1,6 +1,7 @@
 """The engine's side of the native wire, for fake engines and golden tests;
 production is server/protocol.py."""
 
+import array
 import json
 import struct
 from dataclasses import replace
@@ -10,7 +11,7 @@ from server import protocol as wire
 _HEADER = struct.Struct("<4sHHQ")
 _REQUEST = struct.Struct("<QBBQQIIIffIffffQIIIQQIII")
 _IMAGE_SPAN = struct.Struct("<IIIIQQ")
-_MASK_RESPONSE = struct.Struct("<QQI")
+_MASK_RESPONSE = struct.Struct("<QQII")
 _ID = struct.Struct("<Q")
 
 
@@ -59,12 +60,31 @@ def status_event(correlation_id: int = 1, **fields) -> wire.StatusJsonEvent:
 
 def _event_payload(event: wire.EngineEvent) -> tuple[wire.FrameType, bytes]:
     match event:
+        case wire.WarmingEvent():
+            return wire.FrameType.WARMING, struct.pack(
+                "<II", event.steps_done, event.steps
+            )
         case wire.ReadyEvent():
             return wire.FrameType.READY, struct.pack(
-                "<IIB",
+                f"<IIBIII{len(event.stop_token_ids)}I",
                 event.max_concurrent_requests,
                 event.max_context_tokens,
                 event.vision,
+                event.vocabulary_size,
+                event.mask_rows,
+                len(event.stop_token_ids),
+                *event.stop_token_ids,
+            )
+        case wire.StartFailedEvent():
+            return wire.FrameType.START_FAILED, struct.pack(
+                f"<BBQQII{len(event.message)}s",
+                event.kind,
+                event.bound,
+                event.required_bytes,
+                event.budget_bytes,
+                event.plan_context_tokens,
+                len(event.message),
+                event.message,
             )
         case wire.StartEvent():
             return wire.FrameType.START, struct.pack(
@@ -84,12 +104,13 @@ def _event_payload(event: wire.EngineEvent) -> tuple[wire.FrameType, bytes]:
             )
         case wire.MaskRequestEvent():
             return wire.FrameType.MASK_REQUEST, struct.pack(
-                f"<QQII{len(event.simulation_tokens)}I",
+                f"<QQII{len(event.simulation_tokens) + len(event.parents)}I",
                 event.request_id,
                 event.mask_request_id,
                 event.words_per_mask,
                 len(event.simulation_tokens),
                 *event.simulation_tokens,
+                *event.parents,
             )
         case wire.DoneEvent():
             return wire.FrameType.DONE, struct.pack(
@@ -208,13 +229,23 @@ def decode_client_frame(frame_type: int, payload: bytes) -> wire.ClientMessage:
         case wire.FrameType.CANCEL:
             return wire.CancelFrame(*_ID.unpack(payload))
         case wire.FrameType.MASK_RESPONSE:
-            request_id, mask_request_id, count = _MASK_RESPONSE.unpack_from(payload)
+            request_id, mask_request_id, count, forced_count = (
+                _MASK_RESPONSE.unpack_from(payload)
+            )
             mask = payload[_MASK_RESPONSE.size : _MASK_RESPONSE.size + 4 * count]
-            return wire.MaskResponseFrame(request_id, mask_request_id, bytes(mask))
+            forced = array.array("I")
+            forced.frombytes(
+                payload[_MASK_RESPONSE.size + 4 * count :][: 4 * forced_count]
+            )
+            return wire.MaskResponseFrame(
+                request_id, mask_request_id, bytes(mask), tuple(forced)
+            )
         case wire.FrameType.STATUS_REQUEST:
             return wire.StatusRequestFrame(*_ID.unpack(payload))
         case wire.FrameType.RELEASE_REQUEST:
             return wire.ReleaseRequestFrame(*_ID.unpack(payload))
+        case wire.FrameType.STOP:
+            return wire.StopFrame(*_ID.unpack(payload))
     raise ValueError(f"frame type {frame_type:#06x} is not a client frame")
 
 

@@ -117,23 +117,65 @@ def client_messages():
         "request_ignore_eos": example_ignore_eos_request(),
         "request_progress": example_progress_request(),
         "cancel": p.CancelFrame(91),
+        # Mask row 1 forces two tokens after its path, row 2 one.
         "mask_response": p.MaskResponseFrame(
-            91, 7, struct.pack("<3I", 0xFFFFFFFF, 0, 0xA5A5A5A5)
+            91, 7, struct.pack("<3I", 0xFFFFFFFF, 0, 0xA5A5A5A5), (1, 40, 1, 41, 2, 50)
         ),
         "status_request": p.StatusRequestFrame(808),
         "release_request": p.ReleaseRequestFrame(808),
+        "stop": p.StopFrame(91),
     }
 
 
 def engine_events():
     return {
-        "ready": p.ReadyEvent(4, 524_288, False),
-        "ready_vision": p.ReadyEvent(4, 524_288, True),
+        "ready": p.ReadyEvent(4, 524_288, False, 248_320, 9, (248_044, 248_046)),
+        "ready_vision": p.ReadyEvent(
+            4, 524_288, True, 150_144, 9, (150_001, 150_003, 150_005, 150_018)
+        ),
+        "start_failed_memory": p.StartFailedEvent(
+            p.StartFailureKind.MEMORY_BUDGET,
+            p.ShortfallBound.MAX_MEMORY,
+            10_858_659_840,
+            1_073_741_824,
+            0,
+            b"the plan's floors require 10858659840 bytes but the Metal memory "
+            b"budget is 1073741824 bytes",
+        ),
+        "start_failed_context": p.StartFailedEvent(
+            p.StartFailureKind.CONTEXT_BUDGET,
+            p.ShortfallBound.DISK,
+            0,
+            0,
+            73_721,
+            b"--max-context 262144 exceeds the 73721 tokens the model and the SSD "
+            b"cache's room for its KV allow",
+        ),
+        "start_failed_host": p.StartFailedEvent(
+            p.StartFailureKind.HOST_MEMORY,
+            p.ShortfallBound.DEVICE_MEMORY,
+            0,
+            0,
+            0,
+            b"the host has too little free memory to start",
+        ),
+        "start_failed_command_memory": p.StartFailedEvent(
+            p.StartFailureKind.COMMAND_MEMORY,
+            p.ShortfallBound.DEVICE_MEMORY,
+            0,
+            0,
+            0,
+            b"a start command ran out of GPU memory",
+        ),
+        "warming": p.WarmingEvent(3, 9),
         "start": p.StartEvent(91, 2, 4096),
         "prompt_progress": p.PromptProgressEvent(91, 2048, 123456),
         "tokens": p.TokensEvent(91, 17, (10, 11, 12)),
-        "mask_request_initial": p.MaskRequestEvent(91, 6, 4, ()),
-        "mask_request_verify": p.MaskRequestEvent(91, 7, 4, (101, 102, 103)),
+        "mask_request_initial": p.MaskRequestEvent(91, 6, 4, (), ()),
+        # A verify block's tree: the anchor, and two rows that follow it.
+        "mask_request_verify": p.MaskRequestEvent(
+            91, 7, 4, (101, 102, 103), (p.NO_PARENT, 0, 0)
+        ),
         "done": p.DoneEvent(
             91, p.FinishReason.STOP, 4096, 512, 1000, 2000, 3500, (), 64, 350, 280, 50
         ),
@@ -284,6 +326,52 @@ class ProtocolPythonTests(unittest.TestCase):
         for name, event in engine_events().items():
             with self.subTest(name=name):
                 self.assertEqual(decode_event(golden[name]), event)
+
+    def test_the_server_times_the_engine_by_its_own_budgets(self):
+        """SUPERVISION is runtime/Supervision.hpp's, as the golden's
+        supervision line holds it."""
+        self.assertEqual(
+            struct.unpack("<6I", read_golden()["supervision"]),
+            astuple(p.SUPERVISION),
+        )
+
+    def test_ready_and_start_failure_validation(self):
+        """Warming counts its steps, Ready names its tokens and the start
+        failure its class, each within what the engine may send."""
+        # A warm-up has steps, and no more of them done than it has.
+        for event in (p.WarmingEvent(0, 0), p.WarmingEvent(10, 9)):
+            with self.subTest(event=event):
+                self.assert_fatal_event(p.IssueCode.INVALID_COUNT, event)
+        # A warming payload without its counts is below the minimum.
+        warming = native_peer.serialize_event(p.WarmingEvent(3, 9))
+        empty = mutate_u64(warming[: p.FRAME_HEADER_BYTES], 8, 0)
+        self.assertEqual(parser_issue(empty).code, p.IssueCode.INVALID_PAYLOAD_LENGTH)
+        for event in (
+            p.ReadyEvent(4, 4096, False, 64, 9, ()),
+            p.ReadyEvent(4, 4096, False, 64, 9, (1, 64)),
+            p.ReadyEvent(4, 4096, False, 0, 9, (1,)),
+            p.ReadyEvent(4, 4096, False, 64, 0, (1,)),
+        ):
+            with self.subTest(event=event):
+                self.assert_fatal_event(p.IssueCode.INVALID_COUNT, event)
+        self.assert_fatal_event(
+            p.IssueCode.INVALID_ENUM_VALUE,
+            p.StartFailedEvent(9, p.ShortfallBound.DISK, 0, 0, 0, b""),
+        )
+        self.assert_fatal_event(
+            p.IssueCode.INVALID_ENUM_VALUE,
+            p.StartFailedEvent(p.StartFailureKind.MODEL, 3, 0, 0, 0, b""),
+        )
+        # A stop count that does not match the payload breaks the frame.
+        ready = bytearray(
+            native_peer.serialize_event(p.ReadyEvent(4, 4096, False, 64, 9, (1, 2)))
+        )
+        struct.pack_into("<I", ready, p.FRAME_HEADER_BYTES + 17, 3)
+        self.assert_protocol_error(
+            p.FailureClass.PROTOCOL_FATAL,
+            p.IssueCode.INVALID_PAYLOAD_LENGTH,
+            lambda: decode_event(bytes(ready)),
+        )
 
     def test_progress_wire_validation(self):
         # A request asks for its prompt's progress with a flag bit.
@@ -1026,9 +1114,23 @@ class ProtocolPythonTests(unittest.TestCase):
             p.IssueCode.INVALID_SAMPLING,
             lambda: p.serialize_message(invalid),
         )
-        self.assert_fatal_event(p.IssueCode.INVALID_COUNT, p.ReadyEvent(0, 4096, False))
         self.assert_fatal_event(
-            p.IssueCode.INVALID_ENUM_VALUE, p.ReadyEvent(4, 4096, 2)
+            p.IssueCode.INVALID_COUNT, p.ReadyEvent(0, 4096, False, 64, 9, (1,))
+        )
+        self.assert_fatal_event(
+            p.IssueCode.INVALID_ENUM_VALUE, p.ReadyEvent(4, 4096, 2, 64, 9, (1,))
+        )
+        # A mask request's tokens are a tree: a parent each, the first the
+        # root, and every other one's before it.
+        for parents in ((0, 0), (p.NO_PARENT, 1), (p.NO_PARENT, p.NO_PARENT)):
+            with self.subTest(parents=parents):
+                self.assert_fatal_event(
+                    p.IssueCode.INVALID_CONSTRAINT,
+                    p.MaskRequestEvent(8, 1, 4, (101, 102), parents),
+                )
+        self.assert_fatal_event(
+            p.IssueCode.INVALID_PAYLOAD_LENGTH,
+            p.MaskRequestEvent(8, 1, 4, (101, 102), (p.NO_PARENT,)),
         )
 
     def test_unnamed_request_failures_are_fatal(self):
@@ -1052,12 +1154,17 @@ class ProtocolPythonTests(unittest.TestCase):
                 p.FailureClass.PROTOCOL_FATAL,
             ),
             (
-                p.MaskResponseFrame(0, 7, bytes(4)),
+                p.StopFrame(0),
                 p.IssueCode.INVALID_REQUEST_ID,
                 p.FailureClass.PROTOCOL_FATAL,
             ),
             (
-                p.MaskResponseFrame(91, 0, bytes(4)),
+                p.MaskResponseFrame(0, 7, bytes(4), ()),
+                p.IssueCode.INVALID_REQUEST_ID,
+                p.FailureClass.PROTOCOL_FATAL,
+            ),
+            (
+                p.MaskResponseFrame(91, 0, bytes(4), ()),
                 p.IssueCode.INVALID_REQUEST_ID,
                 p.FailureClass.REQUEST_ERROR,
             ),

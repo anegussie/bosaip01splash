@@ -111,7 +111,7 @@ Exit: source-oracle comparisons and runtime oracles pass, model responses are co
 
 ### 6. Finish cache, installation and documentation integration
 
-- Existing preparation identity hashing covers `QuantFormat.h` and `gguf_repack.metal`; verify invalidation, restart reuse and recovery from interrupted preparation. Add any new byte-defining helper to `dev/tools/weight_preparation_identity.py`.
+- Existing preparation identity hashing covers `QuantFormat.h` and `gguf_repack.metal`; verify invalidation, restart reuse and recovery from interrupted preparation. Add any new byte-defining helper to `dev/tools/kernel_identity.py`.
 - Expect these edits to invalidate existing GGUF preparation caches under the current scheme. Document the one-time preparation and disk cost; preserve old-format numerical goldens unless their bytes intentionally change.
 - Add installer selection tests, catalogue/completion coverage where generated, and README/DEVELOPMENT support documentation.
 - The intended existing public interface after implementation is:

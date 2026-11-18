@@ -584,7 +584,7 @@ Baseline: `src-6a06f0d6c0d0ed50806c8908cc3c19b1629f79495f59de3a349c4fb0937b951d`
 | `build/expert-retention-20261105/splash` | `ec70b7e93fdb45d6acdd9d79fdf186ff1848c13efc0999eea4ce0cbc8bf0fadf` |
 | `build/expert-retention-20261105/splash.metallib` | `826339b41ce381c8bc5e4823d213e178e8687ac4743c9b4b01fcafb476e583eb` |
 | `build/expert-retention-20261105/host-step.metallib` | `8e177c753e2051cd8a31c79bf031b3fae8daf04f5564ced9fc37db064bdfe51a` |
-| `runtime/model/SharedExpertArena.hpp` | `dd7110a83b48ed747fa5c998b0114ad387e9e8c5677904f35a840badf06968f9` |
+| `SharedExpertArena.hpp` (historical prototype) | `dd7110a83b48ed747fa5c998b0114ad387e9e8c5677904f35a840badf06968f9` |
 | `runtime/model/ExpertStore.cpp` | `f9bb53657586b37da5843706de1cfea778c734d7fe61a8300a3e8a05548a1155` |
 | `runtime/model/SlotRecycler.cpp` | `d11dbe3638485d5e9353d82e6d0430940e9e45ec924ec9e0ac602243466901a5` |
 

@@ -18,7 +18,7 @@ are excluded.
   inference. `SPLASH_MONITOR_OWNER_PID` bounds a replacement monitor's lifetime.
 
 The maintained monitor is `dev/tools/monitorsplash.sh`, installed as
-`~/monitorsplash.sh` and `runtime/scripts/monitorsplash.sh`. Launcher sampling
+`~/monitorsplash.sh` and `dev/tools/monitorsplash.sh`. Launcher sampling
 can be overridden with `SPLASH_MONITOR_INTERVAL` (positive integer seconds).
 
 Every five minutes the monitor also appends a `performance_summary` to

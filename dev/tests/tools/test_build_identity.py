@@ -75,7 +75,7 @@ class BuildIdentityTests(unittest.TestCase):
         self.assertIn("runtime/metal/abi/ExecutionGeometry.h", inputs)
         self.assertIn("runtime/model/Runtime.cpp", inputs)
         self.assertIn("runtime/metal/kernels/decode/linear_gguf_sgmatrix.metal", inputs)
-        self.assertIn("runtime/metal/kernels/prefill/paged_attention.metal", inputs)
+        self.assertIn("runtime/metal/kernels/shared/paged_attention.metal", inputs)
         self.assertIn("runtime/metal/abi/KernelABI.h", inputs)
         self.assertIn("runtime/metal/kernels/common/paged_attention_tile.h", inputs)
         self.assertIn("dev/tools/build_identity.py", inputs)
@@ -294,30 +294,33 @@ class CompileConfigurationTests(unittest.TestCase):
             self.assertEqual(self.query(*options, changed, sweep), 0)
             self.build(*options, sweep)
 
-            for flags, linked in (
-                ("ENGINE_LINKFLAGS=-Wl,-dead_strip", targets[0]),
-                ("TEST_METALFLAGS=-O0", targets[3]),
-                ("ENGINE_SANITIZER_CXXFLAGS=-O0", targets[4]),
+            splash, engine = targets[0], str(build / "engine/libsplash.a")
+            kernels = str(build / "splash.metallib")
+            test_kernels = (targets[3], str(build / "engine-tests/metal-backend.air"))
+            # A C++ flag leaves the kernels' recorded configuration current,
+            # and a Metal flag the engine's.
+            for flags, target, rebuilds, keeps in (
+                (
+                    "ENGINE_LINKFLAGS=-Wl,-dead_strip",
+                    splash,
+                    (splash, engine),
+                    (kernels,),
+                ),
+                ("PROD_METALFLAGS=-O0", splash, (kernels,), (engine,)),
+                ("TEST_METALFLAGS=-O0", targets[3], test_kernels, ()),
+                ("ENGINE_SANITIZER_CXXFLAGS=-O0", targets[4], (targets[4],), ()),
             ):
                 with self.subTest(flags=flags):
                     for configuration in ([flags], []):
                         start = len(calls())
-                        self.build(*options, *configuration, linked)
-                        self.assertIn(linked, calls()[start:])
-                        if linked == targets[0]:
-                            self.assertIn(
-                                str(build / "engine/libsplash.a"), calls()[start:]
-                            )
-                            self.assertIn(
-                                str(build / "splash.metallib"), calls()[start:]
-                            )
-                        if linked == targets[3]:
-                            self.assertIn(
-                                str(build / "engine-tests/metal-backend.air"),
-                                calls()[start:],
-                            )
+                        self.build(*options, *configuration, target)
+                        rebuilt = calls()[start:]
+                        for output in rebuilds:
+                            self.assertIn(output, rebuilt)
+                        for output in keeps:
+                            self.assertNotIn(output, rebuilt)
                         start = len(calls())
-                        self.build(*options, *configuration, linked)
+                        self.build(*options, *configuration, target)
                         self.assertEqual(len(calls()), start)
 
     def test_an_engine_change_recompiles_the_startup_object_with_its_identity(self):
@@ -364,24 +367,29 @@ class CompileConfigurationTests(unittest.TestCase):
             root = Path(directory)
             self.build_files(root)
             kernel_root = Path("runtime/metal/kernels")
-            # The Q8 tests' kernels: both phases' attention and store, and the
-            # sparse ones.
+            # The Q8 tests' kernels: the attention, the path commit and the
+            # sparse ones, beside the tests' own K/V store.
             q8_sources = [
-                kernel_root / phase / name
-                for phase in ("prefill", "decode")
-                for name in ("paged_attention.metal", "paged_attention_store.metal")
-            ] + [kernel_root / "shared/sparse_attention.metal"]
+                kernel_root / "shared" / name
+                for name in (
+                    "paged_attention.metal",
+                    "kv_path_commit.metal",
+                    "sparse_attention.metal",
+                )
+            ]
             # Every test library a MetalBackend loads links the kernel that
             # ends residency; q8-attention.metallib is loaded by raw MTLDevice
             # tests.
             residency_source = kernel_root / "shared/residency.metal"
             removed_source = kernel_root / "shared/removed.metal"
             removed_header = kernel_root / "common/removed.h"
+            store_source = Path("dev/tests/engine/attention_store_test.metal")
             for relative in (
                 *q8_sources,
                 residency_source,
                 removed_source,
                 removed_header,
+                store_source,
                 Path("runtime/engine/Status.cpp"),
                 Path("dev/tests/engine/metal_backend_test.metal"),
             ):
@@ -408,6 +416,7 @@ class CompileConfigurationTests(unittest.TestCase):
                 )
                 for source in (*q8_sources, residency_source, removed_source)
             }
+            # The tests' store includes the kernel headers too.
             test_airs = {
                 str(
                     build
@@ -415,7 +424,7 @@ class CompileConfigurationTests(unittest.TestCase):
                     / source.relative_to(kernel_root).with_suffix(".air")
                 )
                 for source in q8_sources
-            }
+            } | {str(build / "engine-tests/attention-store-test.air")}
             residency_air = str(build / "engine-tests/kernels/shared/residency.air")
 
             def rebuild(*selected):
@@ -425,6 +434,12 @@ class CompileConfigurationTests(unittest.TestCase):
 
             rebuild(*targets)
             self.assertEqual(rebuild(*targets), set())
+            # A test rule's change leaves production current.
+            with (root / "dev/native.mk").open("a") as rules:
+                rules.write("# test rule\n")
+            self.assertEqual(self.query(*options, library, native), 0)
+            self.assertEqual(self.query(*options, unrelated), 1)
+            self.assertIn(unrelated, rebuild(*targets))
             (root / removed_source).unlink()
             before = self.snapshot(build)
             self.assertEqual(self.query(*options, library), 1)

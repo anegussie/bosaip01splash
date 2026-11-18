@@ -72,6 +72,11 @@ bool PageStorage::isAllocated(uint32_t page) const {
 }
 
 metal::AllocationResult PageStorage::allocateExtent(uint32_t extent, PageForm form) {
+    return allocateExtent(extent, form, admitAllocation_);
+}
+
+metal::AllocationResult PageStorage::allocateExtent(uint32_t extent, PageForm form,
+                                                    const metal::AllocationAdmission &admit) {
     Extent &record = extents_.at(extent);
     if (record.buffer) {
         throw std::logic_error(
@@ -89,7 +94,7 @@ metal::AllocationResult PageStorage::allocateExtent(uint32_t extent, PageForm fo
     const std::string label = form == PageForm::Full   ? "kv-extent-"
                               : form == PageForm::Slim ? "kv-slim-extent-"
                                                        : "kv-index-extent-";
-    return admitAllocation_(bytes, [&] {
+    return admit(bytes, [&] {
         metal::MetalBuffer allocated = backend_.allocateBuffer(
             bytes, metal::BufferStorage::Shared,
             label + std::to_string(extent * extentPages_), metal::BufferReach::Addressed);
@@ -154,7 +159,11 @@ void PageStorage::clearPages(std::span<const uint32_t> pages) {
 uint32_t PageStorage::indexOffset(uint32_t layer) const {
     if (!layout_.indexDimension || layer >= layout_.attentionLayers)
         throw std::out_of_range("KV layer has no index region");
-    return static_cast<uint32_t>(uint64_t{extentPages_} * layer * layout_.indexBytesPerLayerPage());
+    return layer * indexLayerBytes();
+}
+
+uint32_t PageStorage::indexLayerBytes() const noexcept {
+    return static_cast<uint32_t>(uint64_t{extentPages_} * layout_.indexBytesPerLayerPage());
 }
 
 PageForm PageStorage::form(uint32_t page) const { return allocatedExtent(page).form; }
@@ -171,10 +180,24 @@ void PageStorage::writeTable(std::span<const uint32_t> pages, uint32_t first,
         throw std::invalid_argument(
             "KV page table entries start past the end of its pages");
     }
-    for (size_t index = first; index < pages.size(); ++index) {
+    // The extents the table's entries reach, the entries kept as well as the
+    // ones written (setTableReach); an absent entry reaches none.
+    std::vector<uint32_t> reachedExtents;
+    for (size_t index = 0; index < pages.size(); ++index) {
         const uint32_t page = pages[index];
-        entries[index] = entry(allocatedExtent(page), page % extentPages_);
+        const Extent &extent = allocatedExtent(page);
+        if (index >= first) entries[index] = entry(extent, page % extentPages_);
+        if (entries[index] == SPLASH_KV_PAGE_ABSENT) continue;
+        if (reachedExtents.empty() || reachedExtents.back() != page / extentPages_)
+            reachedExtents.push_back(page / extentPages_);
     }
+    std::ranges::sort(reachedExtents);
+    const auto [last, end] = std::ranges::unique(reachedExtents);
+    reachedExtents.erase(last, end);
+    std::vector<metal::MetalBuffer> reached;
+    reached.reserve(reachedExtents.size());
+    for (const uint32_t extent : reachedExtents) reached.push_back(extents_[extent].buffer);
+    backend_.setTableReach(table, reached);
 }
 
 void PageStorage::writeEntries(std::span<const uint32_t> pages,

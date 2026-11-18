@@ -129,6 +129,6 @@ history, with workload-dependent latency and continuity tradeoffs.
 - [Supported serving flags](../../server/serve_options.py).
 - [Verification scratch calculation](../../runtime/ops/PagedAttention.cpp)
   and [partition calculation](../../runtime/ops/PagedAttention.hpp).
-- [Shared runtime arena layout](../../runtime/model/RuntimeArenas.mm).
+- [Shared runtime arena layout](../../runtime/model/RuntimeArenas.cpp).
 - [Memory budget and KV capacity planning](../../runtime/engine/MemoryPlan.cpp).
 - [Startup capacity validation](../../runtime/engine/Bootstrap.mm).

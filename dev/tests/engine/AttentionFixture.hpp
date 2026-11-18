@@ -5,6 +5,7 @@
 #include "metal/CommandGraph.hpp"
 #include "metal/MetalBackend.hpp"
 #include "metal/abi/KvExtent.h"
+#include "ops/ExecutionPlans.hpp"
 #include "ops/PagedAttention.hpp"
 
 #include <algorithm>
@@ -21,15 +22,17 @@
 #include <vector>
 
 // The paged-attention fixture attention-sweep times: deterministic Page32
-// history of every lane in the extents of a pool, one chunk of rows per lane
-// with its queries, and the production store and attention graph over them;
-// and the move of a block from a page to a block cache that a verify reads
-// through its locations.
+// history and rows of every lane in the extents of a pool, one sequence of
+// rows per lane with its queries, and the production attention graph over
+// them, which writes the out-projection's rows; and the move of a block from
+// a page to a block cache that an attention reads through its locations.
 namespace splash::test {
 
 // The target attention layer a fixture holds: its query and KV heads and
 // their width, its cache format, its value order (kv::Layout::
 // valuesTokenMajor) and its variant of the geometry (a window, RoPE).
+// Token-major values are the sparse attention's, which reads selected blocks
+// (kv::valuesTokenMajorFor).
 struct AttentionShape final {
   uint32_t queryHeads = 0;
   uint32_t kvHeads = 0;
@@ -38,6 +41,15 @@ struct AttentionShape final {
   bool valuesTokenMajor = false;
   ops::AttentionVariant variant{};
 };
+// The pages of `layers` attention layers of a shape.
+[[nodiscard]] inline kv::Layout attentionLayout(const AttentionShape &shape, uint32_t layers = 1) noexcept {
+  return {.attentionLayers = layers,
+          .kvHeads = shape.kvHeads,
+          .headDimension = shape.headDimension,
+          .format = shape.format,
+          .valuesTokenMajor = shape.valuesTokenMajor,
+          .reads = shape.valuesTokenMajor ? kv::Reads::SelectedBlocks : kv::Reads::EveryPage};
+}
 
 // Where a fixture's attention layer sits: layer `layer` of a pool of
 // poolLayers attention layers, in extents of extentPages pages.
@@ -55,9 +67,11 @@ struct AttentionFixturePlan final {
   static constexpr uint32_t kMaximumLanes = SPLASH_MAXIMUM_BATCH_WIDTH;
   static constexpr uint64_t kAlignment = 16 * 1024;
   // Sinks: an F32 per query head, which a geometry with learned sinks adds.
-  // Table0 is lane 0's page table; every other lane's follows it.
+  // Layout: each lane's rows of the command (SplashLaneRows,
+  // ops::AttentionRows). Table0 is lane 0's page table; every other lane's
+  // follows it.
   enum class Tensor : uint32_t {
-    ChunkKeys, ChunkValues, Queries, Output, Partials, Statistics, Sinks,
+    Queries, Packed, Output, Partials, Statistics, Sinks, Layout,
     Table0, Count = Table0 + kMaximumLanes
   };
   using Histories = std::array<uint32_t, kMaximumLanes>;
@@ -66,7 +80,7 @@ struct AttentionFixturePlan final {
   AttentionFixtureGeometry geometry;
   uint32_t lanes = 0;
   uint32_t rows = 0;
-  // A lane's rows of chunk keys and values, queries and output: whole pages.
+  // A lane's staged query rows: whole pages.
   uint32_t stride = 0;
   Histories histories{};
   // The pages of each lane's history and rows.
@@ -133,17 +147,20 @@ struct AttentionFixturePlan final {
     plan.extents = (plan.poolPages + geometry.extentPages - 1) / geometry.extentPages;
     plan.poolBytes =
         uint64_t{plan.extents} * HostKvExtents::extentStride(pool, geometry.extentPages);
-    const uint64_t chunks =
-        uint64_t{lanes} * shape.kvHeads * plan.stride * shape.headDimension * sizeof(uint16_t);
     const uint64_t queries =
         uint64_t{lanes} * shape.queryHeads * plan.stride * shape.headDimension * sizeof(uint16_t);
-    plan.size(Tensor::ChunkKeys, chunks);
-    plan.size(Tensor::ChunkValues, chunks);
     plan.size(Tensor::Queries, queries);
-    plan.size(Tensor::Output, queries);
+    // The rows' packed projection rows, from which the reduce reads their
+    // gates (zero here, whose sigmoid is a half): each query head's queries
+    // and gate, then the K and V heads; and the out-projection's input rows
+    // it writes.
+    plan.size(Tensor::Packed, uint64_t{lanes} * rows * (2 * shape.queryHeads + 2 * shape.kvHeads) *
+                                  shape.headDimension * sizeof(uint16_t));
+    plan.size(Tensor::Output, uint64_t{lanes} * rows * shape.queryHeads * shape.headDimension * sizeof(uint16_t));
     plan.size(Tensor::Partials, scratch.partialsBytes);
     plan.size(Tensor::Statistics, scratch.statisticsBytes);
     plan.size(Tensor::Sinks, uint64_t{shape.queryHeads} * sizeof(float));
+    plan.size(Tensor::Layout, uint64_t{kMaximumLanes} * sizeof(SplashLaneRows));
     plan.bytes = aligned(plan.poolBytes);
     for (uint64_t size : plan.sizes) {
       const uint64_t allocation = aligned(size);
@@ -174,13 +191,7 @@ struct AttentionFixturePlan final {
   }
 
 private:
-  [[nodiscard]] kv::Layout layoutOf(uint32_t layers) const noexcept {
-    return {.attentionLayers = layers,
-            .kvHeads = shape.kvHeads,
-            .headDimension = shape.headDimension,
-            .format = shape.format,
-            .valuesTokenMajor = shape.valuesTokenMajor};
-  }
+  [[nodiscard]] kv::Layout layoutOf(uint32_t layers) const noexcept { return attentionLayout(shape, layers); }
   void size(Tensor tensor, uint64_t value) noexcept {
     sizes[static_cast<size_t>(tensor)] = value;
   }
@@ -188,8 +199,8 @@ private:
 
 // A fixture's extents start its one allocation and its tensors are views of
 // the rest; kernels reach the extents only through the lanes' page tables, so
-// the allocation is addressed (metal::BufferReach), resident for every
-// command buffer. Lanes past the plan's lanes bind lane 0's page table, as the
+// the allocation is addressed (metal::BufferReach), and each table names it
+// (HostKvExtents::reachThrough). Lanes past the plan's lanes bind lane 0's page table, as the
 // runtime's padded lanes do.
 class AttentionFixture final {
 public:
@@ -200,10 +211,8 @@ public:
       : plan_(std::move(plan)),
         base_(backend.allocateBuffer(plan_.bytes, metal::BufferStorage::Shared, label,
                                      metal::BufferReach::Addressed)),
-        pages_(HostKvExtents::contiguous(plan_.poolLayout(), plan_.geometry.extentPages,
-                                         plan_.extents,
-                                         static_cast<std::byte *>(base_.contents()),
-                                         base_.gpuAddress())),
+        pages_(HostKvExtents::contiguous(backend, plan_.poolLayout(), plan_.geometry.extentPages,
+                                         plan_.extents, base_)),
         layer_(pages_.layer(plan_.geometry.layer)) {
     uint64_t offset = AttentionFixturePlan::aligned(plan_.poolBytes);
     for (size_t index = 0; index < plan_.sizes.size(); ++index) {
@@ -222,18 +231,20 @@ public:
       tables_[lane] = tables_[0];
   }
 
-  // Zeroes the allocation, then writes the page tables, every lane's
-  // history, chunk and queries. Long histories consult `stop` every 256
-  // tokens; false when it stopped the fill.
+  // Zeroes the allocation, then writes the page tables, the lanes' layout,
+  // every lane's history and rows' K/V into its pages, the rows' as a q/k
+  // projection stores them before the attention, and their queries. Long
+  // histories consult `stop` every 256 tokens; false when it stopped the
+  // fill.
   bool fill(const std::function<bool()> &stop = {}) {
     std::memset(base_.contents(), 0, plan_.bytes);
-    auto *chunkKeys = data<uint16_t>(Tensor::ChunkKeys);
-    auto *chunkValues = data<uint16_t>(Tensor::ChunkValues);
+    auto *layout = data<SplashLaneRows>(Tensor::Layout);
+    for (uint32_t lane = 0; lane < plan_.lanes; ++lane) layout[lane] = {lane * plan_.rows, plan_.rows};
     auto *queries = data<uint16_t>(Tensor::Queries);
     const uint32_t dimensions = plan_.shape.headDimension;
     for (uint32_t lane = 0; lane < plan_.lanes; ++lane) {
-      pages_.writeTable(pageIds_[lane], tables_[lane].contents());
-      for (uint32_t token = 0; token < plan_.histories[lane]; ++token) {
+      pages_.writeTable(pageIds_[lane], tables_[lane]);
+      for (uint32_t token = 0; token < plan_.histories[lane] + plan_.rows; ++token) {
         if (token % 256 == 0 && stop && stop()) return false;
         for (uint32_t head = 0; head < plan_.shape.kvHeads; ++head) {
           const auto key = [&](uint32_t d) {
@@ -262,16 +273,6 @@ public:
         }
       }
       for (uint32_t row = 0; row < plan_.rows; ++row) {
-        for (uint32_t head = 0; head < plan_.shape.kvHeads; ++head) {
-          const uint64_t base =
-              (uint64_t{lane} * plan_.shape.kvHeads + head) * plan_.stride * dimensions;
-          for (uint32_t d = 0; d < dimensions; ++d) {
-            chunkKeys[base + row * dimensions + d] = floatToBf16(
-                float(int((row * 37 + head * 101 + d * 17 + lane * 7) % 255) - 127) * 0.006f);
-            chunkValues[base + uint64_t{d} * plan_.stride + row] = floatToBf16(
-                float(int((row * 53 + head * 79 + d * 29 + lane * 19) % 255) - 127) * 0.007f);
-          }
-        }
         for (uint32_t head = 0; head < plan_.shape.queryHeads; ++head)
           for (uint32_t d = 0; d < dimensions; ++d)
             queries[plan_.queryIndex(lane, head, row, d)] = floatToBf16(
@@ -285,36 +286,47 @@ public:
     return true;
   }
 
-  // One store and attention of the fixture's rows, encoded as the runtime
-  // encodes them, through block lists (sparse plans) when `blocks` has them.
-  void addGraph(metal::CommandGraph &graph, const ops::PrefillAttentionPlan &attention,
-                const ops::AttentionBlocks &blocks = {}) const {
-    const kv::ChunkedPrefillParams chunk = ops::PagedAttention::prefillParams(
-        plan_.histories[0], plan_.rows, plan_.stride, plan_.pages[0]);
-    ops::PagedAttention::addPrefillStore(graph, layer_, buffer(Tensor::ChunkKeys),
-                                         buffer(Tensor::ChunkValues), tables_[0], chunk,
-                                         plan_.layout());
-    ops::PagedAttention::addPrefill(graph, layer_, buffer(Tensor::Queries),
-                                    buffer(Tensor::Output), buffer(Tensor::Partials),
-                                    buffer(Tensor::Statistics), tables_[0], chunk, attention,
-                                    blocks, sinks(attention.sinks));
-  }
-  // Each lane's rows are its verify rows, in the verify chunk stride.
-  void addGraph(metal::CommandGraph &graph, const ops::VerifyAttentionPlan &attention,
-                const ops::AttentionBlocks &blocks = {}) const {
-    if (plan_.rows != kv::kVerifyRows || plan_.stride != kv::kVerifyChunkStride)
-      throw std::logic_error(
-          "a verify fixture stages its lanes' verify rows in the verify chunk stride");
+  // Each lane's rows after its history, as the runtime describes a command's
+  // sequences: their staging is the fixture's, lane after lane.
+  [[nodiscard]] std::array<kv::ChunkedPrefillParams, AttentionFixturePlan::kMaximumLanes> sequences() const {
     std::array<kv::ChunkedPrefillParams, AttentionFixturePlan::kMaximumLanes> chunks{};
-    for (uint32_t lane = 0; lane < attention.lanes; ++lane)
-      chunks[lane] =
-          ops::PagedAttention::verifyParams(plan_.histories[lane], plan_.pages[lane]);
-    ops::PagedAttention::addVerify(
-        graph, layer_,
-        {buffer(Tensor::ChunkKeys), buffer(Tensor::ChunkValues), buffer(Tensor::Queries),
-         buffer(Tensor::Partials), buffer(Tensor::Statistics), buffer(Tensor::Output), tables_,
-         sinks(attention.sinks)},
-        std::span(chunks).first(attention.lanes), attention, blocks);
+    for (uint32_t lane = 0; lane < plan_.lanes; ++lane)
+      chunks[lane] = ops::PagedAttention::chunkParams(plan_.histories[lane], plan_.rows, plan_.stride,
+                                                      plan_.pages[lane]);
+    return chunks;
+  }
+  // The command's rows: each lane's rows after the lanes before it.
+  [[nodiscard]] ops::AttentionRows rows() const {
+    return {buffer(Tensor::Layout), plan_.lanes * plan_.rows};
+  }
+  // The workspace the fixture holds, which a plan's dispatches must fit.
+  [[nodiscard]] ops::AttentionWorkspace workspace() const noexcept {
+    return {plan_.sizes[static_cast<size_t>(Tensor::Partials)], plan_.sizes[static_cast<size_t>(Tensor::Statistics)]};
+  }
+  // The plan of every lane's rows on `plans`' device.
+  [[nodiscard]] ops::AttentionPlan attentionPlan(const ops::ExecutionPlans &plans) const {
+    const auto chunks = sequences();
+    return plans.attention(std::span(chunks).first(plan_.lanes), plan_.shape.queryHeads, plan_.layout(), workspace(),
+                           plan_.shape.variant);
+  }
+
+  // The attention of every lane's rows, encoded as the runtime encodes a
+  // command's sequences after their q/k projection, through block lists
+  // (sparse plans) when `blocks` has them: lane l's tiles from list
+  // blocks.list + l x laneLists on, by default the lists of its tiles.
+  void addGraph(metal::CommandGraph &graph, const ops::AttentionPlan &attention,
+                const ops::AttentionBlocks &blocks = {}, uint32_t laneLists = 0) const {
+    const auto chunks = sequences();
+    const std::span<const kv::ChunkedPrefillParams> lanes = std::span(chunks).first(plan_.lanes);
+    std::array<ops::AttentionHistory, AttentionFixturePlan::kMaximumLanes> histories{};
+    for (uint32_t lane = 0; lane < plan_.lanes; ++lane) {
+      histories[lane] = {layer_, tables_[lane], blocks};
+      if (blocks.stride) histories[lane].blocks.list += lane * (laneLists ? laneLists : kv::attentionTiles(plan_.rows));
+    }
+    (void)ops::PagedAttention::addAttention(graph, attention, buffer(Tensor::Queries), buffer(Tensor::Partials),
+                                            buffer(Tensor::Statistics), lanes, std::span(histories).first(plan_.lanes),
+                                            rows(), {buffer(Tensor::Packed), buffer(Tensor::Output)},
+                                            sinks(attention.sinks));
   }
 
   [[nodiscard]] const AttentionFixturePlan &plan() const noexcept { return plan_; }

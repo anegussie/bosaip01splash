@@ -15,16 +15,15 @@ from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 
-from . import images, origins
+from . import images, origins, unix_socket
+from .chat_format import REASONING_EFFORTS
 from .http_security import validate_api_key
 from .protocol import MAX_THINKING_END_TOKENS
 
-REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
-# The targets' native window, the most context without --max-context, and
-# the most context --max-context takes, which YaRN stretches the native window
-# to and Qwen validates (QwenTargetDimensions::nativeContextTokens,
-# yarnContextTokens).
-MAX_CONTEXT_TOKENS = 262144
+# The most context --max-context takes: the most any family serves
+# (QwenTargetDimensions::maximumContextTokens(), as the engine's families
+# command reports it), YaRN's window of the Qwen targets. The engine refuses
+# more than the model's own.
 MAX_YARN_CONTEXT_TOKENS = 1010000
 # The suffixes of a --max-context: K, 1024 tokens, and M, a million.
 _CONTEXT_UNITS = {"K": 1024, "M": 1000000}
@@ -208,6 +207,12 @@ def parse_cache_dir(value):
     return Path(value).expanduser().absolute()
 
 
+def parse_chat_template_file(value):
+    if not value.strip():
+        raise argparse.ArgumentTypeError("must name a Jinja chat template file")
+    return Path(value).expanduser().absolute()
+
+
 def parse_request_size(value):
     try:
         size = parse_max_memory(value)
@@ -305,6 +310,16 @@ def parse_served_model_name(value):
     return value
 
 
+def parse_host(value):
+    """An address to bind, which the bind checks, or unix:PATH with the path
+    of a UNIX socket."""
+    if unix_socket.path(value) == "":
+        raise argparse.ArgumentTypeError(
+            "unix: needs the socket's path, such as unix:/tmp/splash.sock"
+        )
+    return value
+
+
 def parse_allowed_origin(value):
     """An --allowed-origin value as the server compares Origin headers with it."""
     try:
@@ -385,8 +400,37 @@ GROUPS = (
 
 
 @dataclass(frozen=True)
+class EngineArgument:
+    """How the server passes an option on to the engine's serve-native. The
+    server leaves out an optional one at the option's default, which must
+    equal the engine's own (native_arguments_test.cpp pins the KV and state
+    formats, verify rows, image patches and activations)."""
+
+    # The engine's flag, or the slot of its positional argument after
+    # MODEL_DIRECTORY. An optional positional comes after every required
+    # one, so leaving it out moves none.
+    at: str | int
+    # A parsed value as the engine's command line spells it.
+    text: Callable[[object], str] = str
+    # Written at the default too: the engine requires MAX_CONTEXT and
+    # MAX_MEMORY.
+    required: bool = False
+
+
+def _auto_text(value):
+    """A value whose default None the engine spells auto."""
+    return "auto" if value is None else str(value)
+
+
+def _spelled(text):
+    """The text of a switch, which the engine takes as a flag's value."""
+    return lambda _value: text
+
+
+@dataclass(frozen=True)
 class ServeOption:
-    """An option of both commands, and how the launcher passes it on."""
+    """An option of both commands, how the launcher passes it on, and how
+    the server passes it on to the engine (None: the server keeps it)."""
 
     flag: str
     # The key of the help group that lists it (GROUPS).
@@ -400,6 +444,13 @@ class ServeOption:
     secret: bool = False
     # A parsed value as the server's command line spells it.
     text: Callable[[object], str] = str
+    engine: EngineArgument | None = None
+    # What a model's family must have for the option to act on it, one of
+    # the facts install/families.py reports: a fact of its layout, as the
+    # engine gives it (experts, recurrent_state, ple_table, sparse_kv,
+    # dense_ffn), or of its release (vision, reasoning_switch). None: every
+    # model.
+    needs: str | None = None
 
     @property
     def dest(self):
@@ -421,6 +472,7 @@ SERVE_OPTIONS = (
             help="maximum prompt tokens per native batch, in multiples of 128 up to "
             "2048 (default: 512); smaller chunks reduce scratch memory",
         ),
+        engine=EngineArgument("--prefill-chunk-tokens"),
     ),
     ServeOption(
         "--resource-wait-timeout",
@@ -430,6 +482,7 @@ SERVE_OPTIONS = (
             default=30,
             help="seconds to wait for engine resources after suspension (default: 30)",
         ),
+        engine=EngineArgument("--resource-wait-timeout"),
     ),
     ServeOption(
         "--max-active-requests",
@@ -445,11 +498,12 @@ SERVE_OPTIONS = (
         "--host",
         "network",
         dict(
+            type=parse_host,
             default="127.0.0.1",
             metavar="ADDRESS",
             help="HTTP bind address (default: 127.0.0.1; 0.0.0.0 for all IPv4 "
-            "interfaces); clients use an IP address, localhost or a name given "
-            "with --allowed-host",
+            "interfaces; unix:PATH for a UNIX socket); clients use an IP "
+            "address, localhost or a name given with --allowed-host",
         ),
     ),
     ServeOption(
@@ -503,6 +557,7 @@ SERVE_OPTIONS = (
             help="Metal memory budget, e.g. 28G; it can only lower the automatic "
             "budget (default: auto)",
         ),
+        engine=EngineArgument(1, text=_auto_text, required=True),
     ),
     ServeOption(
         "--max-context",
@@ -512,11 +567,13 @@ SERVE_OPTIONS = (
             default=None,
             metavar="TOKENS",
             help="context token limit, e.g. 100K or 1M (K = 1024 tokens, M = "
-            "1000000 tokens), up to 1010000; past the model's 256K native window "
-            "it turns on YaRN, which is static and changes answers at every "
-            "length, so pass more than 256K only when a request needs it "
-            "(default: auto, the native window when memory holds it)",
+            "1000000 tokens), up to the model's limit, at most 1010000; past its "
+            "native window a model with YaRN turns it on, which is static and "
+            "changes answers at every length, so pass more than the native "
+            "window only when a request needs it (default: auto, the native "
+            "window when memory holds it)",
         ),
+        engine=EngineArgument(0, text=_auto_text, required=True),
     ),
     ServeOption(
         "--ple-memory",
@@ -527,9 +584,11 @@ SERVE_OPTIONS = (
             metavar="SIZE",
             help="RAM row cache of the PLE n-gram table of a Qwen3.8-Flash-Next "
             "GGUF, e.g. 2G, which streams the rest from the SSD; off loads the "
-            "whole table, tens of GB (default: auto, which streams it where "
-            "memory cannot hold it)",
+            "whole table, tens of GB (default: auto, a cache of at most the "
+            "rows of a 128K-token prompt, less where memory is short)",
         ),
+        engine=EngineArgument("--ple-memory"),
+        needs="ple_table",
     ),
     ServeOption(
         "--expert-memory",
@@ -538,15 +597,17 @@ SERVE_OPTIONS = (
             type=parse_expert_memory,
             default=None,
             metavar="SIZE",
-            help="least RAM for the routed experts of a MoE model, e.g. 16G: "
-            "they load whole where memory holds them all, and otherwise take "
-            "all the memory the plan leaves them, at least this, give memory "
-            "back down to it while requests need it, and read the other "
-            "experts from the SSD when a token routes them; off loads every "
-            "expert (default: auto, which loads them all where memory holds "
-            "them, and otherwise gives them what the context leaves, giving "
-            "back down to 85%% of their slots)",
+            help="RAM for the routed experts of a MoE model, e.g. 16G: they "
+            "stream through a store of exactly this size, which neither grows "
+            "nor gives memory back, and read the other experts from the SSD "
+            "when a token routes them; a size that holds every expert, or "
+            "off, loads them all (default: auto, which loads them all where "
+            "memory holds them, and otherwise gives them what the context "
+            "leaves, giving back down to their floor while requests need it; "
+            "see streamed experts)",
         ),
+        engine=EngineArgument("--expert-memory"),
+        needs="experts",
     ),
     ServeOption(
         "--sparse-kv-memory",
@@ -559,6 +620,8 @@ SERVE_OPTIONS = (
             "Qwen3.8-Flash-Next reads of requests whose KV is on the SSD, e.g. "
             "1200M; never below its floor (default: auto, its floor)",
         ),
+        engine=EngineArgument("--sparse-kv-memory"),
+        needs="sparse_kv",
     ),
     ServeOption(
         "--kv-format",
@@ -568,6 +631,7 @@ SERVE_OPTIONS = (
             default="int8",
             help="target KV cache storage (default: int8); bf16 uses more memory",
         ),
+        engine=EngineArgument("--kv-format"),
     ),
     ServeOption(
         "--state-format",
@@ -575,9 +639,26 @@ SERVE_OPTIONS = (
         dict(
             choices=("fp32", "bf16"),
             default="fp32",
-            help="recurrent state storage (default: fp32); bf16 halves each "
-            "state, so memory and the SSD cache hold about twice as many",
+            help="recurrent state storage of running requests (default: fp32); "
+            "bf16 halves each one's state, and cached states store int8 codes "
+            "in either format unless --cached-states exact",
         ),
+        engine=EngineArgument("--state-format"),
+        needs="recurrent_state",
+    ),
+    ServeOption(
+        "--cached-states",
+        "memory",
+        dict(
+            choices=("int8", "exact"),
+            default="int8",
+            help="recurrent state storage of cached states (default: int8): int8 "
+            "codes take about a quarter of an fp32 state, and a restored state "
+            "can differ at near ties; exact keeps --state-format's, so a "
+            "restore is exact",
+        ),
+        engine=EngineArgument("--cached-states"),
+        needs="recurrent_state",
     ),
     ServeOption(
         "--idle-release",
@@ -592,6 +673,7 @@ SERVE_OPTIONS = (
             "still frees the weights",
         ),
         text=idle_release_text,
+        engine=EngineArgument("--idle-release", text=idle_release_text),
     ),
     ServeOption(
         "--max-cache-disk",
@@ -605,6 +687,7 @@ SERVE_OPTIONS = (
             "a volume under 200G), at most 32G; a size such as 16G is held as "
             "given while the volume keeps that floor; 0 disables (default: auto)",
         ),
+        engine=EngineArgument(2),
     ),
     ServeOption(
         "--max-cache-disk-writes",
@@ -617,6 +700,7 @@ SERVE_OPTIONS = (
             "conversation resumes from and KV pages pass it (default: 0, no "
             "limit)",
         ),
+        engine=EngineArgument("--max-cache-disk-writes"),
     ),
     ServeOption(
         "--persistent-cache",
@@ -626,6 +710,7 @@ SERVE_OPTIONS = (
             default=False,
             help="keep the SSD cache across restarts",
         ),
+        engine=EngineArgument("--persistent-cache", text=_spelled("on")),
     ),
     ServeOption(
         "--cache-dir",
@@ -637,6 +722,7 @@ SERVE_OPTIONS = (
             help="where --persistent-cache keeps its files; needs "
             "--persistent-cache (default: ~/Library/Caches/Splash/prefix-cache)",
         ),
+        engine=EngineArgument("--cache-dir"),
     ),
     ServeOption(
         "--served-model-name",
@@ -662,6 +748,21 @@ SERVE_OPTIONS = (
         ),
     ),
     ServeOption(
+        "--reasoning-effort",
+        "api",
+        dict(
+            type=parse_reasoning_effort,
+            metavar="EFFORT",
+            help="effort of every Chat, Responses and Messages request, whatever "
+            "the request asks: "
+            + ", ".join(REASONING_EFFORTS[:-1])
+            + f" or {REASONING_EFFORTS[-1]}; none turns thinking off (default: "
+            "SPLASH_REASONING_EFFORT, else each request's own)",
+        ),
+        environment="SPLASH_REASONING_EFFORT",
+        needs="reasoning_switch",
+    ),
+    ServeOption(
         "--default-reasoning-effort",
         "api",
         dict(
@@ -673,6 +774,7 @@ SERVE_OPTIONS = (
             "SPLASH_DEFAULT_REASONING_EFFORT, else the model template's)",
         ),
         environment="SPLASH_DEFAULT_REASONING_EFFORT",
+        needs="reasoning_switch",
     ),
     ServeOption(
         "--thinking-token-budget",
@@ -685,6 +787,7 @@ SERVE_OPTIONS = (
             "SPLASH_THINKING_TOKEN_BUDGET, else no cap)",
         ),
         environment="SPLASH_THINKING_TOKEN_BUDGET",
+        needs="reasoning_switch",
     ),
     ServeOption(
         "--thinking-end-text",
@@ -694,9 +797,22 @@ SERVE_OPTIONS = (
             help="text that ends thinking where a thinking budget runs out, such "
             "as a sentence that turns to the answer, then </think> as its last "
             f"token; at most {MAX_THINKING_END_TOKENS} tokens (default: "
-            "SPLASH_THINKING_END_TEXT, else </think> alone)",
+            "SPLASH_THINKING_END_TEXT, else the close the chat template writes "
+            "after a reasoning)",
         ),
         environment="SPLASH_THINKING_END_TEXT",
+        needs="reasoning_switch",
+    ),
+    ServeOption(
+        "--chat-template-file",
+        "api",
+        dict(
+            type=parse_chat_template_file,
+            default=None,
+            metavar="FILE",
+            help="a Jinja chat template to render every request with, in place "
+            "of the model's own; read once at startup (default: the model's)",
+        ),
     ),
     ServeOption(
         "--max-request-size",
@@ -720,6 +836,10 @@ SERVE_OPTIONS = (
             f"{images.MAX_PIXELS} (default: {images.MAX_PIXELS}); bounds the "
             "vision scratch one image needs",
         ),
+        engine=EngineArgument(
+            "--max-image-patches", text=lambda pixels: str(images.max_patches(pixels))
+        ),
+        needs="vision",
     ),
     ServeOption(
         "--request-timeout",
@@ -753,6 +873,7 @@ SERVE_OPTIONS = (
             help="decode time owed per unit of prefill time while other requests "
             "decode (default: 0.5; 0 alternates one command each)",
         ),
+        engine=EngineArgument("--decode-share"),
     ),
     ServeOption(
         "--disable-ane",
@@ -763,6 +884,23 @@ SERVE_OPTIONS = (
             help="prefill on the GPU alone (default: a dense model's long "
             "prompts also use the Neural Engine when that is faster)",
         ),
+        engine=EngineArgument("--ane", text=_spelled("off")),
+        needs="dense_ffn",
+    ),
+    ServeOption(
+        "--activations",
+        "requests",
+        dict(
+            choices=("auto", "bf16"),
+            default="auto",
+            help="auto rounds activations to 8 bits where the GPU multiplies "
+            "them twice as fast (M5 and later) and leaves the others bf16: "
+            "long prompts through MLX 4- and 5-bit weights (about a quarter "
+            "less time to the first token), rotated PQ2_0 decode and attention "
+            "over the INT8 KV cache; bf16 keeps every activation bf16, for "
+            "evaluations and bf16 parity (default: auto)",
+        ),
+        engine=EngineArgument("--activations"),
     ),
     ServeOption(
         "--verify-rows",
@@ -770,12 +908,16 @@ SERVE_OPTIONS = (
         dict(
             choices=("auto", "all"),
             default="auto",
-            help="rows of each draft block decode verifies: all verifies every "
-            "row, so a MoE model's greedy and seeded outputs repeat as a dense "
-            "model's do (default: auto, where a verify budget learned from "
-            "earlier cycles chooses a MoE model's rows, which is faster but "
-            "lets those outputs differ from run to run)",
+            help="rows each decode cycle verifies: all verifies every row of "
+            "a draft's block a lane, so greedy and seeded outputs repeat "
+            "(default: auto, where each cycle takes the step of the most "
+            "expected accepted tokens per cost, by the costs the Mac measured "
+            "at a start and the cost of a long history and the acceptance "
+            "learned from earlier cycles, or, on a model whose experts "
+            "stream, the rows worth their time by its cycles' cost line, "
+            "which is faster but lets those outputs differ from run to run)",
         ),
+        engine=EngineArgument("--verify-rows"),
     ),
     ServeOption(
         "--allow-idle-sleep",
@@ -786,6 +928,7 @@ SERVE_OPTIONS = (
             help="let the Mac sleep automatically while requests run (default: it "
             "stays awake until they finish; the display may still sleep)",
         ),
+        engine=EngineArgument("--idle-sleep", text=_spelled("allow")),
     ),
 )
 
@@ -824,6 +967,12 @@ def check_serve_arguments(parser, args):
         )
     if args.cache_dir is not None and not args.persistent_cache:
         parser.error("--cache-dir needs --persistent-cache")
+    if args.reasoning_effort is not None and args.default_reasoning_effort is not None:
+        parser.error(
+            "--default-reasoning-effort (SPLASH_DEFAULT_REASONING_EFFORT) sets "
+            "the effort of requests that set none, and --reasoning-effort "
+            "(SPLASH_REASONING_EFFORT) leaves none: it sets every request's"
+        )
 
 
 def serve_argv(args):
@@ -841,6 +990,22 @@ def serve_argv(args):
         else:
             argv.append(f"{option.flag}={option.text(value)}")
     return argv
+
+
+def engine_argv(args):
+    """The engine's arguments after MODEL_DIRECTORY for the options `args`
+    sets: the positional ones, then the flags (EngineArgument)."""
+    positional, flags = {}, []
+    for option in SERVE_OPTIONS:
+        engine = option.engine
+        value = getattr(args, option.dest)
+        if engine is None or (value == option.default() and not engine.required):
+            continue
+        if isinstance(engine.at, int):
+            positional[engine.at] = engine.text(value)
+        else:
+            flags.extend((engine.at, engine.text(value)))
+    return [positional[position] for position in sorted(positional)] + flags
 
 
 def serve_environment(args):
