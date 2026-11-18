@@ -1,0 +1,34 @@
+{
+  "model": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0",
+  "commit": "13bfb096e452a43095c64cb57cb96990b78fe4bd",
+  "source_build": {
+    "cache": {
+      "loaded_model_layout_sha256": "a1eb653a877f31dc013ff8ad25e0baba9fb5e97a7bb74876e6b2b6b60ab2503f",
+      "build_id": "src-8214b5c89ae3dd2f628a77e5c57bf7e8d15dad58040f39effbf5a9c75aec408e",
+      "dtype": "q8s8_f32_scale_per_token_head_k_token_major_v_token_major",
+      "block_tokens": 32,
+      "rope_scaling": null
+    },
+    "kv": {
+      "target_model_sha256": "44fef9b71f2304ed54c21b5798c209f56a66b1fd132f2cbb826939ee0f87f02a",
+      "format": "int8",
+      "quantization": "symmetric_int8",
+      "scale_type": "float32",
+      "key_layout": "token_major",
+      "value_layout": "token_major"
+    }
+  },
+  "sizes": [
+    8192,
+    32768,
+    65536,
+    102400
+  ],
+  "output_budget": 512,
+  "chunk": 2048,
+  "server_context": 131072,
+  "passes": 2,
+  "comparison": "Historical November 13 valid 2048 rows; not a matched causal A/B.",
+  "cache": "Fresh independent benchmark cache each pass; production cache preserved",
+  "thinking": false
+}

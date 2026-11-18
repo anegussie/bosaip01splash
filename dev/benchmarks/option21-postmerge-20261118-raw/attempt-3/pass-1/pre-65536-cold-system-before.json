@@ -1,0 +1,17 @@
+{
+  "vm_stat": {
+    "exit_code": 0,
+    "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                     3901.\nPages active:                                  75059.\nPages inactive:                                73420.\nPages speculative:                               582.\nPages throttled:                                   0.\nPages wired down:                             662113.\nPages purgeable:                                   2.\n\"Translation faults\":                     3777972116.\nPages copy-on-write:                       668902432.\nPages zero filled:                        1624840037.\nPages reactivated:                         310080692.\nPages purged:                               24580447.\nFile-backed pages:                             55965.\nAnonymous pages:                               93096.\nPages stored in compressor:                   565213.\nPages occupied by compressor:                 191479.\nDecompressions:                            236223188.\nCompressions:                              283323292.\nPageins:                                   179010287.\nPageouts:                                     573223.\nSwapins:                                     5747796.\nSwapouts:                                    7956236.\nPages tagged:                                  73840.\nPages tagged resident:                         53586.\nPages tagged compressed:                       20254.\nPages tag-storage:                             32768.\nPages tag-storage holding tags:                 5344.\nPages tag-storage free:                          173.\nPages tag-storage non-tag pageable:            27251.\nPages tag-storage non-tag wired:                   0.\nBytes of compressed tags:                    3427456.\nTagged compressions:                        13252038.\nTagged decompressions:                      12497737.\n",
+    "stderr": ""
+  },
+  "sysctl vm.swapusage": {
+    "exit_code": 0,
+    "stdout": "vm.swapusage: total = 3072.00M  used = 1837.19M  free = 1234.81M  (encrypted)\n",
+    "stderr": ""
+  },
+  "pmset -g therm": {
+    "exit_code": 0,
+    "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+    "stderr": ""
+  }
+}

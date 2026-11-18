@@ -1,0 +1,19 @@
+{
+  "model": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0",
+  "stream": true,
+  "stream_options": {
+    "include_usage": true
+  },
+  "max_tokens": 192,
+  "temperature": 1.0,
+  "top_p": 0.95,
+  "chat_template_kwargs": {
+    "enable_thinking": false
+  },
+  "messages": [
+    {
+      "role": "user",
+      "content": "Write only Python code, no docstrings or annotations. Define longest_common_prefix(strs) that returns the longest prefix shared by every string in the list, or an empty string."
+    }
+  ]
+}

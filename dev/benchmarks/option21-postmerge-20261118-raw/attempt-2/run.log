@@ -1,0 +1,15 @@
+[smoke/smoke-cold] prompt=4108 cached=0 prefill=449.06 tok/s ttft=9.146s decode=6.21 tok/s cycles=2 tpc=1.5 correct=False thermal=nominal->nominal clean=True
+PRODUCTION RESTORED: original binary, context, chunk, identity and logging
+Traceback (most recent call last):
+  File "/Users/mymac/splash/splash/dev/benchmarks/option21-postmerge-20261118-raw/run.py", line 151, in <module>
+    main()
+    ~~~~^^
+  File "/Users/mymac/splash/splash/dev/benchmarks/option21-postmerge-20261118-raw/run.py", line 126, in main
+    probe(client, OUT / 'smoke', 'smoke-cold', prompt, 96, False)
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mymac/splash/splash/dev/benchmarks/option21-postmerge-20261118-raw/run.py", line 68, in probe
+    row = r.probe(client, directory, name, prompt, budget, cached)
+  File "/Users/mymac/splash/splash/dev/benchmarks/option21-chunk-context-20261113-raw/run.py", line 173, in probe
+    assert row["clean"] and row["correct"] and row["semantic_correct"], (
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: smoke-cold: correctness/contention gate

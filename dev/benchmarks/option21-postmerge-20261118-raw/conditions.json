@@ -1,0 +1,14 @@
+{
+  "timed_requests": 16,
+  "correct": 16,
+  "new_system_swapout_pages_sum": 84572,
+  "page_size_bytes": 16384,
+  "kv_spilled_pages_delta_sum": 0,
+  "thermals": [
+    "fair",
+    "nominal"
+  ],
+  "expert_slots": [
+    1572
+  ]
+}

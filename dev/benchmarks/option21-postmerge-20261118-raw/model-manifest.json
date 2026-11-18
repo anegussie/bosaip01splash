@@ -1,0 +1,83 @@
+{
+  "family": "Qwen3.8-Flash-Next",
+  "files": {
+    "config.json": {
+      "bytes": 316,
+      "ctime_ns": 1795031793872429839,
+      "digest": "d850d2c5b9c8b838aec6325e3f908515f6eec72f21253b0c5471c74507c22258",
+      "mtime_ns": 1795031793872429839,
+      "path": "/Users/mymac/splash/splash/install/models/.metadata/ee2e3c53310e58de7cf45c236f4f0df9f5fdc096ffaa4f690a58f92d10de5ed4/config.json"
+    },
+    "draft/config.json": {
+      "bytes": 1236,
+      "ctime_ns": 1793474274938060696,
+      "digest": "b370fddafd42756538af6e1cbe8273cab6e6d803",
+      "mtime_ns": 1793474274937405695,
+      "path": "/Users/mymac/.cache/huggingface/hub/models--incoai--Qwen3.8-Flash-Next-DFlash2/snapshots/a22a1744e85c17364dcc54a6a420af7135d4c7f6/config.json"
+    },
+    "draft/model.safetensors": {
+      "bytes": 1206140008,
+      "ctime_ns": 1793474865668337493,
+      "digest": "d6723f2a359eaf33ec0c95f22ae8edda896774020c552296a85e1913b4d3186f",
+      "mtime_ns": 1793474865666749780,
+      "path": "/Users/mymac/.cache/huggingface/hub/models--incoai--Qwen3.8-Flash-Next-DFlash2/snapshots/a22a1744e85c17364dcc54a6a420af7135d4c7f6/model.safetensors"
+    },
+    "target/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00001-of-00002.gguf": {
+      "bytes": 37623740192,
+      "ctime_ns": 1794511306798504277,
+      "digest": "69820c02ec7d0b45ef2ebb19d6620299db749fe2aded7f39f93c6b88b199b720",
+      "mtime_ns": 1794511306798504277,
+      "path": "/Users/mymac/.cache/huggingface/hub/models--ISTA-DASLab--Qwen3.8-Flash-Next-GSQ-RCO-GGUF/snapshots/ed59f92082b1e93c0e96d60a8b11aab089b52f09/Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00001-of-00002.gguf"
+    },
+    "target/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00002-of-00002.gguf": {
+      "bytes": 28800138432,
+      "ctime_ns": 1793501370313927187,
+      "digest": "316b46f3a2dbd68c900f43136ab9449f9dcc3725dfd8c794847c204bc161e113",
+      "mtime_ns": 1793501342223379323,
+      "path": "/Users/mymac/.cache/huggingface/hub/models--ISTA-DASLab--Qwen3.8-Flash-Next-GSQ-RCO-GGUF/snapshots/ed59f92082b1e93c0e96d60a8b11aab089b52f09/Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00002-of-00002.gguf"
+    },
+    "tokenizer/chat_template.jinja": {
+      "bytes": 9993,
+      "ctime_ns": 1795031793874589076,
+      "digest": "12827f24b742ea4e80cdc12dbcf9622227056b9f797252a3149263d4f9aaadce",
+      "mtime_ns": 1795031793874589076,
+      "path": "/Users/mymac/splash/splash/install/models/.metadata/ee2e3c53310e58de7cf45c236f4f0df9f5fdc096ffaa4f690a58f92d10de5ed4/tokenizer/chat_template.jinja"
+    },
+    "tokenizer/config.json": {
+      "bytes": 316,
+      "ctime_ns": 1795031793872429839,
+      "digest": "d850d2c5b9c8b838aec6325e3f908515f6eec72f21253b0c5471c74507c22258",
+      "mtime_ns": 1795031793872429839,
+      "path": "/Users/mymac/splash/splash/install/models/.metadata/ee2e3c53310e58de7cf45c236f4f0df9f5fdc096ffaa4f690a58f92d10de5ed4/config.json"
+    },
+    "tokenizer/tokenizer.json": {
+      "bytes": 10085571,
+      "ctime_ns": 1795031793873499916,
+      "digest": "8e852142d8ab38bb7678f650bd504ba28c29d9c6357e6ed762bebdbd474689eb",
+      "mtime_ns": 1795031793873499916,
+      "path": "/Users/mymac/splash/splash/install/models/.metadata/ee2e3c53310e58de7cf45c236f4f0df9f5fdc096ffaa4f690a58f92d10de5ed4/tokenizer/tokenizer.json"
+    },
+    "tokenizer/tokenizer_config.json": {
+      "bytes": 6197,
+      "ctime_ns": 1795031793874493076,
+      "digest": "c0398d4e3a44b70c94a4f14c7b5a8d2fa653c6e6d2ed327a0138ba0ef59cd400",
+      "mtime_ns": 1795031793874493076,
+      "path": "/Users/mymac/splash/splash/install/models/.metadata/ee2e3c53310e58de7cf45c236f4f0df9f5fdc096ffaa4f690a58f92d10de5ed4/tokenizer/tokenizer_config.json"
+    }
+  },
+  "metadata": "ee2e3c53310e58de7cf45c236f4f0df9f5fdc096ffaa4f690a58f92d10de5ed4",
+  "model": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0",
+  "sources": {
+    "draft": {
+      "repo": "/Users/mymac/.cache/huggingface/hub/models--incoai--Qwen3.8-Flash-Next-DFlash2/snapshots/a22a1744e85c17364dcc54a6a420af7135d4c7f6",
+      "revision": null
+    },
+    "target": {
+      "repo": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+      "revision": "ed59f92082b1e93c0e96d60a8b11aab089b52f09"
+    }
+  },
+  "target_format": "gguf",
+  "version": 1,
+  "vision_format": "none"
+}

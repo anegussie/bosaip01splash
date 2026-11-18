@@ -1,0 +1,18 @@
+[smoke/smoke-cold] prompt=363 cached=0 prefill=112.5 tok/s ttft=3.227s decode=26.41 tok/s cycles=14 tpc=6.786 correct=True thermal=nominal->nominal clean=True
+[smoke/smoke-reuse] prompt=363 cached=352 prefill=21.86 tok/s ttft=0.502s decode=26.44 tok/s cycles=14 tpc=6.786 correct=True thermal=nominal->nominal clean=True
+[smoke/code-3] prompt=48 cached=0 prefill=23.87 tok/s ttft=2.019s decode=17.61 tok/s cycles=11 tpc=6.364 correct=True thermal=nominal->nominal clean=True
+[smoke-restart/smoke-persistent] prompt=363 cached=0 prefill=112.07 tok/s ttft=3.238s decode=24.77 tok/s cycles=13 tpc=7.308 correct=True thermal=nominal->nominal clean=True
+PRODUCTION RESTORED: original binary, context, chunk, identity and logging
+Traceback (most recent call last):
+  File "/Users/mymac/splash/splash/dev/benchmarks/option21-postmerge-20261118-raw/run.py", line 149, in <module>
+    main()
+    ~~~~^^
+  File "/Users/mymac/splash/splash/dev/benchmarks/option21-postmerge-20261118-raw/run.py", line 129, in main
+    probe(client, OUT / 'smoke-restart', 'smoke-persistent', prompt, 96, True)
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mymac/splash/splash/dev/benchmarks/option21-postmerge-20261118-raw/run.py", line 66, in probe
+    row = r.probe(client, directory, name, prompt, budget, cached)
+  File "/Users/mymac/splash/splash/dev/benchmarks/option21-chunk-context-20261113-raw/run.py", line 180, in probe
+    assert row["cached_tokens"] >= row["content_tokens_pinned"] - 128, (
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: cache round-trip failed

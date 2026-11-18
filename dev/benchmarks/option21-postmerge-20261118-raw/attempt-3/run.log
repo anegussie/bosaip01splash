@@ -1,0 +1,22 @@
+[smoke/smoke-cold] prompt=4108 cached=0 prefill=450.52 tok/s ttft=9.117s decode=26.09 tok/s cycles=12 tpc=7.0 correct=True thermal=nominal->nominal clean=True
+[smoke/smoke-reuse] prompt=4108 cached=4096 prefill=21.22 tok/s ttft=0.564s decode=27.08 tok/s cycles=14 tpc=6.786 correct=True thermal=nominal->fair clean=True
+[smoke/code-3] prompt=48 cached=0 prefill=23.12 tok/s ttft=2.084s decode=18.77 tok/s cycles=10 tpc=7.0 correct=True thermal=nominal->nominal clean=True
+[smoke-restart/smoke-persistent] prompt=4108 cached=4096 prefill=20.85 tok/s ttft=0.574s decode=24.64 tok/s cycles=12 tpc=7.0 correct=True thermal=nominal->nominal clean=True
+SMOKE PASSED: cold, cache reuse, code execution, persisted cache restart
+[pass-1/pre-8192-cold] prompt=8204 cached=0 prefill=436.84 tok/s ttft=18.779s decode=25.79 tok/s cycles=66 tpc=7.742 correct=True thermal=nominal->fair clean=True
+[pass-1/pre-8192-reuse] prompt=8204 cached=8192 prefill=20.46 tok/s ttft=0.583s decode=26.6 tok/s cycles=65 tpc=7.862 correct=True thermal=nominal->nominal clean=True
+[pass-1/pre-32768-cold] prompt=32780 cached=0 prefill=361.8 tok/s ttft=90.602s decode=24.35 tok/s cycles=65 tpc=7.862 correct=True thermal=nominal->fair clean=True
+[pass-1/pre-32768-reuse] prompt=32780 cached=32768 prefill=20.68 tok/s ttft=0.577s decode=25.87 tok/s cycles=65 tpc=7.862 correct=True thermal=nominal->nominal clean=True
+[pass-1/pre-65536-cold] prompt=65548 cached=0 prefill=281.96 tok/s ttft=232.476s decode=23.48 tok/s cycles=65 tpc=7.862 correct=True thermal=nominal->fair clean=True
+[pass-1/pre-65536-reuse] prompt=65548 cached=65536 prefill=20.9 tok/s ttft=0.568s decode=23.01 tok/s cycles=67 tpc=7.627 correct=True thermal=nominal->nominal clean=True
+[pass-1/pre-102400-cold] prompt=102412 cached=0 prefill=253.85 tok/s ttft=403.431s decode=22.91 tok/s cycles=65 tpc=7.862 correct=True thermal=nominal->fair clean=True
+[pass-1/pre-102400-reuse] prompt=102412 cached=102400 prefill=21.19 tok/s ttft=0.563s decode=25.16 tok/s cycles=65 tpc=7.862 correct=True thermal=nominal->nominal clean=True
+[pass-2/pre-8192-cold] prompt=8204 cached=0 prefill=454.65 tok/s ttft=18.043s decode=26.51 tok/s cycles=66 tpc=7.742 correct=True thermal=nominal->fair clean=True
+[pass-2/pre-8192-reuse] prompt=8204 cached=8192 prefill=21.06 tok/s ttft=0.568s decode=26.64 tok/s cycles=65 tpc=7.862 correct=True thermal=nominal->nominal clean=True
+[pass-2/pre-32768-cold] prompt=32780 cached=0 prefill=329.19 tok/s ttft=99.573s decode=23.57 tok/s cycles=65 tpc=7.862 correct=True thermal=nominal->fair clean=True
+[pass-2/pre-32768-reuse] prompt=32780 cached=32768 prefill=20.96 tok/s ttft=0.571s decode=26.32 tok/s cycles=65 tpc=7.862 correct=True thermal=nominal->nominal clean=True
+[pass-2/pre-65536-cold] prompt=65548 cached=0 prefill=267.02 tok/s ttft=245.482s decode=22.35 tok/s cycles=65 tpc=7.862 correct=True thermal=nominal->fair clean=True
+[pass-2/pre-65536-reuse] prompt=65548 cached=65536 prefill=21.01 tok/s ttft=0.566s decode=25.33 tok/s cycles=65 tpc=7.862 correct=True thermal=nominal->nominal clean=True
+[pass-2/pre-102400-cold] prompt=102412 cached=0 prefill=249.31 tok/s ttft=410.777s decode=20.79 tok/s cycles=68 tpc=7.515 correct=True thermal=nominal->fair clean=True
+[pass-2/pre-102400-reuse] prompt=102412 cached=102400 prefill=21.4 tok/s ttft=0.558s decode=25.16 tok/s cycles=65 tpc=7.862 correct=True thermal=nominal->nominal clean=True
+PRODUCTION RESTORED: original binary, context, chunk, identity and logging

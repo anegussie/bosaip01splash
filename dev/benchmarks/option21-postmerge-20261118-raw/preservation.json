@@ -1,0 +1,10 @@
+{
+  "tracked_dirty_sha256": {
+    "dev/benchmarks/test_bonsai_launcher.py": "56f39d36dc8dacc970c5b9d5644b425bfec8c58bf87cbc378894fe8170a92ad7",
+    "install/assembly.py": "252ff39e28f400758f8019e7f72973395373a37a7dd77bd232c570e63c3a630c",
+    "install/hub.py": "c093c050b09c2960990bd74e6dc0b4c32f49c141b56963a898d42cd46a923141",
+    "install/models.py": "587f0007617a0785463a218c64df02fbaec4a1613f6144137a0b89ba040586d2"
+  },
+  "git_head": "13bfb096e452a43095c64cb57cb96990b78fe4bd",
+  "runner_sha256": "8828784f0863784aabf91ca3112856fb64367a52c64e1f35f0de5998f6110949"
+}

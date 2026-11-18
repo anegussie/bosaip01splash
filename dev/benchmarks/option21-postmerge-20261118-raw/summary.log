@@ -1,0 +1,123 @@
+/Users/mymac/splash/splash/dev/benchmarks/option21-postmerge-20261118.md
+[
+  {
+    "size": 8192,
+    "before": {
+      "cold_prefill_tok_s": 428.92,
+      "cold_decode_tok_s": 23.935000000000002,
+      "cold_sse_ttft_seconds": 19.133499999999998,
+      "reuse_decode_tok_s": 24.155,
+      "reuse_sse_ttft_seconds": 0.893,
+      "cold_wall_seconds": 40.484,
+      "reuse_wall_seconds": 22.049500000000002
+    },
+    "after": {
+      "cold_prefill_tok_s": 445.745,
+      "cold_decode_tok_s": 26.15,
+      "cold_sse_ttft_seconds": 18.411,
+      "reuse_decode_tok_s": 26.62,
+      "reuse_sse_ttft_seconds": 0.5754999999999999,
+      "cold_wall_seconds": 37.955,
+      "reuse_wall_seconds": 19.7735
+    },
+    "percent_change": {
+      "cold_prefill_tok_s": 3.922642917094099,
+      "cold_decode_tok_s": 9.254230206810089,
+      "cold_sse_ttft_seconds": -3.776099511328279,
+      "reuse_decode_tok_s": 10.204926516249223,
+      "reuse_sse_ttft_seconds": -35.55431131019038,
+      "cold_wall_seconds": -6.246912360438706,
+      "reuse_wall_seconds": -10.322229529014281
+    }
+  },
+  {
+    "size": 32768,
+    "before": {
+      "cold_prefill_tok_s": 319.73,
+      "cold_decode_tok_s": 18.88,
+      "cold_sse_ttft_seconds": 102.525,
+      "reuse_decode_tok_s": 22.299999999999997,
+      "reuse_sse_ttft_seconds": 0.895,
+      "cold_wall_seconds": 129.586,
+      "reuse_wall_seconds": 23.8855
+    },
+    "after": {
+      "cold_prefill_tok_s": 345.495,
+      "cold_decode_tok_s": 23.96,
+      "cold_sse_ttft_seconds": 95.0875,
+      "reuse_decode_tok_s": 26.095,
+      "reuse_sse_ttft_seconds": 0.574,
+      "cold_wall_seconds": 116.42349999999999,
+      "reuse_wall_seconds": 20.159999999999997
+    },
+    "percent_change": {
+      "cold_prefill_tok_s": 8.058361742720411,
+      "cold_decode_tok_s": 26.906779661016955,
+      "cold_sse_ttft_seconds": -7.2543282126310675,
+      "reuse_decode_tok_s": 17.01793721973095,
+      "reuse_sse_ttft_seconds": -35.865921787709496,
+      "cold_wall_seconds": -10.157347244301096,
+      "reuse_wall_seconds": -15.59732892340543
+    }
+  },
+  {
+    "size": 65536,
+    "before": {
+      "cold_prefill_tok_s": 255.09500000000003,
+      "cold_decode_tok_s": 20.075000000000003,
+      "cold_sse_ttft_seconds": 256.98400000000004,
+      "reuse_decode_tok_s": 23.105,
+      "reuse_sse_ttft_seconds": 0.8885000000000001,
+      "cold_wall_seconds": 282.4405,
+      "reuse_wall_seconds": 23.009
+    },
+    "after": {
+      "cold_prefill_tok_s": 274.49,
+      "cold_decode_tok_s": 22.915,
+      "cold_sse_ttft_seconds": 238.97899999999998,
+      "reuse_decode_tok_s": 24.17,
+      "reuse_sse_ttft_seconds": 0.567,
+      "cold_wall_seconds": 261.29,
+      "reuse_wall_seconds": 21.755499999999998
+    },
+    "percent_change": {
+      "cold_prefill_tok_s": 7.603049844175702,
+      "cold_decode_tok_s": 14.14694894146946,
+      "cold_sse_ttft_seconds": -7.006272764063148,
+      "reuse_decode_tok_s": 4.609391906513749,
+      "reuse_sse_ttft_seconds": -36.18458075407992,
+      "cold_wall_seconds": -7.488479874522236,
+      "reuse_wall_seconds": -5.447868225476993
+    }
+  },
+  {
+    "size": 102400,
+    "before": {
+      "cold_prefill_tok_s": 240.83499999999998,
+      "cold_decode_tok_s": 17.895000000000003,
+      "cold_sse_ttft_seconds": 425.56,
+      "reuse_decode_tok_s": 21.83,
+      "reuse_sse_ttft_seconds": 0.9615,
+      "cold_wall_seconds": 454.1345,
+      "reuse_wall_seconds": 24.368000000000002
+    },
+    "after": {
+      "cold_prefill_tok_s": 251.57999999999998,
+      "cold_decode_tok_s": 21.85,
+      "cold_sse_ttft_seconds": 407.104,
+      "reuse_decode_tok_s": 25.16,
+      "reuse_sse_ttft_seconds": 0.5605,
+      "cold_wall_seconds": 430.552,
+      "reuse_wall_seconds": 20.872500000000002
+    },
+    "percent_change": {
+      "cold_prefill_tok_s": 4.4615608196483025,
+      "cold_decode_tok_s": 22.10114557138865,
+      "cold_sse_ttft_seconds": -4.336873766331428,
+      "reuse_decode_tok_s": 15.254237288135597,
+      "reuse_sse_ttft_seconds": -41.705668226729074,
+      "cold_wall_seconds": -5.192844851029809,
+      "reuse_wall_seconds": -14.344632304661854
+    }
+  }
+]
