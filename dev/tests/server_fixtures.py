@@ -892,6 +892,8 @@ def main_args(**overrides):
         **{
             "model_root": "model",
             "model": "test-model",
+            "glm_flash": False,
+            "glm_flash_max_output": None,
             "served_model_name": [],
             "announce_served_name": False,
             "reasoning_effort": None,

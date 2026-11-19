@@ -55,4 +55,29 @@ struct HyperConnection final {
                             RowRegion to, HyperShape shape, uint32_t rows);
 };
 
+struct GlmFlashHyperWeights final {
+  metal::MetalBuffer projection; // Native Q8_0 [24][16384].
+  metal::MetalBuffer scale;      // Three FP32 scale values.
+  metal::MetalBuffer base;       // Twenty-four FP32 bias values.
+};
+
+struct GlmFlashHyperScratch final {
+  metal::MetalBuffer inverseRms;  // One FP32 value per token.
+  metal::MetalBuffer coefficients; // Twenty-four FP32 values per token.
+};
+
+struct GlmFlashHyperConnection final {
+  // The streams are FP32 [rows][4][4096]. Compute coefficients and the
+  // weighted input [rows][4096] for the attention or FFN branch.
+  static void addPre(metal::CommandGraph &graph, metal::MetalBuffer streams,
+                     const GlmFlashHyperWeights &weights, const GlmFlashHyperScratch &scratch,
+                     metal::MetalBuffer branchInput, uint32_t rows);
+
+  // Mix the old residual streams and inject the FP32 branch result in
+  // place. Coefficients come from addPre for the same branch and rows.
+  static void addPost(metal::CommandGraph &graph, metal::MetalBuffer streams,
+                      metal::MetalBuffer branchOutput, metal::MetalBuffer coefficients,
+                      uint32_t rows);
+};
+
 } // namespace splash::ops

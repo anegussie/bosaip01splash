@@ -205,10 +205,11 @@ struct MoeGgufGateUpParams {
   uint32_t floor_slots;
   uint32_t chunk_slots;
   uint32_t tiles; // MOE_TILES_*
+  float swiglu_limit;
 };
 
-static_assert(sizeof(MoeGgufGateUpParams) == 40,
-              "MoE GGUF gate/up parameters are 40 bytes on both sides");
+static_assert(sizeof(MoeGgufGateUpParams) == 44,
+              "MoE GGUF gate/up parameters are 44 bytes on both sides");
 
 // One projection (gate, up or down) of the experts a load writes into their
 // slots (moe_expert_load, model/ExpertStore.cpp): rows x columns in `format`,

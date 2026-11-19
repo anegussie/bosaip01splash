@@ -287,3 +287,135 @@ kernel void hyper_connection_stream_mean(device const float *streams [[buffer(0)
   for (uint s = 0; s < p.streams; ++s) sum += x[s * p.hidden];
   destination[ulong(p.row + row) * p.stride + p.column + d] = bfloat(sum / float(p.streams));
 }
+
+// GLM Flash's manifold-constrained hyper-connection. The Q8_0 projection
+// reads the original block layout. Residuals and branch activations stay
+// FP32 here so rounding can be placed at the surrounding operator boundary.
+kernel void glm_flash_hc_rms(device const float *streams [[buffer(0)]],
+                             device float *inverse [[buffer(1)]],
+                             uint row [[threadgroup_position_in_grid]],
+                             uint tid [[thread_index_in_threadgroup]],
+                             uint lane [[thread_index_in_simdgroup]],
+                             uint simdGroup [[simdgroup_index_in_threadgroup]]) {
+  threadgroup float partial[HYPER_CONNECTION_ROW_THREADS / 32];
+  device const float *input = streams + ulong(row) * GLM_FLASH_HC_WIDTH;
+  float squares = 0.0f;
+  for (uint d = tid; d < GLM_FLASH_HC_WIDTH; d += HYPER_CONNECTION_ROW_THREADS)
+    squares += input[d] * input[d];
+  const float sum = simd_sum(squares);
+  if (lane == 0) partial[simdGroup] = sum;
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (tid == 0) {
+    float total = 0.0f;
+    for (uint group = 0; group < HYPER_CONNECTION_ROW_THREADS / 32; ++group)
+      total += partial[group];
+    inverse[row] = rsqrt(total / float(GLM_FLASH_HC_WIDTH) + GLM_FLASH_HC_RMS_EPSILON);
+  }
+}
+
+kernel void glm_flash_hc_project(device const float *streams [[buffer(0)]],
+                                 device const uchar *weights [[buffer(1)]],
+                                 device const float *inverse [[buffer(2)]],
+                                 device float *coefficients [[buffer(3)]],
+                                 uint2 group [[threadgroup_position_in_grid]],
+                                 uint lane [[thread_index_in_simdgroup]]) {
+  constexpr uint blocks = GLM_FLASH_HC_WIDTH / 32;
+  device const float *input = streams + ulong(group.x) * GLM_FLASH_HC_WIDTH;
+  device const uchar *projection = weights + group.y * blocks * 34;
+  float dot = 0.0f;
+  for (uint block = 0; block < blocks; ++block) {
+    device const uchar *weight = projection + block * 34;
+    const float scale = float(*reinterpret_cast<device const half *>(weight));
+    const float value = float(reinterpret_cast<device const char *>(weight + 2)[lane]);
+    dot += (scale * value) * input[block * 32 + lane];
+  }
+  const float sum = simd_sum(dot);
+  if (lane == 0)
+    coefficients[ulong(group.x) * GLM_FLASH_HC_MIXES + group.y] = sum * inverse[group.x];
+}
+
+kernel void glm_flash_hc_coefficients(device float *coefficients [[buffer(0)]],
+                                      device const float *scale [[buffer(1)]],
+                                      device const float *base [[buffer(2)]],
+                                      uint row [[threadgroup_position_in_grid]]) {
+  constexpr uint streams = GLM_FLASH_HC_STREAMS;
+  constexpr float eps = GLM_FLASH_HC_EPSILON;
+  device float *mix = coefficients + ulong(row) * GLM_FLASH_HC_MIXES;
+  for (uint stream = 0; stream < streams; ++stream) {
+    const float pre = mix[stream] * scale[0] + base[stream];
+    const float post = mix[streams + stream] * scale[1] + base[streams + stream];
+    mix[stream] = 1.0f / (1.0f + exp(-pre)) + eps;
+    mix[streams + stream] = 2.0f / (1.0f + exp(-post));
+  }
+
+  // Source-major matrix. Start with a softmax over destinations, add
+  // epsilon, then normalize over sources. Subsequent iterations alternate.
+  float matrix[streams][streams];
+  for (uint src = 0; src < streams; ++src) {
+    float largest = -INFINITY;
+    for (uint dst = 0; dst < streams; ++dst) {
+      const uint index = 2 * streams + src * streams + dst;
+      matrix[src][dst] = mix[index] * scale[2] + base[index];
+      largest = max(largest, matrix[src][dst]);
+    }
+    float sum = 0.0f;
+    for (uint dst = 0; dst < streams; ++dst) {
+      matrix[src][dst] = exp(matrix[src][dst] - largest);
+      sum += matrix[src][dst];
+    }
+    for (uint dst = 0; dst < streams; ++dst)
+      matrix[src][dst] = matrix[src][dst] / sum + eps;
+  }
+  for (uint iteration = 0; iteration < GLM_FLASH_HC_SINKHORN_ITERATIONS; ++iteration) {
+    if (iteration != 0) {
+      for (uint src = 0; src < streams; ++src) {
+        float sum = 0.0f;
+        for (uint dst = 0; dst < streams; ++dst) sum += matrix[src][dst];
+        for (uint dst = 0; dst < streams; ++dst) matrix[src][dst] /= sum + eps;
+      }
+    }
+    for (uint dst = 0; dst < streams; ++dst) {
+      float sum = 0.0f;
+      for (uint src = 0; src < streams; ++src) sum += matrix[src][dst];
+      for (uint src = 0; src < streams; ++src) matrix[src][dst] /= sum + eps;
+    }
+  }
+  for (uint src = 0; src < streams; ++src)
+    for (uint dst = 0; dst < streams; ++dst)
+      mix[2 * streams + src * streams + dst] = matrix[src][dst];
+}
+
+kernel void glm_flash_hc_pre(device const float *streams [[buffer(0)]],
+                             device const float *coefficients [[buffer(1)]],
+                             device float *branch [[buffer(2)]],
+                             uint2 group [[threadgroup_position_in_grid]],
+                             uint tid [[thread_index_in_threadgroup]]) {
+  constexpr uint hidden = GLM_FLASH_HC_HIDDEN;
+  const uint channel = group.y * HYPER_CONNECTION_ROW_THREADS + tid;
+  device const float *state = streams + ulong(group.x) * GLM_FLASH_HC_WIDTH + channel;
+  device const float *mix = coefficients + ulong(group.x) * GLM_FLASH_HC_MIXES;
+  float value = 0.0f;
+  for (uint src = 0; src < GLM_FLASH_HC_STREAMS; ++src)
+    value += state[src * hidden] * mix[src];
+  branch[ulong(group.x) * hidden + channel] = value;
+}
+
+kernel void glm_flash_hc_post(device float *streams [[buffer(0)]],
+                              device const float *branch [[buffer(1)]],
+                              device const float *coefficients [[buffer(2)]],
+                              uint2 group [[threadgroup_position_in_grid]],
+                              uint tid [[thread_index_in_threadgroup]]) {
+  constexpr uint hidden = GLM_FLASH_HC_HIDDEN, count = GLM_FLASH_HC_STREAMS;
+  const uint channel = group.y * HYPER_CONNECTION_ROW_THREADS + tid;
+  device float *state = streams + ulong(group.x) * GLM_FLASH_HC_WIDTH + channel;
+  device const float *mix = coefficients + ulong(group.x) * GLM_FLASH_HC_MIXES;
+  const float value = branch[ulong(group.x) * hidden + channel];
+  float residual[count];
+  for (uint src = 0; src < count; ++src) residual[src] = state[src * hidden];
+  for (uint dst = 0; dst < count; ++dst) {
+    float updated = value * mix[count + dst];
+    for (uint src = 0; src < count; ++src)
+      updated += residual[src] * mix[2 * count + src * count + dst];
+    state[dst * hidden] = updated;
+  }
+}

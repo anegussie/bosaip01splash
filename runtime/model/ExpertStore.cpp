@@ -247,6 +247,7 @@ struct ExpertStore::Impl {
     uint32_t resident = 0;      // the experts that have a slot
     // Its router and shared-expert gate (bind), which predict its routes.
     ops::QuantizedSegment router, scalarGate;
+    metal::MetalBuffer selectionBias;
   };
   // A step's tiles (ops::MoeLoadPart): the grouping's descriptors and count.
   struct PartTiles final {
@@ -1281,6 +1282,7 @@ void ExpertStore::bind(uint32_t block, ops::BlockMoeWeights &weights) {
   Impl::Block &streamed = impl.blocks.at(block);
   streamed.router = weights.router;
   streamed.scalarGate = weights.sharedScalarGate;
+  streamed.selectionBias = weights.selectionBias;
   const Impl::Size &size = impl.sizes[streamed.size];
   // The routed segments give the slots' format and size; their planes are
   // the chunks'.
@@ -1335,7 +1337,7 @@ void ExpertStore::addLoad(metal::CommandGraph &graph, std::span<const ops::MoeLo
     const Impl::Block &next = impl.blocks[block + 1];
     ops::MoE::addRoutes(graph, step.input, next.router, next.scalarGate, impl.predictionScores,
                         impl.predictionRoutes, impl.predictionWeights, rows, shape,
-                        parts.front().plan->configuration().ggufRouterTile);
+                        parts.front().plan->configuration().ggufRouterTile, next.selectionBias);
   }
   // A cycle's loads keep the GPU awake: a decode step's come about every
   // millisecond and most end within one, about as long as an idle GPU takes

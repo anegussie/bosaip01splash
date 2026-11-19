@@ -15,6 +15,7 @@ import select
 import signal
 import socket
 import sys
+import tempfile
 import threading
 import time
 from collections.abc import Callable
@@ -26,7 +27,8 @@ from urllib.parse import unquote
 
 from transformers import AutoTokenizer
 
-from install import assembly
+from install import assembly, gguf
+from install.families import GLM_FLASH_FAMILY
 from install.models import ModelError
 
 from . import dialects, json_codec, serve_options, serve_record, telemetry, unix_socket
@@ -1277,6 +1279,13 @@ def parse_args(argv=None):
     )
     parser.add_argument("--port", type=int, default=serve_options.DEFAULT_PORT)
     parser.add_argument("--binary", default=str(ROOT / "build" / "splash"))
+    parser.add_argument(
+        "--glm-flash", action="store_true", help="serve GLM-5.3-Flash from local GGUF shards"
+    )
+    parser.add_argument(
+        "--glm-flash-max-output", type=int, metavar="TOKENS",
+        help="maximum generated tokens per GLM Flash request (default: 2048)",
+    )
     # The launcher's, not a serve option: where the app follows a start and
     # reads why one failed (serve_record).
     parser.add_argument("--serve-record", type=Path, metavar="PATH")
@@ -1285,6 +1294,16 @@ def parse_args(argv=None):
     serve_options.check_serve_arguments(parser, args)
     if not 0 <= args.port <= 65535:
         parser.error("--port must be in [0, 65535]")
+    if args.glm_flash:
+        context = args.max_context or 8192
+        if context > 8192:
+            parser.error("GLM Flash supports at most 8192 context tokens")
+        if args.glm_flash_max_output is None:
+            args.glm_flash_max_output = min(2048, context - 1)
+        if not 1 <= args.glm_flash_max_output < context:
+            parser.error("--glm-flash-max-output must be positive and smaller than context")
+    elif args.glm_flash_max_output is not None:
+        parser.error("--glm-flash-max-output requires --glm-flash")
     return args
 
 
@@ -1295,6 +1314,9 @@ def _native_command(args, model_root, relaunch_context=None):
     context, and serves what its plan holds of the first engine's context,
     where its own automatic one would follow a Neural Engine split calibrated
     anew."""
+    if getattr(args, "glm_flash", False):
+        context = relaunch_context or args.max_context or 8192
+        return [args.binary, "serve-glm-flash", str(model_root), str(context)]
     command = [
         args.binary,
         "serve-native",
@@ -1361,11 +1383,26 @@ def _start_failed(args, error, failure):
     raise SystemExit(1) from None
 
 
+def _glm_tokenizer(model_root, directory):
+    shards = sorted(model_root.glob("*.gguf"))
+    if not shards:
+        raise ModelError(f"no GLM Flash GGUF shards in {model_root}")
+    metadata = gguf.Metadata(shards[0])
+    if metadata.require("general.architecture", str) != "glm5-next":
+        raise ModelError("expected GLM Flash GGUF architecture glm5-next")
+    for relative, content in gguf.tokenizer_files(metadata).items():
+        destination = directory / relative
+        destination.parent.mkdir(exist_ok=True, parents=True)
+        destination.write_bytes(content)
+    return directory / "tokenizer"
+
+
 def main():
     args = parse_args()
     server = None
     runtime = None
     backend = None
+    glm_tokenizer_dir = None
     # Why the backend stopped restarting the engine, once it has.
     stopped = None
 
@@ -1416,10 +1453,15 @@ def main():
         # Nothing reads `held`: it keeps the assembly held until the server
         # exits, so that no installation collects the assembly its tokenizer
         # and engines, a relaunched one too, serve.
-        model_root, held = assembly.hold(Path(args.model_root))
-        # The family the installation found the model to be, whose chat
-        # format its output is read in.
-        family = assembly.family(model_root)
+        if args.glm_flash:
+            model_root = Path(args.model_root).resolve()
+            family = GLM_FLASH_FAMILY
+            glm_tokenizer_dir = tempfile.TemporaryDirectory(prefix="splash-glm-tokenizer-")
+            tokenizer_path = _glm_tokenizer(model_root, Path(glm_tokenizer_dir.name))
+        else:
+            model_root, held = assembly.hold(Path(args.model_root))
+            family = assembly.family(model_root)
+            tokenizer_path = model_root / "tokenizer"
         if family is None:
             raise ModelError(
                 f"{args.model} is not prepared as a model of a family this "
@@ -1447,7 +1489,7 @@ def main():
         # each is the model's.
         try:
             tokenizer = AutoTokenizer.from_pretrained(
-                model_root / "tokenizer", local_files_only=True, trust_remote_code=False
+                tokenizer_path, local_files_only=True, trust_remote_code=False
             )
         except Exception as error:
             raise ModelError(
@@ -1533,6 +1575,7 @@ def main():
             reasoning_effort=args.reasoning_effort,
             default_reasoning_effort=args.default_reasoning_effort,
             default_thinking_token_budget=args.thinking_token_budget,
+            max_output_tokens=args.glm_flash_max_output,
         )
         server.app = app
         telemetry.run_manifest(
@@ -1619,6 +1662,8 @@ def main():
             signal.signal(signal.SIGINT, signal.SIG_IGN)
             if server is not None:
                 server.server_close()
+            if glm_tokenizer_dir is not None:
+                glm_tokenizer_dir.cleanup()
     if stopped is not None:
         serve_record.failed(
             args.serve_record, serve_record.failure(serve_record.STOPPED, stopped)

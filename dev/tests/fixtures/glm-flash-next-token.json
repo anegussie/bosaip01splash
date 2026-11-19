@@ -1,0 +1,72 @@
+{
+  "target": "unsloth/GLM-5.3-Flash-GGUF:UD-IQ2_XXS",
+  "target_revision": "a38483c8cd5df544f53d70fb281afe97369d5ab6",
+  "reference_engine": "unslothai/llama.cpp",
+  "reference_revision": "722adcdff6341cd4befa07ca49486db17d8f6f39",
+  "reference_binary_sha256": "85e3f5af2f09f3bf5deee0575e14c2f26be838eef884c3fd7f09dcea082b5390",
+  "reference_settings": {
+    "backend": "CPU",
+    "threads": 4,
+    "context": 8192,
+    "batch": 128,
+    "microbatch": 64,
+    "cached_prompt_tokens": 0
+  },
+  "prompt_token_ids": [
+    12542,
+    279,
+    729,
+    323,
+    470,
+    1172,
+    13020,
+    2038,
+    624,
+    750,
+    22494,
+    3575,
+    49695,
+    2877,
+    11,
+    293,
+    11,
+    272,
+    982,
+    262,
+    671,
+    3411,
+    279,
+    6149,
+    897,
+    1283,
+    28176,
+    279,
+    2326,
+    11122,
+    624,
+    262
+  ],
+  "expected_token_id": 671,
+  "top_logprobs": [
+    {
+      "id": 671,
+      "logprob": -1.3457481861114502
+    },
+    {
+      "id": 470,
+      "logprob": -1.5277683734893799
+    },
+    {
+      "id": 10610,
+      "logprob": -2.050276041030884
+    },
+    {
+      "id": 12230,
+      "logprob": -2.3798162937164307
+    },
+    {
+      "id": 421,
+      "logprob": -2.9913980960845947
+    }
+  ]
+}

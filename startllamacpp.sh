@@ -3,6 +3,19 @@ set -euo pipefail
 
 LLAMA_SERVER="/opt/homebrew/opt/llama.cpp/bin/llama-server"
 PRISM_LLAMA_SERVER="/Users/mymac/prism-llama.cpp/build/bin/llama-server"
+GLM53_FLASH_SERVER="${GLM53_FLASH_SERVER:-$HOME/llamacpp/glm53-flash/build/bin/llama-server}"
+GLM53_FLASH_REPO="unsloth/GLM-5.3-Flash-GGUF"
+GLM53_FLASH_FILE="UD-IQ2_XXS/GLM-5.3-Flash-UD-IQ2_XXS-00001-of-00004.gguf"
+GLM53_FLASH_MODEL="${GLM53_FLASH_MODEL:-}"
+GLM53_FLASH_ALIAS="glm-5.3-flash-ud-iq2-xxs"
+GLM53_FLASH_ENGINE="${GLM53_FLASH_ENGINE:-splash}"
+GLM53_FLASH_SPLASH_ROOT="${GLM53_FLASH_SPLASH_ROOT:-$HOME/splash/splash}"
+GLM53_FLASH_SPLASH_BINARY="${GLM53_FLASH_SPLASH_BINARY:-$GLM53_FLASH_SPLASH_ROOT/build/glm5-chunk128/splash}"
+GLM53_FLASH_CONTEXT="${GLM53_FLASH_CONTEXT:-8192}"
+GLM53_FLASH_OUTPUT="${GLM53_FLASH_OUTPUT:-2048}"
+# CPU + mmap avoids trying to place this 102 GB model in 16 GiB of unified memory.
+GLM53_FLASH_GPU_LAYERS="${GLM53_FLASH_GPU_LAYERS:-0}"
+GLM53_FLASH_REASONING_EFFORT="${GLM53_FLASH_REASONING_EFFORT:-low}"
 SPLASH_BIN="${SPLASH_BIN:-/Users/mymac/splash/splash/splash}"
 LITHOS_ROOT="${LITHOS_ROOT:-/Users/mymac/lithos/lithos-metal}"
 LITHOS_PYTHON="${LITHOS_PYTHON:-$LITHOS_ROOT/.venv/bin/python}"
@@ -308,6 +321,12 @@ print_models() {
   echo "   INT8 KV | BF16 state | text only | ${SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE} | expert memory ${SPLASH_FLASH_NEXT_EXPERT_MEMORY} | ${SPLASH_FLASH_NEXT_Q2_PREFILL_CHUNK_TOKENS}-token prefill chunks | PLE row cache ${SPLASH_FLASH_NEXT_PLE_MEMORY}"
   echo "   Source: ${SPLASH_FLASH_NEXT_Q2_MODEL_ID} | local BF16 DFlash2 draft: ${SPLASH_FLASH_NEXT_DFLASH2_MODEL}"
   echo "   Option 21 uses option 20's 16 GiB preset; if a 2,048-token chunk trips the 5 s Metal event window the launcher retries with 10G and 1,024-token chunks"
+  echo "24) GLM-5.3-Flash UD-IQ2_XXS - $GLM53_FLASH_ENGINE"
+  echo "   ${GLM53_FLASH_CONTEXT}-token context | ${GLM53_FLASH_OUTPUT} output tokens | one request | reasoning ${GLM53_FLASH_REASONING_EFFORT}"
+  echo "   Source: ${GLM53_FLASH_REPO} / UD-IQ2_XXS | four shards, about 102 GB"
+  if [[ "$GLM53_FLASH_ENGINE" == "splash" ]]; then
+    echo "   Native Metal | 128-token prefill chunks | streams weights from the installed GGUF shards"
+  fi
 
 }
 
@@ -577,11 +596,13 @@ prepare_llama_run() {
 }
 
 prepare_splash_run() {
+  local profile_slug="${1:-$SPLASH_BONSAI_ALIAS}"
+  local server_path="${2:-$SPLASH_BIN}"
   local log_dir="${LLAMA_LOG_DIR:-$HOME/.local/state/llama-server}"
   local run_id=""
 
-  if [[ ! -x "$SPLASH_BIN" ]]; then
-    echo "Splash is missing or not executable: $SPLASH_BIN" >&2
+  if [[ ! -x "$server_path" ]]; then
+    echo "Splash is missing or not executable: $server_path" >&2
     echo "Build or install Splash, or set SPLASH_BIN to its executable path." >&2
     exit 1
   fi
@@ -593,11 +614,11 @@ prepare_splash_run() {
 
   mkdir -p "$log_dir"
   run_id="$(date '+%Y%m%d-%H%M%S')"
-  SPLASH_RUN_LOG="$log_dir/${SPLASH_BONSAI_ALIAS}-$run_id.log"
+  SPLASH_RUN_LOG="$log_dir/${profile_slug}-$run_id.log"
   : > "$SPLASH_RUN_LOG"
   export SPLASH_TELEMETRY_PATH="${SPLASH_TELEMETRY_PATH:-$SPLASH_RUN_LOG.jsonl}"
   ln -sfn "$SPLASH_RUN_LOG" "$log_dir/splash-latest.log"
-  ln -sfn "$SPLASH_RUN_LOG" "$log_dir/${SPLASH_BONSAI_ALIAS}-latest.log"
+  ln -sfn "$SPLASH_RUN_LOG" "$log_dir/${profile_slug}-latest.log"
   echo "Run log: $SPLASH_RUN_LOG"
   echo "Status: http://${HOST}:${PORT}/status"
   echo "Press Ctrl-C in this Terminal to stop it."
@@ -653,6 +674,10 @@ sync_opencode_model() {
   temp_path="$(mktemp "${config_path}.tmp.XXXXXX")"
   if ! jq --arg default_model "$default_model_id" --arg worker "$worker_model_id" --arg reasoner "$reasoner_model_id" --arg selected_alias "$model_alias" \
     --arg base_url "http://${HOST}:${PORT}/v1" \
+    --arg glm_alias "$GLM53_FLASH_ALIAS" \
+    --arg glm_context "$GLM53_FLASH_CONTEXT" \
+    --arg glm_output "$GLM53_FLASH_OUTPUT" \
+    --arg glm_reasoning "$GLM53_FLASH_REASONING_EFFORT" \
     --arg mlx_reasoner "local-llama/${MLX_API_ALIAS}" \
     --arg mlx_mtp "$mlx_mtp_model_id" \
     --arg bonsai_splash "$bonsai_splash_model_id" \
@@ -768,7 +793,20 @@ sync_opencode_model() {
           .key == "context_worker" or .key == "general_worker"
        then .value.reasoningEffort = "none" else . end
      ) |
-     if $default_model == $bonsai_splash then
+     if $selected_alias == $glm_alias then
+       .provider["local-llama"].models[$glm_alias] = {
+         name: "GLM-5.3-Flash UD-IQ2_XXS",
+         reasoning: true, tool_call: true,
+         limit: {context: ($glm_context | tonumber), output: ($glm_output | tonumber)}
+       } |
+       .compaction.buffer = ($glm_output | tonumber) |
+       .agent |= with_entries(
+         if .value.model == $default_model then
+           .value.reasoningEffort = $glm_reasoning |
+           .value.temperature = 1.0 | .value.top_p = 0.95
+         else . end
+       )
+     elif $default_model == $bonsai_splash then
        .agent.router.temperature = 0.7 |
        .agent.router.top_p = 0.80 |
        .agent.general.temperature = 0.7 |
@@ -1082,7 +1120,7 @@ usage() {
 Usage:
   startllamacpp.sh                  Select a model, or choose 9 to stop serving
   startllamacpp.sh --watch [1-7|10] Start a watchdog-managed server
-  startllamacpp.sh --direct [1-8|10|14|15|16|17|18|19|20|21] Start the selected server without the watchdog
+  startllamacpp.sh --direct [1-8|10|14|15|16|17|18|19|20|21|24] Start the selected server without the watchdog
   startllamacpp.sh --hermes [1-7]  Start a model and its matching Hermes profile
   startllamacpp.sh --list           List model choices
 
@@ -1144,32 +1182,32 @@ if (( DIRECT_LAUNCH == 1 || HERMES_LAUNCH == 1 )) && [[ -n "$DIRECT_CHOICE" ]]; 
   choice="$DIRECT_CHOICE"
 else
   print_models
-  if ! read -r -p "Enter choice (1-10, 14-21; 9 stops): " choice; then
+  if ! read -r -p "Enter choice (1-10, 14-21, 24; 9 stops): " choice; then
     echo "No model choice received." >&2
     exit 2
   fi
 fi
 
 case "$choice" in
-  1|2|3|4|5|6|7|8|10|14|15|16|17|18|19|20|21) ;;
+  1|2|3|4|5|6|7|8|10|14|15|16|17|18|19|20|21|24) ;;
   9)
     stop_llamacpp
     exit $?
     ;;
   *)
-    echo "Invalid choice: $choice (expected 1-10, 14-21; 9 stops)." >&2
+    echo "Invalid choice: $choice (expected 1-10, 14-21 or 24; 9 stops)." >&2
     exit 2
     ;;
 esac
 
-if [[ "$choice" == "8" || "$choice" == "10" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" || "$choice" == "20" || "$choice" == "21" ]]; then
+if [[ "$choice" == "8" || "$choice" == "10" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" || "$choice" == "20" || "$choice" == "21" || "$choice" == "24" ]]; then
   if (( HERMES_LAUNCH == 1 )); then
-    echo "Options 8, 10, and 14-21 do not use hermeslocal profiles; run them from the interactive menu or with --direct." >&2
+    echo "Options 8, 10, 14-21 and 24 do not use hermeslocal profiles; run them from the interactive menu or with --direct." >&2
     exit 2
   fi
   # Keep the reasoning-only profile direct; MTP option 10 is supervised by the
   # watchdog unless the caller explicitly requests --direct.
-  if [[ "$choice" == "8" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" || "$choice" == "20" || "$choice" == "21" ]]; then
+  if [[ "$choice" == "8" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" || "$choice" == "20" || "$choice" == "21" || "$choice" == "24" ]]; then
     DIRECT_LAUNCH=1
   fi
 fi
@@ -1183,6 +1221,85 @@ if (( DIRECT_LAUNCH == 0 )); then
 fi
 
 case "$choice" in
+  24)
+    case "$GLM53_FLASH_ENGINE" in
+      splash) glm53_context_limit=8192 ;;
+      llama.cpp) glm53_context_limit=1048576 ;;
+      *) echo "GLM53_FLASH_ENGINE must be splash or llama.cpp." >&2; exit 2 ;;
+    esac
+    if ! splash_uint_in_range "$GLM53_FLASH_CONTEXT" 4096 "$glm53_context_limit" ||
+       ! splash_uint_in_range "$GLM53_FLASH_OUTPUT" 1 1048575 ||
+       (( GLM53_FLASH_OUTPUT >= GLM53_FLASH_CONTEXT )); then
+      echo "GLM53_FLASH_CONTEXT must be 4096-$glm53_context_limit. GLM53_FLASH_OUTPUT must be positive and smaller than context." >&2
+      exit 2
+    fi
+    case "$GLM53_FLASH_REASONING_EFFORT" in
+      low|high|max) ;;
+      *) echo "GLM53_FLASH_REASONING_EFFORT must be low, high or max." >&2; exit 2 ;;
+    esac
+    if [[ "$GLM53_FLASH_ENGINE" == "splash" ]]; then
+      glm53_root="$GLM53_FLASH_MODEL"
+      if [[ -z "$glm53_root" ]]; then
+        glm53_hub="${HF_HUB_CACHE:-${HUGGINGFACE_HUB_CACHE:-${HF_HOME:-$HOME/.cache/huggingface}/hub}}"
+        glm53_root="$glm53_hub/models--unsloth--GLM-5.3-Flash-GGUF/snapshots/a38483c8cd5df544f53d70fb281afe97369d5ab6/UD-IQ2_XXS"
+      elif [[ "$glm53_root" == *.gguf ]]; then
+        glm53_root="$(dirname "$glm53_root")"
+      fi
+      for glm53_shard in 00001 00002 00003 00004; do
+        require_model "$glm53_root/GLM-5.3-Flash-UD-IQ2_XXS-${glm53_shard}-of-00004.gguf" "GLM-5.3-Flash UD-IQ2_XXS"
+      done
+      glm53_root="$(cd "$glm53_root" && pwd -P)"
+      glm53_python="$GLM53_FLASH_SPLASH_ROOT/.venv/bin/python"
+      if [[ ! -x "$glm53_python" || ! -s "${GLM53_FLASH_SPLASH_BINARY%/*}/splash.metallib" ]]; then
+        echo "Splash Python environment or Metal library is missing for option 24." >&2
+        exit 1
+      fi
+      prepare_splash_run "$GLM53_FLASH_ALIAS" "$GLM53_FLASH_SPLASH_BINARY"
+      sync_opencode_model "$GLM53_FLASH_ALIAS"
+      echo "Starting GLM-5.3-Flash in Splash on http://${HOST}:${PORT}"
+      cd "$GLM53_FLASH_SPLASH_ROOT"
+      exec "$glm53_python" -u -m server.server "$glm53_root" \
+        --glm-flash --binary "$GLM53_FLASH_SPLASH_BINARY" --model "$GLM53_FLASH_REPO" \
+        --served-model-name "$GLM53_FLASH_ALIAS" --announce-served-name \
+        --max-context "$GLM53_FLASH_CONTEXT" --glm-flash-max-output "$GLM53_FLASH_OUTPUT" \
+        --host "$HOST" --port "$PORT" --max-active-requests 1 \
+        --default-reasoning-effort "$GLM53_FLASH_REASONING_EFFORT" \
+        > >(tee -a "$SPLASH_RUN_LOG") 2>&1
+    fi
+    case "$GLM53_FLASH_GPU_LAYERS" in
+      all|auto) ;;
+      *)
+        if ! splash_uint_in_range "$GLM53_FLASH_GPU_LAYERS" 0 1000; then
+          echo "GLM53_FLASH_GPU_LAYERS must be 0-1000, all or auto." >&2
+          exit 2
+        fi
+        ;;
+    esac
+    glm53_model_args=(--hf-repo "$GLM53_FLASH_REPO" --hf-file "$GLM53_FLASH_FILE")
+    if [[ -n "$GLM53_FLASH_MODEL" ]]; then
+      require_model "$GLM53_FLASH_MODEL" "GLM-5.3-Flash UD-IQ2_XXS"
+      glm53_model_args=(--model "$GLM53_FLASH_MODEL")
+    fi
+    glm53_offload_args=(--cpu-moe)
+    [[ "$GLM53_FLASH_GPU_LAYERS" != "0" ]] || glm53_offload_args+=(--no-op-offload)
+    prepare_llama_run "$GLM53_FLASH_ALIAS" "$GLM53_FLASH_SERVER"
+    sync_opencode_model "$GLM53_FLASH_ALIAS"
+    echo "GLM-5.3-Flash UD-IQ2_XXS: about 102 GB across four GGUF shards; missing shards download on first run."
+    echo "CPU memory mapping is enabled by default; this 16 GiB Mac will page weights from SSD and may be very slow."
+    exec "$GLM53_FLASH_SERVER" \
+      "${glm53_model_args[@]}" \
+      --alias "$GLM53_FLASH_ALIAS" \
+      --ctx-size "$GLM53_FLASH_CONTEXT" \
+      --n-predict "$GLM53_FLASH_OUTPUT" \
+      --n-gpu-layers "$GLM53_FLASH_GPU_LAYERS" \
+      "${glm53_offload_args[@]}" \
+      --parallel 1 --batch-size 128 --ubatch-size 64 --cache-ram 0 \
+      --temp 1.0 --top-p 0.95 --top-k 0 --min-p 0.0 --repeat-penalty 1.0 \
+      --jinja --chat-template-kwargs "{\"reasoning_effort\":\"$GLM53_FLASH_REASONING_EFFORT\"}" \
+      --host "$HOST" --port "$PORT" --metrics \
+      --log-file "$LLAMA_RUN_LOG" --log-colors off --log-timestamps
+    ;;
+
   1)
     require_model "$QWEN_9B_MODEL" "Qwen 3.5 9B"
     prepare_llama_run "qwen-planner"

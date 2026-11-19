@@ -124,4 +124,37 @@ void HyperConnection::addStreamMean(metal::CommandGraph &graph, metal::MetalBuff
             {rows, groups(shape.hidden), 1}, {kThreads, 1, 1});
 }
 
+void GlmFlashHyperConnection::addPre(metal::CommandGraph &graph, metal::MetalBuffer streams,
+                                    const GlmFlashHyperWeights &weights, const GlmFlashHyperScratch &scratch,
+                                    metal::MetalBuffer branchInput, uint32_t rows) {
+  if (!rows) throw std::invalid_argument("a GLM hyper-connection requires rows");
+  requireBytes(streams, uint64_t{rows} * GLM_FLASH_HC_WIDTH * sizeof(float), "GLM hyper-connection streams");
+  requireBytes(weights.projection, GLM_FLASH_HC_MIXES * (GLM_FLASH_HC_WIDTH / 32) * 34,
+               "GLM hyper-connection Q8_0 projection");
+  requireBytes(weights.scale, 3 * sizeof(float), "GLM hyper-connection scale");
+  requireBytes(weights.base, GLM_FLASH_HC_MIXES * sizeof(float), "GLM hyper-connection base");
+  requireBytes(scratch.inverseRms, uint64_t{rows} * sizeof(float), "GLM hyper-connection inverse RMS");
+  requireBytes(scratch.coefficients, uint64_t{rows} * GLM_FLASH_HC_MIXES * sizeof(float),
+               "GLM hyper-connection coefficients");
+  requireBytes(branchInput, uint64_t{rows} * GLM_FLASH_HC_HIDDEN * sizeof(float), "GLM hyper-connection branch");
+  graph.add("glm_flash_hc_rms", {streams, scratch.inverseRms}, {rows, 1, 1}, {kThreads, 1, 1});
+  graph.add("glm_flash_hc_project", {streams, weights.projection, scratch.inverseRms, scratch.coefficients},
+            {rows, GLM_FLASH_HC_MIXES, 1}, {32, 1, 1});
+  graph.add("glm_flash_hc_coefficients", {scratch.coefficients, weights.scale, weights.base},
+            {rows, 1, 1}, {1, 1, 1});
+  graph.add("glm_flash_hc_pre", {std::move(streams), scratch.coefficients, std::move(branchInput)},
+            {rows, groups(GLM_FLASH_HC_HIDDEN), 1}, {kThreads, 1, 1});
+}
+
+void GlmFlashHyperConnection::addPost(metal::CommandGraph &graph, metal::MetalBuffer streams,
+                                     metal::MetalBuffer branchOutput, metal::MetalBuffer coefficients,
+                                     uint32_t rows) {
+  if (!rows) throw std::invalid_argument("a GLM hyper-connection requires rows");
+  requireBytes(streams, uint64_t{rows} * GLM_FLASH_HC_WIDTH * sizeof(float), "GLM hyper-connection streams");
+  requireBytes(branchOutput, uint64_t{rows} * GLM_FLASH_HC_HIDDEN * sizeof(float), "GLM hyper-connection branch");
+  requireBytes(coefficients, uint64_t{rows} * GLM_FLASH_HC_MIXES * sizeof(float), "GLM hyper-connection coefficients");
+  graph.add("glm_flash_hc_post", {std::move(streams), std::move(branchOutput), std::move(coefficients)},
+            {rows, groups(GLM_FLASH_HC_HIDDEN), 1}, {kThreads, 1, 1});
+}
+
 } // namespace splash::ops

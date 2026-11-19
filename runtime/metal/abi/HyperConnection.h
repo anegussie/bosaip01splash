@@ -56,3 +56,14 @@ struct HyperStreamMeanParams {
 
 static_assert(sizeof(HyperStreamMeanParams) == 24,
               "hyper-connection stream mean parameters are 24 bytes on both sides");
+
+// GLM-5.3-Flash uses one Q8_0 projection of the concatenated streams.
+// Its 24 output channels are four pre gates, four post gates, then
+// sixteen source-major residual coefficients.
+#define GLM_FLASH_HC_HIDDEN 4096u
+#define GLM_FLASH_HC_STREAMS 4u
+#define GLM_FLASH_HC_WIDTH (GLM_FLASH_HC_HIDDEN * GLM_FLASH_HC_STREAMS)
+#define GLM_FLASH_HC_MIXES 24u
+#define GLM_FLASH_HC_RMS_EPSILON 1e-5f
+#define GLM_FLASH_HC_EPSILON 1e-6f
+#define GLM_FLASH_HC_SINKHORN_ITERATIONS 20u

@@ -267,6 +267,8 @@ ENGINE_CPP_SOURCES := \
 	runtime/ops/MoE.cpp \
 	runtime/ops/Normalization.cpp \
 	runtime/ops/HyperConnection.cpp \
+	runtime/ops/GlmFlashKda.cpp \
+	runtime/ops/GlmFlashSparseAttention.cpp \
 	runtime/ops/NgramEmbedding.cpp \
 	runtime/ops/BlockIndexer.cpp \
 	runtime/ops/PagedAttention.cpp \
@@ -308,6 +310,11 @@ ENGINE_CPP_SOURCES := \
 	runtime/model/GgufFile.cpp \
 	runtime/model/GgufImage.cpp \
 	runtime/model/GgufTarget.cpp \
+	runtime/model/Glm5FlashCheckpoint.cpp \
+	runtime/model/GlmFlashRecurrentLayer.cpp \
+	runtime/model/GlmFlashExperts.cpp \
+	runtime/model/GlmFlashSparseLayer.cpp \
+	runtime/model/GlmFlashSequence.cpp \
 	runtime/model/SafetensorsImage.cpp \
 	runtime/model/SafetensorsTarget.cpp \
 	runtime/model/DraftCheckpoint.cpp \
@@ -349,6 +356,7 @@ ENGINE_MM_SOURCES := \
 	runtime/model/SafetensorsCheckpoint.mm \
 	runtime/model/ModelDescriptor.mm \
 	runtime/engine/ThermalState.mm \
+	runtime/engine/GlmFlashNative.mm \
 	runtime/engine/RuntimeResources.mm \
 	runtime/engine/Bootstrap.mm
 ENGINE_OBJECTS := \

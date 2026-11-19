@@ -3,10 +3,13 @@
 #include "StderrLine.hpp"
 #include "Supervision.hpp"
 #include "engine/FdTransport.hpp"
+#include "engine/GlmFlashNative.hpp"
 #include "engine/Bootstrap.hpp"
 #include "engine/Json.hpp"
 #include "engine/NativeArguments.hpp"
 #include "model/ModelDescriptor.hpp"
+#include "model/GgufTarget.hpp"
+#include "model/Glm5FlashCheckpoint.hpp"
 
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <dispatch/dispatch.h>
@@ -18,6 +21,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
+#include <charconv>
 #include <csignal>
 #include <chrono>
 #include <cstdint>
@@ -157,6 +161,8 @@ void printUsage(std::string_view executable) {
       " [--kv-spill always] [--kv-window-trim on|off] [--verify-rows auto|all]");
   writeStderrLine("       " + command + " model-check mlx-affine none|safetensors CONFIG [DRAFT_CONFIG]");
   writeStderrLine("       " + command + " model-check gguf none|gguf CONFIG GGUF_HEADERS [DRAFT_CONFIG]");
+  writeStderrLine("       " + command + " glm-flash-checkpoint GGUF_DIRECTORY");
+  writeStderrLine("       " + command + " serve-glm-flash GGUF_DIRECTORY CONTEXT");
   writeStderrLine("       " + command + " device-check");
   writeStderrLine("       " + command + " families");
 }
@@ -503,6 +509,52 @@ int printFamilies(int argc) {
   return 0;
 }
 
+int inspectGlmFlashCheckpoint(int argc, char **argv) {
+  if (argc != 3)
+    throw engine::UsageError("glm-flash-checkpoint takes the directory containing the target GGUF shards");
+  const auto paths = model::findTargetGgufs(argv[2]);
+  const model::OpenGguf source(paths);
+  const model::Glm5FlashCheckpoint checkpoint(source.file());
+  json::Writer w;
+  w.object([&] {
+    w.field("architecture", source.file().metadata().architecture())
+        .field("text_layers", checkpoint.textLayers)
+        .field("experts", checkpoint.experts)
+        .field("experts_per_token", checkpoint.expertsPerToken)
+        .field("target_bytes", checkpoint.targetBytes)
+        .field("routed_expert_bytes", checkpoint.routedExpertBytes)
+        .field("auxiliary_bytes", checkpoint.auxiliaryBytes);
+    w.array("shards", [&] {
+      for (uint32_t index = 0; index < paths.size(); ++index)
+        w.object([&] { w.field("path", paths[index].string()).field("bytes", source.file().source(index).bytes()); });
+    });
+    w.array("tensors", [&] {
+      for (const auto &entry : checkpoint.tensors) {
+        const auto &tensor = *entry.tensor;
+        using model::Glm5FlashTensorRole;
+        const char *role = entry.role == Glm5FlashTensorRole::RoutedExpert ? "routed_expert"
+                           : entry.role == Glm5FlashTensorRole::Auxiliary  ? "auxiliary"
+                                                                         : "target";
+        w.object([&] {
+          w.field("name", tensor.name)
+              .field("role", role)
+              .field("shard", tensor.file)
+              .field("file_offset", source.file().source(tensor.file).dataOffset() + tensor.offset)
+              .field("bytes", tensor.bytes)
+              .field("format", model::ggmlTypeName(tensor.type));
+          if (entry.expertStrideBytes) w.field("expert_stride_bytes", entry.expertStrideBytes);
+          w.array("dimensions", [&] {
+            for (const auto dim : tensor.dims) w.value(dim);
+          });
+        });
+      }
+    });
+  });
+  source.checkUnchanged();
+  std::printf("%s\n", w.str().c_str());
+  return 0;
+}
+
 } // namespace
 } // namespace splash
 
@@ -514,6 +566,20 @@ int main(int argc, char **argv) {
         return splash::checkDevice(argc);
       if (command == "model-check")
         return splash::checkModel(argc, argv);
+      if (command == "glm-flash-checkpoint")
+        return splash::inspectGlmFlashCheckpoint(argc, argv);
+      if (command == "serve-glm-flash") {
+        if (argc != 4)
+          throw splash::engine::UsageError("expected GGUF_DIRECTORY and CONTEXT");
+        const std::string_view context = argv[3];
+        uint32_t capacity = 0;
+        const auto end = context.data() + context.size();
+        const auto parsed = std::from_chars(context.data(), end, capacity);
+        if (parsed.ec != std::errc{} || parsed.ptr != end || capacity == 0 || capacity > 8192)
+          throw splash::engine::UsageError("GLM Flash context must be between 1 and 8192");
+        return splash::engine::serveGlmFlash(
+            splash::executablePath().parent_path() / "splash.metallib", argv[2], capacity);
+      }
       if (command == "families")
         return splash::printFamilies(argc);
       if (command == "serve-native")

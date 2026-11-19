@@ -173,12 +173,18 @@ FLINT_PATTERNS = (
     r"(?i:'s|'t|'re|'ve|'m|'ll|'d)?"
     r"| ?[\p{P}\p{S}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+",
 )
+# GLM's byte-level profile treats digits in groups of up to three.
+GLM4_PATTERN = (
+    r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}"
+    r"| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"
+)
 # Each GGUF tokenizer profile (tokenizer.ggml.pre) Splash derives a tokenizer
 # for: the patterns that split text, each isolating its matches, in order,
 # and whether text is NFC-normalized before them.
 TOKENIZER_PROFILES = {
     "qwen35": ((QWEN35_PATTERN,), True),
     "flint": (FLINT_PATTERNS, False),
+    "glm4": ((GLM4_PATTERN,), False),
 }
 # The GGUF token types (llama_token_type) a byte-level BPE vocabulary uses:
 # control tokens are special added tokens, user-defined ones added tokens
@@ -209,14 +215,10 @@ def tokenizer_files(metadata):
     )
     from tokenizers import models as token_models
 
+    name = metadata.require("tokenizer.ggml.pre", str)
     if (
         metadata.require("tokenizer.ggml.model", str) != "gpt2"
-        or (
-            profile := TOKENIZER_PROFILES.get(
-                metadata.require("tokenizer.ggml.pre", str)
-            )
-        )
-        is None
+        or (profile := TOKENIZER_PROFILES.get(name)) is None
     ):
         raise ModelError(
             "unsupported GGUF tokenizer profile; expected gpt2/"
@@ -250,7 +252,9 @@ def tokenizer_files(metadata):
             raise ModelError("GGUF automatic BOS/EOS insertion is unsupported: " + key)
     try:
         backend = Tokenizer(
-            token_models.BPE({t: i for i, t in enumerate(tokens)}, pairs)
+            token_models.BPE(
+                {t: i for i, t in enumerate(tokens)}, pairs, ignore_merges=name == "glm4"
+            )
         )
     except Exception as error:
         raise ModelError("invalid GGUF BPE vocabulary or merges") from error
@@ -296,11 +300,12 @@ def tokenizer_files(metadata):
     template = metadata.require("tokenizer.chat_template", str)
     if not template.strip():
         raise ModelError("GGUF chat template is empty")
+    arch = metadata.require("general.architecture", str)
+    if not (name == "glm4" and arch == "glm5-next"):
+        arch = text_architecture(metadata)
     config = {
         "tokenizer_class": "TokenizersBackend",
-        "model_max_length": metadata.positive(
-            text_architecture(metadata) + ".context_length"
-        ),
+        "model_max_length": metadata.positive(arch + ".context_length"),
         "clean_up_tokenization_spaces": False,
         "bos_token": special_token("bos", optional=True),
         "eos_token": special_token("eos"),

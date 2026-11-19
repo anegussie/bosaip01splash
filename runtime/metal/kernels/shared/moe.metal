@@ -18,7 +18,7 @@
 // (ops::MoeRouter) then weights the top_k experts by the softmax of their
 // scores, or by each one's sigmoid over the sum of theirs
 // (SigmoidNormalized), summed in rank order.
-enum class MoeRouter : uint { Softmax, SigmoidNormalized };
+enum class MoeRouter : uint { Softmax, SigmoidNormalized, GlmFlash };
 template <uint Slots, MoeRouter Router, uint Shared, bool SharedGate>
 inline void moe_route_select(device const float *scores, device bfloat *input,
                              device const float *shared_gate, device uint *selected,
@@ -27,17 +27,21 @@ inline void moe_route_select(device const float *scores, device bfloat *input,
                              uint thread_index, uint simd_lane,
                              uint simd_group, threadgroup float *row_scores,
                              threadgroup float *ordered,
-                             threadgroup float *scalar_partials) {
+                             threadgroup float *scalar_partials,
+                             device const float *bias = nullptr) {
   // Slots expert slots, one per thread.
   constexpr uint Simdgroups = Slots / 32;
   constexpr uint ExpertsPerLane = Slots / 32;
   const uint row = group;
   if (row >= params.rows)
     return;
-  row_scores[thread_index] =
-      thread_index < params.experts
-          ? scores[ulong(row) * Slots + thread_index]
-          : -numeric_limits<float>::infinity();
+  float score = -numeric_limits<float>::infinity();
+  if (thread_index < params.experts) {
+    score = scores[ulong(row) * Slots + thread_index];
+    if constexpr (Router == MoeRouter::GlmFlash)
+      score = splash_sigmoid(score) + bias[thread_index];
+  }
+  row_scores[thread_index] = score;
 
   if constexpr (SharedGate) {
     device bfloat *row_input = input + ulong(row) * params.input_size;
@@ -86,7 +90,10 @@ inline void moe_route_select(device const float *scores, device bfloat *input,
     if (candidate == winner)
       lane_scores[best_slot] = -numeric_limits<float>::infinity();
     if (simd_lane == 0) {
-      ordered[rank] = row_best;
+      if constexpr (Router == MoeRouter::GlmFlash)
+        ordered[rank] = splash_sigmoid(scores[ulong(row) * Slots + winner]);
+      else
+        ordered[rank] = row_best;
       selected[row_routes + rank] = winner;
     }
   }
@@ -101,6 +108,9 @@ inline void moe_route_select(device const float *scores, device bfloat *input,
       routing_weights[row_routes + rank] =
           fast::exp2((ordered[rank] - ordered[0]) * 1.44269504089f) /
           denominator;
+    } else if constexpr (Router == MoeRouter::GlmFlash) {
+      for (uint other = 0; other < params.top_k; ++other) denominator += ordered[other];
+      routing_weights[row_routes + rank] = 2.5f * ordered[rank] / max(denominator, 0x1p-14f);
     } else {
       for (uint other = 0; other < params.top_k; ++other)
         denominator += splash_sigmoid(ordered[other]);
@@ -155,6 +165,25 @@ MOE_ROUTE_SELECT_ENTRY(moe_route_select_f32, SPLASH_MOE_EXPERT_SLOTS, MoeRouter:
 MOE_ROUTE_SELECT_ENTRY(moe_route_select_f32_e512, SPLASH_MOE_WIDE_EXPERT_SLOTS, MoeRouter::Softmax, 1)
 MOE_ROUTE_SELECT_UNGATED_ENTRY(moe_route_select_f32_sigmoid_s2, SPLASH_MOE_EXPERT_SLOTS,
                                MoeRouter::SigmoidNormalized, 2)
+#define MOE_ROUTE_SELECT_GLM_ENTRY(Name, Slots)                                 \
+  kernel void Name(device const float *scores [[buffer(0)]],                    \
+                   device const float *bias [[buffer(1)]],                     \
+                   device uint *selected [[buffer(2)]],                       \
+                   device float *routing_weights [[buffer(3)]],               \
+                   constant MoeRouteParams &params [[buffer(4)]],             \
+                   uint group [[threadgroup_position_in_grid]],               \
+                   uint thread_index [[thread_index_in_threadgroup]],         \
+                   uint lane [[thread_index_in_simdgroup]],                    \
+                   uint simd_group [[simdgroup_index_in_threadgroup]]) {       \
+    threadgroup float row_scores[Slots], ordered[Slots];                       \
+    threadgroup float scalar_partials[Slots / 32];                             \
+    moe_route_select<Slots, MoeRouter::GlmFlash, 1, false>(                      \
+        scores, nullptr, nullptr, selected, routing_weights, params, group,   \
+        thread_index, lane, simd_group, row_scores, ordered, scalar_partials, bias); \
+  }
+MOE_ROUTE_SELECT_GLM_ENTRY(moe_route_select_f32_glm_flash, SPLASH_MOE_EXPERT_SLOTS)
+MOE_ROUTE_SELECT_GLM_ENTRY(moe_route_select_f32_e512_glm_flash, SPLASH_MOE_WIDE_EXPERT_SLOTS)
+#undef MOE_ROUTE_SELECT_GLM_ENTRY
 #undef MOE_ROUTE_SELECT_UNGATED_ENTRY
 #undef MOE_ROUTE_SELECT_ENTRY
 #undef MOE_ROUTE_SELECT_BODY

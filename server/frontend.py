@@ -185,6 +185,7 @@ class Frontend:
         default_reasoning_effort=None,
         default_thinking_token_budget=None,
         sampling_defaults=None,
+        max_output_tokens=None,
     ):
         # What the engine serves, from its Ready (backend.runtime.capabilities):
         # the context follows the latest engine (max_context); its lanes and
@@ -234,6 +235,7 @@ class Frontend:
         ):
             raise ValueError("invalid default_thinking_token_budget")
         self.default_thinking_token_budget = default_thinking_token_budget
+        self.max_output_tokens = max_output_tokens
         # The served family's published sampling, by field: what a request
         # gets for each of these it leaves out. Each is a value a request may
         # send, so a request that leaves it out is never refused for it.
@@ -1022,6 +1024,8 @@ class Frontend:
         if len(prompt_tokens) >= self.max_context:
             raise ContextLengthError(len(prompt_tokens), self.max_context - 1)
         remaining = self.max_context - len(prompt_tokens)
+        if self.max_output_tokens is not None:
+            remaining = min(remaining, self.max_output_tokens)
         max_new = remaining if requested is None else requested
         if not isinstance(max_new, int) or isinstance(max_new, bool) or max_new <= 0:
             raise APIError(400, f"{field} must be a positive integer")

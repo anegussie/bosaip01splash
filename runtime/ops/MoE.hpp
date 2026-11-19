@@ -23,7 +23,9 @@ namespace splash::ops {
 // by the softmax of their scores; SigmoidNormalized, by each one's
 // sigmoid(score) over the sum of theirs plus 1e-20, in fp32. A sigmoid
 // router selects by score as it would by sigmoid(score), which is monotonic.
-enum class MoeRouter : uint8_t { Softmax, SigmoidNormalized };
+// GLM Flash ranks sigmoid(score) + bias, then weights the winners with
+// their unbiased probabilities, normalized with a floor and scaled.
+enum class MoeRouter : uint8_t { Softmax, SigmoidNormalized, GlmFlash };
 
 // The routings the MoE kernels compile (kernels/shared/moe.metal,
 // kernels/shared/moe_gguf.metal):
@@ -45,6 +47,7 @@ inline constexpr std::array kCompiledMoeRoutings{
     // Flint's: a sigmoid router, and an ungated shared expert twice the
     // routed experts' width.
     CompiledMoeRouting{MoeRouter::SigmoidNormalized, 2, false, SPLASH_MOE_EXPERT_SLOTS, "_sigmoid_s2", "_s2"},
+    CompiledMoeRouting{MoeRouter::GlmFlash, 1, false, SPLASH_MOE_WIDE_EXPERT_SLOTS, "_glm_flash", ""},
 };
 
 // The shared expert is sharedSlices experts every row visits after its
@@ -221,6 +224,7 @@ struct BlockMoeWeights final {
   ExpertChunks chunks = {};
   metal::MetalBuffer gateUpRotationSigns;
   metal::MetalBuffer downRotationSigns;
+  metal::MetalBuffer selectionBias = {}; // GLM Flash F32 [experts].
 };
 
 // The one chunk of a block whose routed segments hold all its `slots`
@@ -416,7 +420,7 @@ struct MoE final {
   static void addRoutes(metal::CommandGraph &graph, const metal::MetalBuffer &input, const QuantizedSegment &router,
                         const QuantizedSegment &sharedScalarGate, const metal::MetalBuffer &scores,
                         const metal::MetalBuffer &selected, const metal::MetalBuffer &routingWeights, uint32_t rows,
-                        MoeShape shape, FloatTile routerTile);
+                        MoeShape shape, FloatTile routerTile, const metal::MetalBuffer &selectionBias = {});
   // A streamed experts' load (MoeExpertStream::addLoad): the gate, up and
   // down projections of up to `jobs` experts, job j's projection z's native
   // rows in `staging` from sources[3j + z] (bytes) on, repacked into the

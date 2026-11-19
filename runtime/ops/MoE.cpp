@@ -151,7 +151,8 @@ void addExperts(metal::CommandGraph &graph, const MoeScratch &scratch, const Blo
              up.shared.plane0, up.shared.plane1Slot(), up.shared.meta,
              scratch.expertIntermediate, slots},
             MoeGgufGateUpParams{hidden, intermediate, shape.experts, gate.routed.formatId, gate.shared.formatId,
-                                up.routed.formatId, up.shared.formatId, floorSlots, chunkSlots, range},
+                                up.routed.formatId, up.shared.formatId, floorSlots, chunkSlots, range,
+                                shape.router == MoeRouter::GlmFlash ? 10.0f : 0.0f},
             {group.gate_up_columns, tiles, 1}, gateUpGrid, {GGUF_STAGED_THREADS, 1, 1});
   graph.specialize(passFormats<4>({gate.routed.formatId, gate.shared.formatId, up.routed.formatId, up.shared.formatId}));
   graph.addresses(weights.chunks.planes());
@@ -233,7 +234,8 @@ void MoE::addRouting(metal::CommandGraph &graph, const MoeBuffers &buffers, cons
   if (lanes) requireBytes(buffers.laneRows, uint64_t{lanes} * sizeof(SplashLaneRows), "MoE lane rows");
   group.lanes = lanes;
   MoE::addRoutes(graph, buffers.input, weights.router, weights.sharedScalarGate, scratch.groupedInput,
-                 scratch.selectedExperts, scratch.routingWeights, rows, shape, plan.configuration().ggufRouterTile);
+                 scratch.selectedExperts, scratch.routingWeights, rows, shape, plan.configuration().ggufRouterTile,
+                 weights.selectionBias);
   // The expert passes launch the live tiles alone, on grids the grouping
   // writes with the tile count: a one-lane 35B decode step fills a median of
   // 30 of the 65 tiles it could, and the idle ones' threadgroups, returning at
@@ -277,17 +279,25 @@ void MoE::addRouted(metal::CommandGraph &graph, const MoeBuffers &buffers,
 void MoE::addRoutes(metal::CommandGraph &graph, const metal::MetalBuffer &input, const QuantizedSegment &router,
                     const QuantizedSegment &sharedScalarGate, const metal::MetalBuffer &scores,
                     const metal::MetalBuffer &selected, const metal::MetalBuffer &routingWeights, uint32_t rows,
-                    MoeShape shape, FloatTile routerTile) {
+                    MoeShape shape, FloatTile routerTile, const metal::MetalBuffer &selectionBias) {
   // The router's fp32 scores, in the format its checkpoint holds it
   // (BlockMoeWeights), in rows of routerWidth() expert slots, as the select
   // kernel of that width reads, which weights gated shared slices by the
   // sigmoid of the input's product with the scalar gate.
   const uint32_t width = shape.routerWidth();
+  const auto selectKernel = routingKernel("moe_route_select_f32", shape, &CompiledMoeRouting::selectSuffix);
+  if (shape.router == MoeRouter::GlmFlash) {
+    requireBytes(selectionBias, uint64_t{shape.experts} * sizeof(float), "GLM Flash expert selection bias");
+    const uint64_t routes = uint64_t{rows} * shape.routesPerToken();
+    requireBytes(selected, routes * sizeof(uint32_t), "GLM Flash selected experts");
+    requireBytes(routingWeights, routes * sizeof(float), "GLM Flash routing weights");
+  }
   addGgufFloat(graph, input, router, scores, rows, width, 0, FloatOutput::Float32, routerTile);
   std::vector<metal::MetalBuffer> bindings{scores};
   if (shape.sharedGate) bindings.insert(bindings.end(), {input, sharedScalarGate.plane0});
+  if (shape.router == MoeRouter::GlmFlash) bindings.push_back(selectionBias);
   bindings.insert(bindings.end(), {selected, routingWeights});
-  graph.add(routingKernel("moe_route_select_f32", shape, &CompiledMoeRouting::selectSuffix), std::move(bindings),
+  graph.add(selectKernel, std::move(bindings),
             MoeRouteParams{rows, shape.hiddenSize, shape.experts, shape.expertsPerToken}, {rows, 1, 1},
             {width, 1, 1});
 }

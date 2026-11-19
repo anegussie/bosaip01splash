@@ -175,3 +175,13 @@ FLINT = ChatFormat(
     message_boundary="<|assistant|>",
     image_pad=None,
 )
+
+GLM_FLASH = ChatFormat(
+    stop_tokens=("<|endoftext|>", "<|user|>", "<|observation|>"),
+    think_end_id=154842,
+    think_start_id=None,
+    call_open_id=154843,
+    call_syntax=GLM_ARGS,
+    message_boundary="<|assistant|>",
+    image_pad=None,
+)

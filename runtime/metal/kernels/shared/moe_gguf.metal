@@ -61,9 +61,18 @@ template [[host_name("moe_expert_gguf_m32_down_s2")]] kernel MoeExpertGgufKernel
 // The gate/up pass's column tile (moe_column_tile), out of line: inlined in every format, it grew the 32-row kernel
 // until a 10-core M4 (Apple9) under shader validation summed one element of the staged accumulator wrongly, the same
 // kernel right without validation.
+inline bfloat moe_swiglu(float gate, float up, float limit) {
+  if (limit > 0.0f) {
+    gate = min(gate, limit);
+    up = clamp(up, -limit, limit);
+  }
+  return bfloat(up * splash_silu(gate));
+}
+
 __attribute__((noinline)) void moe_gate_up_column(device bfloat *x, uint rows, uint K, uint N, MoeGgufSegment s,
                                                   uint origin, uint simd_lane, threadgroup half2 *table, bool up,
-                                                  threadgroup bfloat *gate, device bfloat *output, ulong out) {
+                                                  threadgroup bfloat *gate, device bfloat *output, ulong out,
+                                                  float limit) {
   float sums[GGUF_COLUMN_ROWS];
   moe_formats<4>()(s.format, [&](auto f) {
     column_dot<decltype(f), GGUF_COLUMN_ROWS>(x, rows, K, s.w0, s.w1, s.meta, origin + simd_lane, 0, K / 32, table,
@@ -75,7 +84,7 @@ __attribute__((noinline)) void moe_gate_up_column(device bfloat *x, uint rows, u
   if (up)
     for (uint row = 0; row < rows; ++row)
       output[out + ulong(row) * N + origin + simd_lane] =
-          bfloat(float(bfloat(sums[row])) * splash_silu(float(gate[row * GGUF_STAGED_COLUMNS + simd_lane])));
+          moe_swiglu(float(gate[row * GGUF_STAGED_COLUMNS + simd_lane]), float(bfloat(sums[row])), limit);
 }
 // A gate/up simdgroup's staged tile of R rows in format F (moe_expert_gguf_gate_up), out of line as the column tile
 // is: its sums parked as bf16 in `park`, its stage, which its loop no longer reads. Inlined in the pass, a 10-core M4
@@ -134,7 +143,7 @@ kernel void moe_expert_gguf_gate_up(device bfloat *input [[buffer(0)]],
   threadgroup half *my = stage + simd_group * kStagedSimdgroupStage;
   threadgroup bfloat *gate = reinterpret_cast<threadgroup bfloat *>(stage);
   if (moe_column_tile(tiles, t)) {
-    moe_gate_up_column(x, tile.rows, K, N, s, origin, simd_lane, table, up, gate, output, out);
+    moe_gate_up_column(x, tile.rows, K, N, s, origin, simd_lane, table, up, gate, output, out, p.swiglu_limit);
     return;
   }
   const auto run = [&](auto rows) {
@@ -150,8 +159,8 @@ kernel void moe_expert_gguf_gate_up(device bfloat *input [[buffer(0)]],
     if (up)
       for (uint row = 0; row < tile.rows; ++row)
         output[out + ulong(row) * N + origin + simd_lane] =
-            bfloat(float(park[row * GGUF_STAGED_COLUMNS + simd_lane]) *
-                   splash_silu(float(gate[row * GGUF_STAGED_COLUMNS + simd_lane])));
+            moe_swiglu(float(gate[row * GGUF_STAGED_COLUMNS + simd_lane]),
+                       float(park[row * GGUF_STAGED_COLUMNS + simd_lane]), p.swiglu_limit);
   };
   moe_live_rows<Rows>(tile.rows, run);
 }
