@@ -1,0 +1,122 @@
+{
+  "events": [
+    {
+      "id": "chatcmpl-aad1a94cffbbecb4c3a4fbb38650679d",
+      "object": "chat.completion.chunk",
+      "created": 1795042175,
+      "model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "role": "assistant",
+            "content": ""
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "id": "chatcmpl-aad1a94cffbbecb4c3a4fbb38650679d",
+      "object": "chat.completion.chunk",
+      "created": 1795042175,
+      "model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "content": "STREAM"
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "id": "chatcmpl-aad1a94cffbbecb4c3a4fbb38650679d",
+      "object": "chat.completion.chunk",
+      "created": 1795042175,
+      "model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "content": "_OK"
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "id": "chatcmpl-aad1a94cffbbecb4c3a4fbb38650679d",
+      "object": "chat.completion.chunk",
+      "created": 1795042175,
+      "model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {},
+          "finish_reason": "stop"
+        }
+      ],
+      "timings": {
+        "prompt_n": 17,
+        "prompt_ms": 271.398,
+        "prompt_per_second": 62.63863403562296,
+        "predicted_n": 3,
+        "predicted_ms": 96.328,
+        "predicted_per_second": 20.762395149904492,
+        "cache_n": 0,
+        "draft_n": 7,
+        "draft_n_accepted": 1
+      }
+    },
+    {
+      "id": "chatcmpl-aad1a94cffbbecb4c3a4fbb38650679d",
+      "object": "chat.completion.chunk",
+      "created": 1795042175,
+      "model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+      "choices": [],
+      "usage": {
+        "prompt_tokens": 17,
+        "completion_tokens": 3,
+        "total_tokens": 20,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "metrics": {
+        "prefill": {
+          "tokens": 17
+        },
+        "decode": {
+          "tokens": 2
+        },
+        "request_latency": {
+          "start_to_first_token_ms": 271.398,
+          "first_token_to_done_ms": 96.328,
+          "wall_ms": 367.82,
+          "ttft_ms": 271.49199999999996,
+          "queue_to_start_ms": 0.09399999999993724,
+          "stream_tokens_per_second": 20.762395149904492
+        },
+        "cache": {
+          "status": "miss",
+          "matched_tokens": 0,
+          "deduplicated_tokens": 0,
+          "lane": 0
+        },
+        "speculation": {
+          "drafted_tokens": 7,
+          "accepted_draft_tokens": 1,
+          "cycles": 1
+        }
+      }
+    }
+  ],
+  "done": true,
+  "first_token_seconds": 0.27263291605049744,
+  "first_content_seconds": 0.2726331250160001
+}

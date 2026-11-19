@@ -1,0 +1,35 @@
+{
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "```python\ndef stable_unique(items):\n    result = []\n    for item in items:\n        if item not in result:\n            result.append(item)\n    return result\n```",
+        "reasoning_content": ""
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 77,
+    "completion_tokens": 41,
+    "total_tokens": 118,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    }
+  },
+  "timings": {
+    "prompt_n": 77,
+    "prompt_ms": 693.184,
+    "prompt_per_second": 111.08161757917091,
+    "predicted_n": 41,
+    "predicted_ms": 801.51,
+    "predicted_per_second": 49.90580279722025,
+    "cache_n": 0,
+    "draft_n": 49,
+    "draft_n_accepted": 33
+  }
+}

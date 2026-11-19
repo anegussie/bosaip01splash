@@ -1,0 +1,83 @@
+[transformers] PyTorch was not found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
+17:45:57 Loading · unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS
+[transformers] The tokenizer you are loading from '/Users/mymac/splash/splash/install/models/.resolved/f2cc941e42a5753efdc2e0b057d9ef2c5e5bb79bf5a7323a5bc2d4bba61fece1/tokenizer' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+17:45:57 Chat template · patched to render later system messages in place (the original template drops them), generation prompt 5-7 tokens
+17:45:59 Weights loaded in 1.56 s.
+17:45:59 Decode cycles verify the rows their cost line's floor passes (--verify-rows auto): greedy and seeded outputs can differ from run to run.
+17:45:59 SSD cache: up to 2.0 GiB of persistent files in /Users/mymac/splash/splash/build/validation/option19-postmerge-20261118-attempt-2/pass-2/cache/ef567fffd7a693882acb21d8f2d84ace (its quota, while its volume has room beyond the 10.0 GiB it keeps free); KV pages of 336 KiB and states of 19 MiB, a state's write staging through 19 MiB of the memory plan; --max-cache-disk 0 turns it off.
+17:45:59 Routed experts stream from their files: 3206 slots for 10240 experts (31%) in 3319 MiB, a store of 4197 MiB in 4 chunks, all that --expert-memory auto leaves it beside the floors and the KV kept resident; it starts at its floor and grows toward its cap as memory allows; while memory is short it gives chunks back down to its floor, 3635 MiB, 85% of its slots.
+17:45:59 Kernel policy for GPU family 10 with 8 cores.
+17:45:59 Persistent cache /Users/mymac/splash/splash/build/validation/option19-postmerge-20261118-attempt-2/pass-2/cache/ef567fffd7a693882acb21d8f2d84ace: took back 0 restore points over 0 KV blocks (0 MiB); left 0 copies behind.
+17:45:59 Warming up · 0 of 14 steps
+17:46:01 Warming up · 1 of 14 steps
+17:46:01 Warming up · 2 of 14 steps
+17:46:01 Warming up · 3 of 14 steps
+17:46:01 Warming up · 4 of 14 steps
+17:46:01 Warming up · 5 of 14 steps
+17:46:01 Warming up · 6 of 14 steps
+17:46:01 Warming up · 7 of 14 steps
+17:46:01 Warming up · 8 of 14 steps
+17:46:01 Warming up · 9 of 14 steps
+17:46:01 Warming up · 10 of 14 steps
+17:46:02 Warming up · 11 of 14 steps
+17:46:02 Warming up · 12 of 14 steps
+17:46:02 Warming up · 13 of 14 steps
+17:46:02 Warming up · 14 of 14 steps
+17:46:02 Thermal state: fair
+17:46:02 Memory: growth paused; waiting=0; suspended=0
+17:46:04 Ready · unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS · context 80K · http://127.0.0.1:1236
+17:46:06 Started · request 1 · input 17 · cached 0 · effort none · thinking off
+17:46:06 TTFT of request 1: 223.468 ms: own prefill 223.066, claim wait 0, decode 0, other prefill 0, unit wait 0, rest 0.401457
+17:46:06 Done · request 1 · input 17 · cached 0 · output 3 · prefill 17/0.22s · PP 76.2 tok/s · decode 2/0.11s · TTFT 0.2s · TTFT_with_frontend_queue 0.2s · TPS 19.0 tok/s · request=1 · finish=stop · frontend_queue=0.000s · native_queue=0.000s · native_wall=0.329s · 2.0 tok/cycle
+17:46:06 Started · request 2 · input 367 · cached 0 · effort none · thinking off
+17:46:06 Memory: in-service claim of request 2 needs 19.6 MiB, 1 state buffers: met past the host (0.0 MiB now, 0.0 later)
+17:46:07 TTFT of request 2: 1005.11 ms: own prefill 1004.87, claim wait 0, decode 0, other prefill 0, unit wait 0, rest 0.246834
+17:46:07 Done · request 2 · input 367 · cached 0 · output 3 · prefill 367/1.01s · PP 365.2 tok/s · decode 2/0.07s · TTFT 1.0s · TTFT_with_frontend_queue 1.0s · TPS 27.3 tok/s · request=2 · finish=stop · frontend_queue=0.000s · native_queue=0.000s · native_wall=1.078s · 2.0 tok/cycle
+17:46:07 Started · request 3 · input 367 · cached 352 · effort none · thinking off
+17:46:07 TTFT of request 3: 125.432 ms: own prefill 125.319, claim wait 0, decode 0, other prefill 0, unit wait 0, rest 0.112833
+17:46:07 Done · request 3 · input 367 · cached 352 · output 3 · prefill 15/0.12s · PP 120.7 tok/s · decode 2/0.05s · TTFT 0.1s · TTFT_with_frontend_queue 0.1s · TPS 42.7 tok/s · request=3 · finish=stop · frontend_queue=0.000s · native_queue=0.001s · native_wall=0.172s · 2.0 tok/cycle
+17:46:07 Started · request 4 · input 295 · cached 0 · effort none · thinking off
+17:46:09 TTFT of request 4: 1590.78 ms: own prefill 1448.29, claim wait 0, decode 139.863, other prefill 0, unit wait 0, rest 2.63171
+17:46:10 Done · request 4 · input 295 · cached 0 · output 37 · tools 1·6b086797 · prefill 295/1.59s · PP 185.5 tok/s · decode 30/0.74s · TTFT 1.6s · TTFT_with_frontend_queue 1.6s · TPS 40.5 tok/s · request=4 · finish=stop · frontend_queue=0.000s · native_queue=0.000s · native_wall=2.332s · 4.5 tok/cycle
+17:46:10 Started · request 5 · input 351 · cached 288 · effort none · thinking off
+17:46:11 TTFT of request 5: 800.186 ms: own prefill 640.05, claim wait 0, decode 158.004, other prefill 0, unit wait 0, rest 2.13171
+17:46:11 Done · request 5 · input 351 · cached 288 · deduplicated 32 · output 12 · tools 1·6b086797 · prefill 63/0.80s · PP 78.9 tok/s · decode 6/0.14s · TTFT 0.8s · TTFT_with_frontend_queue 0.8s · TPS 44.1 tok/s · request=5 · finish=stop · frontend_queue=0.000s · native_queue=0.001s · native_wall=0.936s · 5.5 tok/cycle
+17:46:11 Started · request 6 · input 17 · cached 0 · effort none · thinking off
+17:46:11 TTFT of request 6: 271.475 ms: own prefill 271.345, claim wait 0, decode 0, other prefill 0, unit wait 0, rest 0.130042
+17:46:11 Done · request 6 · input 17 · cached 0 · output 3 · prefill 17/0.27s · PP 62.6 tok/s · decode 2/0.09s · TTFT 0.3s · TTFT_with_frontend_queue 0.3s · TPS 22.1 tok/s · request=6 · finish=stop · frontend_queue=0.000s · native_queue=0.000s · native_wall=0.362s · 2.0 tok/cycle
+17:46:11 Started · request 7 · input 77 · cached 0 · effort none · thinking off
+17:46:12 TTFT of request 7: 697.413 ms: own prefill 697.23, claim wait 0, decode 0, other prefill 0, unit wait 0, rest 0.182918
+17:46:13 Done · request 7 · input 77 · cached 0 · output 41 · prefill 77/0.70s · PP 110.4 tok/s · decode 40/0.78s · TTFT 0.7s · TTFT_with_frontend_queue 0.7s · TPS 51.3 tok/s · request=7 · finish=stop · frontend_queue=0.000s · native_queue=0.000s · native_wall=1.477s · 5.7 tok/cycle
+17:47:02 Thermal state: fair → nominal
+17:47:08 Started · request 8 · input 4,013 · cached 0 · effort none · thinking off
+17:47:11 TTFT of request 8: 3011.65 ms: own prefill 3010.93, claim wait 0, decode 0, other prefill 0, unit wait 0, rest 0.717084
+17:47:12 Done · request 8 · input 4,013 · cached 0 · output 66 · prefill 4,013/3.01s · PP 1332.5 tok/s · decode 65/0.78s · TTFT 3.0s · TTFT_with_frontend_queue 3.0s · TPS 83.9 tok/s · request=8 · finish=stop · frontend_queue=0.000s · native_queue=0.000s · native_wall=3.787s · 7.2 tok/cycle
+17:47:12 Started · request 9 · input 4,013 · cached 4,000 · effort none · thinking off
+17:47:12 TTFT of request 9: 183.969 ms: own prefill 183.848, claim wait 0, decode 0, other prefill 0, unit wait 0, rest 0.120832
+17:47:13 Done · request 9 · input 4,013 · cached 4,000 · deduplicated 64 · output 66 · prefill 13/0.18s · PP 71.2 tok/s · decode 65/0.84s · TTFT 0.2s · TTFT_with_frontend_queue 0.2s · TPS 76.9 tok/s · request=9 · finish=stop · frontend_queue=0.000s · native_queue=0.001s · native_wall=1.029s · 6.5 tok/cycle
+17:47:19 Memory: in-service claim of request 10 needs 81.2 MiB, 24 pages: met past the host (0.0 MiB now, 0.0 later)
+17:47:19 Started · request 10 · input 32,689 · cached 0 · effort none · thinking off
+17:47:28 Memory: in-service claim of request 10 needs 81.2 MiB, 128 pages: met past the host (0.0 MiB now, 0.0 later)
+17:47:37 Memory: in-service claim of request 10 needs 81.2 MiB, 128 pages: met past the host (0.0 MiB now, 0.0 later)
+17:47:46 Memory: in-service claim of request 10 needs 81.2 MiB, 125 pages: met past the host (0.0 MiB now, 0.0 later)
+17:47:51 TTFT of request 10: 32577.6 ms: own prefill 32565.5, claim wait 0, decode 0, other prefill 0, unit wait 0, rest 12.0937
+17:47:52 Done · request 10 · input 32,689 · cached 0 · output 70 · prefill 32,689/32.58s · PP 1003.4 tok/s · decode 69/1.15s · TTFT 32.6s · TTFT_with_frontend_queue 32.6s · TPS 60.0 tok/s · request=10 · finish=stop · frontend_queue=0.000s · native_queue=0.000s · native_wall=33.728s · 5.3 tok/cycle
+17:47:52 Started · request 11 · input 32,689 · cached 32,672 · effort none · thinking off
+17:47:53 TTFT of request 11: 261.419 ms: own prefill 261.286, claim wait 0, decode 0, other prefill 0, unit wait 0, rest 0.132666
+17:47:54 Done · request 11 · input 32,689 · cached 32,672 · deduplicated 64 · output 70 · prefill 17/0.26s · PP 65.4 tok/s · decode 69/1.15s · TTFT 0.3s · TTFT_with_frontend_queue 0.3s · TPS 60.3 tok/s · request=11 · finish=stop · frontend_queue=0.000s · native_queue=0.002s · native_wall=1.406s · 5.3 tok/cycle
+[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (401422 > 262144). Running this sequence through the model will result in indexing errors
+17:48:01 Started · request 12 · input 57,259 · cached 0 · effort none · thinking off
+17:48:01 Thermal state: nominal → fair
+17:48:01 Memory: host claim needs 243.8 MiB: met, took cache 243.8 (243.8 MiB now, 0.0 later)
+17:48:11 Memory: in-service claim of request 12 needs 81.2 MiB, 128 pages: met past the host (0.0 MiB now, 0.0 later)
+17:48:20 Memory: in-service claim of request 12 needs 81.2 MiB, 128 pages: met past the host (0.0 MiB now, 0.0 later)
+17:48:29 Memory: in-service claim of request 12 needs 81.2 MiB, 128 pages: met past the host (0.0 MiB now, 0.0 later)
+17:48:40 Memory: in-service claim of request 12 needs 81.2 MiB, 128 pages: met past the host (0.0 MiB now, 0.0 later)
+17:48:53 Memory: in-service claim of request 12 needs 81.2 MiB, 128 pages: met past the host (0.0 MiB now, 0.0 later)
+17:49:08 Memory: in-service claim of request 12 needs 81.2 MiB, 125 pages: met past the host (0.0 MiB now, 0.0 later)
+17:49:16 TTFT of request 12: 75300.2 ms: own prefill 75265.6, claim wait 0, decode 0, other prefill 0, unit wait 0, rest 34.5261
+17:49:17 Done · request 12 · input 57,259 · cached 0 · output 48 · prefill 57,259/75.30s · PP 760.4 tok/s · decode 47/0.92s · TTFT 75.3s · TTFT_with_frontend_queue 75.3s · TPS 50.8 tok/s · request=12 · finish=stop · frontend_queue=0.000s · native_queue=0.000s · native_wall=76.225s · 5.2 tok/cycle
+17:49:17 Started · request 13 · input 57,259 · cached 57,248 · effort none · thinking off
+17:49:17 TTFT of request 13: 150.713 ms: own prefill 150.577, claim wait 0, decode 0, other prefill 0, unit wait 0, rest 0.135708
+17:49:18 Done · request 13 · input 57,259 · cached 57,248 · deduplicated 32 · output 51 · prefill 11/0.15s · PP 73.9 tok/s · decode 50/0.97s · TTFT 0.2s · TTFT_with_frontend_queue 0.2s · TPS 51.8 tok/s · request=13 · finish=stop · frontend_queue=0.000s · native_queue=0.002s · native_wall=1.117s · 6.1 tok/cycle
+17:49:18 Stopping · releasing engine resources

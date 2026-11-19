@@ -1,0 +1,35 @@
+{
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "```python\ndef stable_unique(items):\n    result = []\n    for item in items:\n        found = False\n        for existing in result:\n            if existing == item:\n                found = True\n                break\n        if not found:\n            result.append(item)\n    return result\n```",
+        "reasoning_content": ""
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 4013,
+    "completion_tokens": 66,
+    "total_tokens": 4079,
+    "prompt_tokens_details": {
+      "cached_tokens": 4000
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    }
+  },
+  "timings": {
+    "prompt_n": 4013,
+    "prompt_ms": 182.822,
+    "prompt_per_second": 71.10741595650414,
+    "predicted_n": 66,
+    "predicted_ms": 846.811,
+    "predicted_per_second": 76.75856832280166,
+    "cache_n": 4000,
+    "draft_n": 58,
+    "draft_n_accepted": 55
+  }
+}

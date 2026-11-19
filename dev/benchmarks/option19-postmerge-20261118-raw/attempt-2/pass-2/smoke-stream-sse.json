@@ -1,0 +1,122 @@
+{
+  "events": [
+    {
+      "id": "chatcmpl-0b815de673568a21ac0e01ac849258a8",
+      "object": "chat.completion.chunk",
+      "created": 1795041971,
+      "model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "role": "assistant",
+            "content": ""
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "id": "chatcmpl-0b815de673568a21ac0e01ac849258a8",
+      "object": "chat.completion.chunk",
+      "created": 1795041971,
+      "model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "content": "STREAM"
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "id": "chatcmpl-0b815de673568a21ac0e01ac849258a8",
+      "object": "chat.completion.chunk",
+      "created": 1795041971,
+      "model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "content": "_OK"
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "id": "chatcmpl-0b815de673568a21ac0e01ac849258a8",
+      "object": "chat.completion.chunk",
+      "created": 1795041971,
+      "model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {},
+          "finish_reason": "stop"
+        }
+      ],
+      "timings": {
+        "prompt_n": 17,
+        "prompt_ms": 271.375,
+        "prompt_per_second": 62.64394288346384,
+        "predicted_n": 3,
+        "predicted_ms": 90.31,
+        "predicted_per_second": 22.14594175617318,
+        "cache_n": 0,
+        "draft_n": 7,
+        "draft_n_accepted": 1
+      }
+    },
+    {
+      "id": "chatcmpl-0b815de673568a21ac0e01ac849258a8",
+      "object": "chat.completion.chunk",
+      "created": 1795041971,
+      "model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+      "choices": [],
+      "usage": {
+        "prompt_tokens": 17,
+        "completion_tokens": 3,
+        "total_tokens": 20,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "metrics": {
+        "prefill": {
+          "tokens": 17
+        },
+        "decode": {
+          "tokens": 2
+        },
+        "request_latency": {
+          "start_to_first_token_ms": 271.375,
+          "first_token_to_done_ms": 90.31,
+          "wall_ms": 361.785,
+          "ttft_ms": 271.475,
+          "queue_to_start_ms": 0.10000000000002274,
+          "stream_tokens_per_second": 22.14594175617318
+        },
+        "cache": {
+          "status": "miss",
+          "matched_tokens": 0,
+          "deduplicated_tokens": 0,
+          "lane": 0
+        },
+        "speculation": {
+          "drafted_tokens": 7,
+          "accepted_draft_tokens": 1,
+          "cycles": 1
+        }
+      }
+    }
+  ],
+  "done": true,
+  "first_token_seconds": 0.2725804590154439,
+  "first_content_seconds": 0.27258066699141636
+}

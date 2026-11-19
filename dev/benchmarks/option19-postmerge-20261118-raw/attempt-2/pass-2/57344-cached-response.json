@@ -1,0 +1,35 @@
+{
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "def chunked(items, size):\n    if size <= 0:\n        raise ValueError(\"size must be greater than 0\")\n    return [items[i:i + size] for i in range(0, len(items), size)]",
+        "reasoning_content": ""
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 57259,
+    "completion_tokens": 51,
+    "total_tokens": 57310,
+    "prompt_tokens_details": {
+      "cached_tokens": 57248
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    }
+  },
+  "timings": {
+    "prompt_n": 57259,
+    "prompt_ms": 148.769,
+    "prompt_per_second": 73.94013537766604,
+    "predicted_n": 51,
+    "predicted_ms": 965.912,
+    "predicted_per_second": 51.76454997970829,
+    "cache_n": 57248,
+    "draft_n": 45,
+    "draft_n_accepted": 41
+  }
+}

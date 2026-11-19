@@ -1,0 +1,25 @@
+{
+  "timed_requests": 18,
+  "correct": true,
+  "prompt_lengths_match_baseline": true,
+  "cache_gates": true,
+  "persistent_restart_reuse": true,
+  "smoke_checks": 21,
+  "thinking_off": true,
+  "production_ready": true,
+  "production_arguments_restored": true,
+  "preexisting_edits_preserved": true,
+  "binaries_unchanged": true,
+  "maximum_active_requests": 1,
+  "thermal_states": [
+    "fair",
+    "nominal"
+  ],
+  "expert_slots_observed": [
+    3206
+  ],
+  "active_kv_modes_observed": [
+    "not_reported"
+  ],
+  "production_pid": 57231
+}

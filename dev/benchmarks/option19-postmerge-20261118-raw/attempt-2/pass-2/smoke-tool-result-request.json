@@ -1,0 +1,59 @@
+{
+  "model": "qwen3.6-35b-a3b-iq3-xxs-splash",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Use add to calculate 17 plus 25."
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_9150595ce7e1df482ea49e7bc9a7605a_0",
+          "type": "function",
+          "function": {
+            "name": "add",
+            "arguments": "{\"a\":17,\"b\":25}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_9150595ce7e1df482ea49e7bc9a7605a_0",
+      "content": "42"
+    }
+  ],
+  "temperature": 0,
+  "seed": 42,
+  "reasoning_effort": "none",
+  "max_tokens": 128,
+  "cache_salt": "pass-2:tool",
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "add",
+        "description": "Add two integers.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "integer"
+            },
+            "b": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "a",
+            "b"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  ],
+  "tool_choice": "none"
+}

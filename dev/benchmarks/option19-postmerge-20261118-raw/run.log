@@ -1,0 +1,14 @@
+PRODUCTION RESTORED: original binary, context, chunk, identity and logging
+Traceback (most recent call last):
+  File "/Users/mymac/splash/splash/dev/benchmarks/option19-postmerge-20261118-raw/run.py", line 170, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/Users/mymac/splash/splash/dev/benchmarks/option19-postmerge-20261118-raw/run.py", line 147, in main
+    with serving(directory):
+         ~~~~~~~^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.9/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/Users/mymac/splash/splash/dev/benchmarks/option19-postmerge-20261118-raw/run.py", line 68, in serving
+    assert ready['prefill_chunk_tokens']==512 and ready['identity']['kv']['format']=='int8'
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

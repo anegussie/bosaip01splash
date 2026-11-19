@@ -1,0 +1,35 @@
+{
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "STREAM_OK",
+        "reasoning_content": ""
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 17,
+    "completion_tokens": 3,
+    "total_tokens": 20,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    }
+  },
+  "timings": {
+    "prompt_n": 17,
+    "prompt_ms": 270.255,
+    "prompt_per_second": 62.90355405080387,
+    "predicted_n": 3,
+    "predicted_ms": 88.604,
+    "predicted_per_second": 22.572344363685612,
+    "cache_n": 0,
+    "draft_n": 7,
+    "draft_n_accepted": 1
+  }
+}

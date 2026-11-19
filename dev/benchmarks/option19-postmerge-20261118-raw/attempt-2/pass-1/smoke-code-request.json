@@ -1,0 +1,22 @@
+{
+  "model": "qwen3.6-35b-a3b-iq3-xxs-splash",
+  "messages": [
+    {
+      "role": "system",
+      "content": "Return only the requested Python function. Use no imports or commentary."
+    },
+    {
+      "role": "user",
+      "content": "Implement stable_unique(items). Return a new list with duplicates removed, preserving first occurrence order. Support unhashable lists and dictionaries as elements, using equality rather than hashing. Handle empty input and do not mutate input. Use no imports."
+    }
+  ],
+  "temperature": 0,
+  "seed": 42,
+  "reasoning_effort": "none",
+  "max_tokens": 384,
+  "cache_salt": "pass-1:coding-smoke",
+  "stream": true,
+  "stream_options": {
+    "include_usage": true
+  }
+}

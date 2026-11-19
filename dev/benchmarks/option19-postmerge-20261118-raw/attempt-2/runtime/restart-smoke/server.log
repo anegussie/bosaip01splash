@@ -1,0 +1,34 @@
+[transformers] PyTorch was not found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
+17:45:48 Loading · unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS
+[transformers] The tokenizer you are loading from '/Users/mymac/splash/splash/install/models/.resolved/f2cc941e42a5753efdc2e0b057d9ef2c5e5bb79bf5a7323a5bc2d4bba61fece1/tokenizer' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+17:45:48 Chat template · patched to render later system messages in place (the original template drops them), generation prompt 5-7 tokens
+17:45:50 Weights loaded in 1.56 s.
+17:45:50 Decode cycles verify the rows their cost line's floor passes (--verify-rows auto): greedy and seeded outputs can differ from run to run.
+17:45:50 SSD cache: up to 2.0 GiB of persistent files in /Users/mymac/splash/splash/build/validation/option19-postmerge-20261118-attempt-2/pass-1/cache/ef567fffd7a693882acb21d8f2d84ace (its quota, while its volume has room beyond the 10.0 GiB it keeps free); KV pages of 336 KiB and states of 19 MiB, a state's write staging through 19 MiB of the memory plan; --max-cache-disk 0 turns it off.
+17:45:50 Routed experts stream from their files: 3206 slots for 10240 experts (31%) in 3319 MiB, a store of 4197 MiB in 4 chunks, all that --expert-memory auto leaves it beside the floors and the KV kept resident; it starts at its floor and grows toward its cap as memory allows; while memory is short it gives chunks back down to its floor, 3635 MiB, 85% of its slots.
+17:45:50 Kernel policy for GPU family 10 with 8 cores.
+17:45:50 Persistent cache /Users/mymac/splash/splash/build/validation/option19-postmerge-20261118-attempt-2/pass-1/cache/ef567fffd7a693882acb21d8f2d84ace: took back 7 restore points over 2958 KV blocks (1107 MiB); left 0 copies behind.
+17:45:50 Warming up · 0 of 14 steps
+17:45:52 Warming up · 1 of 14 steps
+17:45:52 Warming up · 2 of 14 steps
+17:45:52 Warming up · 3 of 14 steps
+17:45:52 Warming up · 4 of 14 steps
+17:45:52 Warming up · 5 of 14 steps
+17:45:52 Warming up · 6 of 14 steps
+17:45:52 Warming up · 7 of 14 steps
+17:45:52 Warming up · 8 of 14 steps
+17:45:52 Warming up · 9 of 14 steps
+17:45:52 Warming up · 10 of 14 steps
+17:45:53 Warming up · 11 of 14 steps
+17:45:53 Warming up · 12 of 14 steps
+17:45:53 Warming up · 13 of 14 steps
+17:45:53 Warming up · 14 of 14 steps
+17:45:53 Thermal state: fair
+17:45:53 Memory: growth paused; waiting=0; suspended=0
+17:45:54 Ready · unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS · context 80K · http://127.0.0.1:1236
+17:45:55 Memory: optional claim of request 1 needs 19.6 MiB, 1 state buffers: short (0.0 MiB now, 0.0 later)
+17:45:55 Memory: in-service claim of request 1: granted
+17:45:55 Started · request 1 · input 4,013 · cached 4,000 · effort none · thinking off
+17:45:55 TTFT of request 1: 229.515 ms: own prefill 218.365, claim wait 0, decode 0, other prefill 0, unit wait 0, rest 11.1498
+17:45:56 Done · request 1 · input 4,013 · cached 4,000 · output 66 · prefill 13/0.22s · PP 60.0 tok/s · decode 65/0.95s · TTFT 0.2s · TTFT_with_frontend_queue 0.2s · TPS 68.3 tok/s · request=1 · finish=stop · frontend_queue=0.000s · native_queue=0.013s · native_wall=1.181s · 7.2 tok/cycle
+17:45:56 Stopping · releasing engine resources
