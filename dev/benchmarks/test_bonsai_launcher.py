@@ -91,6 +91,8 @@ print('Ready test server',flush=True)
             "MOCK_ROOT": str(self.root),
             "LLAMA_LOG_DIR": str(self.root / "logs"),
             "OPENCODE_CONFIG_PATH": str(self.config),
+            "PI_MODELS_PATH": str(self.root / "pi-models.json"),
+            "PI_SETTINGS_PATH": str(self.root / "pi-settings.json"),
             "SPLASH_BONSAI_STARTUP_RETRY_DELAY": "1",
         }
         for name in list(self.env):
@@ -302,7 +304,7 @@ print('Ready test server',flush=True)
             config["provider"]["local-llama"]["models"][
                 "qwen3.6-35b-a3b-iq3-xxs-splash"
             ]["limit"],
-            {"context": 79872, "output": 4096},
+            {"context": 77824, "output": 4096},
         )
         self.assertEqual(config["compaction"]["buffer"], 4096)
         self.assertTrue(

@@ -12,7 +12,7 @@ namespace splash::model {
 class GlmFlashSequence final {
 public:
   static constexpr uint32_t vocabulary = 154880;
-  static constexpr uint32_t chunkRows = 128;
+  static constexpr uint32_t chunkRows = 2048;
 
   GlmFlashSequence(metal::MetalBackend &backend, const std::filesystem::path &directory, uint32_t capacity);
   void reset() noexcept;

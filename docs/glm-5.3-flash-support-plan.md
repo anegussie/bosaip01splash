@@ -112,9 +112,13 @@ Use the same GLM tokenizer and chat template as the baseline, including stop IDs
 4. Use short and representative Pi prompts, including the roughly 4K-token workload that exposed the delay. Begin with a small output cap to measure time to first token; use a longer fixed decode segment to measure steady output rate. Alternate engine order and repeat viable configurations. Distinguish cold model/OS pages, warm weights with a fresh prefix, and cached-prefix replay.
 5. Save raw observations and one table with prompt tokens, cached tokens, prefill tokens/s, first streamed token and first visible answer latency, decode tokens/s, output correctness, expert hit rate/bytes read, peak memory, swap delta and thermals. Review repetitions and variability before claiming a gain.
 
-**Launcher status.** Local option 24 defaults to the experimental Splash worker with 128-token prefill chunks. `GLM53_FLASH_ENGINE=llama.cpp` selects the reference profile. The initial 64-token serving smoke used 32-token chunks and measured 12.9 seconds to the first token and about 0.46 decode tokens per second. A matched performance sweep remains pending.
+**Launcher status.** Local option 24 defaults to the experimental Splash worker with 2,048-token prefill chunks. `GLM53_FLASH_ENGINE=llama.cpp` selects the reference profile. The initial 64-token serving smoke used 32-token chunks and measured 12.9 seconds to the first token and about 0.46 decode tokens per second. A matched performance sweep remains pending.
 
 The 128-token build matched the 32-token build's greedy two-token completion for the same 129-token prompt. The 128-token run crossed a chunk boundary and took 14.8 seconds to the first token at 8.70 prefill tokens per second. The system swap-out counter stayed flat during the run. The KDA and MoE oracles also passed with 128 rows under Metal shader validation.
+
+On the 16 GB M5, a 513-token uncached prompt crossed the new 512-token boundary and produced the same greedy two-token completion as the 128-token build. In one run per build, prefill took 49.81 seconds with 128-token chunks (10.30 tok/s) and 19.64 seconds with 512-token chunks (26.12 tok/s). Each request had one timed decode step.
+
+On the same M5, a 1,025-token uncached prompt produced the same two-token greedy completion with 512- and 1,024-token chunks. One request per build measured 29.47 and 37.84 prefill tokens/s, respectively, with first-token latencies of 34.78 and 27.09 seconds.
 
 #### M5 Pro Mac mini with 64 GB
 

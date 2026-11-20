@@ -202,6 +202,15 @@ def sha256(path: Path) -> str:
     return hash_file(path, hashlib.sha256())
 
 
+def content_digest(path: Path, digest: str) -> str:
+    """path's content digest in the scheme of digest: the SHA-256 of a 64-digit
+    one, the Git blob SHA-1 ("blob <size>" and a NUL, then the content) of a
+    40-digit one, as the Hub names the blob of a small file."""
+    if len(digest) == 64:
+        return sha256(path)
+    return hash_file(path, hashlib.sha1(f"blob {path.stat().st_size}\0".encode()))
+
+
 def read_json(path: Path):
     try:
         if path.stat().st_size > MAX_JSON_BYTES:

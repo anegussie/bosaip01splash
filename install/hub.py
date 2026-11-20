@@ -8,6 +8,12 @@ another installation can remove its files. The commit the Hub names for a
 default branch is recorded as refs/main, as huggingface_hub records a branch
 it downloads, for installs without the Hub.
 
+A download fetches only what this machine does not already have: a file the
+cache lacks but a folder it searches holds whole, by the blob ID the Hub
+reports for it or by its name, is placed in the cache's blobs folder
+(search_roots, local_files, _reuse_blob) rather than brought over the
+network.
+
 huggingface_hub is imported where it is used: the launcher imports the
 installer modules before the environment that provides it exists, and the
 tests replace its functions.
@@ -601,9 +607,10 @@ class Repository:
 
     def download(self, names):
         """Each of names -> its local path, downloading what the cache lacks.
-        Before a download, the partial files killed ones left in the
-        repository's blobs folder are removed. Ctrl+C stops the wait for it
-        at once (_interruptible)."""
+        A file the cache lacks but this machine holds whole elsewhere is put
+        in the repository's blobs folder rather than fetched (_reuse_blob).
+        Before a download, the partial files killed ones left in that folder
+        are removed. Ctrl+C stops the wait for it at once (_interruptible)."""
         for name in names:
             self._require(name)
         if self.paths is not None:
@@ -611,11 +618,27 @@ class Repository:
         from huggingface_hub import snapshot_download
 
         blobs = folder(self.name) / "blobs"
-        # (bytes, blob ID) of each file whose blob the cache lacks.
+        # name -> (bytes, blob ID) of each file whose blob the cache lacks.
+        missing = {
+            name: (size, blob)
+            for name, (size, blob) in self.sizes.items()
+            if name in names and blob and not (blobs / blob).exists()
+        }
+        candidates = local_files(missing)
+        reused = {}
+        for name, (_, blob) in missing.items():
+            for source in candidates.get(name, ()):
+                if _reuse_blob(blobs, name, blob, source):
+                    reused[name] = source
+                    break
+        if reused:
+            print(
+                "Reusing files this machine already has: "
+                + ", ".join(f"{name} from {reused[name]}" for name in sorted(reused)),
+                flush=True,
+            )
         fetch = [
-            (size, blob)
-            for size, blob in (self.sizes[n] for n in names if n in self.sizes)
-            if not (blob and (blobs / blob).exists())
+            (size, blob) for name, (size, blob) in missing.items() if name not in reused
         ]
         total = sum(size for size, _ in fetch)
         if fetch:
@@ -643,6 +666,76 @@ class Repository:
 
     def identity(self):
         return {"repo": self.name, "revision": self.revision}
+
+
+def search_roots():
+    """The folders local_files looks in for a file a download would otherwise
+    bring from the Hub: the Hub cache huggingface_hub uses, the models root,
+    and the folders SPLASH_MODEL_SEARCH_PATHS names, separated as PATH is."""
+    from huggingface_hub import constants
+
+    roots = [Path(constants.HF_HUB_CACHE), models.MODELS]
+    roots += [
+        Path(value)
+        for value in os.environ.get("SPLASH_MODEL_SEARCH_PATHS", "").split(os.pathsep)
+        if value
+    ]
+    found = []
+    for root in roots:
+        root = root.expanduser().resolve()
+        if root.is_dir() and root not in found:
+            found.append(root)
+    return found
+
+
+def local_files(requested):
+    """name -> each file under search_roots that could be the file the Hub
+    would bring for it: one named name, or one named the blob ID its content
+    has, with the bytes the Hub reports. A download uses one only after reading
+    it (_reuse_blob), so a partial file, or another variant of the same name,
+    is never taken for the file that is missing. One walk of each root serves
+    every file requested."""
+    found = {}
+    for root in search_roots():
+        for directory, _, entries in os.walk(root):
+            for entry in entries:
+                for name, (size, digest) in requested.items():
+                    if entry not in (name, digest):
+                        continue
+                    path = Path(directory) / entry
+                    try:
+                        whole = path.stat().st_size == size
+                    except OSError:
+                        continue
+                    if whole:
+                        found.setdefault(name, []).append(path)
+    return found
+
+
+def _reuse_blob(blobs, name, digest, source):
+    """Place source, whose content the Hub reports as digest, in the
+    repository's blobs folder under the name huggingface_hub would give it, so
+    its download links the snapshot from that blob rather than fetching it.
+    False when source's content is something else, or cannot be placed, which
+    leaves the download to bring the file."""
+    if models.content_digest(source, digest) != digest:
+        return False
+    destination = blobs / digest
+    if destination.exists():
+        return True
+    stage = blobs / f"{digest}.local-{os.getpid()}"
+    try:
+        blobs.mkdir(parents=True, exist_ok=True)
+        # Cache collection identifies live blobs by inode. Sharing an inode
+        # across repositories would keep an unused repository's blob alive.
+        shutil.copyfile(source, stage)
+        os.replace(stage, destination)
+    except OSError as error:
+        models.warn(f"could not reuse {source} for {name}: {error}")
+        return False
+    finally:
+        stage.unlink(missing_ok=True)
+    return True
 
 
 def _paths(directory):

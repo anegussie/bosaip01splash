@@ -13,7 +13,7 @@
 namespace {
 using namespace splash;
 using test::require;
-constexpr uint32_t heads = 64, dim = 128, channels = heads * dim, rows = 128;
+constexpr uint32_t heads = 64, dim = 128, channels = heads * dim, rows = 2048;
 using Qkv = std::array<std::vector<float>, 3>;
 
 float sample(uint32_t i, uint32_t period, float amplitude) {
@@ -171,9 +171,9 @@ int main(int argc, const char **argv) {
       metal::MetalBackend backend(argv[1]);
       const Fixture fixture;
       const Expected expected = reference(fixture);
-      check(backend, fixture, expected, std::array<uint32_t, 1>{128});
-      check(backend, fixture, expected, std::array<uint32_t, 6>{1, 7, 24, 32, 32, 32});
-      std::cout << "GLM Flash KDA output and state match the CPU oracle for 128 rows and split chunks\n";
+      check(backend, fixture, expected, std::array<uint32_t, 1>{rows});
+      check(backend, fixture, expected, std::array<uint32_t, 9>{1, 7, 24, 96, 128, 128, 128, 512, 1024});
+      std::cout << "GLM Flash KDA output and state match the CPU oracle for " << rows << " rows and split chunks\n";
       return 0;
     } catch (const std::exception &error) {
       std::cerr << error.what() << '\n';

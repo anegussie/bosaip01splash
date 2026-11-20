@@ -142,6 +142,9 @@ int main(int argc, const char **argv) {
       checkExpertClamp(backend, 1);
       checkExpertClamp(backend, 32);
       checkExpertClamp(backend, 128);
+      checkExpertClamp(backend, 512);
+      checkExpertClamp(backend, 1024);
+      checkExpertClamp(backend, 2048);
       std::cout << "GLM Flash MoE routes, weights and clamped expert activations match CPU oracle\n";
       return 0;
     } catch (const std::exception &error) {

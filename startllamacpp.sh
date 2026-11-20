@@ -10,7 +10,7 @@ GLM53_FLASH_MODEL="${GLM53_FLASH_MODEL:-}"
 GLM53_FLASH_ALIAS="glm-5.3-flash-ud-iq2-xxs"
 GLM53_FLASH_ENGINE="${GLM53_FLASH_ENGINE:-splash}"
 GLM53_FLASH_SPLASH_ROOT="${GLM53_FLASH_SPLASH_ROOT:-$HOME/splash/splash}"
-GLM53_FLASH_SPLASH_BINARY="${GLM53_FLASH_SPLASH_BINARY:-$GLM53_FLASH_SPLASH_ROOT/build/glm5-chunk128/splash}"
+GLM53_FLASH_SPLASH_BINARY="${GLM53_FLASH_SPLASH_BINARY:-$GLM53_FLASH_SPLASH_ROOT/build/glm5-chunk2048/splash}"
 GLM53_FLASH_CONTEXT="${GLM53_FLASH_CONTEXT:-8192}"
 GLM53_FLASH_OUTPUT="${GLM53_FLASH_OUTPUT:-2048}"
 # CPU + mmap avoids trying to place this 102 GB model in 16 GiB of unified memory.
@@ -325,7 +325,7 @@ print_models() {
   echo "   ${GLM53_FLASH_CONTEXT}-token context | ${GLM53_FLASH_OUTPUT} output tokens | one request | reasoning ${GLM53_FLASH_REASONING_EFFORT}"
   echo "   Source: ${GLM53_FLASH_REPO} / UD-IQ2_XXS | four shards, about 102 GB"
   if [[ "$GLM53_FLASH_ENGINE" == "splash" ]]; then
-    echo "   Native Metal | 128-token prefill chunks | streams weights from the installed GGUF shards"
+    echo "   Native Metal | 2048-token prefill chunks | streams weights from the installed GGUF shards"
   fi
 
 }

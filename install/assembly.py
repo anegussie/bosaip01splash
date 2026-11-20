@@ -109,8 +109,8 @@ def _write_durably(path, data):
 def file_record(path: Path, recorded=None):
     """What model.json records of a linked file: its path, size and times,
     which verify compares on every start, and its content digest, which
-    verify(full=True) recomputes (_digest_of). recorded, the record an
-    earlier assembly keeps of the file, gives the digest without reading the
+    verify(full=True) recomputes (models.content_digest). recorded, the record
+    an earlier assembly keeps of the file, gives the digest without reading the
     file while it keeps the path, size and times recorded, as verify trusts
     them to."""
     stat = path.stat()
@@ -137,14 +137,6 @@ def _digest(path):
     return models.sha256(path)
 
 
-def _digest_of(path, digest):
-    """path's content digest in the scheme of digest (_digest)."""
-    if len(digest) == 64:
-        return models.sha256(path)
-    size = path.stat().st_size
-    return models.hash_file(path, hashlib.sha1(f"blob {size}\0".encode()))
-
-
 def verify(assembly: Path, *, full=False):
     """The record of the assembly at assembly (an entry of .resolved, or a
     selection link to one) if it verifies: model.json has the shape build
@@ -156,7 +148,10 @@ def verify(assembly: Path, *, full=False):
         raise models.ModelError("invalid resolved model record")
     for name, entry in record["files"].items():
         path = assembly / name
-        stat = path.stat()
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            raise models.ModelError(f"resolved model file is gone: {name}") from None
         if (
             not path.is_symlink()
             or str(path.readlink()) != entry["path"]
@@ -165,7 +160,7 @@ def verify(assembly: Path, *, full=False):
             or stat.st_ctime_ns != entry["ctime_ns"]
         ):
             raise models.ModelError("resolved model file changed: " + name)
-        if full and _digest_of(path, entry["digest"]) != entry["digest"]:
+        if full and models.content_digest(path, entry["digest"]) != entry["digest"]:
             raise models.ModelError("source content hash mismatch: " + name)
     return record
 
