@@ -851,19 +851,21 @@ print('Ready test server',flush=True)
         self.assertEqual(config["agent"]["general"]["reasoningEffort"], "none")
 
     def test_option21_fast_defaults_preserve_reasoning_and_context_overrides(self):
-        for variable, effort in (
-            ("SPLASH_FLASH_NEXT_REASONING_EFFORT", "low"),
-            ("SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT", "medium"),
+        for overrides, effort in (
+            ({}, "medium"),
+            ({"SPLASH_FLASH_NEXT_REASONING_EFFORT": "low"}, "low"),
+            ({"SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT": "xhigh"}, "xhigh"),
         ):
-            with self.subTest(variable=variable):
+            with self.subTest(overrides=overrides):
                 result = self.run_launcher(
                     "21",
                     SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.draft()),
                     SPLASH_FLASH_NEXT_MAX_CONTEXT="32768",
                     SPLASH_FLASH_NEXT_OPENCODE_CONTEXT="30000",
+                    SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS="1",
                     SPLASH_FLASH_NEXT_Q2_MAX_TOKENS="1024",
                     SPLASH_FLASH_NEXT_Q2_THINKING_TOKEN_BUDGET="0",
-                    **{variable: effort},
+                    **overrides,
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 args = json.loads((self.root / "argv.json").read_text())
@@ -876,6 +878,7 @@ print('Ready test server',flush=True)
                 ]
                 self.assertEqual(model["limit"]["context"], 32768)
                 self.assertEqual(model["limit"]["input"], 30000)
+                self.assertEqual(model["options"]["reasoning_effort"], effort)
                 self.assertTrue(
                     model["options"]["chat_template_kwargs"]["enable_thinking"]
                 )

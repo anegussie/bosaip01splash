@@ -70,9 +70,8 @@ if [[ -z "${SPLASH_FLASH_NEXT_MAX_MEMORY:-}" ]]; then
   SPLASH_FLASH_NEXT_MAX_MEMORY_DEFAULTED=1
 fi
 SPLASH_FLASH_NEXT_MAX_MEMORY="${SPLASH_FLASH_NEXT_MAX_MEMORY:-10G}"
-# Option 21 reasons at xhigh by default; an explicit Q2 value wins, then the
-# shared Flash-Next effort, then this default.
-SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT="${SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT:-${SPLASH_FLASH_NEXT_REASONING_EFFORT:-xhigh}}"
+# Option 21 uses its own reasoning default after the Q2 and shared overrides.
+SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT="${SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT:-${SPLASH_FLASH_NEXT_REASONING_EFFORT:-medium}}"
 SPLASH_FLASH_NEXT_REASONING_EFFORT="${SPLASH_FLASH_NEXT_REASONING_EFFORT:-low}"
 SPLASH_FLASH_NEXT_MAX_CACHE_DISK="${SPLASH_FLASH_NEXT_MAX_CACHE_DISK:-16G}"
 # Option 21's Q2_0 target has a small persistent-cache default for low-disk Macs.
