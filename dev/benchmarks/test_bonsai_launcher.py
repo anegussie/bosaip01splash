@@ -308,7 +308,7 @@ print('Ready test server',flush=True)
             "--max-active-requests": "1",
             "--prefill-chunk-tokens": "512",
             "--max-cache-disk": "2147483648",
-            "--default-reasoning-effort": "none",
+            "--default-reasoning-effort": "xhigh",
             "--cache-dir": str(
                 pathlib.Path.home() / "Library/Caches/Splash/qwen36-option19-iq3-xxs"
             ),
@@ -369,6 +369,7 @@ print('Ready test server',flush=True)
         )
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("19) Qwen3.6 35B A3B UD-IQ3_XXS", r.stdout)
+        self.assertIn("reasoning xhigh | DFlash2", r.stdout)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertEqual(args[args.index("--max-context") + 1], "16K")
         self.assertNotIn("--persistent-cache", args)
@@ -391,12 +392,33 @@ print('Ready test server',flush=True)
             {"SPLASH_QWEN36_IQ3_PERSISTENT_CACHE": "2"},
             {"SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS": "513"},
             {"SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS": "4096"},
+            {"SPLASH_QWEN36_IQ3_REASONING_EFFORT": "invalid"},
         ):
             with self.subTest(overrides=overrides):
                 r = self.run_launcher("19", **overrides)
                 self.assertNotEqual(r.returncode, 0)
                 self.assertEqual(self.config.read_bytes(), before)
                 self.assertFalse((self.root / "attempts").exists())
+
+    def test_option19_reasoning_default_and_override(self):
+        for setting, expected in (("", "xhigh"), ("none", "none")):
+            with self.subTest(setting=setting):
+                r = self.run_launcher("19", SPLASH_QWEN36_IQ3_REASONING_EFFORT=setting)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                args = json.loads((self.root / "argv.json").read_text())
+                self.assertEqual(
+                    args[args.index("--default-reasoning-effort") + 1], expected
+                )
+                config = json.loads(self.config.read_text())
+                model = config["provider"]["local-llama"]["models"][
+                    "qwen3.6-35b-a3b-iq3-xxs-splash"
+                ]
+                self.assertTrue(model["reasoning"])
+                self.assertEqual(model["options"]["reasoning_effort"], expected)
+                self.assertEqual(config["agent"]["general"]["reasoningEffort"], expected)
+                self.assertEqual(
+                    model["variants"]["bounded-compaction"]["reasoning_effort"], "none"
+                )
 
     def test_option20_defaults_are_independent_and_enable_reasoning(self):
         config = json.loads(self.config.read_text())

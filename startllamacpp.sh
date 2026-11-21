@@ -52,6 +52,7 @@ SPLASH_QWEN36_IQ3_OPENCODE_CONTEXT="${SPLASH_QWEN36_IQ3_OPENCODE_CONTEXT:-auto}"
 splash_qwen36_iq3_default_output=0
 [[ -n "${SPLASH_QWEN36_IQ3_MAX_TOKENS:-}" ]] || splash_qwen36_iq3_default_output=1
 SPLASH_QWEN36_IQ3_MAX_TOKENS="${SPLASH_QWEN36_IQ3_MAX_TOKENS:-16384}"
+SPLASH_QWEN36_IQ3_REASONING_EFFORT="${SPLASH_QWEN36_IQ3_REASONING_EFFORT:-xhigh}"
 SPLASH_QWEN36_IQ3_MAX_CACHE_DISK="${SPLASH_QWEN36_IQ3_MAX_CACHE_DISK:-2G}"
 SPLASH_QWEN36_IQ3_PERSISTENT_CACHE="${SPLASH_QWEN36_IQ3_PERSISTENT_CACHE:-1}"
 SPLASH_QWEN36_IQ3_CACHE_DIR="${SPLASH_QWEN36_IQ3_CACHE_DIR:-$HOME/Library/Caches/Splash/qwen36-option19-iq3-xxs}"
@@ -305,7 +306,7 @@ print_models() {
   echo "   Separate option-18 prefix cache: ${SPLASH_QWEN36_MAX_CACHE_DISK} | persistent: ${SPLASH_QWEN36_PERSISTENT_CACHE}"
   echo "19) Qwen3.6 35B A3B UD-IQ3_XXS - Splash SSD expert streaming (downloads on first run)${splash_status}"
   echo "   ${SPLASH_QWEN36_IQ3_MAX_CONTEXT} server context | up to ${SPLASH_QWEN36_IQ3_MAX_TOKENS} output tokens | ${SPLASH_QWEN36_IQ3_MAX_MEMORY} Metal cap | expert RAM cache / SSD reads"
-  echo "   INT8 KV | BF16 state | ${SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS}-token prefill chunks | one active request | reasoning off | DFlash2"
+  echo "   INT8 KV | BF16 state | ${SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS}-token prefill chunks | one active request | reasoning ${SPLASH_QWEN36_IQ3_REASONING_EFFORT} | DFlash2"
   echo "   Vision: at most 1,048,576 resized pixels per image (4096 patches; about 1024x1024)"
   echo "   Source: ${SPLASH_QWEN36_IQ3_MODEL_ID}"
   echo "   Separate option-19 prefix cache: ${SPLASH_QWEN36_IQ3_MAX_CACHE_DISK} | persistent: ${SPLASH_QWEN36_IQ3_PERSISTENT_CACHE}"
@@ -957,6 +958,8 @@ sync_opencode_splash() {
      }) |
      if $alias == "qwen3.6-35b-a3b-iq3-xxs-splash" then
        del(.provider["local-llama"].models[$alias].attachment) |
+       .provider["local-llama"].models[$alias].reasoning = true |
+       .provider["local-llama"].models[$alias].options.reasoning_effort = $reasoning_effort |
        .provider["local-llama"].models[$alias].modalities = {input: ["text", "image"], output: ["text"]} |
        .provider["local-llama"].models[$alias].variants["bounded-compaction"] |= ((. // {}) + {
          max_tokens: ([2048, $output] | min), reasoning_effort: "none",
@@ -2020,6 +2023,11 @@ case "$choice" in
       SPLASH_BONSAI_PERSISTENT_CACHE="$SPLASH_QWEN36_PERSISTENT_CACHE"
       SPLASH_BONSAI_CACHE_DIR="$SPLASH_QWEN36_CACHE_DIR"
       if [[ "$choice" == "19" ]]; then
+        case "$SPLASH_QWEN36_IQ3_REASONING_EFFORT" in
+          none|minimal|low|medium|high|xhigh|max) ;;
+          *) echo "SPLASH_QWEN36_IQ3_REASONING_EFFORT must be none, minimal, low, medium, high, xhigh or max." >&2; exit 1 ;;
+        esac
+        splash_reasoning_effort="$SPLASH_QWEN36_IQ3_REASONING_EFFORT"
         SPLASH_BONSAI_MODEL_ID="$SPLASH_QWEN36_IQ3_MODEL_ID"
         SPLASH_BONSAI_ALIAS="qwen3.6-35b-a3b-iq3-xxs-splash"
         SPLASH_BONSAI_DISPLAY_NAME="Qwen3.6 35B A3B UD-IQ3_XXS via Splash SSD expert streaming"
