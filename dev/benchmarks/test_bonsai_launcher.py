@@ -125,12 +125,12 @@ print('Ready test server',flush=True)
         config = json.loads(self.config.read_text())
         self.assertEqual(
             config["provider"]["local-llama"]["models"]["bonsai-27b-splash"]["limit"],
-            {"context": 22528, "output": 4096},
+            {"context": 24576, "input": 20480, "output": 4096},
         )
         self.assertEqual(config["compaction"]["keep"]["tokens"], 1536)
         self.assertEqual(config["compaction"]["buffer"], 4096)
 
-    def test_output_override_updates_compaction_reserve(self):
+    def test_output_override_keeps_the_compaction_buffer(self):
         r = self.run_launcher(SPLASH_BONSAI_MAX_TOKENS="1024")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         config = json.loads(self.config.read_text())
@@ -140,7 +140,7 @@ print('Ready test server',flush=True)
             ],
             1024,
         )
-        self.assertEqual(config["compaction"]["buffer"], 1024)
+        self.assertEqual(config["compaction"]["buffer"], 4096)
 
     def test_option16_uses_local_weights_and_separate_alias_cache_and_log(self):
         model = self.root / "Heretic model.gguf"
@@ -211,9 +211,9 @@ print('Ready test server',flush=True)
             config["provider"]["local-llama"]["models"]["qwen3.6-35b-a3b-q2-splash"][
                 "limit"
             ],
-            {"context": 22528, "output": 2048},
+            {"context": 24576, "input": 22528, "output": 2048},
         )
-        self.assertEqual(config["compaction"]["buffer"], 2048)
+        self.assertEqual(config["compaction"]["buffer"], 4096)
         self.assertTrue(
             (self.root / "logs/qwen3.6-35b-a3b-q2-splash-latest.log").is_symlink()
         )
@@ -250,7 +250,7 @@ print('Ready test server',flush=True)
             config["provider"]["local-llama"]["models"]["qwen3.6-35b-a3b-q2-splash"][
                 "limit"
             ],
-            {"context": 12288, "output": 3072},
+            {"context": 16384, "input": 12288, "output": 3072},
         )
 
     def test_option18_invalid_context_and_output_do_not_mutate_config(self):
@@ -269,17 +269,36 @@ print('Ready test server',flush=True)
                 self.assertFalse((self.root / "attempts").exists())
 
     def test_option19_iq3_profile_is_independent_of_option18(self):
+        model_id = "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS"
+        pi_models = pathlib.Path(self.env["PI_MODELS_PATH"])
+        pi_settings = pathlib.Path(self.env["PI_SETTINGS_PATH"])
+        pi_models.write_text(
+            json.dumps(
+                {
+                    "providers": {
+                        "splash-local": {
+                            "models": [
+                                {"id": model_id, "contextWindow": 77824, "maxTokens": 4096}
+                            ]
+                        }
+                    }
+                }
+            )
+        )
+        pi_settings.write_text(json.dumps({"compaction": {"keepRecentTokens": 20000}}))
         r = self.run_launcher(
             "19",
             SPLASH_QWEN36_MAX_CONTEXT="invalid",
             SPLASH_QWEN36_MAX_TOKENS="invalid",
             SPLASH_QWEN36_PERSISTENT_CACHE="0",
             SPLASH_QWEN36_CACHE_DIR=str(self.root / "option18-cache"),
+            SPLASH_QWEN36_IQ3_MAX_CONTEXT="80K",
+            SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS="512",
         )
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         args = json.loads((self.root / "argv.json").read_text())
         for flag, value in {
-            "--model": "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_XXS",
+            "--model": model_id,
             "--served-model-name": "qwen3.6-35b-a3b-iq3-xxs-splash",
             "--max-context": "80K",
             "--expert-memory": "auto",
@@ -304,9 +323,16 @@ print('Ready test server',flush=True)
             config["provider"]["local-llama"]["models"][
                 "qwen3.6-35b-a3b-iq3-xxs-splash"
             ]["limit"],
-            {"context": 77824, "output": 4096},
+            {"context": 81920, "input": 65536, "output": 16384},
         )
         self.assertEqual(config["compaction"]["buffer"], 4096)
+        pi_model = json.loads(pi_models.read_text())["providers"]["splash-local"]["models"][0]
+        self.assertEqual((pi_model["contextWindow"], pi_model["maxTokens"]), (81920, 16384))
+        override = json.loads(pi_settings.read_text())["compaction"]["modelOverrides"]
+        self.assertEqual(
+            override[f"splash-local/{model_id}"],
+            {"reserveTokens": 20480, "keepRecentTokens": 20000},
+        )
         self.assertTrue(
             (self.root / "logs/qwen3.6-35b-a3b-iq3-xxs-splash-latest.log").is_symlink()
         )
@@ -352,7 +378,7 @@ print('Ready test server',flush=True)
             config["provider"]["local-llama"]["models"][
                 "qwen3.6-35b-a3b-iq3-xxs-splash"
             ]["limit"],
-            {"context": 12288, "output": 3072},
+            {"context": 16384, "input": 12288, "output": 3072},
         )
 
     def test_option19_invalid_settings_do_not_mutate_config(self):
@@ -418,7 +444,9 @@ print('Ready test server',flush=True)
         alias = "qwen3.8-flash-next-iq3-xxs-splash"
         self.assertEqual(config["model"], "local-llama/" + alias)
         model = config["provider"]["local-llama"]["models"][alias]
-        self.assertEqual(model["limit"], {"context": 129024, "output": 1024})
+        self.assertEqual(
+            model["limit"], {"context": 131072, "input": 129024, "output": 1024}
+        )
         self.assertEqual(model["modalities"], {"input": ["text"], "output": ["text"]})
         self.assertTrue(model["reasoning"])
         self.assertEqual(
@@ -428,7 +456,7 @@ print('Ready test server',flush=True)
         self.assertEqual(config["agent"]["general"]["temperature"], 1.0)
         self.assertEqual(config["agent"]["general"]["top_p"], 0.95)
         self.assertEqual(config["agent"]["context_worker"]["temperature"], 0.4)
-        self.assertEqual(config["compaction"]["buffer"], 1024)
+        self.assertEqual(config["compaction"]["buffer"], 4096)
         self.assertIn("reasoning=low", r.stdout)
         self.assertTrue((self.root / f"logs/{alias}-latest.log").is_symlink())
 
@@ -481,7 +509,7 @@ print('Ready test server',flush=True)
         model = config["provider"]["local-llama"]["models"][
             "qwen3.8-flash-next-iq3-xxs-splash"
         ]
-        self.assertEqual(model["limit"], {"context": 28672, "output": 3072})
+        self.assertEqual(model["limit"], {"context": 32768, "input": 28672, "output": 3072})
         self.assertEqual(config["agent"]["general"]["reasoningEffort"], "none")
         self.assertEqual(config["agent"]["general"]["temperature"], 0.7)
         self.assertEqual(config["agent"]["general"]["top_p"], 0.8)
@@ -493,7 +521,7 @@ print('Ready test server',flush=True)
         model = config["provider"]["local-llama"]["models"][
             "qwen3.8-flash-next-iq3-xxs-splash"
         ]
-        self.assertEqual(model["limit"], {"context": 2048, "output": 1024})
+        self.assertEqual(model["limit"], {"context": 4096, "input": 2048, "output": 1024})
 
     def test_option20_invalid_settings_preserve_config(self):
         before = self.config.read_bytes()
@@ -785,6 +813,9 @@ print('Ready test server',flush=True)
             "21",
             SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(draft),
             SPLASH_HOST_MEM_BYTES=str(17179869184),
+            SPLASH_FLASH_NEXT_Q2_MAX_TOKENS="1024",
+            SPLASH_FLASH_NEXT_Q2_THINKING_TOKEN_BUDGET="0",
+            SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT="none",
         )
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         args = json.loads((self.root / "argv.json").read_text())
@@ -812,7 +843,9 @@ print('Ready test server',flush=True)
         model = config["provider"]["local-llama"]["models"][
             "qwen3.8-flash-next-q2-0-dflash2-bf16-splash"
         ]
-        self.assertEqual(model["limit"], {"context": 129024, "output": 1024})
+        self.assertEqual(
+            model["limit"], {"context": 131072, "input": 129024, "output": 1024}
+        )
         self.assertFalse(model["options"]["chat_template_kwargs"]["enable_thinking"])
         self.assertEqual(model["options"]["reasoning_effort"], "none")
         self.assertEqual(config["agent"]["general"]["reasoningEffort"], "none")
@@ -828,6 +861,8 @@ print('Ready test server',flush=True)
                     SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.draft()),
                     SPLASH_FLASH_NEXT_MAX_CONTEXT="32768",
                     SPLASH_FLASH_NEXT_OPENCODE_CONTEXT="30000",
+                    SPLASH_FLASH_NEXT_Q2_MAX_TOKENS="1024",
+                    SPLASH_FLASH_NEXT_Q2_THINKING_TOKEN_BUDGET="0",
                     **{variable: effort},
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -839,7 +874,8 @@ print('Ready test server',flush=True)
                 model = config["provider"]["local-llama"]["models"][
                     "qwen3.8-flash-next-q2-0-dflash2-bf16-splash"
                 ]
-                self.assertEqual(model["limit"]["context"], 30000)
+                self.assertEqual(model["limit"]["context"], 32768)
+                self.assertEqual(model["limit"]["input"], 30000)
                 self.assertTrue(
                     model["options"]["chat_template_kwargs"]["enable_thinking"]
                 )
@@ -980,6 +1016,8 @@ print('Ready test server',flush=True)
             "21",
             SPLASH_HOST_MEM_BYTES=str(17179869184),
             SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.draft()),
+            SPLASH_FLASH_NEXT_Q2_MAX_TOKENS="1024",
+            SPLASH_FLASH_NEXT_Q2_THINKING_TOKEN_BUDGET="0",
             MOCK_MODE="context_once",
         )
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
@@ -991,7 +1029,9 @@ print('Ready test server',flush=True)
         model = config["provider"]["local-llama"]["models"][
             "qwen3.8-flash-next-q2-0-dflash2-bf16-splash"
         ]
-        self.assertEqual(model["limit"], {"context": 112633, "output": 1024})
+        self.assertEqual(
+            model["limit"], {"context": 114681, "input": 112633, "output": 1024}
+        )
         self.assertIn("retrying once with server_context=114681", r.stdout)
 
     def test_option21_context_fallback_is_bounded(self):
@@ -1267,7 +1307,7 @@ print('Ready test server',flush=True)
         config = json.loads(self.config.read_text())
         self.assertEqual(
             config["provider"]["local-llama"]["models"]["bonsai-27b-splash"]["limit"][
-                "context"
+                "input"
             ],
             2048,
         )

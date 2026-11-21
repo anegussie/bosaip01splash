@@ -51,7 +51,7 @@ SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS="${SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS
 SPLASH_QWEN36_IQ3_OPENCODE_CONTEXT="${SPLASH_QWEN36_IQ3_OPENCODE_CONTEXT:-auto}"
 splash_qwen36_iq3_default_output=0
 [[ -n "${SPLASH_QWEN36_IQ3_MAX_TOKENS:-}" ]] || splash_qwen36_iq3_default_output=1
-SPLASH_QWEN36_IQ3_MAX_TOKENS="${SPLASH_QWEN36_IQ3_MAX_TOKENS:-4096}"
+SPLASH_QWEN36_IQ3_MAX_TOKENS="${SPLASH_QWEN36_IQ3_MAX_TOKENS:-16384}"
 SPLASH_QWEN36_IQ3_MAX_CACHE_DISK="${SPLASH_QWEN36_IQ3_MAX_CACHE_DISK:-2G}"
 SPLASH_QWEN36_IQ3_PERSISTENT_CACHE="${SPLASH_QWEN36_IQ3_PERSISTENT_CACHE:-1}"
 SPLASH_QWEN36_IQ3_CACHE_DIR="${SPLASH_QWEN36_IQ3_CACHE_DIR:-$HOME/Library/Caches/Splash/qwen36-option19-iq3-xxs}"
@@ -305,7 +305,7 @@ print_models() {
   echo "   Source: ${SPLASH_QWEN36_MODEL_ID}"
   echo "   Separate option-18 prefix cache: ${SPLASH_QWEN36_MAX_CACHE_DISK} | persistent: ${SPLASH_QWEN36_PERSISTENT_CACHE}"
   echo "19) Qwen3.6 35B A3B UD-IQ3_XXS - Splash SSD expert streaming (downloads on first run)${splash_status}"
-  echo "   ${SPLASH_QWEN36_IQ3_MAX_CONTEXT} server context | up to ${SPLASH_QWEN36_IQ3_MAX_TOKENS} worker output tokens (parent up to 2048) | ${SPLASH_QWEN36_IQ3_MAX_MEMORY} Metal cap | expert RAM cache / SSD reads"
+  echo "   ${SPLASH_QWEN36_IQ3_MAX_CONTEXT} server context | up to ${SPLASH_QWEN36_IQ3_MAX_TOKENS} output tokens | ${SPLASH_QWEN36_IQ3_MAX_MEMORY} Metal cap | expert RAM cache / SSD reads"
   echo "   INT8 KV | BF16 state | ${SPLASH_QWEN36_IQ3_PREFILL_CHUNK_TOKENS}-token prefill chunks | one active request | reasoning off | DFlash2"
   echo "   Vision: at most 1,048,576 resized pixels per image (4096 patches; about 1024x1024)"
   echo "   Source: ${SPLASH_QWEN36_IQ3_MODEL_ID}"
@@ -348,6 +348,13 @@ splash_context_tokens() {
   else
     return 1
   fi
+}
+
+# Reserve the whole output window and at least 2048 tokens for the client.
+splash_output_reserve() {
+  local reserve="$SPLASH_BONSAI_MAX_TOKENS"
+  (( reserve < 2048 )) && reserve=2048
+  echo "$reserve"
 }
 
 splash_cache_disk_bytes() {
@@ -888,6 +895,10 @@ sync_opencode_splash() {
   local config_path="${OPENCODE_CONFIG_PATH:-$HOME/.config/opencode/opencode.json}"
   local model_id="local-llama/${SPLASH_BONSAI_ALIAS}"
   local temp_path=""
+  # The input limit already reserves output in the server window. Keep an
+  # additional buffer for tool results and prompt estimation before compaction.
+  local buffer="$((SPLASH_BONSAI_OPENCODE_CONTEXT / 2))"
+  (( buffer <= 4096 )) || buffer=4096
 
   [[ -f "$config_path" ]] || return 0
   command -v jq >/dev/null 2>&1 || {
@@ -904,8 +915,10 @@ sync_opencode_splash() {
     --argjson temperature "${splash_temperature:-0.7}" \
     --argjson top_p "${splash_top_p:-0.80}" \
     --arg base_url "http://${HOST}:${PORT}/v1" \
-    --argjson context "$SPLASH_BONSAI_OPENCODE_CONTEXT" \
+    --argjson context "$splash_context_limit" \
+    --argjson input "$SPLASH_BONSAI_OPENCODE_CONTEXT" \
     --argjson output "$SPLASH_BONSAI_MAX_TOKENS" \
+    --argjson buffer "$buffer" \
     '.provider["local-llama"].options.baseURL = $base_url |
      .model = $model |
      .small_model = $model |
@@ -932,7 +945,7 @@ sync_opencode_splash() {
        then .value.reasoningEffort = $worker_reasoning_effort else . end
      ) |
      .compaction = ((.compaction // {}) + {
-       auto: true, keep: {tokens: ([1536, (($context - $output) / 2 | floor)] | min)}, buffer: $output
+       auto: true, keep: {tokens: ([1536, (($input - $buffer) / 2 | floor)] | min)}, buffer: $buffer
      }) |
      del(.compaction.prune, .compaction.tail_turns,
          .compaction.preserve_recent_tokens, .compaction.reserved) |
@@ -941,7 +954,7 @@ sync_opencode_splash() {
      .tool_output = ((.tool_output // {}) + {max_lines: 100, max_bytes: 8192}) |
      .provider["local-llama"].models[$alias] |= ((. // {}) + {
        name: $display_name,
-       limit: ((.limit // {}) + {context: $context, output: $output})
+       limit: ((.limit // {}) + {context: $context, input: $input, output: $output})
      }) |
      if $alias == "qwen3.6-35b-a3b-iq3-xxs-splash" then
        del(.provider["local-llama"].models[$alias].attachment) |
@@ -974,6 +987,80 @@ sync_opencode_splash() {
   chmod 600 "$temp_path"
   mv "$temp_path" "$config_path"
   echo "OpenCode model synchronized: $model_id (Splash, int8 KV)"
+}
+
+# Pi keeps its own model catalog, so the output window and context limit the
+# launcher plans for Splash have to reach it too. Missing config files are not
+# an error: Pi users who do not use Splash are unaffected.
+sync_pi_splash() {
+  local models_path="${PI_MODELS_PATH:-$HOME/.pi/agent/models.json}"
+  local settings_path="${PI_SETTINGS_PATH:-$HOME/.pi/agent/settings.json}"
+  local temp_path="" model_key="" keep_recent=0
+  local pi_context="$splash_context_limit" reserve="$((SPLASH_BONSAI_MAX_TOKENS + 4096))"
+  command -v jq >/dev/null 2>&1 || return 0
+  [[ -f "$models_path" ]] || return 0
+
+  # Pi's context includes output. Reserve the output and its 4096-token
+  # request safety margin before the session reaches the context ceiling.
+  (( reserve >= 16384 )) || reserve=16384
+
+  if [[ -f "$models_path" ]]; then
+    temp_path="$(mktemp "${models_path}.tmp.XXXXXX")"
+    if ! jq --arg base_url "http://${HOST}:${PORT}/v1" \
+        --arg model_id "$SPLASH_BONSAI_MODEL_ID" \
+        --arg alias "$SPLASH_BONSAI_ALIAS" \
+        --arg display_name "$SPLASH_BONSAI_DISPLAY_NAME" \
+        --argjson context "$pi_context" \
+        --argjson max_tokens "$SPLASH_BONSAI_MAX_TOKENS" \
+        '(.providers | to_entries
+           | map(select(.value.models | any(.id == $model_id or .id == $alias)))
+           | map(.key)) as $hits |
+         .providers |= with_entries(
+           .key as $k |
+           if ($hits | index($k))
+           then .value.baseUrl = $base_url |
+                .value.models |= map(
+                  if (.id == $model_id or .id == $alias)
+                  then .contextWindow = $context | .maxTokens = $max_tokens |
+                       .name = $display_name
+                  else . end)
+           else . end)' "$models_path" > "$temp_path"; then
+      rm -f "$temp_path"
+      echo "Failed to update the Pi model catalog." >&2
+      return 1
+    fi
+    chmod 600 "$temp_path"
+    mv "$temp_path" "$models_path"
+  fi
+
+  # Pi compacts once free context falls below reserveTokens, so both numbers
+  # have to sit inside the limit the launcher just planned.
+  model_key="$(jq -r --arg model_id "$SPLASH_BONSAI_MODEL_ID" --arg alias "$SPLASH_BONSAI_ALIAS" \
+    '(.providers | to_entries | map(select(.value.models | any(.id == $model_id or .id == $alias))) | .[0]) as $p |
+     if $p == null then empty else
+       $p.key + "/" + ($p.value.models | map(select(.id == $model_id or .id == $alias)) | .[0].id) end' \
+    "$models_path" 2>/dev/null)"
+  if [[ -n "$model_key" ]] && [[ -f "$settings_path" ]]; then
+    (( reserve < pi_context )) || reserve=$((pi_context / 2))
+    # Leave older messages available to summarize when compaction is due.
+    keep_recent=$(((pi_context - reserve) / 2))
+    temp_path="$(mktemp "${settings_path}.tmp.XXXXXX")"
+    if jq --arg key "$model_key" --argjson reserve "$reserve" --argjson keep "$keep_recent" \
+      '([(.compaction.keepRecentTokens // 20000), $keep] | min) as $recent |
+       .compaction = ((.compaction // {}) + {modelOverrides: ((.compaction.modelOverrides // {}) +
+         {($key): {reserveTokens: $reserve, keepRecentTokens: $recent}})})' \
+      "$settings_path" > "$temp_path"; then
+      chmod 600 "$temp_path"
+      mv "$temp_path" "$settings_path"
+      printf 'Pi model synchronized: %s context %s, max output %s, compaction reserve %s.\n' \
+        "$model_key" "$pi_context" "$SPLASH_BONSAI_MAX_TOKENS" "$reserve"
+    else
+      rm -f "$temp_path"
+      echo "Failed to update the Pi compaction settings." >&2
+      return 1
+    fi
+  fi
+  return 0
 }
 
 sync_opencode_qwen_splash() {
@@ -2092,7 +2179,7 @@ case "$choice" in
     splash_context_max=24576
     [[ "$choice" != "19" ]] || splash_context_max=81920
     [[ "$choice" != "20" && "$choice" != "21" ]] || splash_context_max=131072
-    splash_client_context_max="$((splash_context_max - 2048))"
+    splash_client_context_max="$((splash_context_max - $(splash_output_reserve)))"
     if ! splash_context_limit="$(splash_context_tokens "$SPLASH_BONSAI_MAX_CONTEXT")" ||
        (( splash_context_limit < 4096 || splash_context_limit > splash_context_max )); then
       echo "Splash context must be 4096-${splash_context_max} tokens for option $choice (option 18: SPLASH_QWEN36_MAX_CONTEXT; option 19: SPLASH_QWEN36_IQ3_MAX_CONTEXT; option 20: SPLASH_FLASH_NEXT_MAX_CONTEXT; options 14/16: SPLASH_BONSAI_MAX_CONTEXT)." >&2
@@ -2105,7 +2192,10 @@ case "$choice" in
     splash_client_context_auto=0
     [[ "$SPLASH_BONSAI_OPENCODE_CONTEXT" != "auto" ]] || splash_client_context_auto=1
     if [[ "$SPLASH_BONSAI_OPENCODE_CONTEXT" == "auto" ]]; then
-      SPLASH_BONSAI_OPENCODE_CONTEXT="$((splash_context_limit - 2048))"
+      SPLASH_BONSAI_OPENCODE_CONTEXT="$((splash_context_limit - $(splash_output_reserve)))"
+      if (( SPLASH_BONSAI_OPENCODE_CONTEXT < 2 )); then
+        SPLASH_BONSAI_OPENCODE_CONTEXT="$((splash_context_limit / 2))"
+      fi
     fi
     if ! splash_uint_in_range "$SPLASH_BONSAI_OPENCODE_CONTEXT" 2 "$splash_client_context_max" ||
        (( SPLASH_BONSAI_OPENCODE_CONTEXT >= splash_context_limit )); then
@@ -2119,6 +2209,10 @@ case "$choice" in
     fi
     if ! splash_uint_in_range "$SPLASH_BONSAI_MAX_TOKENS" 1 "$((SPLASH_BONSAI_OPENCODE_CONTEXT - 1))"; then
       echo "Splash output must be positive and smaller than its OpenCode context (option 18: SPLASH_QWEN36_MAX_TOKENS; option 19: SPLASH_QWEN36_IQ3_MAX_TOKENS; option 20: SPLASH_FLASH_NEXT_MAX_TOKENS; options 14/16: SPLASH_BONSAI_MAX_TOKENS)." >&2
+      exit 1
+    fi
+    if (( SPLASH_BONSAI_OPENCODE_CONTEXT + SPLASH_BONSAI_MAX_TOKENS > splash_context_limit )); then
+      echo "Splash OpenCode input plus output exceeds the ${splash_context_limit}-token server context. Set the OpenCode input to at most $((splash_context_limit - SPLASH_BONSAI_MAX_TOKENS)) tokens." >&2
       exit 1
     fi
     if ! splash_uint_in_range "$SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT" 1 4294967295; then
@@ -2203,6 +2297,7 @@ case "$choice" in
     done
     prepare_splash_run
     sync_opencode_splash
+    sync_pi_splash
     if [[ "$choice" == "19" ]]; then
       printf 'Vision enabled: up to 1048576 resized pixels / 4096 patches per image (about 1024x1024).\n' | timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
     fi
@@ -2313,13 +2408,17 @@ case "$choice" in
           splash_context_limit="$splash_context_ceiling"
           SPLASH_BONSAI_MAX_CONTEXT="$splash_context_ceiling"
           if [[ "$splash_client_context_auto" == "1" ]]; then
-            SPLASH_BONSAI_OPENCODE_CONTEXT="$((splash_context_limit - 2048))"
+            SPLASH_BONSAI_OPENCODE_CONTEXT="$((splash_context_limit - $(splash_output_reserve)))"
+            (( SPLASH_BONSAI_OPENCODE_CONTEXT >= 2 )) ||
+              SPLASH_BONSAI_OPENCODE_CONTEXT="$((splash_context_limit / 2))"
             if (( splash_bonsai_default_output && SPLASH_BONSAI_OPENCODE_CONTEXT <= SPLASH_BONSAI_MAX_TOKENS )); then
               SPLASH_BONSAI_MAX_TOKENS="$((SPLASH_BONSAI_OPENCODE_CONTEXT / 2))"
             fi
           fi
-          if (( SPLASH_BONSAI_MAX_TOKENS < SPLASH_BONSAI_OPENCODE_CONTEXT )); then
+          if (( SPLASH_BONSAI_MAX_TOKENS < SPLASH_BONSAI_OPENCODE_CONTEXT &&
+                SPLASH_BONSAI_OPENCODE_CONTEXT + SPLASH_BONSAI_MAX_TOKENS <= splash_context_limit )); then
             sync_opencode_splash || exit 1
+            sync_pi_splash || exit 1
             printf 'Option 21 default context exceeds the current memory/disk plan; retrying once with server_context=%s client_context=%s output=%s. Explicit SPLASH_FLASH_NEXT_MAX_CONTEXT overrides remain exact.\n' \
               "$SPLASH_BONSAI_MAX_CONTEXT" "$SPLASH_BONSAI_OPENCODE_CONTEXT" "$SPLASH_BONSAI_MAX_TOKENS" |
               timestamp_log_stream | tee -a "$SPLASH_RUN_LOG"
