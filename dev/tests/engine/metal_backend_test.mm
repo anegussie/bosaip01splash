@@ -115,6 +115,64 @@ void prefillScratchLifetimes(const std::string &metallibPath, uint32_t chunk) {
     std::cout << "PASS target arena chunk capacity: " << chunk << " rows\n";
 }
 
+void flashNextPrefillScratchLifetimes(const std::string &metallibPath) {
+    using namespace splash;
+    using namespace splash::model;
+    MetalBackend backend(metallibPath);
+    const ops::ExecutionPlans plans(backend.capabilities(), ops::Int8Activations::Off);
+    const Qwen4ExpLayout layout;
+    RuntimeGeometry geometry;
+    geometry.target = QwenTargetGeometry(layout, {});
+    geometry.target.kvLayout = layout.kvLayout();
+    geometry.target.kvLayout.format = kv::Format::Int8;
+    geometry.target.stateLayout = layout.gdnStateLayout();
+    geometry.prefillChunkTokens = 128;
+    geometry.prefillChunks = 2;
+    const auto shape = prefillTargetRows(geometry, plans);
+    const auto base = sharedBuffer(backend, TargetArena::bytes(geometry.target, shape));
+    const TargetArena arena(backend, base, 0, geometry.target, shape);
+    const std::array<MetalBuffer, 3> phases{
+        arena.get(TargetTensor::GdnPacked, 0),
+        arena.get(TargetTensor::FullPacked, 0),
+        arena.moeScratch(0).expertIntermediate};
+    if (!std::all_of(phases.begin(), phases.end(), [&](const MetalBuffer &buffer) {
+            return buffer && buffer.contents() == phases.front().contents();
+        }))
+        throw std::runtime_error("Flash-Next prefill phases did not reuse scratch");
+
+    const std::array<MetalBuffer, 2> carried{
+        arena.get(TargetTensor::Hidden0, 0),
+        arena.get(TargetTensor::Hidden0, 1)};
+    constexpr uint32_t words = 8;
+    CommandGraph graph;
+    const auto copy = [&](const MetalBuffer &source, const MetalBuffer &target) {
+        graph.add("test_copy_u32", {source, target}, words, {1, 1, 1}, {words, 1, 1});
+    };
+    std::vector<MetalBuffer> inputs;
+    std::vector<MetalBuffer> outputs;
+    const auto write = [&](const MetalBuffer &target) {
+        auto &input = inputs.emplace_back(sharedBuffer(backend, words * sizeof(uint32_t)));
+        std::fill_n(static_cast<uint32_t *>(input.contents()), words, 1000 + inputs.size());
+        copy(input, target);
+    };
+    const auto read = [&](const MetalBuffer &source) {
+        copy(source, outputs.emplace_back(sharedBuffer(backend, words * sizeof(uint32_t))));
+    };
+    for (const auto &buffer : carried) write(buffer);
+    for (const auto &buffer : phases) {
+        write(buffer);
+        read(buffer);
+    }
+    for (const auto &buffer : carried) read(buffer);
+    (void)backend.submitCommandAsync(graph.dispatches()).wait();
+    constexpr std::array<uint32_t, 5> expected{1003, 1004, 1005, 1001, 1002};
+    for (size_t i = 0; i < outputs.size(); ++i) {
+        const auto *output = static_cast<const uint32_t *>(outputs[i].contents());
+        if (!std::all_of(output, output + words, [&](uint32_t value) { return value == expected[i]; }))
+            throw std::runtime_error("Flash-Next arena overlapped live tensors");
+    }
+}
+
 [[noreturn]] void fail(const std::string &message) {
     std::cerr << "FAIL: " << message << '\n';
     std::exit(1);
@@ -3525,6 +3583,7 @@ std::string metallib;
 std::span<const splash::test::TestCase> behaviourTests() {
     static constexpr splash::test::TestCase kTests[] = {
         {"prefillChunkCapacity", [] { prefillScratchLifetimes(metallib, 512); }},
+        {"flashNextPrefillScratchLifetimes", [] { flashNextPrefillScratchLifetimes(metallib); }},
         {"testACommandOutOfMemoryIsClassed", [] { testACommandOutOfMemoryIsClassed(); }},
         {"completionDoesNotWaitForMemoryTelemetry", [] { completionDoesNotWaitForMemoryTelemetry(metallib); }},
         {"terminalCommandRecovers", [] { terminalCommandRecovers(metallib, false); }},

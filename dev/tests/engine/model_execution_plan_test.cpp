@@ -535,9 +535,30 @@ void checkPrefillAttentionHistory() {
   require(splitsAfter(65'536) > splitsAfter(0), "a chunk's attention plan does not follow its history");
 }
 
+void checkFlashNextPrefillScratch() {
+  const auto flash = loadedModel<model::Qwen4ExpWeights>();
+  const auto geometry = model::RuntimeGeometry::from(flash, kv::Format::Int8, ops::GdnStateFormat::BFloat16,
+                                                      model::StreamedParts::loaded(flash, true));
+  DeviceCapabilities device;
+  device.appleGpuFamily = 10;
+  device.gpuCoreCount = 8;
+  const ops::ExecutionPlans plans(device, ops::Int8Activations::On);
+  const auto shared = model::prefillTargetRows(geometry, plans);
+  auto separate = shared;
+  separate.shareLayerScratch = false;
+  const auto bytes = model::TargetArena::bytes(geometry.target, shared);
+  const auto separateBytes = model::TargetArena::bytes(geometry.target, separate);
+  require(shared.shareLayerScratch && shared.rows == model::kPrefillRows && bytes < separateBytes,
+          "Flash-Next prefill did not share layer scratch at full chunk size");
+  require(!model::decodeTargetRows(geometry, plans).shareLayerScratch,
+          "Flash-Next decode unexpectedly shared layer scratch");
+  std::cout << "Flash-Next prefill target arena: " << separateBytes << " -> " << bytes << " bytes\n";
+}
+
 int main() {
   try {
     checkPrefillAttentionHistory();
+    checkFlashNextPrefillScratch();
     checkUnsizedProjection();
     checkCaptureLayers();
     checkGdnWidths();

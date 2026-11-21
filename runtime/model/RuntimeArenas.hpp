@@ -271,6 +271,7 @@ struct TargetRows final {
   uint32_t chunks = 1;
   ops::AttentionWorkspace attention{};
   ops::MoeWorkspace moe{};
+  bool shareLayerScratch = false;
 };
 
 // Whether a target tensor's rows outlive a layer of a prefill group, which
@@ -316,30 +317,10 @@ struct TargetRows final {
 // from c times a chunk's bytes on.
 class TargetArena final {
 public:
-  [[nodiscard]] static uint64_t bytes(const QwenTargetGeometry &target, const TargetRows &shape) {
-    uint64_t total = 0;
-    for (const uint64_t value : targetTensorBytes(target, shape))
-      total = checkedAdd(total, alignUp(value), "target arena");
-    return total;
-  }
+  [[nodiscard]] static uint64_t bytes(const QwenTargetGeometry &target, const TargetRows &shape);
 
   TargetArena(metal::MetalBackend &backend, const metal::MetalBuffer &base, uint64_t offset,
-              const QwenTargetGeometry &target, const TargetRows &shape)
-      : shape_(shape) {
-    const auto sizes = targetTensorBytes(target, shape);
-    uint64_t cursor = offset;
-    for (uint32_t index = 0; index < sizes.size(); ++index) {
-      if (sizes[index]) {
-        tensors_[index] = backend.view(base, cursor, sizes[index]);
-        if (shape.chunks > 1 && targetGroupTensor(static_cast<TargetTensor>(index))) {
-          const uint64_t chunkBytes = sizes[index] / shape.chunks;
-          for (uint32_t chunk = 0; chunk < shape.chunks; ++chunk)
-            chunkViews_[index].push_back(backend.view(base, cursor + chunk * chunkBytes, chunkBytes));
-        }
-      }
-      cursor += alignUp(sizes[index]);
-    }
-  }
+              const QwenTargetGeometry &target, const TargetRows &shape);
 
   // Chunk `chunk`'s view of a group's tensor (targetGroupTensor), or the
   // tensor of an arena of one chunk.

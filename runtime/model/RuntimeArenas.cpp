@@ -53,6 +53,87 @@ std::array<uint64_t, targetTensorCount> targetTensorBytes(const QwenTargetGeomet
   return result;
 }
 
+namespace {
+
+enum class LayerScratch { Carried, Gdn, Attention, Experts, Count };
+
+LayerScratch layerScratch(TargetTensor tensor) noexcept {
+  switch (tensor) {
+  case TargetTensor::GdnPacked:
+  case TargetTensor::GdnQueries:
+  case TargetTensor::GdnKeys:
+  case TargetTensor::GdnValues:
+  case TargetTensor::GdnDecay:
+  case TargetTensor::GdnBeta:
+  case TargetTensor::Recurrent:
+  case TargetTensor::GdnHidden:
+    return LayerScratch::Gdn;
+  case TargetTensor::FullPacked:
+  case TargetTensor::FullQueries:
+  case TargetTensor::AttentionPartials:
+  case TargetTensor::AttentionStatistics:
+  case TargetTensor::AttentionHidden:
+    return LayerScratch::Attention;
+  default:
+    break;
+  }
+  for (size_t field = 0; field < ops::kMoeScratchFields.size(); ++field) {
+    const auto member = ops::kMoeScratchFields[field].buffer;
+    if ((member == &ops::MoeScratch::expertIntermediate || member == &ops::MoeScratch::expertOutput) &&
+        tensor == moeScratchTensor<TargetTensor>(field))
+      return LayerScratch::Experts;
+  }
+  return LayerScratch::Carried;
+}
+
+struct TargetArenaLayout final {
+  std::array<uint64_t, targetTensorCount> sizes;
+  std::array<uint64_t, targetTensorCount> offsets{};
+  uint64_t bytes = 0;
+};
+
+TargetArenaLayout targetArenaLayout(const QwenTargetGeometry &target, const TargetRows &shape) {
+  TargetArenaLayout result{.sizes = targetTensorBytes(target, shape)};
+  std::array<uint64_t, static_cast<size_t>(LayerScratch::Count)> lengths{};
+  for (uint32_t index = 0; index < result.sizes.size(); ++index) {
+    const auto phase = shape.shareLayerScratch ? layerScratch(static_cast<TargetTensor>(index)) : LayerScratch::Carried;
+    uint64_t &length = lengths[static_cast<size_t>(phase)];
+    result.offsets[index] = length;
+    length = checkedAdd(length, alignUp(result.sizes[index]), "target arena scratch");
+  }
+  const uint64_t base = lengths[static_cast<size_t>(LayerScratch::Carried)];
+  if (shape.shareLayerScratch) {
+    for (uint32_t index = 0; index < result.sizes.size(); ++index)
+      if (layerScratch(static_cast<TargetTensor>(index)) != LayerScratch::Carried)
+        result.offsets[index] += base;
+  }
+  result.bytes = checkedAdd(base, *std::max_element(lengths.begin() + 1, lengths.end()), "target arena");
+  return result;
+}
+
+} // namespace
+
+uint64_t TargetArena::bytes(const QwenTargetGeometry &target, const TargetRows &shape) {
+  return targetArenaLayout(target, shape).bytes;
+}
+
+TargetArena::TargetArena(metal::MetalBackend &backend, const metal::MetalBuffer &base, uint64_t offset,
+                         const QwenTargetGeometry &target, const TargetRows &shape)
+    : shape_(shape) {
+  const auto layout = targetArenaLayout(target, shape);
+  for (uint32_t index = 0; index < layout.sizes.size(); ++index) {
+    const uint64_t size = layout.sizes[index];
+    if (!size) continue;
+    const uint64_t start = offset + layout.offsets[index];
+    tensors_[index] = backend.view(base, start, size);
+    if (shape.chunks > 1 && targetGroupTensor(static_cast<TargetTensor>(index))) {
+      const uint64_t chunkBytes = size / shape.chunks;
+      for (uint32_t chunk = 0; chunk < shape.chunks; ++chunk)
+        chunkViews_[index].push_back(backend.view(base, start + chunk * chunkBytes, chunkBytes));
+    }
+  }
+}
+
 TargetRows prefillTargetRows(const RuntimeGeometry &geometry, const ops::ExecutionPlans &operators) {
   const QwenTargetGeometry &target = geometry.target;
   TargetRows shape{.rows = geometry.prefillChunkTokens,
@@ -60,7 +141,11 @@ TargetRows prefillTargetRows(const RuntimeGeometry &geometry, const ops::Executi
                    // Any one sequence's splits: a chunk's sequences share the
                    // workspace in turn where they do not fit together.
                    .attention = operators.sequenceAttentionWorkspace(target.attentionQueryHeads, target.kvLayout),
-                   .moe = {}};
+                   .moe = {},
+                   // Flash-Next runs a layer's mixer (GDN or attention) for
+                   // all chunks before the MoE resident and loaded passes.
+                   // Routing runs with the mixer, so its buffers stay separate.
+                   .shareLayerScratch = target.hyperConnections && target.ffnKind == QwenFfnKind::SparseMoe};
   if (target.ffnKind == QwenFfnKind::SparseMoe)
     shape.moe = operators.moeWorkspace(target.moeBlockShape(), target.moeRouterFormat, geometry.prefillChunkTokens);
   return shape;
