@@ -111,6 +111,10 @@ class ReasoningSplitter:
 
     def __init__(self, thinking, tool_calls=False, chat_format=None):
         self.reasoning = thinking
+        self.think_start = (
+            THINK_START if chat_format is None else chat_format.think_start
+        )
+        self.think_end = THINK_END if chat_format is None else chat_format.think_end
         # Whether the output may yet open its reasoning: until it shows
         # whether it starts with THINK_START.
         self.opening = (
@@ -123,23 +127,23 @@ class ReasoningSplitter:
         # the chat template's layout of a turn, are still to be dropped.
         self.separator = False
         self.ends = (
-            (THINK_END, chat_format.call_syntax.call_open)
+            (self.think_end, chat_format.call_syntax.call_open)
             if tool_calls and chat_format.calls_end_reasoning
-            else (THINK_END,)
+            else (self.think_end,)
         )
 
     def put(self, text):
         if self.opening:
             self.pending += text
-            if len(self.pending) < len(THINK_START) and THINK_START.startswith(
-                self.pending
-            ):
+            if len(self.pending) < len(
+                self.think_start
+            ) and self.think_start.startswith(self.pending):
                 return []
             self.opening = False
             text, self.pending = self.pending, ""
-            if text.startswith(THINK_START):
+            if text.startswith(self.think_start):
                 self.reasoning = True
-                text = text[len(THINK_START) :]
+                text = text[len(self.think_start) :]
         if not self.reasoning:
             return self._content(text)
         self.pending += text
@@ -152,11 +156,11 @@ class ReasoningSplitter:
             end, marker = min(ends)
             reasoning = self.pending[:end]
             content = self.pending[end:]
-            if marker == THINK_END:
-                content = content[len(THINK_END) :]
+            if marker == self.think_end:
+                content = content[len(self.think_end) :]
             self.pending = ""
             self.reasoning = False
-            self.separator = marker == THINK_END
+            self.separator = marker == self.think_end
             output = [("reasoning_content", reasoning)] if reasoning else []
             return output + self._content(content)
         ready, self.pending = hold_partial(self.pending, *self.ends)
@@ -176,6 +180,116 @@ class ReasoningSplitter:
         kind = "reasoning_content" if self.reasoning else "content"
         text, self.pending = self.pending, ""
         return [(kind, text)]
+
+
+class InklingChannels:
+    """Stream Inkling's separate model messages and JSON tool invocations."""
+
+    markers = (
+        "<|message_model|>",
+        "<|content_text|>",
+        "<|content_thinking|>",
+        "<|content_invoke_tool_json|>",
+        "<|end_message|>",
+    )
+
+    def __init__(self, policy, request_id):
+        self.policy = policy
+        self.request_id = request_id
+        self.pending = ""
+        self.header = ""
+        self.tool_json = ""
+        self.channel = "content"
+        self.calls = []
+
+    @property
+    def reasoning(self):
+        return self.channel == "reasoning_content"
+
+    @property
+    def in_call(self):
+        return self.channel == "tool"
+
+    @property
+    def call_id(self):
+        return f"call_{self.request_id}_{len(self.calls)}" if self.in_call else None
+
+    def _text(self, text, events):
+        if not text:
+            return
+        if self.in_call:
+            self.tool_json += text
+        elif self.channel == "header":
+            self.header += text
+        else:
+            events.append((self.channel, text))
+
+    def _close(self, events):
+        if not self.in_call or self.policy is None:
+            return
+        try:
+            call = json_codec.loads(self.tool_json)
+        except ValueError:
+            return
+        if not isinstance(call, dict):
+            return
+        name, arguments = call.get("name"), call.get("args")
+        if (
+            not isinstance(name, str)
+            or name not in self.policy.schemas
+            or not isinstance(arguments, dict)
+        ):
+            return
+        if self.header and self.header.strip() != name:
+            return
+        encoded = json_codec.dumps(arguments)
+        function = {"name": name, "arguments": encoded}
+        index, call_id = len(self.calls), self.call_id
+        self.calls.append({"id": call_id, "type": "function", "function": function})
+        events.append(
+            (
+                "tool",
+                {
+                    "index": index,
+                    "id": call_id,
+                    "type": "function",
+                    "function": {"name": name},
+                },
+            )
+        )
+        for chunk in argument_deltas(encoded):
+            events.append(("tool", {"index": index, "function": {"arguments": chunk}}))
+
+    def put(self, text):
+        self.pending += text
+        events = []
+        channels = ("header", "content", "reasoning_content", "tool", "content")
+        while self.pending:
+            found = [
+                (self.pending.find(marker), index)
+                for index, marker in enumerate(self.markers)
+                if marker in self.pending
+            ]
+            if not found:
+                ready, self.pending = hold_partial(self.pending, *self.markers)
+                self._text(ready, events)
+                break
+            position, index = min(found)
+            self._text(self.pending[:position], events)
+            self.pending = self.pending[position + len(self.markers[index]) :]
+            if index == 4:
+                self._close(events)
+            if index in (0, 4):
+                self.header = ""
+                self.tool_json = ""
+            self.channel = channels[index]
+        return events
+
+    def finish(self):
+        events = []
+        self._text(self.pending, events)
+        self.pending = ""
+        return events
 
 
 _NOT_JSON = object()
@@ -257,14 +371,17 @@ class StreamingToolCallProjector:
     its text the same way. A structured answer's JSON is left as it is.
     """
 
-    def __init__(self, policy, request_id, structured=False, syntax=None):
+    def __init__(
+        self, policy, request_id, structured=False, syntax=None, think_end=THINK_END
+    ):
         # The types of the tools its calls name, read as they name them.
         self.tool_types = ParameterTypes(policy) if policy is not None else None
         self.request_id = request_id
         # The layout its calls are read in, which a tool policy needs.
         self.syntax = syntax
+        self.think_end = think_end
         self.text_tags = (
-            (syntax.call_open, THINK_END) if policy is not None else (THINK_END,)
+            (syntax.call_open, think_end) if policy is not None else (think_end,)
         )
         self.pending = ""
         self.state = "output" if structured else "content"
@@ -471,7 +588,7 @@ class StreamingToolCallProjector:
                     break
                 self._emit_content(self.pending[:start], events)
                 self.pending = self.pending[start + len(tag) :]
-                if tag != THINK_END:
+                if tag != self.think_end:
                     # A call's opening, the other tag.
                     self.state = "name"
                 continue

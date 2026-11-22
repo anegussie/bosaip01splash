@@ -178,6 +178,14 @@ GLM4_PATTERN = (
     r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}"
     r"| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"
 )
+# Inkling uses the o200k split without normalization or automatic BOS.
+INKLING2_PATTERN = (
+    r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+"
+    r"(?i:'s|'t|'re|'ve|'m|'ll|'d)?"
+    r"|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*"
+    r"(?i:'s|'t|'re|'ve|'m|'ll|'d)?"
+    r"|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+"
+)
 # Each GGUF tokenizer profile (tokenizer.ggml.pre) Splash derives a tokenizer
 # for: the patterns that split text, each isolating its matches, in order,
 # and whether text is NFC-normalized before them.
@@ -185,6 +193,7 @@ TOKENIZER_PROFILES = {
     "qwen35": ((QWEN35_PATTERN,), True),
     "flint": (FLINT_PATTERNS, False),
     "glm4": ((GLM4_PATTERN,), False),
+    "inkling2": ((INKLING2_PATTERN,), False),
 }
 # The GGUF token types (llama_token_type) a byte-level BPE vocabulary uses:
 # control tokens are special added tokens, user-defined ones added tokens
@@ -253,7 +262,9 @@ def tokenizer_files(metadata):
     try:
         backend = Tokenizer(
             token_models.BPE(
-                {t: i for i, t in enumerate(tokens)}, pairs, ignore_merges=name == "glm4"
+                {t: i for i, t in enumerate(tokens)},
+                pairs,
+                ignore_merges=name == "glm4",
             )
         )
     except Exception as error:
@@ -301,7 +312,7 @@ def tokenizer_files(metadata):
     if not template.strip():
         raise ModelError("GGUF chat template is empty")
     arch = metadata.require("general.architecture", str)
-    if not (name == "glm4" and arch == "glm5-next"):
+    if (name, arch) not in {("glm4", "glm5-next"), ("inkling2", "inkling2")}:
         arch = text_architecture(metadata)
     config = {
         "tokenizer_class": "TokenizersBackend",

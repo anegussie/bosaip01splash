@@ -14,7 +14,7 @@ from tokenizers.decoders import DecodeStream
 from . import json_codec, supervision, telemetry
 from . import protocol as wire
 from . import runtime as engine_runtime
-from .chat_format import THINK_END, ChatFormat
+from .chat_format import ChatFormat
 from .constraints import TokenConstraint
 from .diagnostics import print_status
 from .errors import APIError, ConstraintError, remaining_request_time
@@ -53,7 +53,7 @@ def thinking_end_tokens(tokenizer, text, chat_format):
         or not tokenizer.added_tokens_decoder.keys().isdisjoint(tokens[:-1])
     ):
         raise ThinkingEndError(
-            f"the thinking end {text!r} must end with {THINK_END} and hold no "
+            f"the thinking end {text!r} must end with {chat_format.think_end} and hold no "
             "other special token"
         )
     if len(tokens) > wire.MAX_THINKING_END_TOKENS:
@@ -192,13 +192,25 @@ class Job:
 
 
 class CallbackStreamer:
-    def __init__(self, tokenizer, callback, stop_sequences=(), on_stop=None):
+    def __init__(
+        self, tokenizer, callback, stop_sequences=(), on_stop=None, control_tokens=()
+    ):
         self.tokenizer = tokenizer
         self.callback = callback
         self.stops = StopSearch(stop_sequences) if stop_sequences else None
         self.on_stop = on_stop
         self.backend = tokenizer.backend_tokenizer
-        self.decode_stream = DecodeStream(skip_special_tokens=True)
+        self.skip_special = not control_tokens
+        self.hidden_tokens = (
+            {
+                i
+                for i, token in tokenizer.added_tokens_decoder.items()
+                if token.special and i not in control_tokens
+            }
+            if control_tokens
+            else frozenset()
+        )
+        self.decode_stream = DecodeStream(skip_special_tokens=self.skip_special)
         self.token_ids = []
         self.emitted = []
         self.pending_text = ""
@@ -235,6 +247,8 @@ class CallbackStreamer:
             return
         for token_id in token_ids:
             token_id = int(token_id)
+            if token_id in self.hidden_tokens:
+                continue
             self.token_ids.append(token_id)
             if self.decode_stream is None:
                 continue
@@ -258,7 +272,7 @@ class CallbackStreamer:
             return
         decoded = self.tokenizer.decode(
             self.token_ids,
-            skip_special_tokens=True,
+            skip_special_tokens=self.skip_special,
             clean_up_tokenization_spaces=False,
         )
         handled = "".join(self.emitted) + self.pending_text
@@ -281,6 +295,17 @@ class CallbackStreamer:
         a request without a chat format."""
         if chat_format is None:
             return 0
+        if chat_format.channel_framing:
+            count = 0
+            reasoning = False
+            for token in self.token_ids:
+                if token == chat_format.think_start_id:
+                    reasoning = True
+                elif token in chat_format.output_control_tokens:
+                    reasoning = False
+                elif reasoning:
+                    count += 1
+            return count
         if thinking:
             start = 0
         elif chat_format.think_start_id is not None and self.token_ids[:1] == [
@@ -926,7 +951,11 @@ class NativeBackend:
             job.events.put(("text", text))
 
         streamer = CallbackStreamer(
-            self.tokenizer, emit, job.stop_sequences, stop_matched
+            self.tokenizer,
+            emit,
+            job.stop_sequences,
+            stop_matched,
+            job.chat_format.output_control_tokens if job.chat_format else (),
         )
         state = _JobState(job, streamer)
         request = self._generation_request(job)

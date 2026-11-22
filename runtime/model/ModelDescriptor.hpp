@@ -131,4 +131,18 @@ inspectSourceConfiguration(std::string_view targetFormat, std::string_view visio
                            const std::optional<std::filesystem::path> &ggufHeaders,
                            const std::optional<std::filesystem::path> &draft);
 
+// Validate the local standalone Inkling GGUF and report its raw byte budget.
+// An inspected source need not yet have a serving model descriptor.
+struct InklingSourceFacts {
+  std::string architecture;
+  uint32_t physicalLayers;
+  uint32_t logicalLayers;
+  size_t tensorCount;
+  uint64_t residentTensorBytes;
+  uint64_t expertTensorBytes;
+  std::vector<std::pair<uint32_t, uint64_t>> bf16KvBytes;
+};
+
+[[nodiscard]] InklingSourceFacts inspectInklingSource(const std::filesystem::path &path);
+
 } // namespace splash::model

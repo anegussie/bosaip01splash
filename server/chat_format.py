@@ -123,14 +123,19 @@ class ChatFormat:
     # the request's reasoning effort.
     think_start_id: int | None
     # The token of TOOL_CALL_OPEN.
-    call_open_id: int
-    call_syntax: ToolCallSyntax
+    call_open_id: int | None
+    call_syntax: ToolCallSyntax | None
     # The template's special token after which prompt tokenization reuses a
     # cached prompt's tokens (tokenization.PromptTokenizer).
     message_boundary: str
     # The template's placeholder for one image, one token, which the server
     # widens to the image's tokens; None for a template without one.
     image_pad: str | None
+    think_start: str = THINK_START
+    think_end: str = THINK_END
+    implicit_generation_prompt: bool = False
+    output_control_tokens: tuple[int, ...] = ()
+    channel_framing: bool = False
 
     @property
     def reasoning_switch(self):
@@ -138,7 +143,7 @@ class ChatFormat:
         effort or enable_thinking opening the generation prompt's think block
         or leaving it out; a model that opens its reasoning itself decides
         each turn, whatever the request says."""
-        return self.think_start_id is None
+        return self.think_start_id is None or self.channel_framing
 
     @property
     def calls_end_reasoning(self):
@@ -184,4 +189,19 @@ GLM_FLASH = ChatFormat(
     call_syntax=GLM_ARGS,
     message_boundary="<|assistant|>",
     image_pad=None,
+)
+
+INKLING = ChatFormat(
+    stop_tokens=("<|content_model_end_sampling|>",),
+    think_start_id=200008,
+    think_end_id=200010,
+    call_open_id=None,
+    call_syntax=None,
+    message_boundary="<|end_message|>",
+    image_pad=None,
+    think_start="<|content_thinking|>",
+    think_end="<|end_message|>",
+    implicit_generation_prompt=True,
+    output_control_tokens=(200001, 200004, 200008, 200010, 200049),
+    channel_framing=True,
 )

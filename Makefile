@@ -269,6 +269,7 @@ ENGINE_CPP_SOURCES := \
 	runtime/ops/HyperConnection.cpp \
 	runtime/ops/GlmFlashKda.cpp \
 	runtime/ops/GlmFlashSparseAttention.cpp \
+	runtime/ops/Inkling.cpp \
 	runtime/ops/NgramEmbedding.cpp \
 	runtime/ops/BlockIndexer.cpp \
 	runtime/ops/PagedAttention.cpp \
@@ -311,6 +312,8 @@ ENGINE_CPP_SOURCES := \
 	runtime/model/GgufImage.cpp \
 	runtime/model/GgufTarget.cpp \
 	runtime/model/Glm5FlashCheckpoint.cpp \
+	runtime/model/InklingCheckpoint.cpp \
+	runtime/model/InklingSequence.cpp \
 	runtime/model/GlmFlashRecurrentLayer.cpp \
 	runtime/model/GlmFlashExperts.cpp \
 	runtime/model/GlmFlashSparseLayer.cpp \

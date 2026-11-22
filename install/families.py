@@ -26,7 +26,7 @@ if __name__ == "__main__" and not __package__:
     __package__ = "install"
 
 from server import serve_options
-from server.chat_format import FLINT, GLM_FLASH, QWEN, ChatFormat
+from server.chat_format import FLINT, GLM_FLASH, INKLING, QWEN, ChatFormat
 
 from . import models
 
@@ -71,6 +71,9 @@ class ModelFamily:
 # GLM Flash opens local GGUF shards directly, without an installed draft.
 GLM_FLASH_FAMILY = ModelFamily(
     "GLM-5.3-Flash", "", GLM_FLASH, SamplingDefaults(1.0, 0.95, 0), vision=False
+)
+INKLING_FAMILY = ModelFamily(
+    "Inkling 2 Mini", "", INKLING, SamplingDefaults(1.0, 1.0, 0), vision=False
 )
 
 FAMILIES = (

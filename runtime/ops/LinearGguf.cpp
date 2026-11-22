@@ -564,7 +564,8 @@ void addGgufFloat(metal::CommandGraph &graph, metal::MetalBuffer input, std::spa
     const QuantizedSegment &w = *p.weights;
     const uint32_t n = w.outputSize;
     if (!w.isFloat() || w.inputSize != k || !n || n % 8 || p.outOffset + uint64_t{n} > p.outStride ||
-        (p.tile == FloatTile::NeuralAccelerator && (rows < 16 || k % 32)))
+        (p.tile == FloatTile::NeuralAccelerator && (rows < 16 || k % 32)) ||
+        (p.tile == FloatTile::Vector && rows != 1))
       throw std::invalid_argument("invalid float projection");
     // The rows of a quantized format write fp32, the MoE router's scores.
     if (w.quantizedRows() && type != FloatOutput::Float32)
@@ -582,7 +583,9 @@ void addGgufFloat(metal::CommandGraph &graph, metal::MetalBuffer input, std::spa
            projections[first + count].tile == lead.tile)
       ++count;
     const bool accelerator = lead.tile == FloatTile::NeuralAccelerator;
-    const uint32_t columns = accelerator ? 32 : 8, tileRows = accelerator ? 64 : 32;
+    const bool vector = lead.tile == FloatTile::Vector;
+    const uint32_t columns = vector ? 4 : accelerator ? 32 : 8;
+    const uint32_t tileRows = vector ? 1 : accelerator ? 64 : 32;
     GgufFloatParams params{rows, k, {}, {}, {}};
     std::vector<metal::MetalBuffer> bindings{input};
     uint32_t tiles = 0;
@@ -595,10 +598,11 @@ void addGgufFloat(metal::CommandGraph &graph, metal::MetalBuffer input, std::spa
       params.out_offset[slot] = p.outOffset;
       tiles += (p.weights->outputSize + columns - 1) / columns;
     }
-    graph.add(std::string(accelerator ? "gguf_float_na_" : "gguf_float_") + lead.weights->name() + "_" +
+    graph.add(std::string(vector ? "gguf_float_vector_" : accelerator ? "gguf_float_na_" : "gguf_float_") +
+                  lead.weights->name() + "_" +
                   (type == FloatOutput::Float32 ? "f32" : "bf16"),
               std::move(bindings), params, {tiles, (rows + tileRows - 1) / tileRows, 1},
-              {accelerator ? 128u : 256u, 1, 1});
+              {vector || accelerator ? 128u : 256u, 1, 1});
     first += count;
   }
 }

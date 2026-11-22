@@ -162,7 +162,9 @@ void printUsage(std::string_view executable) {
   writeStderrLine("       " + command + " model-check mlx-affine none|safetensors CONFIG [DRAFT_CONFIG]");
   writeStderrLine("       " + command + " model-check gguf none|gguf CONFIG GGUF_HEADERS [DRAFT_CONFIG]");
   writeStderrLine("       " + command + " glm-flash-checkpoint GGUF_DIRECTORY");
+  writeStderrLine("       " + command + " inkling-checkpoint GGUF");
   writeStderrLine("       " + command + " serve-glm-flash GGUF_DIRECTORY CONTEXT");
+  writeStderrLine("       " + command + " serve-inkling GGUF CONTEXT");
   writeStderrLine("       " + command + " device-check");
   writeStderrLine("       " + command + " families");
 }
@@ -555,6 +557,27 @@ int inspectGlmFlashCheckpoint(int argc, char **argv) {
   return 0;
 }
 
+int inspectInklingCheckpoint(int argc, char **argv) {
+  if (argc != 3)
+    throw engine::UsageError("inkling-checkpoint takes the local Inkling 2 Mini GGUF file");
+  const auto facts = model::inspectInklingSource(argv[2]);
+  json::Writer w;
+  w.object([&] {
+    w.field("architecture", facts.architecture)
+        .field("physical_layers", facts.physicalLayers)
+        .field("logical_layers", facts.logicalLayers)
+        .field("tensor_count", facts.tensorCount)
+        .field("resident_tensor_bytes", facts.residentTensorBytes)
+        .field("expert_tensor_bytes", facts.expertTensorBytes);
+    w.object("bf16_kv_bytes", [&] {
+      for (const auto &[context, bytes] : facts.bf16KvBytes)
+        w.field(json::Key(std::to_string(context)), bytes);
+    });
+  });
+  std::printf("%s\n", w.str().c_str());
+  return 0;
+}
+
 } // namespace
 } // namespace splash
 
@@ -568,17 +591,22 @@ int main(int argc, char **argv) {
         return splash::checkModel(argc, argv);
       if (command == "glm-flash-checkpoint")
         return splash::inspectGlmFlashCheckpoint(argc, argv);
-      if (command == "serve-glm-flash") {
+      if (command == "inkling-checkpoint")
+        return splash::inspectInklingCheckpoint(argc, argv);
+      if (command == "serve-glm-flash" || command == "serve-inkling") {
         if (argc != 4)
-          throw splash::engine::UsageError("expected GGUF_DIRECTORY and CONTEXT");
+          throw splash::engine::UsageError("expected a GGUF source and CONTEXT");
         const std::string_view context = argv[3];
         uint32_t capacity = 0;
         const auto end = context.data() + context.size();
         const auto parsed = std::from_chars(context.data(), end, capacity);
-        if (parsed.ec != std::errc{} || parsed.ptr != end || capacity == 0 || capacity > 8192)
-          throw splash::engine::UsageError("GLM Flash context must be between 1 and 8192");
-        return splash::engine::serveGlmFlash(
-            splash::executablePath().parent_path() / "splash.metallib", argv[2], capacity);
+        const bool inkling = command == "serve-inkling";
+        const uint32_t maximum = inkling ? splash::engine::inklingMaximumContext() : 8192;
+        if (parsed.ec != std::errc{} || parsed.ptr != end || capacity == 0 || capacity > maximum)
+          throw splash::engine::UsageError("context must be between 1 and " + std::to_string(maximum));
+        const auto metallib = splash::executablePath().parent_path() / "splash.metallib";
+        return inkling ? splash::engine::serveInkling(metallib, argv[2], capacity)
+                       : splash::engine::serveGlmFlash(metallib, argv[2], capacity);
       }
       if (command == "families")
         return splash::printFamilies(argc);

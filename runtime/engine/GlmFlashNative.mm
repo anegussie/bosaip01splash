@@ -1,9 +1,13 @@
 #include "engine/GlmFlashNative.hpp"
 
-#include "StderrLine.hpp"
+#include "AwakeClock.hpp"
 #include "engine/Json.hpp"
+#include "engine/MemoryGovernor.hpp"
+#include "engine/MemoryPlan.hpp"
 #include "engine/Protocol.hpp"
 #include "model/GlmFlashSequence.hpp"
+#include "model/InklingCheckpoint.hpp"
+#include "model/InklingSequence.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -14,16 +18,22 @@
 #include <random>
 #include <system_error>
 #include <sysexits.h>
+#include <type_traits>
 #include <unistd.h>
 
 namespace splash::engine {
 namespace {
 using namespace protocol;
-using Clock = std::chrono::steady_clock;
+using Clock = AwakeClock;
 
-constexpr uint32_t vocabulary = model::GlmFlashSequence::vocabulary;
-constexpr uint32_t maskWords = (vocabulary + 31) / 32;
-constexpr std::array<uint32_t, 3> stopTokens{154820, 154827, 154829};
+struct TextModel {
+  std::string_view architecture;
+  uint32_t vocabulary;
+  std::span<const uint32_t> stops;
+};
+
+constexpr std::array<uint32_t, 3> glmStops{154820, 154827, 154829};
+constexpr std::array<uint32_t, 1> inklingStops{200006};
 
 uint64_t elapsed(Clock::time_point start) {
   return std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - start).count();
@@ -43,7 +53,7 @@ public:
     while (!bytes.empty()) {
       const auto count = write(STDOUT_FILENO, bytes.data(), bytes.size());
       if (count < 0 && errno == EINTR) continue;
-      if (count <= 0) throw std::system_error(errno, std::system_category(), "GLM protocol write");
+      if (count <= 0) throw std::system_error(errno, std::system_category(), "text model protocol write");
       bytes = bytes.subspan(size_t(count));
     }
   }
@@ -68,10 +78,10 @@ public:
       const int result = poll(&input, 1, timeout);
       if (result == 0) break;
       if (result < 0 && errno == EINTR) continue;
-      if (result < 0) throw std::system_error(errno, std::system_category(), "GLM protocol poll");
+      if (result < 0) throw std::system_error(errno, std::system_category(), "text model protocol poll");
       const auto count = read(STDIN_FILENO, buffer_.data(), buffer_.size());
       if (count < 0 && errno == EINTR) continue;
-      if (count < 0) throw std::system_error(errno, std::system_category(), "GLM protocol read");
+      if (count < 0) throw std::system_error(errno, std::system_category(), "text model protocol read");
       if (count == 0) {
         closed_ = true;
         if (auto issue = parser_.finish()) throw std::runtime_error(issue->describe());
@@ -99,7 +109,7 @@ bool maskAllows(std::span<const uint32_t> mask, uint32_t token) {
 
 class Sampler {
 public:
-  explicit Sampler(const RequestFrame &request)
+  Sampler(const RequestFrame &request, uint32_t vocabulary)
       : settings_(request.sampling), random_(settings_.seed), seen_(vocabulary), counts_(vocabulary) {
     for (const auto token : request.promptTokens) seen_[token] = true;
   }
@@ -161,14 +171,14 @@ private:
   std::vector<uint32_t> counts_;
 };
 
-class Worker {
+template <class Sequence> class Worker {
 public:
-  Worker(Pipe &pipe, model::GlmFlashSequence &sequence, uint32_t capacity)
-      : pipe_(pipe), sequence_(sequence), capacity_(capacity) {}
+  Worker(Pipe &pipe, Sequence &sequence, const TextModel &model, uint32_t capacity)
+      : pipe_(pipe), sequence_(sequence), model_(model), capacity_(capacity) {}
 
   void run() {
     pipe_.send(ReadyEvent{.maxConcurrentRequests = 1, .maxContextTokens = capacity_,
-                          .vocabularySize = vocabulary, .stopTokens = {stopTokens.begin(), stopTokens.end()},
+                          .vocabularySize = model_.vocabulary, .stopTokens = {model_.stops.begin(), model_.stops.end()},
                           .maskRows = 1});
     while (auto message = pipe_.receive(-1)) {
       @autoreleasepool {
@@ -197,12 +207,47 @@ private:
     writer.object([&] {
       writer.field("schema_version", kStatusSchemaVersion)
           .field("ready", true)
-          .field("architecture", "glm5-next")
+          .field("architecture", model_.architecture)
           .field("backend", "metal")
           .field("max_context_tokens", capacity_)
-          .field("prefill_chunk_tokens", model::GlmFlashSequence::chunkRows)
-          .field("active_requests", uint32_t(active))
-          .field("expert_read_bytes", sequence_.expertReadBytes());
+          .field("prefill_chunk_tokens", Sequence::chunkRows)
+          .field("active_requests", uint32_t(active));
+      if constexpr (requires { sequence_.expertReadBytes(); }) {
+        writer.field("expert_read_bytes", sequence_.expertReadBytes());
+      }
+      if constexpr (requires { sequence_.expertCacheBytes(); }) {
+        const auto memory = sequence_.memoryStats();
+        writer.field("expert_cache_bytes", sequence_.expertCacheBytes())
+            .field("expert_cache_core_bytes", sequence_.protectedExpertCacheBytes())
+            .field("expert_cache_budget_bytes", sequence_.expertBudgetBytes())
+            .field("expert_cache_max_budget_bytes", sequence_.maximumExpertBudgetBytes())
+            .field("metal_allocated_bytes", memory.allocatedBytes)
+            .field("metal_peak_allocated_bytes", memory.peakAllocatedBytes);
+        writer.array("expert_cache_passes", [&] {
+          uint32_t phase = 0;
+          for (const auto &stats : sequence_.expertCacheStats()) {
+            writer.object([&] {
+              writer.field("phase", phase++)
+                  .field("lookups", stats.lookups)
+                  .field("hits", stats.hits)
+                  .field("read_bytes", stats.readBytes);
+            });
+          }
+        });
+        writer.array("inkling_execution", [&] {
+          uint32_t singleRow = 0;
+          for (const auto &stats : sequence_.executionStats()) {
+            writer.object([&] {
+              writer.field("single_row", singleRow++ != 0)
+                  .field("attention_and_routing_seconds", stats.attentionAndRoutingSeconds)
+                  .field("expert_stage_seconds", stats.expertStageSeconds)
+                  .field("expert_wait_seconds", stats.expertWaitSeconds)
+                  .field("expert_gpu_seconds", stats.expertGpuSeconds)
+                  .field("expert_commands", stats.expertCommands);
+            });
+          }
+        });
+      }
       writer.object("weights", [&] { writer.field("released", false).field("restoring", false); });
     });
     pipe_.send(StatusJsonEvent{correlation, writer.str()});
@@ -215,25 +260,33 @@ private:
   void control(const ClientMessage &message, uint64_t active) {
     if (const auto *statusFrame = std::get_if<StatusRequestFrame>(&message))
       status(statusFrame->correlationId, active != 0);
-    else if (const auto *release = std::get_if<ReleaseRequestFrame>(&message))
+    else if (const auto *release = std::get_if<ReleaseRequestFrame>(&message)) {
+      if constexpr (requires { sequence_.releasePrefix(); }) {
+        if (!active) {
+          sequence_.releasePrefix();
+          if constexpr (requires { sequence_.releaseExperts(); }) sequence_.releaseExperts();
+        }
+      }
       status(release->correlationId, active != 0);
+    }
     else if (const auto *cancel = std::get_if<CancelFrame>(&message); cancel && cancel->requestId == active)
       cancelled_ = true;
     else if (const auto *stop = std::get_if<StopFrame>(&message); stop && stop->requestId == active)
       stopped_ = true;
     else if (const auto *request = std::get_if<RequestFrame>(&message))
-      requestError(request->requestId, "overloaded", "GLM Flash already has an active request", true);
+      requestError(request->requestId, "overloaded", "the model already has an active request", true);
   }
 
   void generate(const RequestFrame &request) {
     const auto id = request.requestId;
-    constexpr auto outOfRange = [](uint32_t token) { return token >= vocabulary; };
+    const auto outOfRange = [&](uint32_t token) { return token >= model_.vocabulary; };
+    const uint32_t maskWords = (model_.vocabulary + 31) / 32;
     if (request.promptTokens.empty() || request.promptTokens.size() > capacity_ ||
         std::ranges::any_of(request.promptTokens, outOfRange) ||
         std::ranges::any_of(request.scoreTokens, outOfRange) ||
         (request.thinkingBudget && std::ranges::any_of(request.thinkingBudget->end, outOfRange)) ||
         !request.imageSpans.empty()) {
-      requestError(id, "invalid_request", "GLM Flash requires a text prompt and valid token IDs within its context");
+      requestError(id, "invalid_request", "the model requires a text prompt and valid token IDs within its context");
       return;
     }
     const auto now = unixMicros();
@@ -250,18 +303,30 @@ private:
     };
 
     cancelled_ = stopped_ = false;
-    pipe_.send(StartEvent{.requestId = id});
     const uint32_t promptCount = uint32_t(request.promptTokens.size());
+    uint32_t matched = 0;
+    std::span<const float> logits;
+    if constexpr (requires { sequence_.restorePrefix(request.promptTokens); }) {
+      if (prefixSalt_ == request.cacheSalt) matched = sequence_.restorePrefix(request.promptTokens);
+      else sequence_.releasePrefix();
+      if (matched == promptCount) logits = sequence_.prefixLogits();
+    }
+    pipe_.send(StartEvent{.requestId = id, .matchedPromptTokens = matched});
     const uint32_t outputLimit = std::min(request.logicalMaxOutputTokens, capacity_ - promptCount + 1);
     DoneEvent done{.requestId = id, .reason = EngineFinishReason::Length, .promptTokens = promptCount};
-    std::span<const float> logits;
-    for (uint32_t offset = 0; offset < promptCount && !interrupt();) {
-      const auto count = std::min(model::GlmFlashSequence::chunkRows, promptCount - offset);
+    for (uint32_t offset = matched; offset < promptCount && !interrupt();) {
+      const auto count = std::min(Sequence::chunkRows, promptCount - offset);
       const bool last = offset + count == promptCount;
       logits = sequence_.evaluate(std::span(request.promptTokens).subspan(offset, count), last, interrupt);
       offset += count;
       if (!interrupt() && (request.flags & kReturnProgressFlag))
         pipe_.send(PromptProgressEvent{id, offset, elapsed(start)});
+    }
+    if constexpr (requires { sequence_.rememberPrompt(request.promptTokens, logits); }) {
+      if (matched < promptCount && !interrupt()) {
+        sequence_.rememberPrompt(request.promptTokens, logits);
+        prefixSalt_ = request.cacheSalt;
+      }
     }
     done.prefillMicros = elapsed(start);
     const auto decodeStart = Clock::now();
@@ -270,7 +335,7 @@ private:
       done.reason = EngineFinishReason::Stop;
       for (const uint32_t token : request.scoreTokens) done.optionLogits.push_back(logits[token]);
     } else if (!interrupt()) {
-      Sampler sampler(request);
+      Sampler sampler(request, model_.vocabulary);
       bool thinking = request.thinkingBudget.has_value();
       size_t ending = 0;
       for (uint32_t index = 0; index < outputLimit && !interrupt(); ++index) {
@@ -284,7 +349,7 @@ private:
             if (auto *response = std::get_if<MaskResponseFrame>(&*message);
                 response && response->requestId == id && response->maskRequestId == maskId) {
               if (response->maskWords.size() != maskWords)
-                throw std::runtime_error("invalid GLM Flash constraint mask size");
+                throw std::runtime_error("invalid text model constraint mask size");
               mask = std::move(response->maskWords);
               break;
             }
@@ -300,11 +365,11 @@ private:
           if (token && (*token == budget.end.back() || *token == budget.alsoEnds)) thinking = false;
         }
         if (!token) {
-          requestError(id, "invalid_constraint", "constraint admits no GLM Flash token");
+          requestError(id, "invalid_constraint", "constraint admits no model token");
           return;
         }
         if (!(request.flags & RequestIgnoreEndOfSequence) &&
-            std::ranges::find(stopTokens, *token) != stopTokens.end()) {
+            std::ranges::find(model_.stops, *token) != model_.stops.end()) {
           done.reason = EngineFinishReason::Stop;
           break;
         }
@@ -331,28 +396,62 @@ private:
   }
 
   Pipe &pipe_;
-  model::GlmFlashSequence &sequence_;
+  Sequence &sequence_;
+  TextModel model_;
   uint32_t capacity_;
+  CacheSalt prefixSalt_;
   bool cancelled_ = false;
   bool stopped_ = false;
 };
-} // namespace
 
-int serveGlmFlash(const std::filesystem::path &metallib, const std::filesystem::path &directory, uint32_t capacity) {
+model::InklingCacheBudget inklingCacheBudget(const DeviceCapabilities &device) {
+  const uint64_t metalBytes = EngineMemoryPolicy::hardBudgetBytes(device.recommendedMaxWorkingSetBytes, 0);
+  const uint64_t reserve = EngineMemoryPolicy::hostSpareReserveBytes(device.physicalMemoryBytes);
+  return {metalBytes, [reserve](uint64_t maximum, uint64_t resident) -> uint64_t {
+    const auto host = queryHostMemory();
+    const auto pressure = querySystemMemoryPressure().value_or(MemoryPressure::Normal);
+    if (pressure == MemoryPressure::Critical) return uint64_t{0};
+    const uint64_t spare = host ? host->spare + resident : 0;
+    uint64_t budget = host ? std::min(maximum, spare > reserve ? spare - reserve : 0) : maximum;
+    if (pressure == MemoryPressure::Warning) budget = std::min(budget, resident);
+    return budget;
+  }};
+}
+
+template <class Sequence>
+int serveTextModel(const std::filesystem::path &metallib, const std::filesystem::path &path, uint32_t capacity,
+                   const TextModel &profile) {
   signal(SIGPIPE, SIG_IGN);
   Pipe pipe;
   std::unique_ptr<metal::MetalBackend> backend;
-  std::unique_ptr<model::GlmFlashSequence> sequence;
+  std::unique_ptr<Sequence> sequence;
   try {
     backend = std::make_unique<metal::MetalBackend>(metallib);
-    sequence = std::make_unique<model::GlmFlashSequence>(*backend, directory, capacity);
+    if constexpr (std::is_same_v<Sequence, model::InklingSequence>)
+      sequence = std::make_unique<Sequence>(*backend, path, capacity, inklingCacheBudget(backend->capabilities()));
+    else
+      sequence = std::make_unique<Sequence>(*backend, path, capacity);
   } catch (const std::exception &error) {
     pipe.send(StartFailedEvent{.message = error.what()});
     return EX_SOFTWARE;
   }
-  Worker worker(pipe, *sequence, capacity);
+  Worker worker(pipe, *sequence, profile, capacity);
   worker.run();
   return EX_OK;
+}
+
+} // namespace
+
+int serveGlmFlash(const std::filesystem::path &metallib, const std::filesystem::path &directory, uint32_t capacity) {
+  return serveTextModel<model::GlmFlashSequence>(
+      metallib, directory, capacity, {"glm5-next", model::GlmFlashSequence::vocabulary, glmStops});
+}
+
+uint32_t inklingMaximumContext() noexcept { return model::InklingSequence::maximumContext; }
+
+int serveInkling(const std::filesystem::path &metallib, const std::filesystem::path &gguf, uint32_t capacity) {
+  return serveTextModel<model::InklingSequence>(
+      metallib, gguf, capacity, {"inkling2", model::InklingCheckpoint::vocabulary, inklingStops});
 }
 
 } // namespace splash::engine

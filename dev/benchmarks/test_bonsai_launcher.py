@@ -98,7 +98,12 @@ print('Ready test server',flush=True)
         for name in list(self.env):
             if (
                 name.startswith(
-                    ("SPLASH_BONSAI_", "SPLASH_QWEN36_", "SPLASH_FLASH_NEXT_")
+                    (
+                        "SPLASH_BONSAI_",
+                        "SPLASH_QWEN36_",
+                        "SPLASH_FLASH_NEXT_",
+                        "INKLING25_",
+                    )
                 )
                 and name != "SPLASH_BONSAI_STARTUP_RETRY_DELAY"
             ):
@@ -278,7 +283,11 @@ print('Ready test server',flush=True)
                     "providers": {
                         "splash-local": {
                             "models": [
-                                {"id": model_id, "contextWindow": 77824, "maxTokens": 4096}
+                                {
+                                    "id": model_id,
+                                    "contextWindow": 77824,
+                                    "maxTokens": 4096,
+                                }
                             ]
                         }
                     }
@@ -326,8 +335,12 @@ print('Ready test server',flush=True)
             {"context": 81920, "input": 65536, "output": 16384},
         )
         self.assertEqual(config["compaction"]["buffer"], 4096)
-        pi_model = json.loads(pi_models.read_text())["providers"]["splash-local"]["models"][0]
-        self.assertEqual((pi_model["contextWindow"], pi_model["maxTokens"]), (81920, 16384))
+        pi_model = json.loads(pi_models.read_text())["providers"]["splash-local"][
+            "models"
+        ][0]
+        self.assertEqual(
+            (pi_model["contextWindow"], pi_model["maxTokens"]), (81920, 16384)
+        )
         override = json.loads(pi_settings.read_text())["compaction"]["modelOverrides"]
         self.assertEqual(
             override[f"splash-local/{model_id}"],
@@ -415,10 +428,138 @@ print('Ready test server',flush=True)
                 ]
                 self.assertTrue(model["reasoning"])
                 self.assertEqual(model["options"]["reasoning_effort"], expected)
-                self.assertEqual(config["agent"]["general"]["reasoningEffort"], expected)
+                self.assertEqual(
+                    config["agent"]["general"]["reasoningEffort"], expected
+                )
                 self.assertEqual(
                     model["variants"]["bounded-compaction"]["reasoning_effort"], "none"
                 )
+
+    def test_option25_pinned_profile_and_client_limits(self):
+        alias = "inkling-2-mini-ud-iq3-xxs"
+        model = self.root / "Inkling-2-Mini-UD-IQ3_XXS.gguf"
+        with model.open("wb") as gguf:
+            gguf.truncate(11_663_309_504)
+        pi = pathlib.Path(self.env["PI_MODELS_PATH"])
+        pi.write_text(
+            json.dumps({"providers": {"other": {"baseUrl": "http://elsewhere"}}})
+        )
+        pi_settings = pathlib.Path(self.env["PI_SETTINGS_PATH"])
+        pi_settings.write_text(
+            json.dumps(
+                {"compaction": {"reserveTokens": 16000, "keepRecentTokens": 20000}}
+            )
+        )
+        settings = {
+            "INKLING25_SERVER": str(self.mock),
+            "INKLING25_PYTHON": str(self.mock),
+            "INKLING25_MODEL": str(model),
+            "LLAMA_PORT": "12425",
+        }
+        (self.root / "splash.metallib").write_text("mock")
+        result = self.run_launcher("25", **settings)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        for flag, value in {
+            "--model": "unsloth/Inkling-2-Mini-GGUF:UD-IQ3_XXS",
+            "--served-model-name": alias,
+            "--max-context": "131072",
+            "--inkling-max-output": "1024",
+            "--binary": str(self.mock),
+            "--max-active-requests": "1",
+            "--default-reasoning-effort": "low",
+            "--port": "12425",
+        }.items():
+            self.assertEqual(args[args.index(flag) + 1], value, flag)
+        self.assertEqual(args[:4], ["-u", "-m", "server.server", str(model)])
+        self.assertIn("--inkling", args)
+        config = json.loads(self.config.read_text())
+        self.assertEqual(config["model"], f"local-llama/{alias}")
+        profile = config["provider"]["local-llama"]["models"][alias]
+        self.assertEqual(
+            profile["limit"], {"context": 131072, "input": 130048, "output": 1024}
+        )
+        self.assertEqual(profile["modalities"]["input"], ["text"])
+        providers = json.loads(pi.read_text())["providers"]
+        self.assertEqual(providers["other"]["baseUrl"], "http://elsewhere")
+        self.assertEqual(
+            providers["inkling-local"]["baseUrl"], "http://127.0.0.1:12425/v1"
+        )
+        pi_model = providers["inkling-local"]["models"][0]
+        self.assertEqual(
+            (pi_model["id"], pi_model["contextWindow"], pi_model["maxTokens"]),
+            (alias, 131072, 1024),
+        )
+        compaction = json.loads(pi_settings.read_text())["compaction"]
+        self.assertEqual(compaction["reserveTokens"], 16000)
+        self.assertEqual(
+            compaction["modelOverrides"][f"inkling-local/{alias}"],
+            {"reserveTokens": 2048, "keepRecentTokens": 20000},
+        )
+
+        projector = self.root / "mmproj-F16.gguf"
+        projector.touch()
+        manual = subprocess.run(
+            ["bash", LAUNCHER],
+            input="25\n",
+            env={**self.env, **settings, "INKLING25_MMPROJ": str(projector)},
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        self.assertEqual(manual.returncode, 2, manual.stdout + manual.stderr)
+        self.assertIn("25) Inkling 2 Mini UD-IQ3_XXS", manual.stdout)
+        self.assertIn("serves text only", manual.stderr)
+
+    def test_option25_uses_pinned_cache_over_incomplete_local_file(self):
+        filename = "Inkling-2-Mini-UD-IQ3_XXS.gguf"
+        (self.root / filename).touch()
+        hub = self.root / "hub"
+        snapshot = (
+            hub
+            / "models--unsloth--Inkling-2-Mini-GGUF"
+            / "snapshots"
+            / "07fb508609f0652b3f3b2dca32129fa2b8083260"
+        )
+        snapshot.mkdir(parents=True)
+        blob = snapshot.parent.parent / "checkpoint"
+        with blob.open("wb") as gguf:
+            gguf.truncate(11_663_309_504)
+        (snapshot / filename).symlink_to(blob)
+        (self.root / "splash.metallib").write_text("mock")
+        result = self.run_launcher(
+            "25",
+            INKLING25_SERVER=str(self.mock),
+            INKLING25_PYTHON=str(self.mock),
+            INKLING25_DIR=str(self.root),
+            HF_HUB_CACHE=str(hub),
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[3], str(snapshot / filename))
+
+    def test_option25_rejects_bad_settings_before_start(self):
+        before = self.config.read_bytes()
+        for settings, error in (
+            (
+                {"INKLING25_CONTEXT": "4096", "INKLING25_OUTPUT": "4096"},
+                "smaller than context",
+            ),
+            ({"INKLING25_REASONING": "invalid"}, "INKLING25_REASONING must be"),
+            ({"INKLING25_CONTEXT": "131073"}, "1024-131072"),
+            (
+                {"INKLING25_DIR": str(self.root), "HF_HUB_CACHE": str(self.root)},
+                "checkpoint missing",
+            ),
+        ):
+            with self.subTest(settings=settings):
+                result = self.run_launcher(
+                    "25", INKLING25_SERVER=str(self.mock), **settings
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(error, result.stderr)
+                self.assertEqual(self.config.read_bytes(), before)
+                self.assertFalse((self.root / "attempts").exists())
 
     def test_option20_defaults_are_independent_and_enable_reasoning(self):
         config = json.loads(self.config.read_text())
@@ -531,7 +672,9 @@ print('Ready test server',flush=True)
         model = config["provider"]["local-llama"]["models"][
             "qwen3.8-flash-next-iq3-xxs-splash"
         ]
-        self.assertEqual(model["limit"], {"context": 32768, "input": 28672, "output": 3072})
+        self.assertEqual(
+            model["limit"], {"context": 32768, "input": 28672, "output": 3072}
+        )
         self.assertEqual(config["agent"]["general"]["reasoningEffort"], "none")
         self.assertEqual(config["agent"]["general"]["temperature"], 0.7)
         self.assertEqual(config["agent"]["general"]["top_p"], 0.8)
@@ -543,7 +686,9 @@ print('Ready test server',flush=True)
         model = config["provider"]["local-llama"]["models"][
             "qwen3.8-flash-next-iq3-xxs-splash"
         ]
-        self.assertEqual(model["limit"], {"context": 4096, "input": 2048, "output": 1024})
+        self.assertEqual(
+            model["limit"], {"context": 4096, "input": 2048, "output": 1024}
+        )
 
     def test_option20_invalid_settings_preserve_config(self):
         before = self.config.read_bytes()

@@ -62,6 +62,7 @@ ENGINE_ASSEMBLY = frozenset(
     {
         "runtime/engine/Bootstrap.hpp",
         "runtime/engine/Bootstrap.mm",
+        "runtime/engine/GlmFlashNative.mm",
         "runtime/engine/RuntimeResources.hpp",
         "runtime/engine/RuntimeResources.mm",
         "runtime/engine/StreamedMemoryPlan.hpp",

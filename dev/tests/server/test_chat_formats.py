@@ -39,6 +39,49 @@ from server.tokenization import PromptTokenizer
 TEMPLATE = (
     Path(__file__).resolve().parents[1] / "fixtures/chat_templates/flint.jinja"
 ).read_text()
+
+
+class InklingChannelsTests(unittest.TestCase):
+    def test_split_frame_streams_text_thinking_and_a_json_call(self):
+        policy = SimpleNamespace(schemas={"lookup": {}})
+        projector = model_output.InklingChannels(policy, "test")
+        source = (
+            "<|message_model|><|content_thinking|>Plan<|end_message|>"
+            "<|message_model|><|content_text|>Checking.<|end_message|>"
+            "<|message_model|>lookup<|content_invoke_tool_json|>"
+            '{"name":"lookup","args":{"city":"Paris"}}<|end_message|>'
+        )
+        events = []
+        for character in source:
+            events.extend(projector.put(character))
+        events.extend(projector.finish())
+        self.assertEqual(
+            "".join(text for kind, text in events if kind == "reasoning_content"),
+            "Plan",
+        )
+        self.assertEqual(
+            "".join(text for kind, text in events if kind == "content"), "Checking."
+        )
+        self.assertEqual(len(projector.calls), 1)
+        self.assertEqual(projector.calls[0]["id"], "call_test_0")
+        self.assertEqual(
+            json.loads(projector.calls[0]["function"]["arguments"]), {"city": "Paris"}
+        )
+
+    def test_incomplete_unknown_and_mismatched_channels_do_not_emit_calls(self):
+        policy = SimpleNamespace(schemas={"lookup": {}})
+        cases = (
+            '<|message_model|>lookup<|content_invoke_tool_json|>{"name":"lookup"',
+            '<|message_model|>unknown<|content_invoke_tool_json|>{"name":"unknown","args":{}}<|end_message|>',
+            '<|message_model|>unknown<|content_invoke_tool_json|>{"name":"lookup","args":{}}<|end_message|>',
+        )
+        for source in cases:
+            with self.subTest(source=source):
+                projector = model_output.InklingChannels(policy, "test")
+                self.assertEqual(projector.put(source) + projector.finish(), [])
+                self.assertEqual(projector.calls, [])
+
+
 # Flint's control tokens, the special ones, and the tags its template writes
 # in text, added tokens that are not special.
 FLINT_SPECIAL = (

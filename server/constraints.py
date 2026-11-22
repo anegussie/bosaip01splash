@@ -7,7 +7,7 @@ from llguidance import LLMatcher, LLTokenizer
 from llguidance.hf import from_tokenizer as guidance_tokenizer
 from llguidance.numpy import allocate_token_bitmask, fill_next_token_bitmask
 
-from .chat_format import THINK_END, THINK_START, TOOL_CALL_OPEN
+from .chat_format import TOOL_CALL_OPEN
 from .errors import APIError, ConstraintError
 from .lru import LRUCache
 from .protocol import NO_PARENT
@@ -162,12 +162,19 @@ def validate_tokenizer(tokenizer, chat_format):
     except ValueError as error:
         raise TokenizerContractError(str(error)) from None
     vocabulary = tokenizer.get_vocab()
-    expected = {
-        THINK_END: chat_format.think_end_id,
-        TOOL_CALL_OPEN: chat_format.call_open_id,
-    }
+    expected = {chat_format.think_end: chat_format.think_end_id}
+    if chat_format.call_open_id is not None:
+        expected[TOOL_CALL_OPEN] = chat_format.call_open_id
     if chat_format.think_start_id is not None:
-        expected[THINK_START] = chat_format.think_start_id
+        expected[chat_format.think_start] = chat_format.think_start_id
+    if chat_format.channel_framing:
+        expected.update(
+            {
+                "<|message_model|>": 200001,
+                "<|content_text|>": 200004,
+                "<|content_invoke_tool_json|>": 200049,
+            }
+        )
     for token, token_id in expected.items():
         if vocabulary.get(token) != token_id or tokenizer.encode(
             token, add_special_tokens=False

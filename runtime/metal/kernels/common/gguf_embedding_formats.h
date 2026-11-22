@@ -290,6 +290,20 @@ struct GgufEmbedMXFP4 {
     return float(kFP4Values[q]) * as_type<float>(e < 2 ? 0x00200000u << e : (e - 1) << 23);
   }
 };
+// Inkling stores original GGUF type-40 blocks of 64 weights. Each of
+// four groups has a scale and eight bytes with the two half-groups in
+// the low and high nibbles. Its per-expert scale is applied after projection.
+struct GgufEmbedInklingNVFP4 {
+  enum : uint { Weights = 64, Bytes = 36 };
+  static float decode(device const uchar *block, uint dim) {
+    const uint index = dim % Weights, element = index % 16, group = index / 16;
+    const uint code = (block[4 + group * 8 + element % 8] >> (4 * (element / 8))) & 15;
+    const uchar scale = block[group] & 127;
+    const float coefficient = float(quant_e4m3_pair(scale == 127 ? uchar(0) : scale).x) * 128.0f;
+    return float(kFP4Values[code]) * coefficient;
+  }
+};
+
 // The loader's nvfp4 block: uchar scales[16] | float g | uchar codes[128], element l in nibble l % 2 of codes[l / 2]
 // and its 16-group's E4M3 scale scales[l / 16]; value = kFP4Values[code] (twice the E2M1 value) times the scale the
 // projections' coefficient rounds once (kernels/common/quant_formats.h), (e4m3 / 2^8) (128 g).

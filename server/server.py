@@ -28,7 +28,7 @@ from urllib.parse import unquote
 from transformers import AutoTokenizer
 
 from install import assembly, gguf
-from install.families import GLM_FLASH_FAMILY
+from install.families import GLM_FLASH_FAMILY, INKLING_FAMILY
 from install.models import ModelError
 
 from . import dialects, json_codec, serve_options, serve_record, telemetry, unix_socket
@@ -53,6 +53,7 @@ from .errors import (
     OPENAI_ERRORS,
     RETRY_STATUSES,
     APIError,
+    ContextLengthError,
     ErrorDialect,
     RequestValidationError,
     field_error,
@@ -71,6 +72,7 @@ from .latency import RequestLatency
 from .metrics import prometheus_metrics
 from .origins import ANY_ORIGIN
 from .output import (
+    InklingChannels,
     ReasoningSplitter,
     StreamingToolCallProjector,
     validate_response_content,
@@ -396,15 +398,21 @@ class FrontendHandler(BaseHTTPRequestHandler):
             return
         self._send(status, data, "application/json", retry_after)
 
-    def _log_api_error(self, code):
+    def _log_api_error(self, code, *, context_error=None):
         path = "".join(char if char.isprintable() else "?" for char in self.route)
         # A request the engine took is named as the backend's lines name it,
         # so that the app joins them.
         job = self._submitted
         engine_id = job.engine_request_id if job is not None else None
         request = "" if engine_id is None else f"request {engine_id} · "
+        context = (
+            f" · input {context_error.input_tokens:,} · limit {context_error.maximum_input_tokens:,}"
+            if context_error is not None
+            else ""
+        )
         print_status(
-            f"Error · {request}{code} · {self.command} {path[:256]}", error=True
+            f"Error · {request}{code} · {self.command} {path[:256]}{context}",
+            error=True,
         )
 
     def safe_error(self, error, *, log=True):
@@ -414,6 +422,7 @@ class FrontendHandler(BaseHTTPRequestHandler):
         if self.response_started:
             return
         status, code, payload = self.errors.answer(error)
+        context_error = error if isinstance(error, ContextLengthError) else None
         telemetry.emit(
             {
                 "event": "http_request_error",
@@ -426,10 +435,21 @@ class FrontendHandler(BaseHTTPRequestHandler):
                 "correlation": getattr(self, "_telemetry_correlation", {})
                 if self.command == "POST"
                 else telemetry.correlation(getattr(self, "headers", {})),
+                **(
+                    {
+                        "input_tokens": context_error.input_tokens,
+                        "maximum_input_tokens": context_error.maximum_input_tokens,
+                    }
+                    if context_error is not None
+                    else {}
+                ),
             }
         )
         if log and not error.logged:
-            self._log_api_error(code)
+            if context_error is None:
+                self._log_api_error(code)
+            else:
+                self._log_api_error(code, context_error=context_error)
         try:
             self.send_json(status, payload, error.retry_after)
         except (BrokenPipeError, ConnectionResetError, TimeoutError):
@@ -871,7 +891,14 @@ class FrontendHandler(BaseHTTPRequestHandler):
         start, each piece of output, the idle waits and prompt progress:
         streams send them, and complete Messages and Responses gather the
         output into blocks."""
-        splitter = ReasoningSplitter(job.thinking, job.may_call_tools, job.chat_format)
+        channel_framing = (
+            job.chat_format is not None and job.chat_format.channel_framing
+        )
+        splitter = (
+            InklingChannels(job.tool_policy, job.public_id)
+            if channel_framing
+            else ReasoningSplitter(job.thinking, job.may_call_tools, job.chat_format)
+        )
         # A chat answer is parsed as it arrives whether it streams or not:
         # its calls where tools may be called, and in any answer, a </think>
         # the model writes after its reasoning ended is dropped. A text
@@ -882,8 +909,10 @@ class FrontendHandler(BaseHTTPRequestHandler):
                 job.public_id,
                 job.response_validator is not None,
                 job.chat_format.call_syntax,
+                job.chat_format.think_end,
             )
-            if job.tool_policy is not None or job.reasoning is not None
+            if not channel_framing
+            and (job.tool_policy is not None or job.reasoning is not None)
             else None
         )
         reasoning, content, result = [], [], None
@@ -898,7 +927,9 @@ class FrontendHandler(BaseHTTPRequestHandler):
                     on_text(kind, value)
 
         def append(field, text):
-            if field == "content" and projector is not None:
+            if field == "tool":
+                publish([(field, text)])
+            elif field == "content" and projector is not None:
                 publish(projector.put(text))
             else:
                 (reasoning if field == "reasoning_content" else content).append(text)
@@ -917,6 +948,17 @@ class FrontendHandler(BaseHTTPRequestHandler):
                 result = value
         for field, text in splitter.finish():
             append(field, text)
+        if channel_framing:
+            return Collected(
+                "".join(reasoning),
+                "".join(content),
+                splitter.calls,
+                result,
+                splitter.reasoning,
+                splitter.in_call
+                and (result.reason == "length" or result.stop_sequence is not None),
+                splitter.call_id,
+            )
         cut_in_call = (
             projector is not None
             and projector.in_call
@@ -1005,6 +1047,7 @@ class FrontendHandler(BaseHTTPRequestHandler):
 
 
 _MODEL_PATH = re.compile(r"/v1/models/(.*)", re.DOTALL)
+INKLING_MAX_CONTEXT = 131_072
 _PAGE = Route(FrontendHandler._get_page, public=True)
 
 # Every endpoint, by its method and its path or path pattern.
@@ -1279,12 +1322,28 @@ def parse_args(argv=None):
     )
     parser.add_argument("--port", type=int, default=serve_options.DEFAULT_PORT)
     parser.add_argument("--binary", default=str(ROOT / "build" / "splash"))
-    parser.add_argument(
-        "--glm-flash", action="store_true", help="serve GLM-5.3-Flash from local GGUF shards"
+    standalone = parser.add_mutually_exclusive_group()
+    standalone.add_argument(
+        "--glm-flash",
+        action="store_true",
+        help="serve GLM-5.3-Flash from local GGUF shards",
+    )
+    standalone.add_argument(
+        "--inkling",
+        action="store_true",
+        help="serve text from a local Inkling 2 Mini GGUF",
     )
     parser.add_argument(
-        "--glm-flash-max-output", type=int, metavar="TOKENS",
+        "--glm-flash-max-output",
+        type=int,
+        metavar="TOKENS",
         help="maximum generated tokens per GLM Flash request (default: 2048)",
+    )
+    parser.add_argument(
+        "--inkling-max-output",
+        type=int,
+        metavar="TOKENS",
+        help="maximum generated tokens per Inkling request (default: 1024)",
     )
     # The launcher's, not a serve option: where the app follows a start and
     # reads why one failed (serve_record).
@@ -1301,9 +1360,25 @@ def parse_args(argv=None):
         if args.glm_flash_max_output is None:
             args.glm_flash_max_output = min(2048, context - 1)
         if not 1 <= args.glm_flash_max_output < context:
-            parser.error("--glm-flash-max-output must be positive and smaller than context")
+            parser.error(
+                "--glm-flash-max-output must be positive and smaller than context"
+            )
     elif args.glm_flash_max_output is not None:
         parser.error("--glm-flash-max-output requires --glm-flash")
+    if args.inkling:
+        context = args.max_context or INKLING_MAX_CONTEXT
+        if context > INKLING_MAX_CONTEXT:
+            parser.error(
+                f"the native Inkling profile supports at most {INKLING_MAX_CONTEXT} context tokens"
+            )
+        if args.inkling_max_output is None:
+            args.inkling_max_output = min(1024, context - 1)
+        if not 1 <= args.inkling_max_output < context:
+            parser.error(
+                "--inkling-max-output must be positive and smaller than context"
+            )
+    elif args.inkling_max_output is not None:
+        parser.error("--inkling-max-output requires --inkling")
     return args
 
 
@@ -1317,6 +1392,9 @@ def _native_command(args, model_root, relaunch_context=None):
     if getattr(args, "glm_flash", False):
         context = relaunch_context or args.max_context or 8192
         return [args.binary, "serve-glm-flash", str(model_root), str(context)]
+    if getattr(args, "inkling", False):
+        context = relaunch_context or args.max_context or INKLING_MAX_CONTEXT
+        return [args.binary, "serve-inkling", str(model_root), str(context)]
     command = [
         args.binary,
         "serve-native",
@@ -1387,9 +1465,13 @@ def _glm_tokenizer(model_root, directory):
     shards = sorted(model_root.glob("*.gguf"))
     if not shards:
         raise ModelError(f"no GLM Flash GGUF shards in {model_root}")
-    metadata = gguf.Metadata(shards[0])
-    if metadata.require("general.architecture", str) != "glm5-next":
-        raise ModelError("expected GLM Flash GGUF architecture glm5-next")
+    return _standalone_tokenizer(shards[0], directory, "glm5-next")
+
+
+def _standalone_tokenizer(source, directory, architecture):
+    metadata = gguf.Metadata(source)
+    if metadata.require("general.architecture", str) != architecture:
+        raise ModelError(f"expected GGUF architecture {architecture}")
     for relative, content in gguf.tokenizer_files(metadata).items():
         destination = directory / relative
         destination.parent.mkdir(exist_ok=True, parents=True)
@@ -1399,10 +1481,11 @@ def _glm_tokenizer(model_root, directory):
 
 def main():
     args = parse_args()
+    inkling = getattr(args, "inkling", False)
     server = None
     runtime = None
     backend = None
-    glm_tokenizer_dir = None
+    standalone_tokenizer_dir = None
     # Why the backend stopped restarting the engine, once it has.
     stopped = None
 
@@ -1453,11 +1536,18 @@ def main():
         # Nothing reads `held`: it keeps the assembly held until the server
         # exits, so that no installation collects the assembly its tokenizer
         # and engines, a relaunched one too, serve.
-        if args.glm_flash:
+        if args.glm_flash or inkling:
             model_root = Path(args.model_root).resolve()
-            family = GLM_FLASH_FAMILY
-            glm_tokenizer_dir = tempfile.TemporaryDirectory(prefix="splash-glm-tokenizer-")
-            tokenizer_path = _glm_tokenizer(model_root, Path(glm_tokenizer_dir.name))
+            standalone_tokenizer_dir = tempfile.TemporaryDirectory(
+                prefix="splash-gguf-tokenizer-"
+            )
+            scratch = Path(standalone_tokenizer_dir.name)
+            if inkling:
+                family = INKLING_FAMILY
+                tokenizer_path = _standalone_tokenizer(model_root, scratch, "inkling2")
+            else:
+                family = GLM_FLASH_FAMILY
+                tokenizer_path = _glm_tokenizer(model_root, scratch)
         else:
             model_root, held = assembly.hold(Path(args.model_root))
             family = assembly.family(model_root)
@@ -1575,7 +1665,9 @@ def main():
             reasoning_effort=args.reasoning_effort,
             default_reasoning_effort=args.default_reasoning_effort,
             default_thinking_token_budget=args.thinking_token_budget,
-            max_output_tokens=args.glm_flash_max_output,
+            max_output_tokens=args.inkling_max_output
+            if inkling
+            else args.glm_flash_max_output,
         )
         server.app = app
         telemetry.run_manifest(
@@ -1662,8 +1754,8 @@ def main():
             signal.signal(signal.SIGINT, signal.SIG_IGN)
             if server is not None:
                 server.server_close()
-            if glm_tokenizer_dir is not None:
-                glm_tokenizer_dir.cleanup()
+            if standalone_tokenizer_dir is not None:
+                standalone_tokenizer_dir.cleanup()
     if stopped is not None:
         serve_record.failed(
             args.serve_record, serve_record.failure(serve_record.STOPPED, stopped)

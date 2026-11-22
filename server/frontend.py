@@ -15,7 +15,7 @@ from . import images as image_input
 from . import protocol as wire
 from . import request_fields
 from .backend import Job, ReasoningRequest
-from .chat_format import REASONING_EFFORTS, THINK_END, THINK_START, TOOL_CALL_OPEN
+from .chat_format import QWEN, REASONING_EFFORTS, TOOL_CALL_OPEN
 from .chat_messages import normalize_messages, template_messages
 from .chat_templates import (
     LATER_SYSTEM_UNSUPPORTED,
@@ -98,20 +98,22 @@ def accepts_sampling(name, value):
 COMPLETION_DEFAULT_MAX_TOKENS = 16
 
 
-def _generation_prompt(probed, rendered, tokens):
+def _generation_prompt(probed, rendered, tokens, chat_format=QWEN):
     """Whether the generation prompt opens a think block, and how many of the
     prompt's last tokens it is (zero where they differ from its tokens).
     `probed` is its text and tokens, as the startup probe found them for the
     request's template options, and the rendered prompt must end with that
     text."""
     text, ids = probed
+    if not text and chat_format.implicit_generation_prompt:
+        return False, 0
     if not text or not rendered.endswith(text):
         raise APIError(
             400, "chat template must end with an assistant generation prefix"
         )
     count = len(ids)
     return (
-        text.rfind(THINK_START) > text.rfind(THINK_END),
+        text.rfind(chat_format.think_start) > text.rfind(chat_format.think_end),
         count if count < len(tokens) and tuple(tokens[-count:]) == ids else 0,
     )
 
@@ -670,6 +672,14 @@ class Frontend:
         response_schema, response_validator = normalize_response_format(
             body.get("response_format")
         )
+        if self.chat_format.channel_framing and (
+            response_schema is not None
+            or (tool_policy is not None and tool_policy.constrained)
+        ):
+            raise APIError(
+                400,
+                "native Inkling supports automatic tool calls and unstructured output",
+            )
         # PDFs render only once the whole request is checked: a render holds
         # the one PDF worker for up to 30 s.
         messages = template_messages(
@@ -780,7 +790,10 @@ class Frontend:
         thinking, generation_prompt_tokens = False, 0
         if add_generation_prompt:
             thinking, generation_prompt_tokens = _generation_prompt(
-                chat_template.generation_prompt(options), rendered, tokens
+                chat_template.generation_prompt(options),
+                rendered,
+                tokens,
+                self.chat_format,
             )
         return RenderedPrompt(
             rendered, tokens, images, positions, thinking, generation_prompt_tokens

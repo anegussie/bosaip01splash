@@ -8,6 +8,7 @@
 // implementation's Metal matrix multiply stages F32 weights as half above eight rows; no phase here rounds them.
 #pragma clang fp reassociate(off)
 #include "metal/abi/Gguf.h"
+#include "metal/abi/Inkling.h"
 #include "metal/kernels/common/gguf_embedding_formats.h"
 #include "metal/kernels/common/sgmatrix.h"
 
@@ -120,11 +121,11 @@ template <typename F> struct Eight<Native<F>> {
 // time: at the router's K = 2048 the mean error stays 5.5e-9 of sum |x w| (7.4e-9 with one chain per part). Rows of
 // K (a multiple of 8) start 16-byte aligned in page-aligned buffers.
 template <typename W, typename T>
-inline void project(device const bfloat *input, FloatProjection<T> projection, constant GgufFloatParams &p, uint y,
+inline void project(device const bfloat *input, FloatProjection<T> projection, uint K, uint rows, uint y,
                     uint sg, uint lane, threadgroup float2 *parts) {
   const sgmatrix::Lane l = sgmatrix::lane_map(lane);
-  const uint K = p.input_size, runs = K / 8, column = projection.tile * 8 + l.fn, row0 = y * kRows;
-  const uint live = min(kRows, p.rows - row0);
+  const uint runs = K / 8, column = projection.tile * 8 + l.fn, row0 = y * kRows;
+  const uint live = min(kRows, rows - row0);
   const uint steps = (K + kStep - 1) / kStep, first = sg * steps / kSplits, last = (sg + 1) * steps / kSplits;
   device const uchar *w0 = float_row<W>(projection.weights, column, K),
                      *w1 = float_row<W>(projection.weights, column + 1, K);
@@ -183,8 +184,8 @@ static_assert(gguf_float::kSplits >= gguf_float::kFragments, "simdgroup f reduce
                    uint2 tg [[threadgroup_position_in_grid]], uint sg [[simdgroup_index_in_threadgroup]],     \
                    uint lane [[thread_index_in_simdgroup]]) {                                                 \
     threadgroup float2 parts[gguf_float::kSplits * gguf_float::kFragments * 32];                              \
-    gguf_float::project<W, T>(input, float_projection(p, tg.x, 8, weights0, output0, weights1, output1), p,   \
-                              tg.y, sg, lane, parts);                                                         \
+    gguf_float::project<W, T>(input, float_projection(p, tg.x, 8, weights0, output0, weights1, output1),     \
+                              p.input_size, p.rows, tg.y, sg, lane, parts);                                                         \
   }
 GGUF_FLOAT_KERNEL(gguf_float_f32_bf16, float, bfloat)
 GGUF_FLOAT_KERNEL(gguf_float_f32_f32, float, float)
@@ -195,6 +196,103 @@ GGUF_FLOAT_KERNEL(gguf_float_bf16_f32, bfloat, float)
 GGUF_QUANTIZED_EMBEDDING_FORMATS(GGUF_FLOAT_NATIVE)
 #undef GGUF_FLOAT_NATIVE
 #undef GGUF_FLOAT_KERNEL
+
+// A SIMD group produces one output column for a single BF16 input row. Each
+// lane reads whole runs of eight values, as in the matrix projection.
+template <typename W>
+inline float gguf_float_dot(device const bfloat *input, device const uchar *row, uint kSize, uint lane) {
+  float4 low(0.0f), high(0.0f);
+  for (uint k = lane * 8; k < kSize; k += 32 * 8) {
+    const auto w = gguf_float::Eight<W>::load(row, k, true);
+    const auto x = gguf_float::Eight<bfloat>::load(reinterpret_cast<device const uchar *>(input), k, true);
+    low = fma(float4(w[0], w[1], w[2], w[3]), float4(x[0], x[1], x[2], x[3]), low);
+    high = fma(float4(w[4], w[5], w[6], w[7]), float4(x[4], x[5], x[6], x[7]), high);
+  }
+  return simd_sum(dot(low + high, float4(1.0f)));
+}
+
+#define GGUF_VECTOR_KERNEL(Name, W, T)                                                                         \
+  kernel void Name(device const bfloat *input [[buffer(0)]], device const uchar *weights0 [[buffer(1)]],      \
+                   device T *output0 [[buffer(2)]], device const uchar *weights1 [[buffer(3)]],               \
+                   device T *output1 [[buffer(4)]], constant GgufFloatParams &p [[buffer(5)]],                \
+                   uint tg [[threadgroup_position_in_grid]], uint sg [[simdgroup_index_in_threadgroup]],     \
+                   uint lane [[thread_index_in_simdgroup]]) {                                                 \
+    const auto projection = float_projection(p, tg, 4, weights0, output0, weights1, output1);                  \
+    const uint column = projection.tile * 4 + sg;                                                             \
+    if (column >= projection.output_size) return;                                                             \
+    const float value = gguf_float_dot<W>(input, float_row<W>(projection.weights, column, p.input_size),       \
+                                          p.input_size, lane);                                                 \
+    if (!lane) projection.output[projection.out_offset + column] = T(value);                                  \
+  }
+GGUF_VECTOR_KERNEL(gguf_float_vector_f32_bf16, float, bfloat)
+GGUF_VECTOR_KERNEL(gguf_float_vector_f32_f32, float, float)
+GGUF_VECTOR_KERNEL(gguf_float_vector_bf16_bf16, bfloat, bfloat)
+GGUF_VECTOR_KERNEL(gguf_float_vector_bf16_f32, bfloat, float)
+#define GGUF_VECTOR_NATIVE(f, F) GGUF_VECTOR_KERNEL(gguf_float_vector_##f##_f32, Native<F>, float)
+GGUF_QUANTIZED_EMBEDDING_FORMATS(GGUF_VECTOR_NATIVE)
+#undef GGUF_VECTOR_NATIVE
+#undef GGUF_VECTOR_KERNEL
+
+// One expert per vector grid row, or an exact list of live (expert, row
+// tile) pairs for prefill. Projection and rounding match the individual
+// kernels above; only the dispatch geometry and bindings differ.
+template <typename W>
+inline void inkling_grouped_matrix(device const bfloat *input, device float *output, InklingExpertEntry entry,
+                                   device const uchar *weights,
+                                   bool gate, uint columnTile, uint rowTile, uint sg, uint lane,
+                                   threadgroup float2 *parts) {
+  const uint inputWidth = gate ? SPLASH_INKLING_HIDDEN : SPLASH_INKLING_EXPERT_WIDTH;
+  const uint outputWidth = gate ? 2 * SPLASH_INKLING_EXPERT_WIDTH : SPLASH_INKLING_HIDDEN;
+  const FloatProjection<float> projection{weights, output + ulong(entry.firstRow) * outputWidth,
+                                          outputWidth, outputWidth, 0, columnTile};
+  gguf_float::project<W, float>(input + ulong(entry.firstRow) * inputWidth, projection, inputWidth,
+                               entry.rows, rowTile, sg, lane, parts);
+}
+
+template <typename W>
+inline void inkling_grouped_vector(device const bfloat *input, device float *output, InklingExpertEntry entry,
+                                   device const uchar *weights,
+                                   bool gate, uint column, uint lane) {
+  const uint inputWidth = gate ? SPLASH_INKLING_HIDDEN : SPLASH_INKLING_EXPERT_WIDTH;
+  const uint outputWidth = gate ? 2 * SPLASH_INKLING_EXPERT_WIDTH : SPLASH_INKLING_HIDDEN;
+  const float value = gguf_float_dot<W>(input + ulong(entry.firstRow) * inputWidth,
+                                        float_row<W>(weights, column, inputWidth), inputWidth, lane);
+  if (!lane) output[ulong(entry.firstRow) * outputWidth + column] = value;
+}
+
+#define INKLING_GROUPED_KERNELS(f, F)                                                                        \
+  kernel void inkling_grouped_matrix_##f(                                                                    \
+      device const bfloat *input [[buffer(0)]], device float *output [[buffer(1)]],                           \
+      device const InklingExpertEntry *experts [[buffer(2)]], device const InklingExpertTile *tiles [[buffer(3)]], \
+      constant uint &gate [[buffer(4)]], constant ulong *addresses [[buffer(5)]],                           \
+      uint2 group [[threadgroup_position_in_grid]],                                                        \
+      uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]]) {                  \
+    threadgroup float2 parts[gguf_float::kSplits * gguf_float::kFragments * 32];                               \
+    const auto tile = tiles[group.y];                                                                        \
+    const auto expert = experts[tile.expert];                                                              \
+    device const uchar *weights = reinterpret_cast<device const uchar *>(addresses[2 * tile.expert + !gate]); \
+    if (expert.rows == 1) {                                                                                \
+      inkling_grouped_vector<Native<F>>(input, output, expert, weights, gate != 0, group.x * 8 + sg, lane);  \
+    } else {                                                                                               \
+      inkling_grouped_matrix<Native<F>>(input, output, expert, weights, gate != 0, group.x, tile.tile,      \
+                                        sg, lane, parts);                                                   \
+    }                                                                                                      \
+  }                                                                                                         \
+  kernel void inkling_grouped_vector_##f(                                                                    \
+      device const bfloat *input [[buffer(0)]], device float *output [[buffer(1)]],                           \
+      device const InklingExpertEntry *experts [[buffer(2)]], constant uint &gate [[buffer(3)]],              \
+      constant ulong *addresses [[buffer(4)]],                                                              \
+      uint2 group [[threadgroup_position_in_grid]], uint sg [[simdgroup_index_in_threadgroup]],              \
+      uint lane [[thread_index_in_simdgroup]]) {                                                             \
+    device const uchar *weights = reinterpret_cast<device const uchar *>(addresses[2 * group.y + !gate]);   \
+    inkling_grouped_vector<Native<F>>(input, output, experts[group.y], weights, gate != 0, group.x * 4 + sg, lane); \
+  }
+INKLING_GROUPED_KERNELS(iq2xxs, GgufEmbedIQ2XXS)
+INKLING_GROUPED_KERNELS(iq2xs, GgufEmbedIQ2XS)
+INKLING_GROUPED_KERNELS(iq2s, GgufEmbedIQ2S)
+INKLING_GROUPED_KERNELS(iq3xxs, GgufEmbedIQ3XXS)
+INKLING_GROUPED_KERNELS(iq4nl, GgufEmbedIQ4NL)
+#undef INKLING_GROUPED_KERNELS
 
 // The same projections on the neural accelerator (ops::FloatTile::NeuralAccelerator), whose matmul takes bf16 operands:
 // each F32 weight is split into three bf16 parts, its leading 8 significant bits, the next 8 and the last 8, so

@@ -194,6 +194,24 @@ class GgufMetadataTests(unittest.TestCase):
             metadata.values["tokenizer.chat_template"],
         )
 
+    def test_inkling_tokenizer_splits_digits_and_preserves_unicode(self):
+        values = fixture()
+        values.update(
+            {
+                "general.architecture": "inkling2",
+                "inkling2.context_length": 1_048_576,
+                "tokenizer.ggml.pre": "inkling2",
+            }
+        )
+        files = gguf.tokenizer_files(self.metadata(values))
+        backend = Tokenizer.from_str(files["tokenizer/tokenizer.json"].decode())
+        self.assertEqual(
+            [part for part, _ in backend.pre_tokenizer.pre_tokenize_str("1234567")],
+            ["123", "456", "7"],
+        )
+        self.assertNotEqual(backend.encode("e\u0301").ids, backend.encode("é").ids)
+        self.assertEqual(backend.encode("ab").ids, [256])
+
     def test_invalid_tokenizer_metadata_is_rejected(self):
         types = fixture()["tokenizer.ggml.token_type"]
         for key, value in (
