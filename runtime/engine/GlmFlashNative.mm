@@ -243,7 +243,8 @@ private:
                   .field("expert_stage_seconds", stats.expertStageSeconds)
                   .field("expert_wait_seconds", stats.expertWaitSeconds)
                   .field("expert_gpu_seconds", stats.expertGpuSeconds)
-                  .field("expert_commands", stats.expertCommands);
+                  .field("expert_commands", stats.expertCommands)
+                  .field("expert_recycled_buffers", stats.expertRecycledBuffers);
             });
           }
         });

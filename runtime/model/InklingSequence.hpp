@@ -21,6 +21,7 @@ struct InklingExecutionStats {
   double expertWaitSeconds = 0;
   double expertGpuSeconds = 0;
   uint64_t expertCommands = 0;
+  uint64_t expertRecycledBuffers = 0;
 };
 
 struct InklingCacheBudget {
@@ -29,7 +30,7 @@ struct InklingCacheBudget {
 };
 
 // Target-only reference path for the native Inkling graphs. It stages selected
-// expert slices from the GGUF and keeps a separate cache for each layer visit.
+// expert slices from the GGUF and shares cached weights across loop passes.
 class InklingSequence final {
 public:
   static constexpr uint32_t chunkRows = 2048;

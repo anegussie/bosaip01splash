@@ -588,6 +588,29 @@ kernel void inkling_grouped_nvfp4(device const bfloat *input [[buffer(0)]],
   if (!lane) output[row * hidden + out] = expert.downScale * sum;
 }
 
+template <bool FullTile>
+inline float4 inkling_activations4(device const bfloat *input, uint live, uint i) {
+  return float4(float(input[i]), FullTile || live > 1 ? float(input[expertWidth + i]) : 0.0f,
+                FullTile || live > 2 ? float(input[2 * expertWidth + i]) : 0.0f,
+                FullTile || live > 3 ? float(input[3 * expertWidth + i]) : 0.0f);
+}
+
+template <bool FullTile>
+inline float4 inkling_nvfp4_rows_dot(device const bfloat *activation, device const uchar *weights,
+                                      uint live, uint lane) {
+  using Format = GgufEmbedInklingNVFP4;
+  static_assert(Format::Weights == 64 && expertWidth % Format::Weights == 0);
+  float4 sum(0.0f);
+  for (uint first = lane; first < expertWidth; first += Format::Weights) {
+    // Process both halves of the same packed block without recomputing its
+    // address. Keep the reduction order identical to the single-row kernel.
+    sum += inkling_activations4<FullTile>(activation, live, first) * Format::decode(weights, lane);
+    sum += inkling_activations4<FullTile>(activation, live, first + 32) * Format::decode(weights, lane + 32);
+    weights += Format::Bytes;
+  }
+  return float4(simd_sum(sum.x), simd_sum(sum.y), simd_sum(sum.z), simd_sum(sum.w));
+}
+
 // Four routed rows reuse each decoded NVFP4 weight. Each row keeps the
 // same K traversal and SIMD reduction as the single-row projection.
 kernel void inkling_grouped_nvfp4_rows(device const bfloat *input [[buffer(0)]],
@@ -609,16 +632,8 @@ kernel void inkling_grouped_nvfp4_rows(device const bfloat *input [[buffer(0)]],
   device const bfloat *activation = input + first * expertWidth;
   device const uchar *packed = reinterpret_cast<device const uchar *>(addresses[2 * tile.expert + 1]);
   device const uchar *weights = packed + ulong(out) * (expertWidth / Format::Weights) * Format::Bytes;
-  float4 sum(0.0f);
-  for (uint i = lane; i < expertWidth; i += 32) {
-    const auto block = weights + i / Format::Weights * Format::Bytes;
-    const float w = Format::decode(block, i);
-    const float4 x(float(activation[i]), live > 1 ? float(activation[expertWidth + i]) : 0.0f,
-                   live > 2 ? float(activation[2 * expertWidth + i]) : 0.0f,
-                   live > 3 ? float(activation[3 * expertWidth + i]) : 0.0f);
-    sum += x * w;
-  }
-  const float4 result(simd_sum(sum.x), simd_sum(sum.y), simd_sum(sum.z), simd_sum(sum.w));
+  const float4 result = live == 4 ? inkling_nvfp4_rows_dot<true>(activation, weights, live, lane)
+                                  : inkling_nvfp4_rows_dot<false>(activation, weights, live, lane);
   if (!lane)
     for (uint row = 0; row < live; ++row)
       output[(first + row) * hidden + out] = expert.downScale * result[row];

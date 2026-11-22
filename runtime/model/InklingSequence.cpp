@@ -41,6 +41,7 @@ constexpr bool isCoreLayer(uint32_t layer) noexcept {
 constexpr uint32_t globalAttentionRows = 256;
 constexpr uint32_t expertBatch = SPLASH_INKLING_EXPERT_BATCH;
 constexpr uint32_t expertTileRows = SPLASH_INKLING_EXPERT_TILE_ROWS;
+constexpr uint32_t decodeRankDecayTokens = 16;
 constexpr uint64_t kvRowBytes = 2 * kvWidth * sizeof(uint16_t);
 constexpr uint64_t stagingReserveBytes = 128ull << 20;
 
@@ -159,11 +160,12 @@ public:
     return backend.view(buffer, uint64_t{row} * width * bytes, uint64_t{count} * width * bytes);
   }
 
-  MetalBuffer read(const GgufTensor &tensor, uint64_t index = 0, uint64_t slices = 1) {
+  MetalBuffer read(const GgufTensor &tensor, uint64_t index = 0, uint64_t slices = 1, MetalBuffer result = {}) {
     if (!slices || index >= slices || tensor.bytes % slices)
       throw GgufError("invalid Inkling tensor slice: " + tensor.name);
     const uint64_t bytes = tensor.bytes / slices;
-    auto result = allocate(bytes, 1);
+    if (!result) result = allocate(bytes, 1);
+    if (result.sizeBytes() != bytes) throw std::logic_error("Inkling weight buffer size mismatch");
     source.file().source(tensor.file).readData(tensor.offset + index * bytes, {data<uint8_t>(result), size_t(bytes)});
     return result;
   }
@@ -205,15 +207,18 @@ public:
     return state.slots;
   }
 
+  CachedExpert evictExpert() noexcept {
+    auto &cache = expertCache.empty() ? protectedExperts : expertCache;
+    auto victim = std::move(cache.back());
+    expertBytes -= victim.bytes;
+    if (victim.protectedEntry) protectedExpertBytes -= victim.bytes;
+    expertIndex.erase(victim.key);
+    cache.pop_back();
+    return victim;
+  }
+
   void trimExperts(uint64_t target) noexcept {
-    while (expertBytes > target) {
-      auto &cache = expertCache.empty() ? protectedExperts : expertCache;
-      const auto &victim = cache.back();
-      expertBytes -= victim.bytes;
-      if (victim.protectedEntry) protectedExpertBytes -= victim.bytes;
-      expertIndex.erase(victim.key);
-      cache.pop_back();
-    }
+    while (expertBytes > target) evictExpert();
   }
 
   uint64_t protectedBudget() const noexcept { return expertBudget * 3 / 4; }
@@ -231,15 +236,23 @@ public:
     trimExperts(expertBudget);
   }
 
-  ExpertMask preferCoreExperts(uint32_t physical, const ExpertRoutes &grouped, const GgufTensor &gate,
-                               const GgufTensor &down) {
+  ExpertMask preferCoreExperts(const Layout::Visit &visit, uint32_t rows, const ExpertRoutes &grouped,
+                               const GgufTensor &gate, const GgufTensor &down) {
+    const uint32_t physical = visit.physicalLayer;
     ExpertMask preferred;
     if (!isCoreLayer(physical)) return preferred;
 
     auto &ranks = expertRanks[physical - Layout::coreBegin];
     ExpertRanks order;
     std::iota(order.begin(), order.end(), 0u);
-    for (uint32_t expert : order) ranks[expert] = ranks[expert] / 2 + uint32_t(grouped[expert].size());
+    // One decode token visits the same layer three times, each routing only a
+    // few experts. Decay once per interval of tokens to retain useful history
+    // through the loop and give the decode routes time to update the ranking.
+    const bool decay = rows != 1 || (visit.pass == 0 && position % decodeRankDecayTokens == 0);
+    for (uint32_t expert : order) {
+      if (decay) ranks[expert] /= 2;
+      ranks[expert] += uint32_t(grouped[expert].size());
+    }
 
     // Workloads that touch every expert in layer order can flush the entire
     // cache between passes. Give each repeated layer a share, ranked by the
@@ -427,6 +440,7 @@ public:
     const uint32_t routeCount = rows * routes;
     auto &cacheStats = expertStats[isCoreLayer(physical) ? visit.pass + 1 : 0];
     const auto *selected = data<uint32_t>(scratch.selected);
+    const auto singleRowRoutes = rows == 1 ? std::span<const uint32_t>(selected, routes) : std::span<const uint32_t>();
     ExpertRoutes grouped;
     for (uint32_t route = 0; route < routeCount; ++route) grouped.at(selected[route]).push_back(route);
     auto *order = data<uint32_t>(scratch.order);
@@ -441,7 +455,7 @@ public:
 
     const auto &gate = source.file().require(prefix + "ffn_gate_up_exps.weight");
     const auto &down = source.file().require(prefix + "ffn_down_exps.weight");
-    const auto preferred = preferCoreExperts(physical, grouped, gate, down);
+    const auto preferred = preferCoreExperts(visit, rows, grouped, gate, down);
     const bool nvfp4 = down.type == ggml::kNVFP4;
     const float *gateScales = nvfp4 ? data(weight(prefix + "ffn_gate_up_exps.scale")) : nullptr;
     const float *downScales = nvfp4 ? data(weight(prefix + "ffn_down_exps.scale")) : nullptr;
@@ -492,7 +506,7 @@ public:
       if (stop()) return false;
       const auto began = Clock::now();
       const auto weights = cachedExpert(physical, expert, gate, down, nvfp4, gateScales, downScales, cacheStats,
-                                        preferred.test(expert));
+                                        preferred.test(expert), singleRowRoutes);
       timing.expertStageSeconds += secondsSince(began);
       data<InklingExpertEntry>(scratch.expertEntries[slot])[batchSize] = {
           start, count, weights.gateUpScale, weights.downScale};
@@ -511,7 +525,8 @@ public:
 
   ops::InklingExpertWeights cachedExpert(uint32_t physical, uint32_t expert, const GgufTensor &gate,
                                          const GgufTensor &down, bool nvfp4, const float *gateScales,
-                                         const float *downScales, InklingExpertCacheStats &stats, bool preferred) {
+                                         const float *downScales, InklingExpertCacheStats &stats, bool preferred,
+                                         std::span<const uint32_t> singleRowRoutes) {
     const uint32_t key = physical * Layout::experts + expert;
     ++stats.lookups;
     if (const auto found = expertIndex.find(key); found != expertIndex.end()) {
@@ -528,12 +543,34 @@ public:
       }
       return entry->weights;
     }
-    const uint64_t payload = (gate.bytes + down.bytes) / Layout::experts;
-    if (payload <= expertBudget) trimExperts(expertBudget - payload);
+    const uint64_t gateBytes = gate.bytes / Layout::experts;
+    const uint64_t downBytes = down.bytes / Layout::experts;
+    const uint64_t payload = gateBytes + downBytes;
+    MetalBuffer reusedGate, reusedDown;
+    // Single-row routing fits in one batch. Earlier layers have finished and
+    // only the selected experts of this layer can be held by that batch.
+    static_assert(routes <= expertBatch);
+    if (payload <= expertBudget) {
+      while (expertBytes > expertBudget - payload) {
+        auto victim = evictExpert();
+        if (!singleRowRoutes.empty() &&
+            (victim.key / Layout::experts != physical ||
+             std::ranges::find(singleRowRoutes, victim.key % Layout::experts) == singleRowRoutes.end())) {
+          if (!reusedGate && victim.weights.gateUp.plane0.sizeBytes() == gateBytes) {
+            reusedGate = std::move(victim.weights.gateUp.plane0);
+            ++execution[1].expertRecycledBuffers;
+          }
+          if (!reusedDown && victim.weights.down.sizeBytes() == downBytes) {
+            reusedDown = std::move(victim.weights.down);
+            ++execution[1].expertRecycledBuffers;
+          }
+        }
+      }
+    }
     ops::InklingExpertWeights weights{
         ops::QuantizedSegment::rows(gguf_format_of(gate.type), 2 * expertWidth, hidden,
-                                    read(gate, expert, Layout::experts)),
-        read(down, expert, Layout::experts), nvfp4, gateScales ? gateScales[expert] : 1.0f,
+                                    read(gate, expert, Layout::experts, std::move(reusedGate))),
+        read(down, expert, Layout::experts, std::move(reusedDown)), nvfp4, gateScales ? gateScales[expert] : 1.0f,
         downScales ? downScales[expert] : 1.0f,
     };
     const uint64_t bytes = weights.gateUp.plane0.allocatedBytes() + weights.down.allocatedBytes();
