@@ -30,6 +30,15 @@ INKLING25_ALIAS="inkling-2-mini-ud-iq3-xxs"
 INKLING25_CONTEXT="${INKLING25_CONTEXT:-131072}"
 INKLING25_OUTPUT="${INKLING25_OUTPUT:-1024}"
 INKLING25_REASONING="${INKLING25_REASONING:-low}"
+INKLING26_DIR="${INKLING26_DIR:-$HOME/splash/splash/install/models/inkling-option26}"
+INKLING26_SERVER="${INKLING26_SERVER:-$INKLING25_DIR/runtime/llama-server}"
+INKLING26_FILENAME="Inkling-2-Mini-UD-IQ1_S.gguf"
+INKLING26_MODEL_BYTES=7764291776
+INKLING26_MODEL="${INKLING26_MODEL:-$INKLING26_DIR/$INKLING26_FILENAME}"
+INKLING26_ALIAS="inkling-2-mini-ud-iq1-s"
+INKLING26_CONTEXT="${INKLING26_CONTEXT:-65536}"
+INKLING26_OUTPUT="${INKLING26_OUTPUT:-1024}"
+INKLING26_REASONING="${INKLING26_REASONING:-low}"
 SPLASH_BIN="${SPLASH_BIN:-/Users/mymac/splash/splash/splash}"
 LITHOS_ROOT="${LITHOS_ROOT:-/Users/mymac/lithos/lithos-metal}"
 LITHOS_PYTHON="${LITHOS_PYTHON:-$LITHOS_ROOT/.venv/bin/python}"
@@ -344,6 +353,9 @@ print_models() {
   echo "25) Inkling 2 Mini UD-IQ3_XXS - Splash Metal (text only)"
   echo "   ${INKLING25_CONTEXT}-token context | ${INKLING25_OUTPUT} output tokens | one request | reasoning ${INKLING25_REASONING}"
   echo "   Source: ${INKLING25_REPO} / ${INKLING25_FILENAME} | 11.66 GB"
+  echo "26) Inkling 2 Mini UD-IQ1_S - Unsloth llama.cpp Metal (text only)"
+  echo "   ${INKLING26_CONTEXT}-token context | ${INKLING26_OUTPUT} output tokens | one request | reasoning ${INKLING26_REASONING}"
+  echo "   Source: ${INKLING25_REPO} / ${INKLING26_FILENAME} | 7.76 GB"
 
 }
 
@@ -654,6 +666,17 @@ prepare_splash_run() {
 
 sync_opencode_model() {
   local model_alias="$1"
+  local inkling_alias="$INKLING25_ALIAS" inkling_name="Inkling 2 Mini UD-IQ3_XXS"
+  local inkling_context="$INKLING25_CONTEXT" inkling_output="$INKLING25_OUTPUT"
+  local inkling_reasoning="$INKLING25_REASONING" inkling_mmproj="$INKLING25_MMPROJ"
+  if [[ "$model_alias" == "$INKLING26_ALIAS" ]]; then
+    inkling_alias="$INKLING26_ALIAS"
+    inkling_name="Inkling 2 Mini UD-IQ1_S"
+    inkling_context="$INKLING26_CONTEXT"
+    inkling_output="$INKLING26_OUTPUT"
+    inkling_reasoning="$INKLING26_REASONING"
+    inkling_mmproj=""
+  fi
   local config_path="${OPENCODE_CONFIG_PATH:-$HOME/.config/opencode/opencode.json}"
   local model_id="local-llama/${model_alias}"
   local mlx_mtp_model_id="local-llama/${MLX_MTP_ALIAS}"
@@ -706,11 +729,11 @@ sync_opencode_model() {
     --arg glm_context "$GLM53_FLASH_CONTEXT" \
     --arg glm_output "$GLM53_FLASH_OUTPUT" \
     --arg glm_reasoning "$GLM53_FLASH_REASONING_EFFORT" \
-    --arg inkling_alias "$INKLING25_ALIAS" \
-    --arg inkling_context "$INKLING25_CONTEXT" \
-    --arg inkling_output "$INKLING25_OUTPUT" \
-    --arg inkling_reasoning "$INKLING25_REASONING" \
-    --arg inkling_mmproj "$INKLING25_MMPROJ" \
+    --arg inkling_alias "$inkling_alias" --arg inkling_name "$inkling_name" \
+    --arg inkling_context "$inkling_context" \
+    --arg inkling_output "$inkling_output" \
+    --arg inkling_reasoning "$inkling_reasoning" \
+    --arg inkling_mmproj "$inkling_mmproj" \
     --arg mlx_reasoner "local-llama/${MLX_API_ALIAS}" \
     --arg mlx_mtp "$mlx_mtp_model_id" \
     --arg bonsai_splash "$bonsai_splash_model_id" \
@@ -843,7 +866,7 @@ sync_opencode_model() {
        ($inkling_context | tonumber) as $context |
        ($inkling_output | tonumber) as $output |
        .provider["local-llama"].models[$inkling_alias] = {
-         name: "Inkling 2 Mini UD-IQ3_XXS",
+         name: $inkling_name,
          reasoning: true, tool_call: true,
          modalities: {input: (if $inkling_mmproj == "" then ["text"] else ["text", "image"] end), output: ["text"]},
          limit: {context: $context, input: ($context - $output), output: $output}
@@ -928,8 +951,8 @@ sync_opencode_model() {
     echo "OpenCode default: task-only router; it delegates to a child. Switch to general to work directly."
   elif [[ "$model_alias" == "$SPLASH_BONSAI_ALIAS" ]]; then
     echo "OpenCode model synchronized: $default_model_id (Splash, PTQ1_0, int8 KV)"
-  elif [[ "$model_alias" == "$INKLING25_ALIAS" ]]; then
-    echo "OpenCode model synchronized: $default_model_id (reasoning $INKLING25_REASONING)"
+  elif [[ "$model_alias" == "$inkling_alias" ]]; then
+    echo "OpenCode model synchronized: $default_model_id (reasoning $inkling_reasoning)"
   else
     echo "OpenCode model synchronized: $default_model_id (agent reasoning effort: none)"
   fi
@@ -965,31 +988,31 @@ sync_pi_model_compaction() {
   fi
 }
 
-sync_pi_inkling25() {
+sync_pi_inkling() {
+  local alias="$1" name="$2" context="$3" output="$4" mmproj="$5"
   local models_path="${PI_MODELS_PATH:-$HOME/.pi/agent/models.json}"
   local temp_path
 
   [[ -f "$models_path" ]] || return 0
   temp_path="$(mktemp "${models_path}.tmp.XXXXXX")"
   if ! jq --arg url "http://${HOST}:${PORT}/v1" \
-    --arg alias "$INKLING25_ALIAS" --arg mmproj "$INKLING25_MMPROJ" \
-    --argjson context "$INKLING25_CONTEXT" --argjson output "$INKLING25_OUTPUT" \
-    '.providers["inkling-local"] = {
+    --arg alias "$alias" --arg name "$name" --arg mmproj "$mmproj" \
+    --argjson context "$context" --argjson output "$output" \
+    '.providers["inkling-local"] |= ((. // {}) + {
        baseUrl: $url, api: "openai-completions", apiKey: "none",
-       models: [{
-         id: $alias, name: "Inkling 2 Mini UD-IQ3_XXS",
+       models: ((.models // [] | map(select(.id != $alias))) + [{
+         id: $alias, name: $name,
          reasoning: true, input: (if $mmproj == "" then ["text"] else ["text", "image"] end),
          contextWindow: $context, maxTokens: $output
-       }]
-     }' "$models_path" >"$temp_path"; then
+       }])
+     })' "$models_path" >"$temp_path"; then
     rm -f "$temp_path"
-    echo "Failed to update the Pi model catalog for option 25." >&2
+    echo "Failed to update the Pi model catalog for $alias." >&2
     return 1
   fi
   chmod 600 "$temp_path"
   mv "$temp_path" "$models_path"
-  sync_pi_model_compaction "inkling-local/$INKLING25_ALIAS" "$INKLING25_CONTEXT" "$INKLING25_OUTPUT" \
-    "$((INKLING25_OUTPUT + 1024))"
+  sync_pi_model_compaction "inkling-local/$alias" "$context" "$output" "$((output + 1024))"
 }
 
 sync_opencode_splash() {
@@ -1285,7 +1308,7 @@ usage() {
 Usage:
   startllamacpp.sh                  Select a model, or choose 9 to stop serving
   startllamacpp.sh --watch [1-7|10] Start a watchdog-managed server
-  startllamacpp.sh --direct [1-8|10|14|15|16|17|18|19|20|21|24|25] Start the selected server without the watchdog
+  startllamacpp.sh --direct [1-8|10|14|15|16|17|18|19|20|21|24|25|26] Start the selected server without the watchdog
   startllamacpp.sh --hermes [1-7]  Start a model and its matching Hermes profile
   startllamacpp.sh --list           List model choices
 
@@ -1347,32 +1370,32 @@ if (( DIRECT_LAUNCH == 1 || HERMES_LAUNCH == 1 )) && [[ -n "$DIRECT_CHOICE" ]]; 
   choice="$DIRECT_CHOICE"
 else
   print_models
-  if ! read -r -p "Enter choice (1-10, 14-21, 24-25; 9 stops): " choice; then
+  if ! read -r -p "Enter choice (1-10, 14-21, 24-26; 9 stops): " choice; then
     echo "No model choice received." >&2
     exit 2
   fi
 fi
 
 case "$choice" in
-  1|2|3|4|5|6|7|8|10|14|15|16|17|18|19|20|21|24|25) ;;
+  1|2|3|4|5|6|7|8|10|14|15|16|17|18|19|20|21|24|25|26) ;;
   9)
     stop_llamacpp
     exit $?
     ;;
   *)
-    echo "Invalid choice: $choice (expected 1-10, 14-21 or 24-25; 9 stops)." >&2
+    echo "Invalid choice: $choice (expected 1-10, 14-21 or 24-26; 9 stops)." >&2
     exit 2
     ;;
 esac
 
-if [[ "$choice" == "8" || "$choice" == "10" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" || "$choice" == "20" || "$choice" == "21" || "$choice" == "24" || "$choice" == "25" ]]; then
+if [[ "$choice" == "8" || "$choice" == "10" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" || "$choice" == "20" || "$choice" == "21" || "$choice" == "24" || "$choice" == "25" || "$choice" == "26" ]]; then
   if (( HERMES_LAUNCH == 1 )); then
-    echo "Options 8, 10, 14-21 and 24-25 do not use hermeslocal profiles; run them from the interactive menu or with --direct." >&2
+    echo "Options 8, 10, 14-21 and 24-26 do not use hermeslocal profiles; run them from the interactive menu or with --direct." >&2
     exit 2
   fi
   # Keep the reasoning-only profile direct; MTP option 10 is supervised by the
   # watchdog unless the caller explicitly requests --direct.
-  if [[ "$choice" == "8" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" || "$choice" == "20" || "$choice" == "21" || "$choice" == "24" || "$choice" == "25" ]]; then
+  if [[ "$choice" == "8" || "$choice" == "14" || "$choice" == "15" || "$choice" == "16" || "$choice" == "17" || "$choice" == "18" || "$choice" == "19" || "$choice" == "20" || "$choice" == "21" || "$choice" == "24" || "$choice" == "25" || "$choice" == "26" ]]; then
     DIRECT_LAUNCH=1
   fi
 fi
@@ -1386,6 +1409,34 @@ if (( DIRECT_LAUNCH == 0 )); then
 fi
 
 case "$choice" in
+  26)
+    if ! splash_uint_in_range "$INKLING26_CONTEXT" 1024 1048576 ||
+       ! splash_uint_in_range "$INKLING26_OUTPUT" 1 "$INKLING26_CONTEXT" ||
+       (( INKLING26_OUTPUT >= INKLING26_CONTEXT )); then
+      echo "INKLING26_CONTEXT must be 1024-1048576. INKLING26_OUTPUT must be positive and smaller than context." >&2
+      exit 2
+    fi
+    case "$INKLING26_REASONING" in
+      none|minimal|low|medium|high|xhigh|max) ;;
+      *) echo "INKLING26_REASONING must be none, minimal, low, medium, high, xhigh or max." >&2; exit 2 ;;
+    esac
+    if [[ ! -f "$INKLING26_MODEL" ]] || [[ "$(stat -Lf %z "$INKLING26_MODEL")" != "$INKLING26_MODEL_BYTES" ]]; then
+      echo "Inkling IQ1_S checkpoint missing or incomplete: $INKLING26_MODEL" >&2
+      exit 1
+    fi
+    prepare_llama_run "$INKLING26_ALIAS" "$INKLING26_SERVER"
+    sync_opencode_model "$INKLING26_ALIAS"
+    sync_pi_inkling "$INKLING26_ALIAS" "Inkling 2 Mini UD-IQ1_S" "$INKLING26_CONTEXT" "$INKLING26_OUTPUT" ""
+    echo "Starting Inkling 2 Mini IQ1_S with Unsloth llama.cpp on http://${HOST}:${PORT}"
+    exec "$INKLING26_SERVER" \
+      --model "$INKLING26_MODEL" --alias "$INKLING26_ALIAS" --no-mmproj \
+      --ctx-size "$INKLING26_CONTEXT" --n-predict "$INKLING26_OUTPUT" --parallel 1 \
+      --n-gpu-layers all --load-mode mmap --flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 \
+      --batch-size 512 --ubatch-size 128 --cache-ram 0 --no-warmup \
+      --temp 1.0 --top-p 1.0 --top-k 0 --min-p 0.0 --jinja --reasoning-effort "$INKLING26_REASONING" \
+      --host "$HOST" --port "$PORT" --metrics --log-file "$LLAMA_RUN_LOG" --log-colors off --log-timestamps
+    ;;
+
   25)
     if ! splash_uint_in_range "$INKLING25_CONTEXT" 1024 131072 ||
        ! splash_uint_in_range "$INKLING25_OUTPUT" 1 "$INKLING25_CONTEXT" ||
@@ -1423,7 +1474,8 @@ case "$choice" in
     fi
     prepare_splash_run "$INKLING25_ALIAS" "$INKLING25_SERVER"
     sync_opencode_model "$INKLING25_ALIAS"
-    sync_pi_inkling25
+    sync_pi_inkling "$INKLING25_ALIAS" "Inkling 2 Mini UD-IQ3_XXS" \
+      "$INKLING25_CONTEXT" "$INKLING25_OUTPUT" "$INKLING25_MMPROJ"
     echo "Starting Inkling 2 Mini in Splash on http://${HOST}:${PORT}"
     cd "$INKLING25_SPLASH_ROOT"
     exec "$INKLING25_PYTHON" -u -m server.server "$INKLING25_MODEL" \
