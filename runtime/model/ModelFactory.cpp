@@ -11,6 +11,8 @@
 #include <sys/sysctl.h>
 
 #include <array>
+#include <charconv>
+#include <cstdlib>
 #include <functional>
 #include <stdexcept>
 #include <string_view>
@@ -45,6 +47,18 @@ QwenVisionWeights loadVisionWeights(metal::MetalBackend &backend, WeightImages &
 }
 
 namespace {
+
+uint32_t decodeExpertReadAheadPercent() {
+  const char *setting = std::getenv("SPLASH_DECODE_EXPERT_READAHEAD_PERCENT");
+  if (!setting) return 100;
+  const std::string_view value(setting);
+  uint32_t percent = 0;
+  const auto end = value.data() + value.size();
+  const auto parsed = std::from_chars(value.data(), end, percent);
+  if (parsed.ec != std::errc{} || parsed.ptr != end || percent > 100)
+    throw std::invalid_argument("SPLASH_DECODE_EXPERT_READAHEAD_PERCENT must be an integer from 0 to 100");
+  return percent;
+}
 
 TargetWeights readTarget(metal::MetalBackend &backend, const Qwen3_8Layout &layout,
                          const QwenTargetFiles &files) {
@@ -88,7 +102,8 @@ TargetWeights loadTarget(metal::MetalBackend &backend, WeightImages &images, con
   const ExpertStoreOptions experts{.memoryBytes = options.expertMemoryBytes,
                                    .floorBytes = options.expertFloorBytes,
                                    .floorShare = options.expertFloorShare,
-                                   .readers = options.readers};
+                                   .readers = options.readers,
+                                   .decodeReadAheadPercent = options.expertMemoryBytes ? decodeExpertReadAheadPercent() : 100};
   return std::visit(
       [&](const auto &layout) -> TargetWeights {
         const std::filesystem::path directory = root / "target";

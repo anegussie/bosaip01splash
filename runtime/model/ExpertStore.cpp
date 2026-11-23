@@ -271,8 +271,10 @@ struct ExpertStore::Impl {
     }
   };
 
-  Impl(metal::MetalBackend &backend, ops::MoeShape shape, Geometry geometry, std::shared_ptr<SsdReaders> readers)
-      : backend(backend), shape(shape), geometry(std::move(geometry)), readers(std::move(readers)) {}
+  Impl(metal::MetalBackend &backend, ops::MoeShape shape, Geometry geometry, std::shared_ptr<SsdReaders> readers,
+       uint32_t decodeReadAheadPercent)
+      : backend(backend), shape(shape), geometry(std::move(geometry)), readers(std::move(readers)),
+        decodeReadAheadPercent(decodeReadAheadPercent) {}
   // The readers of a read-ahead read into this store's memory: they end the
   // pieces they took before it goes.
   ~Impl() {
@@ -375,6 +377,7 @@ struct ExpertStore::Impl {
   const ops::MoeShape shape;
   const Geometry geometry;
   const std::shared_ptr<SsdReaders> readers;
+  const uint32_t decodeReadAheadPercent;
   // What holds the sources open, and their checks (StreamedBlocks).
   std::shared_ptr<const void> files;
   std::vector<std::function<void()>> checks;
@@ -1076,6 +1079,10 @@ void ExpertStore::Impl::load(uint32_t index, LoadUse loadUse, uint32_t rows, boo
       std::vector<uint32_t> experts;
       for (const uint32_t expert : predictedExperts(rows, routed))
         if (blocks[index + 1].slot[expert] == kNoSlot) experts.push_back(expert);
+      if (loadUse == LoadUse::Decode)
+        experts.resize((experts.size() * decodeReadAheadPercent + 99) / 100);
+      // Even an empty forecast retires the previous batch before its staging
+      // can be reused. Required reads and later rounds use the full budget.
       planAhead(index + 1, experts, use);
     }
   } catch (const std::exception &error) {
@@ -1100,10 +1107,12 @@ void ExpertStore::Impl::readBlockAhead(uint32_t index, LoadUse use) {
 
 ExpertStore::ExpertStore(metal::MetalBackend &backend, StreamedBlocks streamed, ops::MoeShape shape,
                          ExpertStoreOptions options)
-    : impl_(std::make_shared<Impl>(backend, shape, geometryOf(streamed, shape), std::move(options.readers))) {
+    : impl_(std::make_shared<Impl>(backend, shape, geometryOf(streamed, shape), std::move(options.readers),
+                                  options.decodeReadAheadPercent)) {
   Impl &impl = *impl_;
   const Geometry &geometry = impl.geometry;
   if (!options.memoryBytes || !impl.readers) throw std::invalid_argument("invalid expert store");
+  if (options.decodeReadAheadPercent > 100) throw std::invalid_argument("invalid decode expert read-ahead percentage");
   impl.files = std::move(streamed.sources);
   impl.checks = std::move(streamed.checks);
   for (uint32_t block = 0; block < streamed.blocks.size(); ++block)

@@ -156,6 +156,8 @@ struct ExpertStoreOptions final {
   // size needs larger ones to fit the expert kernels' table
   // (streamedExpertChunkLayout).
   uint64_t elasticChunkBytes = kExpertElasticChunkBytes;
+  // Percentage of the ranked next-block misses to read ahead during decode.
+  uint32_t decodeReadAheadPercent = 100;
 };
 
 class ExpertStore final : public ops::MoeExpertStream, public WeightMemory {

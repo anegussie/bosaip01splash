@@ -421,6 +421,36 @@ int streamedExperts(MetalBackend &backend, const MoeShape &shape, const std::fil
   return failures;
 }
 
+// Two blocks with identical routing give an exact forecast. Even with
+// prediction disabled, the second block must demand-load the same weights.
+void decodeReadAheadBudget(MetalBackend &backend, const MoeShape &shape, const std::filesystem::path &directory) {
+  const Model model = makeModel(backend, shape, Q4K, true);
+  const ExpertFile file(model, directory / "decode-ahead-budget.bin");
+  Buffers buffers;
+  freshRows(backend, buffers, shape);
+  const StepPlan step = decodeStep(shape, 1, 8);
+  require(!longChunk(shape, step.plan.rows()), "forecast test requires ranked rather than whole-block read-ahead");
+  const auto want = runWeights(backend, model.weights, buffers, step);
+  for (const uint32_t percent : {100u, 50u, 0u}) {
+    auto options = storeOptions(arenaBytes(model, shape.experts + 3) + kSpareBytes, file.blocks, shape);
+    options.decodeReadAheadPercent = percent;
+    ExpertStore store(backend, file.blocks, shape, options);
+    growToCap(store);
+    std::array<BlockMoeWeights, 2> streamed{model.weights, model.weights};
+    for (uint32_t block = 0; block < streamed.size(); ++block) store.bind(block, streamed[block]);
+    require(runWeights(backend, streamed[0], buffers, step) == want, "first decode block differs from resident output");
+    const uint64_t firstReads = store.stats().uses[1].read;
+    require(runWeights(backend, streamed[1], buffers, step) == want, "second decode block differs from resident output");
+    const auto decode = store.stats().uses[1];
+    const uint64_t misses = decode.read - firstReads;
+    require(misses > 1, "decode forecast did not predict enough missing experts to test a cap");
+    require(decode.readAhead <= (misses * percent + 99) / 100, "decode read-ahead exceeds its forecast budget");
+    if (!percent) require(!decode.aheadReadBytes && !decode.prefetched, "zero-budget decode performed read-ahead");
+    printf("decode ahead %u%%: %llu of %llu second-block misses read ahead, resident output matches\n",
+           percent, (unsigned long long)decode.readAhead, (unsigned long long)misses);
+  }
+}
+
 // A long prefill chunk's loads are recycled before the experts a decode step
 // routed: three blocks share the slots of one block and the decode step's
 // experts and three slots, and after a decode step of the last block two
@@ -1851,12 +1881,18 @@ int streamedSourceChanges(const std::string &metallibPath, const MoeShape &shape
 
 int main(int argc, const char *argv[]) {
   @autoreleasepool {
-    if (argc != 2 && !(argc == 3 && std::string_view(argv[2]) == "--gyro")) {
-      std::cerr << "usage: expert_store_test <metallib>\n";
+    const bool decodeAhead = argc == 3 && std::string_view(argv[2]) == "--decode-read-ahead";
+    if (argc != 2 && !(argc == 3 && (decodeAhead || std::string_view(argv[2]) == "--gyro"))) {
+      std::cerr << "usage: expert_store_test <metallib> [--gyro|--decode-read-ahead]\n";
       return 2;
     }
     try {
       MetalBackend backend(argv[1]);
+      if (decodeAhead) {
+        const splash::test::TemporaryDirectory directory("expert-decode-ahead");
+        decodeReadAheadBudget(backend, kShapes[0], directory.path());
+        return 0;
+      }
       if (argc == 3) {
         const splash::test::TemporaryDirectory gyroDirectory("splash-gyro-expert-store");
         const int failures = sharedFormatArena(backend, {256, 16, 4, 640}, gyroDirectory.path(), true);
@@ -1865,6 +1901,7 @@ int main(int argc, const char *argv[]) {
       }
 
       const splash::test::TemporaryDirectory directory("expert-store");
+      decodeReadAheadBudget(backend, kShapes[0], directory.path());
       int failures = 0;
       for (const MoeShape &shape : kShapes) {
         printf("%u experts, top %u, hidden %u, %u wide:\n", shape.experts, shape.expertsPerToken, shape.hiddenSize,
