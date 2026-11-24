@@ -27,7 +27,7 @@ INKLING25_MODEL_BYTES=11663309504
 INKLING25_MODEL="${INKLING25_MODEL:-}"
 INKLING25_MMPROJ="${INKLING25_MMPROJ:-}"
 INKLING25_ALIAS="inkling-2-mini-ud-iq3-xxs"
-INKLING25_CONTEXT="${INKLING25_CONTEXT:-131072}"
+INKLING25_CONTEXT="${INKLING25_CONTEXT:-20480}"
 INKLING25_OUTPUT="${INKLING25_OUTPUT:-1024}"
 INKLING25_REASONING="${INKLING25_REASONING:-low}"
 INKLING26_DIR="${INKLING26_DIR:-$HOME/splash/splash/install/models/inkling-option26}"
@@ -463,6 +463,17 @@ splash_flash_next_host_defaults() {
 # faster one: 443.7 tok/s cold prefill at 8,204 prompt tokens against 282.3 with
 # 1,024-token chunks, 441.4 against 272.2 at 4,108, and a turn-8 ladder TTFT of
 # 6.40 s against 9.70 s, with decode unchanged (17.56 against 17.68 tok/s).
+# Re-measured on 2026-11-24 with six alternating trials of the same cold 8,129
+# token prompt (docs/int2-prefill-rollout-outcome.md): 278.2 against 221.0 tok/s
+# prefill and 29.22 against 36.79 s to the first token, with decode 14 percent
+# slower at the larger chunk (24.9 against 28.8 tok/s). A request still ends 20
+# percent sooner, 34.3 s of wall time against 41.2 s, so the pair stays.
+# The chunk is the engine's prefill budget: 2,048 rows is sixteen of the 128-row
+# staged tiles the Q2_0 projections run, 10.1 TFLOP/s a chunk on this M5, and the
+# prepacked INT2 tile tried in between was slower, 53.30 ms against 9.50 ms a
+# 2,048-row chunk in dev/benchmarks/gguf_projection_benchmark.mm and 1.8 percent
+# slower end to end across six trials, so it is out of the tree and the staged
+# tile is the path this launcher pins.
 # One host step of a 2,048-token chunk carries about 4.6 s of GPU work, close to
 # the engine's fixed 5,000 ms Metal event window; a cold run hit 5.157 s there
 # and bootstrap died with "Caused GPU Timeout Error" before Ready. The launch

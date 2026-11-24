@@ -463,7 +463,7 @@ print('Ready test server',flush=True)
         for flag, value in {
             "--model": "unsloth/Inkling-2-Mini-GGUF:UD-IQ3_XXS",
             "--served-model-name": alias,
-            "--max-context": "131072",
+            "--max-context": "20480",
             "--inkling-max-output": "1024",
             "--binary": str(self.mock),
             "--max-active-requests": "1",
@@ -477,7 +477,7 @@ print('Ready test server',flush=True)
         self.assertEqual(config["model"], f"local-llama/{alias}")
         profile = config["provider"]["local-llama"]["models"][alias]
         self.assertEqual(
-            profile["limit"], {"context": 131072, "input": 130048, "output": 1024}
+            profile["limit"], {"context": 20480, "input": 19456, "output": 1024}
         )
         self.assertEqual(profile["modalities"]["input"], ["text"])
         providers = json.loads(pi.read_text())["providers"]
@@ -488,13 +488,13 @@ print('Ready test server',flush=True)
         pi_model = providers["inkling-local"]["models"][0]
         self.assertEqual(
             (pi_model["id"], pi_model["contextWindow"], pi_model["maxTokens"]),
-            (alias, 131072, 1024),
+            (alias, 20480, 1024),
         )
         compaction = json.loads(pi_settings.read_text())["compaction"]
         self.assertEqual(compaction["reserveTokens"], 16000)
         self.assertEqual(
             compaction["modelOverrides"][f"inkling-local/{alias}"],
-            {"reserveTokens": 2048, "keepRecentTokens": 20000},
+            {"reserveTokens": 2048, "keepRecentTokens": 9216},
         )
 
         projector = self.root / "mmproj-F16.gguf"
