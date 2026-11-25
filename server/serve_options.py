@@ -15,10 +15,10 @@ from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 
-from . import images, origins, unix_socket
+from . import images, origins, request_fields, unix_socket
 from .chat_format import REASONING_EFFORTS
 from .http_security import validate_api_key
-from .protocol import MAX_THINKING_END_TOKENS
+from .protocol import MAX_THINKING_END_TOKENS, SAMPLING_FIELDS
 
 # The most context --max-context takes: the most any family serves
 # (QwenTargetDimensions::maximumContextTokens(), as the engine's families
@@ -29,7 +29,11 @@ MAX_YARN_CONTEXT_TOKENS = 1010000
 _CONTEXT_UNITS = {"K": 1024, "M": 1000000}
 DEFAULT_MAX_REQUEST_BYTES = 128 * 1024 * 1024
 DEFAULT_QUEUE_SIZE = 32
-DEFAULT_PREFILL_CHUNK_TOKENS = 512
+# The requests the engine decodes at once unless --max-concurrent-requests
+# says otherwise (ExecutionLimits::defaultLanes), and the most it can
+# (SPLASH_MAXIMUM_BATCH_WIDTH).
+DEFAULT_CONCURRENT_REQUESTS = 4
+MAX_CONCURRENT_REQUESTS = 8
 # The port both commands serve on unless --port names another, or for the
 # launcher SPLASH_PORT does.
 DEFAULT_PORT = 8000
@@ -88,15 +92,6 @@ def parse_model_id(value):
     except ValueError as error:
         raise argparse.ArgumentTypeError(str(error)) from None
     return value
-
-
-def parse_model_source(value):
-    """A Hub model ID or an existing local GGUF, kept absolute for serving."""
-    if value:
-        path = Path(value).expanduser()
-        if path.suffix.lower() == ".gguf" and path.is_file():
-            return str(path.absolute())
-    return parse_model_id(value)
 
 
 def parse_max_context(value):
@@ -197,8 +192,29 @@ def parse_expert_memory(value):
     return _memory_size(value, "16G", ("off",))
 
 
-def parse_sparse_kv_memory(value):
-    return _memory_size(value, "1200M", ())
+def parse_prefill_chunk_tokens(value):
+    """The tokens one native prefill batch takes: a multiple of 128 up to the
+    engine's own chunk limit of 2,048."""
+    try:
+        tokens = int(value)
+    except ValueError:
+        tokens = 0
+    if not 128 <= tokens <= 2048 or tokens % 128:
+        raise argparse.ArgumentTypeError(
+            "must be a multiple of 128 in [128, 2048]"
+        )
+    return tokens
+
+
+def parse_resource_wait_timeout(value):
+    """How long a request waits for engine resources after a suspension, in
+    seconds."""
+    if (seconds := _duration_seconds(value)) is None or seconds != int(seconds):
+        raise argparse.ArgumentTypeError("must be a positive whole number of seconds")
+    return int(seconds)
+
+
+def parse_sparse_kv_memory(value):    return _memory_size(value, "1200M", ())
 
 
 def parse_cache_dir(value):
@@ -275,6 +291,18 @@ def parse_queue_size(value):
     return size
 
 
+def parse_concurrent_requests(value):
+    try:
+        requests = int(value)
+    except ValueError:
+        requests = 0
+    if not 1 <= requests <= MAX_CONCURRENT_REQUESTS:
+        raise argparse.ArgumentTypeError(
+            f"must be a number of requests from 1 to {MAX_CONCURRENT_REQUESTS}"
+        )
+    return requests
+
+
 def parse_decode_share(value):
     try:
         share = float(value)
@@ -344,36 +372,34 @@ def parse_api_key(value):
         raise argparse.ArgumentTypeError(str(error)) from None
 
 
-def parse_prefill_chunk_tokens(value):
-    try:
-        tokens = int(value)
-    except ValueError:
-        tokens = 0
-    if not 128 <= tokens <= 2048 or tokens % 128:
-        raise argparse.ArgumentTypeError(
-            "must be a multiple of 128 tokens in [128, 2048]"
-        )
-    return tokens
-
-
-def parse_resource_wait_timeout(value):
-    try:
-        seconds = int(value)
-    except ValueError:
-        seconds = 0
-    if not 1 <= seconds <= 2**32 - 1:
-        raise argparse.ArgumentTypeError(
-            "resource wait timeout must be a positive integer in seconds (at most 4294967295)"
-        )
-    return seconds
-
-
 def parse_reasoning_effort(value):
     if value not in REASONING_EFFORTS:
         raise argparse.ArgumentTypeError(
             f"must be one of {', '.join(REASONING_EFFORTS)}"
         )
     return value
+
+
+def parse_sampling_default(value):
+    """A --sampling-default NAME=VALUE as (name, number), a number a request
+    may set (request_fields.sampling_refusal): `splash serve` refuses one
+    before it downloads anything. The app's Sampling defaults field
+    (LaunchOption.samplingDefaults) takes the same names and forms, and
+    leaves the ranges to this check."""
+    name, separator, number = value.partition("=")
+    if not separator or name not in SAMPLING_FIELDS:
+        raise argparse.ArgumentTypeError(
+            f"must be NAME=VALUE, NAME one of {', '.join(SAMPLING_FIELDS)}"
+        )
+    try:
+        parsed = int(number) if name == "top_k" else float(number)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"{name} must be {'an integer' if name == 'top_k' else 'a number'}"
+        ) from None
+    if (refusal := request_fields.sampling_refusal(name, parsed)) is not None:
+        raise argparse.ArgumentTypeError(refusal)
+    return name, parsed
 
 
 def parse_thinking_token_budget(value):
@@ -448,8 +474,9 @@ class ServeOption:
     # What a model's family must have for the option to act on it, one of
     # the facts install/families.py reports: a fact of its layout, as the
     # engine gives it (experts, recurrent_state, ple_table, sparse_kv,
-    # dense_ffn), or of its release (vision, reasoning_switch). None: every
-    # model.
+    # dense_ffn), or of its release (vision; reasoning_switch, its chat
+    # format's effort reaching the model, and prompt_switches_reasoning, the
+    # effort turning its reasoning on and off). None: every model.
     needs: str | None = None
 
     @property
@@ -463,37 +490,6 @@ class ServeOption:
 
 
 SERVE_OPTIONS = (
-    ServeOption(
-        "--prefill-chunk-tokens",
-        "memory",
-        dict(
-            type=parse_prefill_chunk_tokens,
-            default=DEFAULT_PREFILL_CHUNK_TOKENS,
-            help="maximum prompt tokens per native batch, in multiples of 128 up to "
-            "2048 (default: 512); smaller chunks reduce scratch memory",
-        ),
-        engine=EngineArgument("--prefill-chunk-tokens"),
-    ),
-    ServeOption(
-        "--resource-wait-timeout",
-        "requests",
-        dict(
-            type=parse_resource_wait_timeout,
-            default=30,
-            help="seconds to wait for engine resources after suspension (default: 30)",
-        ),
-        engine=EngineArgument("--resource-wait-timeout"),
-    ),
-    ServeOption(
-        "--max-active-requests",
-        "requests",
-        dict(
-            type=int,
-            choices=range(0, 65),
-            default=0,
-            help="FIFO native request concurrency; 1 limits simultaneous model states (0: engine default)",
-        ),
-    ),
     ServeOption(
         "--host",
         "network",
@@ -554,8 +550,9 @@ SERVE_OPTIONS = (
             type=parse_max_memory,
             default=None,
             metavar="SIZE",
-            help="Metal memory budget, e.g. 28G; it can only lower the automatic "
-            "budget (default: auto)",
+            help="Metal memory budget in place of the automatic one, e.g. 28G, up "
+            "to the GPU's recommended working set less a margin (default: auto, "
+            "which also leaves a tenth of the Mac's memory unwired)",
         ),
         engine=EngineArgument(1, text=_auto_text, required=True),
     ),
@@ -608,6 +605,30 @@ SERVE_OPTIONS = (
         ),
         engine=EngineArgument("--expert-memory"),
         needs="experts",
+    ),
+    ServeOption(
+        "--prefill-chunk-tokens",
+        "memory",
+        dict(
+            type=parse_prefill_chunk_tokens,
+            default=2048,
+            metavar="TOKENS",
+            help="maximum prompt tokens per native batch, in multiples of 128 up to "
+            "2048 (default: 2048); smaller chunks reduce scratch memory",
+        ),
+        engine=EngineArgument("--prefill-chunk-tokens"),
+    ),
+    ServeOption(
+        "--resource-wait-timeout",
+        "requests",
+        dict(
+            type=parse_resource_wait_timeout,
+            default=30,
+            metavar="SECONDS",
+            help="seconds a request waits for engine resources after a suspension "
+            "(default: 30)",
+        ),
+        engine=EngineArgument("--resource-wait-timeout"),
     ),
     ServeOption(
         "--sparse-kv-memory",
@@ -748,6 +769,23 @@ SERVE_OPTIONS = (
         ),
     ),
     ServeOption(
+        "--sampling-default",
+        "api",
+        dict(
+            action="append",
+            default=[],
+            type=parse_sampling_default,
+            metavar="NAME=VALUE",
+            help="the value of a sampling parameter for requests that set "
+            "none (repeatable): "
+            + ", ".join(SAMPLING_FIELDS)
+            + " (default: the served family's published sampling for "
+            "temperature, top_p and top_k, else the value that leaves the "
+            "logits unchanged)",
+        ),
+        text=lambda item: f"{item[0]}={item[1]}",
+    ),
+    ServeOption(
         "--reasoning-effort",
         "api",
         dict(
@@ -787,7 +825,7 @@ SERVE_OPTIONS = (
             "SPLASH_THINKING_TOKEN_BUDGET, else no cap)",
         ),
         environment="SPLASH_THINKING_TOKEN_BUDGET",
-        needs="reasoning_switch",
+        needs="prompt_switches_reasoning",
     ),
     ServeOption(
         "--thinking-end-text",
@@ -801,7 +839,7 @@ SERVE_OPTIONS = (
             "after a reasoning)",
         ),
         environment="SPLASH_THINKING_END_TEXT",
-        needs="reasoning_switch",
+        needs="prompt_switches_reasoning",
     ),
     ServeOption(
         "--chat-template-file",
@@ -833,8 +871,11 @@ SERVE_OPTIONS = (
             default=images.MAX_PIXELS,
             metavar="PIXELS",
             help=f"maximum resized pixels per image, {images.MIN_PIXELS}–"
-            f"{images.MAX_PIXELS} (default: {images.MAX_PIXELS}); bounds the "
-            "vision scratch one image needs",
+            f"{images.MAX_PIXELS} (default: {images.MAX_PIXELS}); for "
+            "Inkling-2-Mini, PIXELS / 256 is the most 20-pixel patches an "
+            "image keeps its size within "
+            f"({images.max_patches(images.MAX_PIXELS):,} at the default); "
+            "bounds the vision scratch one image needs",
         ),
         engine=EngineArgument(
             "--max-image-patches", text=lambda pixels: str(images.max_patches(pixels))
@@ -864,6 +905,23 @@ SERVE_OPTIONS = (
         ),
     ),
     ServeOption(
+        "--max-concurrent-requests",
+        "requests",
+        dict(
+            type=parse_concurrent_requests,
+            default=DEFAULT_CONCURRENT_REQUESTS,
+            metavar="REQUESTS",
+            help="requests the engine runs at once, 1 to "
+            f"{MAX_CONCURRENT_REQUESTS}; more let more clients be answered "
+            "together, each a little slower, and take memory for their "
+            "states and arenas: where that streams more of the weights or "
+            "leaves less context than four would, the start logs both, and "
+            "/status reports four's context (default: "
+            f"{DEFAULT_CONCURRENT_REQUESTS})",
+        ),
+        engine=EngineArgument("--max-concurrent-requests"),
+    ),
+    ServeOption(
         "--decode-share",
         "requests",
         dict(
@@ -888,6 +946,18 @@ SERVE_OPTIONS = (
         needs="dense_ffn",
     ),
     ServeOption(
+        "--recalibrate-ane",
+        "requests",
+        dict(
+            action="store_true",
+            default=False,
+            help="calibrate the Neural Engine's share of long prompts again at "
+            "this start instead of taking the one this Mac kept",
+        ),
+        engine=EngineArgument("--ane-calibration", text=_spelled("again")),
+        needs="dense_ffn",
+    ),
+    ServeOption(
         "--activations",
         "requests",
         dict(
@@ -896,9 +966,9 @@ SERVE_OPTIONS = (
             help="auto rounds activations to 8 bits where the GPU multiplies "
             "them twice as fast (M5 and later) and leaves the others bf16: "
             "long prompts through MLX 4- and 5-bit weights (about a quarter "
-            "less time to the first token), rotated PQ2_0 decode and attention "
-            "over the INT8 KV cache; bf16 keeps every activation bf16, for "
-            "evaluations and bf16 parity (default: auto)",
+            "less time to the first token) and Q8_0 ones, rotated PQ2_0 decode "
+            "and attention over the INT8 KV cache; bf16 keeps every activation "
+            "bf16, for evaluations and bf16 parity (default: auto)",
         ),
         engine=EngineArgument("--activations"),
     ),
@@ -967,6 +1037,10 @@ def check_serve_arguments(parser, args):
         )
     if args.cache_dir is not None and not args.persistent_cache:
         parser.error("--cache-dir needs --persistent-cache")
+    if args.recalibrate_ane and args.disable_ane:
+        parser.error(
+            "--recalibrate-ane needs the Neural Engine --disable-ane turns off"
+        )
     if args.reasoning_effort is not None and args.default_reasoning_effort is not None:
         parser.error(
             "--default-reasoning-effort (SPLASH_DEFAULT_REASONING_EFFORT) sets "

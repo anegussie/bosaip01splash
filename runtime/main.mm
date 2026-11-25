@@ -7,9 +7,9 @@
 #include "engine/Bootstrap.hpp"
 #include "engine/Json.hpp"
 #include "engine/NativeArguments.hpp"
-#include "model/ModelDescriptor.hpp"
 #include "model/GgufTarget.hpp"
 #include "model/Glm5FlashCheckpoint.hpp"
+#include "model/ModelDescriptor.hpp"
 
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <dispatch/dispatch.h>
@@ -21,7 +21,6 @@
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
-#include <charconv>
 #include <csignal>
 #include <chrono>
 #include <cstdint>
@@ -158,13 +157,15 @@ void printUsage(std::string_view executable) {
       " [--idle-release SECONDS|off] [--idle-sleep prevent|allow] [--ane on|off]"
       " [--activations auto|bf16] [--relaunch-context TOKENS] [--ple-memory BYTES|auto|off]"
       " [--expert-memory BYTES|auto|off] [--sparse-kv-memory BYTES|auto]"
-      " [--kv-spill always] [--kv-window-trim on|off] [--verify-rows auto|all]");
+      " [--kv-spill always] [--kv-window-trim on|off] [--verify-rows auto|all]"
+      " [--max-concurrent-requests REQUESTS]");
   writeStderrLine("       " + command + " model-check mlx-affine none|safetensors CONFIG [DRAFT_CONFIG]");
   writeStderrLine("       " + command + " model-check gguf none|gguf CONFIG GGUF_HEADERS [DRAFT_CONFIG]");
   writeStderrLine("       " + command + " glm-flash-checkpoint GGUF_DIRECTORY");
   writeStderrLine("       " + command + " inkling-checkpoint GGUF");
   writeStderrLine("       " + command + " serve-glm-flash GGUF_DIRECTORY CONTEXT");
   writeStderrLine("       " + command + " serve-inkling GGUF CONTEXT");
+  writeStderrLine("       " + command + " vision-check mlx-affine|gguf safetensors|gguf CONFIG ROOT");
   writeStderrLine("       " + command + " device-check");
   writeStderrLine("       " + command + " families");
 }
@@ -234,13 +235,12 @@ bootstrapConfig(const engine::NativeArguments &arguments) {
       config.resources.cacheRoot.empty() && !caches.empty())
     config.resources.cacheRoot = caches / "prefix-cache";
   config.resources.kvFormat = arguments.kvFormat;
-  config.resources.prefillChunkTokens = arguments.prefillChunkTokens;
   config.resources.stateFormat = arguments.stateFormat;
   config.resources.exactCachedStates = arguments.exactCachedStates;
   config.resources.maximumImagePatches = arguments.maxImagePatches;
   config.resources.idleReleaseSeconds = arguments.idleReleaseSeconds;
-  config.resources.preventIdleSleep = arguments.preventIdleSleep;
   config.resources.aneFfn.enabled = arguments.neuralEngine;
+  config.resources.aneFfn.recalibrate = arguments.recalibrateAne;
   config.resources.relaunchContext = arguments.relaunchContext;
   config.resources.pleMemory = arguments.pleMemory;
   config.resources.expertMemory = arguments.expertMemory;
@@ -248,11 +248,10 @@ bootstrapConfig(const engine::NativeArguments &arguments) {
   config.resources.kvSpillAlways = arguments.kvSpillAlways;
   config.resources.kvWindowTrim = arguments.kvWindowTrim;
   config.resources.verifyRows = arguments.verifyRows;
+  config.resources.lanes = arguments.lanes;
   config.resources.int8Activations = arguments.int8Activations;
   config.nativeLoop.engine.maxContext = arguments.maxContext;
   config.nativeLoop.engine.decodeShare = arguments.decodeShare;
-  config.nativeLoop.engine.resourceWaitTimeoutMilliseconds =
-      static_cast<double>(arguments.resourceWaitTimeoutSeconds) * 1000.0;
   return config;
 }
 
@@ -488,6 +487,16 @@ int checkModel(int argc, char **argv) {
   return 0;
 }
 
+// The tower of an upstream model's configuration prepared once from ROOT's
+// vision/, which the installer links its downloaded files into: nothing but
+// its status, or the refusal (model::checkVisionSource).
+int checkVision(int argc, char **argv) {
+  if (argc != 6)
+    throw engine::UsageError("vision-check takes the source formats, the target's config and the tower's root");
+  model::checkVisionSource(argv[2], argv[3], argv[4], argv[5]);
+  return 0;
+}
+
 // What each family's layout gives the options a start takes
 // (model::familyFacts), as JSON by family, which the installer reports to the
 // app (install/families.py).
@@ -589,6 +598,10 @@ int main(int argc, char **argv) {
         return splash::checkDevice(argc);
       if (command == "model-check")
         return splash::checkModel(argc, argv);
+      if (command == "vision-check")
+        return splash::checkVision(argc, argv);
+      if (command == "families")
+        return splash::printFamilies(argc);
       if (command == "glm-flash-checkpoint")
         return splash::inspectGlmFlashCheckpoint(argc, argv);
       if (command == "inkling-checkpoint")
@@ -608,8 +621,6 @@ int main(int argc, char **argv) {
         return inkling ? splash::engine::serveInkling(metallib, argv[2], capacity)
                        : splash::engine::serveGlmFlash(metallib, argv[2], capacity);
       }
-      if (command == "families")
-        return splash::printFamilies(argc);
       if (command == "serve-native")
         return splash::serveNative(argc, argv);
       throw splash::engine::UsageError(command.empty() ? std::string("expected a command")

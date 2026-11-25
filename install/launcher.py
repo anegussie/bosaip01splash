@@ -462,8 +462,8 @@ def serve(args):
         # A child inherits the environment, not -B: every Python program
         # serve starts writes no bytecode either (the server's PDF workers,
         # started with no environment, have -B of their own), so a runtime
-        # inside a signed app never gains __pycache__ folders, which break
-        # its signature.
+        # inside a signed app gains no bytecode beside what it ships, which
+        # would break its signature.
         os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
     # Keep both locks across exec until the foreground server exits.
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
@@ -699,10 +699,10 @@ def parse_args(argv=None):
     model = groups["model"]
     model.add_argument(
         "--model",
-        type=serve_options.parse_model_source,
+        type=serve_options.parse_model_id,
         required=True,
-        metavar="MODEL",
-        help="Hugging Face model or local GGUF file, with a GGUF variant after ':' (e.g. :UD-Q4_K_M); "
+        metavar="OWNER/REPO[:VARIANT]",
+        help="upstream Hugging Face model, with a GGUF variant after ':' (e.g. :UD-Q4_K_M); "
         "with --model-dir, the ID reported by the API",
     )
     model.add_argument(
@@ -725,11 +725,9 @@ def parse_args(argv=None):
     model.add_argument(
         "--draft-model",
         type=model_artifacts.parse_draft_model,
-        default=os.environ.get("SPLASH_DRAFT_MODEL") or None,
         metavar="DRAFT",
         help="DFlash2 draft repository or local directory to use instead of the "
-        "automatically selected one (default: SPLASH_DRAFT_MODEL, if set; "
-        "a local directory with --model-dir)",
+        "automatically selected one (a local directory with --model-dir)",
     )
     model.add_argument(
         "--language-only",
@@ -773,8 +771,6 @@ def parse_args(argv=None):
         except argparse.ArgumentTypeError as error:
             parser.error(f"SPLASH_PORT: {error}")
     if args.command == "serve":
-        if Path(args.model).is_absolute() and args.revision:
-            parser.error("--revision cannot be used with a local GGUF")
         if args.model_dir is not None:
             if args.revision is not None:
                 parser.error("--revision cannot be used with --model-dir")

@@ -63,6 +63,8 @@ std::string_view runtimeBootstrapStageName(RuntimeBootstrapStage stage) {
     return "decode_warmup";
   case RuntimeBootstrapStage::CompositeStateRestore:
     return "composite_state_restore";
+  case RuntimeBootstrapStage::AneFfnSetUp:
+    return "ane_ffn_set_up";
   case RuntimeBootstrapStage::MemoryAudit:
     return "memory_audit";
   case RuntimeBootstrapStage::Ready:
@@ -119,15 +121,16 @@ protocol::ProtocolLimits protocolLimitsFor(
   limits.maxSimulationTokens = model::ExecutionLimits::targetVerifyRows;
   limits.maxMaskWords = model::maskWordsPerToken(capabilities.vocabularySize) *
                         (model::ExecutionLimits::targetVerifyRows + 1);
+  limits.imagePatchPixels = capabilities.imagePatchPixels;
   return limits;
 }
 
 protocol::ReadyEvent readyEventFor(const model::ModelDescriptor &model,
                                    const EngineConfig &engine,
-                                   const protocol::ProtocolLimits &limits) {
+                                   const protocol::ProtocolLimits &limits, uint32_t lanes) {
   const std::span<const uint32_t> stops = std::visit(
       [](const auto &layout) { return layout.stopTokens.tokens(); }, model.target);
-  return {.maxConcurrentRequests = model::ExecutionLimits::maximumBatchWidth,
+  return {.maxConcurrentRequests = lanes,
           .maxContextTokens = engine.maxContext,
           .vision = engine.maxImagePatches != 0,
           .vocabularySize = model.capabilities.vocabularySize,
@@ -247,13 +250,13 @@ void ServingRuntime::sampleThermalState() {
 RuntimeBootstrapReport ServingRuntime::requireWarmup(
     const EngineMemoryPlan &memoryPlan, std::span<const uint32_t> prefillRowClasses,
     model::RuntimeModel &modelRuntime, KvPool &kvPool, WarmupProgress progress,
-    ActualMemoryReporter memoryReporter) {
+    ActualMemoryReporter memoryReporter, const std::function<uint32_t(double)> &setUp) {
   RuntimeBootstrapReport report = reportForPlan(memoryPlan);
-  report.warmup.maximumPrefillRows = std::min(model::ExecutionLimits::prefillTokenBudget, modelRuntime.commandLimits().commandRows);
   // Its steps: the prefill of the most rows, one of each row class, each
-  // decode width and the state restore, each counted done as it ends.
-  protocol::WarmingEvent warming{.steps = static_cast<uint32_t>(std::count_if(prefillRowClasses.begin(), prefillRowClasses.end(), [&](uint32_t rows) { return rows <= modelRuntime.commandLimits().commandRows; })) +
-                                          model::ExecutionLimits::maximumBatchWidth + 2};
+  // decode width, the state restore and, where given, the split's set-up,
+  // each counted done as it ends.
+  protocol::WarmingEvent warming{.steps = static_cast<uint32_t>(prefillRowClasses.size()) +
+                                          memoryPlan.breakdown().maximumBatchWidth + 2 + (setUp ? 1 : 0)};
   progress(warming);
   const auto ended = [&] {
     ++warming.stepsDone;
@@ -301,30 +304,35 @@ RuntimeBootstrapReport ServingRuntime::requireWarmup(
     return result;
   };
 
+  double mostRowsMilliseconds = 0.0;
   {
     const KvPool::RunwayHold runway(kvPool);
     model::WarmupStepResult maximumPrefill =
         run(RuntimeBootstrapStage::MaximumPrefill, report.warmup.maximumPrefill,
             [&] {
-              return modelRuntime.warmupPrefill(std::min(model::ExecutionLimits::prefillTokenBudget, modelRuntime.commandLimits().commandRows));
+              const double before = modelRuntime.telemetry().totalPrefillGpuSeconds;
+              model::WarmupStepResult result = modelRuntime.warmupPrefill(model::ExecutionLimits::prefillTokenBudget);
+              mostRowsMilliseconds = 1000.0 * (modelRuntime.telemetry().totalPrefillGpuSeconds - before);
+              return result;
             });
     report.warmup.maximumPrefillDetail = maximumPrefill.detail;
-    // Warm every reachable row class before Ready: otherwise the 27B's
-    // first 17-row chunk waited 19 s for kernels on a 16-core Apple9.
-    // Row classes need no memory beyond the maximum prefill's.
+    // A pipeline is created the first time a dispatch names it, so a class of
+    // prefill chunk no warmup ran would create its kernels while its request
+    // waited: 19 s cold for the 27B's first 17-row chunk on a 16-core Apple9
+    // plan. A class needs no memory the prefill of the most rows did not, and
+    // is required as that one is.
     for (const uint32_t rows : prefillRowClasses)
-      if (rows <= modelRuntime.commandLimits().commandRows) run(RuntimeBootstrapStage::PrefillRowClasses, report.warmup.prefillRowClasses,
+      run(RuntimeBootstrapStage::PrefillRowClasses, report.warmup.prefillRowClasses,
           [&] { return modelRuntime.warmupPrefill(rows); });
     const auto &budget = memoryPlan.breakdown();
     // Startup exercises only widths that fit this budget. This is not a
     // serving concurrency limit: the engine still admits lanes dynamically.
     const uint32_t affordableWidth = static_cast<uint32_t>(std::min<uint64_t>(
-        model::ExecutionLimits::maximumBatchWidth,
+        budget.maximumBatchWidth,
         (budget.dynamicBudgetBytes -
-         kvRunwayPages(budget.kvExtentPages) * budget.kvPageBytes) /
+         model::ExecutionLimits::runwayPages(budget.kvExtentPages, budget.maximumBatchWidth) * budget.kvPageBytes) /
             budget.laneStateBytes));
-    for (uint32_t width = 1;
-         width <= model::ExecutionLimits::maximumBatchWidth; ++width) {
+    for (uint32_t width = 1; width <= budget.maximumBatchWidth; ++width) {
       if (width > affordableWidth ||
           (width > 1 && report.warmup.decodeBatches[width - 2] ==
                             WarmupStepStatus::MemoryLimited)) {
@@ -341,24 +349,44 @@ RuntimeBootstrapReport ServingRuntime::requireWarmup(
         [&] { return modelRuntime.warmupCompositeStateRestore(); }, true);
   }
 
-  ActualMemoryReport actual;
-  try {
-    actual = memoryReporter();
-  } catch (const metal::MetalAllocationError &error) {
-    report.resourceFailure = resourceAllocationFailure(error.failure());
-    fail(report, RuntimeBootstrapStage::MemoryAudit,
-         std::string("actual memory reporting failed: ") + error.what());
-  } catch (const std::exception &error) {
-    fail(report, RuntimeBootstrapStage::MemoryAudit,
-         std::string("actual memory reporting failed: ") + error.what());
-  } catch (...) {
-    fail(report, RuntimeBootstrapStage::MemoryAudit,
-         "actual memory reporting failed with an unknown exception");
-  }
-  report.memoryAudit = auditActualMemory(memoryPlan, actual);
-  if (!report.memoryAudit.valid) {
-    fail(report, RuntimeBootstrapStage::MemoryAudit,
-         report.memoryAudit.describe());
+  const auto audit = [&] {
+    ActualMemoryReport actual;
+    try {
+      actual = memoryReporter();
+    } catch (const metal::MetalAllocationError &error) {
+      report.resourceFailure = resourceAllocationFailure(error.failure());
+      fail(report, RuntimeBootstrapStage::MemoryAudit,
+           std::string("actual memory reporting failed: ") + error.what());
+    } catch (const std::exception &error) {
+      fail(report, RuntimeBootstrapStage::MemoryAudit,
+           std::string("actual memory reporting failed: ") + error.what());
+    } catch (...) {
+      fail(report, RuntimeBootstrapStage::MemoryAudit,
+           "actual memory reporting failed with an unknown exception");
+    }
+    report.memoryAudit = auditActualMemory(memoryPlan, actual);
+    if (!report.memoryAudit.valid) {
+      fail(report, RuntimeBootstrapStage::MemoryAudit,
+           report.memoryAudit.describe());
+    }
+  };
+  audit();
+  // The split a start left to set up joins last, at the least memory the
+  // engine holds (1.7.0's joined before the KV pool and warmup): the audit
+  // above gave back what the engine does not keep idle, and runs again after
+  // it so that it sees the split.
+  if (setUp) {
+    WarmupStepStatus status = WarmupStepStatus::Pending;
+    run(RuntimeBootstrapStage::AneFfnSetUp, status, [&] {
+      const auto started = AwakeClock::now();
+      if (const uint32_t rows = setUp(mostRowsMilliseconds)) {
+        const KvPool::RunwayHold runway(kvPool, (rows + kv::kPageTokens - 1) / kv::kPageTokens);
+        return modelRuntime.warmupPrefill(rows);
+      }
+      // A set-up that left the GPU alone took at least the clock's tick (1 ns), even where the clock read none.
+      return model::WarmupStepResult{"the GPU alone", std::max(millisecondsSince(started) / 1000.0, 1e-9), {}};
+    }, true);
+    audit();
   }
   report.stage = RuntimeBootstrapStage::Ready;
   report.message = "required warmup paths and memory audit passed";
@@ -387,8 +415,11 @@ std::unique_ptr<ServingRuntime> ServingRuntime::start(
   }
   const uint32_t relaunchContext = config.resources.relaunchContext;
   if (relaunchContext) {
-    // Keep the first engine's context unless this plan holds less; Ready
-    // tells the server the new limit (server/runtime.py).
+    // A relaunch, planned as the server's first engine was, for
+    // --max-context or the automatic context, serves the context that
+    // engine served, which its split left. A plan that holds less, as when
+    // this Mac's memory budget shrank, has the relaunch serve that, and the
+    // server adopts it from Ready (server/runtime.py).
     if (relaunchContext > planContext)
       logLine("The memory plan holds ", planContext, " tokens of context, less than the ",
               relaunchContext, " the server's first engine served.");
@@ -463,7 +494,8 @@ std::unique_ptr<ServingRuntime> ServingRuntime::start(
   const protocol::ProtocolLimits limits = protocolLimitsFor(
       config.resources.model.capabilities, config.nativeLoop.engine.maxContext);
   const protocol::ReadyEvent ready =
-      readyEventFor(config.resources.model, config.nativeLoop.engine, limits);
+      readyEventFor(config.resources.model, config.nativeLoop.engine, limits,
+                    resources->memoryPlan().breakdown().maximumBatchWidth);
   std::unique_ptr<NativeRuntime> nativeLoop;
   try {
     connectToGovernor(config.nativeLoop.engine, resources->memoryGovernor());
@@ -495,11 +527,20 @@ std::unique_ptr<ServingRuntime> ServingRuntime::start(
   RuntimeResources *resourcesPointer = resources.get();
   model::RuntimeModel *modelPointer = modelRuntime.get();
   NativeRuntime *loopPointer = nativeLoop.get();
+  // A split left to set up joins as the warmup's last step, with the GPU time
+  // of its prefill of a full chunk on the GPU alone, which gives the mixer;
+  // a prefill of the least rows it takes creates its kernels.
+  std::function<uint32_t(double)> aneFfn;
+  if (resources->aneFfnPending())
+    aneFfn = [resourcesPointer, modelPointer, loopPointer](double gpuMilliseconds) {
+      resourcesPointer->finishAneFfn(gpuMilliseconds, *modelPointer);
+      loopPointer->refreshCommandLimits();
+      return resourcesPointer->aneFfnMinimumRows();
+    };
   RuntimeBootstrapReport report = requireWarmup(
-      resources->memoryPlan(), resources->modelContext().operators.prefillRowClasses(),
-      *modelRuntime, resources->kvPool(),
+      resources->memoryPlan(), modelRuntime->prefillRowClasses(), *modelRuntime, resources->kvPool(),
       [loopPointer](const protocol::WarmingEvent &event) { loopPointer->announceWarming(event); },
-      [resourcesPointer, modelPointer, loopPointer, pressure = config.resources.memoryPressure] {
+      [resourcesPointer, modelPointer] {
         // Audit every attempted warmup before reclaiming idle buffers.
         // Wider batches and cache memory grow on demand after Ready.
         ActualMemoryReport report = resourcesPointer->actualMemoryReport(
@@ -522,15 +563,16 @@ std::unique_ptr<ServingRuntime> ServingRuntime::start(
           }
           std::this_thread::sleep_for(kMemoryReleasePoll);
         }
-        // The pools start at their floors and grow before Ready into the
-        // room the host's rule for growth leaves (MemoryGovernor::
-        // growToTargets), which serving's control passes keep to, at
-        // macOS's pressure now: a warning that began during the start holds
-        // them at their floors.
-        resourcesPointer->memoryGovernor().growToTargets(loopPointer->monotonicMilliseconds(),
-                                                         pressure ? pressure() : MemoryPressure::Normal);
         return report;
-      });
+      },
+      aneFfn);
+  // The pools start at their floors and grow before Ready into the room the
+  // host's rule for growth leaves (MemoryGovernor::growToTargets), which
+  // serving's control passes keep to, at macOS's pressure now: a warning that
+  // began during the start holds them at their floors.
+  resources->memoryGovernor().growToTargets(nativeLoop->monotonicMilliseconds(),
+                                            config.resources.memoryPressure ? config.resources.memoryPressure()
+                                                                            : MemoryPressure::Normal);
 
   return std::unique_ptr<ServingRuntime>(
       new ServingRuntime(std::move(resources), std::move(modelRuntime), std::move(nativeLoop), ready,

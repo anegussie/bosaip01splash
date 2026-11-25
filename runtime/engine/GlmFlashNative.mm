@@ -405,7 +405,8 @@ private:
 };
 
 model::InklingCacheBudget inklingCacheBudget(const DeviceCapabilities &device) {
-  const uint64_t metalBytes = EngineMemoryPolicy::hardBudgetBytes(device.recommendedMaxWorkingSetBytes, 0);
+  const uint64_t metalBytes = EngineMemoryPolicy::hardBudgetBytes(device.recommendedMaxWorkingSetBytes, 0,
+                                                                   device.physicalMemoryBytes);
   const uint64_t reserve = EngineMemoryPolicy::hostSpareReserveBytes(device.physicalMemoryBytes);
   return {metalBytes, [reserve](uint64_t maximum, uint64_t resident) -> uint64_t {
     const auto host = queryHostMemory();

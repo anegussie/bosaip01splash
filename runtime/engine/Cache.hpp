@@ -21,6 +21,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -134,6 +135,8 @@ struct KvTierSnapshot final {
   uint32_t pendingPages = 0;
   uint32_t diskBlocks = 0;
   uint64_t diskBytes = 0;
+  // Why a tier the start asked for is off (its "SSD cache off" line); empty otherwise.
+  std::string offReason;
 };
 
 // What a start took back from a persistent tier: the states and KV blocks
@@ -420,10 +423,11 @@ public:
   // what is needed now, a restore that waits, a reclaim's demotion or a
   // Spill request's write through, and the pages take a small share of the
   // tier's writes. A point is unneeded unless it is still the newest of its
-  // conversation (newestPoint). Every point is refused once a file stopped
-  // taking writes, and one larger than the room it may take (pointFits) or
-  // given up to make room for itself.
-  [[nodiscard]] PersistStatus persist(uint64_t block);
+  // conversation (newestPoint), or, a `head`, still an ordinary state, which
+  // new conversations start from whether or not one went on from it. Every
+  // point is refused once a file stopped taking writes, and one larger than
+  // the room it may take (pointFits) or given up to make room for itself.
+  [[nodiscard]] PersistStatus persist(uint64_t block, bool head = false);
   // The block holds a restore point a conversation still resumes from: an
   // ordinary state with no ordinary state below it, or with ordinary states
   // on more than one of its branches, which no single conversation went on
@@ -446,6 +450,7 @@ public:
   // Measures the volume the disk tier lives on and sets the budget's limit
   // (DiskSpace::measure), for keepDiskLimit(); none without such a tier.
   void setDiskMeasure(std::function<void()> measure) { diskMeasure_ = std::move(measure); }
+  void setDiskOff(std::string reason) { kvTier_.offReason = std::move(reason); }
   // At a control pass, and when a write found the volume full: measures it
   // again, then gives up copies while the tier holds more than the limit,
   // in the order a full quota replaces them (freeDiskSpace), never a copy in

@@ -39,11 +39,6 @@ splash opencode    # or: splash claude / splash codex / splash hermes / splash p
 For a server started with another `--port`, pass the same `--port` to the agent.
 
 Press Ctrl+C in the server terminal to stop Splash.
-
-While the native engine is loaded, Splash prevents automatic idle system
-sleep so inference can continue when you leave the Mac unattended. The
-display can still sleep. Closing the lid or explicitly putting the Mac to
-sleep can still interrupt inference.
 For LM Studio Bionic, follow its [Splash setup guide](https://lmstudio.ai/blog/splash-engine).
 
 ## Use the API
@@ -62,6 +57,7 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 
 Reasoning follows the model default; `"reasoning_effort": "none"` turns it off
 in Chat. Anthropic Messages requests reason only when they set `thinking`.
+Some models decide for themselves whether to reason.
 [Reasoning settings](docs/server.md#default-reasoning-effort) ·
 [Tool calls](docs/api.md#tool-calls) ·
 [API details](docs/api.md)
@@ -76,45 +72,31 @@ automatically:
 | Qwen3.8-27B | `unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_M` | `mlx-community/Qwen3.8-27B-4bit` |
 | Qwen3.6-35B-A3B | `unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_M` | `mlx-community/Qwen3.6-35B-A3B-4bit` |
 | Ornith-1.5-122B | `unsloth/Ornith-1.5-122B-GGUF:UD-Q4_K_XL` | `ornith-ai/Ornith-1.5-122B-MLX-4bit` |
-| Qwen3.8-Flash-Next | `ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0` | — |
-| Flint | `unsloth/flint-GGUF:UD-Q4_K_XL` | — |
-
-Override the draft with `--draft-model OWNER/REPO` or a local BF16 DFlash2
-checkpoint directory. `SPLASH_DRAFT_MODEL` supplies the same default when a
-wrapper launches Splash; an explicit `--draft-model` takes precedence. The
-loader validates the architecture and accepts selector codebooks with or
-without the `.weight` suffix. A compatible checkpoint still needs a matched
-benchmark against the automatically selected draft before deployment.
+| Qwen3.8-Flash-Next | `ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0` | `mlx-community/Qwen3.8-Flash-Next-4bit` |
+| Flint | `unsloth/flint-GGUF:UD-Q4_K_XL` | `mlx-community/flint-mixed-3-4bit` |
+| Inkling-2-Mini | `unsloth/Inkling-2-Mini-GGUF:UD-Q4_K_M` | `mlx-community/Inkling-2-Mini-4bit` |
 
 Unsloth GGUF variants span **1–8 bits**, including mixed-precision UD formats
 up to `UD-Q8_K_XL`, whose BF16 tensors load too. Whole-BF16 and F16 models are
 not supported: the installer refuses a GGUF whose projections and experts are
 all BF16, F16 or F32.
 [Prism ML Ternary Bonsai 2](https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf)
-is also supported in PQ2_0 (7.2 GB), including vision. This branch also supports PTQ1_0 and its optimized decode lookup. Pass `OWNER/REPO:VARIANT`
-to `--model`, as in the quick start. MLX targets can be affine 2–8-bit,
-including mixed precision, mxfp4 or nvfp4. NVIDIA's and unsloth's NVFP4
-checkpoints and NVFP4 GGUFs also load. Smaller variants run on
+is also supported in PQ2_0 (7.2 GB), including vision. Inkling-2-Mini also loads
+from its release, `thinkingmachines/Inkling-2-Mini`. Pass
+`OWNER/REPO:VARIANT` to `--model`, as in the quick start. MLX targets can be
+affine 2–8-bit, including mixed precision, mxfp4, mxfp8 or nvfp4. NVIDIA's and
+unsloth's NVFP4 checkpoints and NVFP4 GGUFs also load. Smaller Qwen3.8-27B,
+Qwen3.6-35B-A3B and Inkling-2-Mini variants run on
 [24 GB Macs](docs/performance.md#smaller-ggufs-on-24-gb-macs).
 [27B variants](https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/tree/main) ·
 [35B variants](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/tree/main) ·
 [Ornith-1.5-122B variants](https://huggingface.co/unsloth/Ornith-1.5-122B-GGUF/tree/main) ·
-[Flash-Next variants](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/tree/main)
+[Flash-Next variants](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF/tree/main) ·
+[Inkling-2-Mini variants](https://huggingface.co/unsloth/Inkling-2-Mini-GGUF/tree/main)
 
 Vision and the tokenizer come from the target model's source.
 [Model loading and compatibility](docs/models.md#upstream-model-loading) ·
 [Supported formats](docs/models.md#gguf-targets)
-
-A local GGUF from a supported family can also be selected directly:
-
-```bash
-./splash serve --model /path/to/model.gguf --language-only
-```
-
-Its configuration, tokenizer and chat template come from that file. Local
-targets are checked on each start and use a separate assembly from Hub models.
-The family's DFlash2 draft is selected automatically; acceptance with altered
-weights needs measurement. `--revision` applies only to Hub targets.
 
 To serve files already on this Mac, pass the target's GGUF file or GGUF/MLX
 directory directly, and a compatible local DFlash2 draft:
@@ -150,8 +132,6 @@ window. To set your own limits or cache options, add these to `splash serve`:
 | `--persistent-cache` | Keep the SSD cache across restarts. Off by default. |
 
 Use `--max-memory` to leave room for other applications.
-An explicit `--max-context` also sizes verification attention scratch for
-that context, freeing memory that would otherwise cover the full model window.
 The server listens on localhost without authentication by default. For LAN
 access, authentication, browser apps on other origins, and other options, see
 [server configuration](docs/server.md#server-configuration) or
@@ -179,10 +159,6 @@ Strata serving the same GGUF on that Mac.
 [Launch benchmarks](https://inco.ai/blog/splash/) ·
 [Measurement details](docs/performance.md#splash-10-launch-benchmarks) ·
 [Run benchmarks locally](docs/validate.md#local-benchmarks)
-
-[Option-20 Mac prefill and generation estimates](docs/performance.md#option-20-mac-performance)
-cover six configurations, with measured Air results separated from conditional
-larger-Mac and Q2_0 planning scenarios.
 
 ### GGUF against llama.cpp
 

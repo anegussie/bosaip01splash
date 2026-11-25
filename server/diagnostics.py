@@ -4,7 +4,6 @@ import atexit
 import collections
 import io
 import itertools
-import math
 import os
 import select
 import signal
@@ -313,7 +312,8 @@ def _reasoning_parts(reasoning):
     effort, which the template renders over the others, named as such, or
     the server's (its default for an absent one, or the one it sets for
     every request); its enable_thinking where it set one that counted, and
-    whether it thinks."""
+    whether it thinks, where its prompt decides that: a model that opens its
+    own reasoning (thinking None) decides it itself."""
     sent, effort = reasoning["sent_effort"], reasoning["effort"]
     if (template := reasoning.get("template_effort")) is not None:
         rendered = f"{template} (chat_template_kwargs)"
@@ -328,7 +328,8 @@ def _reasoning_parts(reasoning):
             parts[0] += f" → {effort}"
     if reasoning["enable_thinking"] is not None:
         parts.append(f"enable_thinking {str(reasoning['enable_thinking']).lower()}")
-    parts.append("thinking on" if reasoning["thinking"] else "thinking off")
+    if reasoning["thinking"] is not None:
+        parts.append("thinking on" if reasoning["thinking"] else "thinking off")
     return parts
 
 
@@ -343,17 +344,12 @@ def _request(record):
 
 def print_request(record):
     outcome = record["outcome"]
-    detailed = "frontend_queue_ms" in record
     if outcome == "error":
         parts = ["Error", *_request(record), record.get("error_code", "runtime_error")]
         # Only the engine's own wording of a resource failure, never the
         # request's error message, which may quote it.
         if record.get("engine_reason"):
             parts.append(record["engine_reason"])
-        if detailed:
-            if "request_id" in record:
-                parts.append(f"request={record['request_id']}")
-            parts.append(f"frontend_queue={record['frontend_queue_ms'] / 1000:.3f}s")
         print_status(" · ".join(parts), error=True)
         return
     if outcome == "started":
@@ -386,47 +382,12 @@ def print_request(record):
     tools = record.get("tools")
     if isinstance(tools, dict) and tools.get("count"):
         parts.append(f"tools {tools['count']}·{tools.get('signature', '')}")
-    prefill = metrics.get("prefill", {})
-    prefill_tokens = prefill.get("tokens")
-    prefill_ms = latency.get("start_to_first_token_ms")
-    if (
-        detailed
-        and isinstance(prefill_tokens, int)
-        and isinstance(prefill_ms, (int, float))
-        and math.isfinite(prefill_ms)
-    ):
-        parts.append(f"prefill {prefill_tokens:,}/{prefill_ms / 1000:.2f}s")
-        if prefill_ms > 0:
-            parts.append(f"PP {prefill_tokens * 1000 / prefill_ms:.1f} tok/s")
-    decode = metrics.get("decode", {})
-    decode_tokens = decode.get("tokens")
-    decode_ms = latency.get("first_token_to_done_ms")
-    if (
-        detailed
-        and isinstance(decode_tokens, int)
-        and isinstance(decode_ms, (int, float))
-        and math.isfinite(decode_ms)
-    ):
-        parts.append(f"decode {decode_tokens:,}/{decode_ms / 1000:.2f}s")
     ttft = latency.get("ttft_ms")
     speed = latency.get("stream_tokens_per_second")
     if ttft is not None:
         parts.append(f"TTFT {ttft / 1000:.1f}s")
-        if detailed:
-            parts.append(
-                f"TTFT_with_frontend_queue {(ttft + record.get('frontend_queue_ms', 0)) / 1000:.1f}s"
-            )
-    if isinstance(speed, (int, float)) and math.isfinite(speed):
-        parts.append(f"TPS {speed:.1f} tok/s" if detailed else f"{speed:.1f} tok/s")
-    if detailed and "request_id" in record:
-        parts.extend((f"request={record['request_id']}", f"finish={outcome}"))
-        parts.append(f"frontend_queue={record.get('frontend_queue_ms', 0) / 1000:.3f}s")
-        queued = latency.get("queue_to_start_ms")
-        if detailed and isinstance(queued, (int, float)) and math.isfinite(queued):
-            parts.append(f"native_queue={queued / 1000:.3f}s")
-        wall = latency.get("wall_ms")
-        if detailed and isinstance(wall, (int, float)) and math.isfinite(wall):
-            parts.append(f"native_wall={wall / 1000:.3f}s")
+    if speed is not None:
+        parts.append(f"{speed:.1f} tok/s")
     speculation = metrics.get("speculation", {})
     if speculation.get("cycles"):
         # Each verified draft yields the tokens it accepted and one more.

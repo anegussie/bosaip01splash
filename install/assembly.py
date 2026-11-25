@@ -54,6 +54,11 @@ RECORD_KEYS = {
     "sources",
     "files",
 }
+# A text-only assembly of a family that serves images may record why the
+# Hub's listing of its commit gave no tower Splash serves (vision_unavailable),
+# so that later starts do not ask again until the commit moves
+# (upstream._lacks_tower).
+OPTIONAL_RECORD_KEYS = {"vision_unavailable"}
 FILE_RECORD_KEYS = {"path", "bytes", "mtime_ns", "ctime_ns", "digest"}
 
 
@@ -109,8 +114,8 @@ def _write_durably(path, data):
 def file_record(path: Path, recorded=None):
     """What model.json records of a linked file: its path, size and times,
     which verify compares on every start, and its content digest, which
-    verify(full=True) recomputes (models.content_digest). recorded, the record
-    an earlier assembly keeps of the file, gives the digest without reading the
+    verify(full=True) recomputes (_digest_of). recorded, the record an
+    earlier assembly keeps of the file, gives the digest without reading the
     file while it keeps the path, size and times recorded, as verify trusts
     them to."""
     stat = path.stat()
@@ -137,6 +142,14 @@ def _digest(path):
     return models.sha256(path)
 
 
+def _digest_of(path, digest):
+    """path's content digest in the scheme of digest (_digest)."""
+    if len(digest) == 64:
+        return models.sha256(path)
+    size = path.stat().st_size
+    return models.hash_file(path, hashlib.sha1(f"blob {size}\0".encode()))
+
+
 def verify(assembly: Path, *, full=False):
     """The record of the assembly at assembly (an entry of .resolved, or a
     selection link to one) if it verifies: model.json has the shape build
@@ -148,10 +161,7 @@ def verify(assembly: Path, *, full=False):
         raise models.ModelError("invalid resolved model record")
     for name, entry in record["files"].items():
         path = assembly / name
-        try:
-            stat = path.stat()
-        except FileNotFoundError:
-            raise models.ModelError(f"resolved model file is gone: {name}") from None
+        stat = path.stat()
         if (
             not path.is_symlink()
             or str(path.readlink()) != entry["path"]
@@ -160,7 +170,7 @@ def verify(assembly: Path, *, full=False):
             or stat.st_ctime_ns != entry["ctime_ns"]
         ):
             raise models.ModelError("resolved model file changed: " + name)
-        if full and models.content_digest(path, entry["digest"]) != entry["digest"]:
+        if full and _digest_of(path, entry["digest"]) != entry["digest"]:
             raise models.ModelError("source content hash mismatch: " + name)
     return record
 
@@ -170,7 +180,12 @@ def _well_formed(record):
     sources = record.get("sources")
     files = record.get("files")
     return (
-        set(record) == RECORD_KEYS | ({"metadata"} if gguf_target else set())
+        set(record) - OPTIONAL_RECORD_KEYS
+        == RECORD_KEYS | ({"metadata"} if gguf_target else set())
+        and isinstance(record.get("vision_unavailable", ""), str)
+        and (
+            "vision_unavailable" not in record or record.get("vision_format") == "none"
+        )
         and type(record["version"]) is int
         and record["version"] == 1
         and isinstance(record["model"], str)
@@ -268,6 +283,16 @@ def family(path: Path):
     for a family this release does not serve."""
     record = recorded(path)
     return record and families.named(record["family"])
+
+
+def vocabulary(path: Path) -> int:
+    """The vocabulary the assembly path names serves: its DFlash2 draft's
+    (draft/config.json), which the engine refuses unless it is its target's
+    (ModelDescriptor.mm readDraftLayout)."""
+    size = models.read_json(Path(path) / "draft/config.json").get("vocab_size")
+    if type(size) is not int or size <= 0:
+        raise models.ModelError(f"{path}/draft/config.json names no vocabulary size")
+    return size
 
 
 def _metadata_inputs(files):

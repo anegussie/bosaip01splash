@@ -263,6 +263,11 @@ class DiagnosticsTests(HarnessTestCase):
             line(sent_effort="none", effort="none", thinking=False),
             " · effort none · thinking off\n",
         )
+        # A model that opens its own reasoning decides whether it thinks.
+        self.assertEqual(
+            line(sent_effort="none", effort="none", thinking=None),
+            " · effort none\n",
+        )
         self.assertEqual(
             line(
                 sent_effort="xhigh",
@@ -461,16 +466,12 @@ class DiagnosticsTests(HarnessTestCase):
                     "outcome": "error",
                     "error_code": "capacity_exhausted",
                     "engine_reason": reason,
-                    "request_id": 123,
-                    "frontend_queue_ms": 250,
                     "error_message": "private prompt",
                 }
             )
         self.assertRegex(
             errors.getvalue(),
-            r"^\d{2}:\d{2}:\d{2} Error · request 123 · capacity_exhausted · "
-            + reason
-            + r" · request=123 · frontend_queue=0\.250s\n$",
+            r"^\d{2}:\d{2}:\d{2} Error · capacity_exhausted · " + reason + "\n$",
         )
 
     def test_concurrent_console_lines_stay_whole(self):

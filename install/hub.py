@@ -8,12 +8,6 @@ another installation can remove its files. The commit the Hub names for a
 default branch is recorded as refs/main, as huggingface_hub records a branch
 it downloads, for installs without the Hub.
 
-A download fetches only what this machine does not already have: a file the
-cache lacks but a folder it searches holds whole, by the blob ID the Hub
-reports for it or by its name, is placed in the cache's blobs folder
-(search_roots, local_files, _reuse_blob) rather than brought over the
-network.
-
 huggingface_hub is imported where it is used: the launcher imports the
 installer modules before the environment that provides it exists, and the
 tests replace its functions.
@@ -88,11 +82,15 @@ def reason(error) -> str:
 
 
 def failure_kind(error) -> str | None:
-    """What the app words a Hub or network failure by
-    (models.ModelError.kind): no such repository, no connection or access
-    denied; None for any other, which the app shows by its message, such as
-    a revision or file the repository lacks. A gated repository is access
-    denied, though huggingface_hub refuses it as a RepositoryNotFoundError
+    """What the app words a Hub, network or disk failure by
+    (models.ModelError.kind): no such repository, no connection, a
+    connection that dropped during the download ("interrupted"), access
+    denied, or a disk that filled ("disk", without the figures
+    _require_room gives, as a disk can fill after that check, which counts
+    the purgeable space macOS frees only as it is needed); None for any
+    other, which the app shows by its message, such as a revision or file
+    the repository lacks. A gated repository is access denied, though
+    huggingface_hub refuses it as a RepositoryNotFoundError
     (GatedRepoError)."""
     import httpx
     from huggingface_hub.errors import (
@@ -114,6 +112,10 @@ def failure_kind(error) -> str | None:
         return "auth"
     if isinstance(error, (httpx.ConnectError, httpx.TimeoutException)):
         return "offline"
+    if isinstance(error, (httpx.NetworkError, httpx.RemoteProtocolError)):
+        return "interrupted"
+    if isinstance(error, OSError) and error.errno in (errno.ENOSPC, errno.EDQUOT):
+        return "disk"
     return None
 
 
@@ -451,14 +453,6 @@ class Repository:
         return cls(name, None, set(paths), dict(paths))
 
     @classmethod
-    def local_gguf(cls, path):
-        """Expose exactly the selected file, including beside other GGUFs."""
-        path = Path(path)
-        if not path.is_file() or path.suffix.lower() != ".gguf":
-            raise models.ModelError(f"local GGUF file not found: {path}")
-        return cls.local_files(str(path), {path.name: path})
-
-    @classmethod
     def cached(
         cls, name, commit, path=None, *, unreachable_reason=None, unreachable_kind=None
     ):
@@ -506,8 +500,7 @@ class Repository:
         for the app. unreachable and unreachable_kind, from another repository
         this start, stand for the Hub's answer without a request. A different
         revision is never substituted."""
-        import httpx
-        from huggingface_hub import HfApi, constants
+        from huggingface_hub import constants
 
         if Path(name).is_absolute():
             return cls.local_directory(name)
@@ -523,6 +516,12 @@ class Repository:
         elif unreachable:
             why, kind = unreachable, unreachable_kind
         else:
+            # Only a request needs the client and the Hub's API: an offline
+            # or pinned start of an installed model imports neither (httpx
+            # alone took 67 ms of that start's 0.14 s).
+            import httpx
+            from huggingface_hub import HfApi
+
             try:
                 info = HfApi().model_info(
                     name, revision=revision, files_metadata=True, timeout=HUB_TIMEOUT
@@ -605,12 +604,33 @@ class Repository:
             f"{self.name}/{name}", "rb", revision=self.revision, block_size=8 << 20
         )
 
-    def download(self, names):
+    def stored(self, names):
+        """(bytes, blob ID) of each of names the Hub lists: what a download
+        of names comes to, the blobs the Hub cache has and those it lacks."""
+        if self.paths is not None:
+            return []
+        return [self.sizes[n] for n in names if n in self.sizes]
+
+    def missing(self, names):
+        """(bytes, blob ID) of each of names whose blob the Hub cache lacks:
+        what a download of names fetches."""
+        if self.paths is not None:
+            return []
+        blobs = folder(self.name) / "blobs"
+        return [
+            (size, blob)
+            for size, blob in self.stored(names)
+            if not (blob and (blobs / blob).exists())
+        ]
+
+    def download(self, names, *, reserve=0):
         """Each of names -> its local path, downloading what the cache lacks.
-        A file the cache lacks but this machine holds whole elsewhere is put
-        in the repository's blobs folder rather than fetched (_reuse_blob).
-        Before a download, the partial files killed ones left in that folder
-        are removed. Ctrl+C stops the wait for it at once (_interruptible)."""
+        reserve is the bytes of the downloads that follow this one into the
+        Hub cache, which its room check counts too, so that a disk without
+        room for all of them refuses the first (_require_room). Before a
+        download, the partial files killed ones left in the repository's
+        blobs folder are removed. Ctrl+C stops the wait for it at once
+        (_interruptible)."""
         for name in names:
             self._require(name)
         if self.paths is not None:
@@ -618,38 +638,17 @@ class Repository:
         from huggingface_hub import snapshot_download
 
         blobs = folder(self.name) / "blobs"
-        # name -> (bytes, blob ID) of each file whose blob the cache lacks.
-        missing = {
-            name: (size, blob)
-            for name, (size, blob) in self.sizes.items()
-            if name in names and blob and not (blobs / blob).exists()
-        }
-        candidates = local_files(missing)
-        reused = {}
-        for name, (_, blob) in missing.items():
-            for source in candidates.get(name, ()):
-                if _reuse_blob(blobs, name, blob, source):
-                    reused[name] = source
-                    break
-        if reused:
-            print(
-                "Reusing files this machine already has: "
-                + ", ".join(f"{name} from {reused[name]}" for name in sorted(reused)),
-                flush=True,
-            )
-        fetch = [
-            (size, blob) for name, (size, blob) in missing.items() if name not in reused
-        ]
+        fetch = self.missing(names)
         total = sum(size for size, _ in fetch)
         if fetch:
             _remove_abandoned_downloads(blobs)
-            _require_room(self.name, blobs, total)
+            _require_room(blobs, total + reserve)
             print(
                 f"Fetching {len(fetch)} file(s), {total / 1e9:.2f} GB, "
                 f"from {self.name}@{self.revision[:12]}; cached files are reused.",
                 flush=True,
             )
-        with _download_progress(self.name, blobs, fetch) as counted:
+        with _download_progress(self.name, blobs, self.stored(names), fetch) as counted:
             path = Path(
                 _interruptible(
                     snapshot_download,
@@ -666,76 +665,6 @@ class Repository:
 
     def identity(self):
         return {"repo": self.name, "revision": self.revision}
-
-
-def search_roots():
-    """The folders local_files looks in for a file a download would otherwise
-    bring from the Hub: the Hub cache huggingface_hub uses, the models root,
-    and the folders SPLASH_MODEL_SEARCH_PATHS names, separated as PATH is."""
-    from huggingface_hub import constants
-
-    roots = [Path(constants.HF_HUB_CACHE), models.MODELS]
-    roots += [
-        Path(value)
-        for value in os.environ.get("SPLASH_MODEL_SEARCH_PATHS", "").split(os.pathsep)
-        if value
-    ]
-    found = []
-    for root in roots:
-        root = root.expanduser().resolve()
-        if root.is_dir() and root not in found:
-            found.append(root)
-    return found
-
-
-def local_files(requested):
-    """name -> each file under search_roots that could be the file the Hub
-    would bring for it: one named name, or one named the blob ID its content
-    has, with the bytes the Hub reports. A download uses one only after reading
-    it (_reuse_blob), so a partial file, or another variant of the same name,
-    is never taken for the file that is missing. One walk of each root serves
-    every file requested."""
-    found = {}
-    for root in search_roots():
-        for directory, _, entries in os.walk(root):
-            for entry in entries:
-                for name, (size, digest) in requested.items():
-                    if entry not in (name, digest):
-                        continue
-                    path = Path(directory) / entry
-                    try:
-                        whole = path.stat().st_size == size
-                    except OSError:
-                        continue
-                    if whole:
-                        found.setdefault(name, []).append(path)
-    return found
-
-
-def _reuse_blob(blobs, name, digest, source):
-    """Place source, whose content the Hub reports as digest, in the
-    repository's blobs folder under the name huggingface_hub would give it, so
-    its download links the snapshot from that blob rather than fetching it.
-    False when source's content is something else, or cannot be placed, which
-    leaves the download to bring the file."""
-    if models.content_digest(source, digest) != digest:
-        return False
-    destination = blobs / digest
-    if destination.exists():
-        return True
-    stage = blobs / f"{digest}.local-{os.getpid()}"
-    try:
-        blobs.mkdir(parents=True, exist_ok=True)
-        # Cache collection identifies live blobs by inode. Sharing an inode
-        # across repositories would keep an unused repository's blob alive.
-        shutil.copyfile(source, stage)
-        os.replace(stage, destination)
-    except OSError as error:
-        models.warn(f"could not reuse {source} for {name}: {error}")
-        return False
-    finally:
-        stage.unlink(missing_ok=True)
-    return True
 
 
 def _paths(directory):
@@ -823,17 +752,21 @@ def _publish(path, content):
             pending.unlink(missing_ok=True)
 
 
-def _require_room(repo_id, blobs, needed):
+def _require_room(blobs, needed):
     """Refuse a download of needed bytes into the blobs folder that its volume
     has no room for, before it fills the disk: the Hub cache can be on
-    another volume (HF_HOME, HF_HUB_CACHE) than the home folder."""
+    another volume (HF_HOME, HF_HUB_CACHE) than the home folder. The refusal
+    is of kind "disk", with the bytes needed and available, which the app
+    words; its message, with the cache's path, is for the log."""
     existing = next(p for p in (blobs, *blobs.parents) if p.exists())
     available = _available_bytes(existing)
     if needed > available:
         raise models.ModelError(
-            f"not enough disk space for {repo_id}: the download needs "
+            f"not enough disk space: the installation needs "
             f"{needed / 1e9:.2f} GB and {available / 1e9:.2f} GB is available "
-            f"in {blobs.parent.parent}"
+            f"in {blobs.parent.parent}",
+            kind="disk",
+            details={"needed": needed, "available": available},
         )
 
 
@@ -941,36 +874,40 @@ def _interruptible(call, *args, **kwargs):
 
 
 @contextmanager
-def _download_progress(repo_id, blobs, fetch):
-    """With json_progress, report the download in the block of fetch,
-    (bytes, blob ID) pairs in the blobs folder, as JSON lines on stdout,
-    and yield the tqdm class the block's snapshot_download counts with (None
-    without json_progress): done 0 first, then, measured every
-    PROGRESS_INTERVAL, whenever it grew, the bytes received, and done == total
-    once the block succeeds. Received is what the network has brought or what
-    the folder holds of fetch, whichever is more, and at most the total: under
-    Xet a file is written in order from chunks that arrive out of order and
-    wait in memory, so the folder alone can stay at 0 for minutes, then jump."""
+def _download_progress(repo_id, blobs, files, fetch):
+    """With json_progress, report the download in the block of files,
+    (bytes, blob ID) pairs in the blobs folder, of which it fetches those in
+    fetch, as JSON lines on stdout, and yield the tqdm class the block's
+    snapshot_download counts with (None without json_progress): done first
+    the bytes of the files the folder has whole, so that a download started
+    again goes on from what the one before finished, then, measured every
+    PROGRESS_INTERVAL, whenever it grew, those and the bytes received, and
+    done == total once the block succeeds. Received is what the network has
+    brought or what the folder holds of fetch, whichever is more, and at most
+    the total: under Xet a file is written in order from chunks that arrive
+    out of order and wait in memory, so the folder alone can stay at 0 for
+    minutes, then jump."""
     if not (json_progress and fetch):
         yield None
         return
-    total = sum(size for size, _ in fetch)
+    total = sum(size for size, _ in files)
+    had = total - sum(size for size, _ in fetch)
     counted = _network_counter()
     stop = threading.Event()
 
     def measure():
-        done = 0
+        done = had
         while not stop.wait(PROGRESS_INTERVAL):
             held = _blob_bytes(blobs)
             written = sum(min(size, held.get(blob, 0)) for size, blob in fetch)
-            now = min(max(written, counted.received), total)
+            now = had + min(max(written, counted.received), total - had)
             # A partial file renamed to its blob between the listing and its
             # size goes uncounted once, so only growth is reported.
             if now > done:
                 done = now
                 _report_progress(repo_id, done, total)
 
-    _report_progress(repo_id, 0, total)
+    _report_progress(repo_id, had, total)
     thread = threading.Thread(target=measure)
     thread.start()
     try:

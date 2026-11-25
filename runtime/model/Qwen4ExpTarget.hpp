@@ -26,8 +26,7 @@ class Qwen4ExpTarget final : public QwenTarget {
 public:
   // A target whose prefill commands run up to `prefillChunks` chunks.
   Qwen4ExpTarget(const Qwen4ExpWeights &weights, const QwenTargetGeometry &geometry, metal::MetalBackend &backend,
-                 const ops::ExecutionPlans &operators, uint32_t prefillChunks,
-                 uint32_t prefillRows = ExecutionLimits::prefillTokenBudget);
+                 const ops::ExecutionPlans &operators, uint32_t prefillChunks);
 
   [[nodiscard]] QwenTargetScratchBytes allocatedScratchBytes() const noexcept override;
   [[nodiscard]] std::vector<metal::MetalBuffer> addPrefill(metal::CommandGraph &graph,

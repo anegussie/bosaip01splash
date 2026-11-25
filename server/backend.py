@@ -7,17 +7,17 @@ import queue
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import dataclass, field, replace
 
 from tokenizers.decoders import DecodeStream
 
-from . import json_codec, supervision, telemetry
+from . import json_codec, supervision
 from . import protocol as wire
 from . import runtime as engine_runtime
 from .chat_format import ChatFormat
 from .constraints import TokenConstraint
 from .diagnostics import print_status
-from .errors import APIError, ConstraintError, remaining_request_time
+from .errors import APIError, ConstraintError
 from .latency import RequestLatency
 from .metrics import metrics_dict
 from .output import StopSearch
@@ -53,8 +53,8 @@ def thinking_end_tokens(tokenizer, text, chat_format):
         or not tokenizer.added_tokens_decoder.keys().isdisjoint(tokens[:-1])
     ):
         raise ThinkingEndError(
-            f"the thinking end {text!r} must end with {chat_format.think_end} and hold no "
-            "other special token"
+            f"the thinking end {text!r} must end with {chat_format.think_close} "
+            "and hold no other special token"
         )
     if len(tokens) > wire.MAX_THINKING_END_TOKENS:
         raise ThinkingEndError(
@@ -62,6 +62,14 @@ def thinking_end_tokens(tokenizer, text, chat_format):
             f"{wire.MAX_THINKING_END_TOKENS}"
         )
     return tokens
+
+
+# A start's state source as usage names it: null for none.
+_STATE_SOURCES = {
+    wire.StateSource.NONE: None,
+    wire.StateSource.MEMORY: "memory",
+    wire.StateSource.DISK: "disk",
+}
 
 
 @dataclass(frozen=True)
@@ -72,6 +80,21 @@ class CacheInfo:
     # Tokens whose KV the request read from cached blocks another request
     # computed, past its cached prefix; known once it is done.
     deduplicated_tokens: int = 0
+    # What its start found beside the cached prefix (wire.StartEvent): how
+    # far the cache matched its prompt's KV, where the state it resumed from
+    # was, and whether a state past it was lost.
+    prefix_tokens: int = 0
+    state_source: str | None = None
+    lost_state: bool = False
+
+    def reuse(self):
+        """The usage fields that say what the request reused, beside each
+        API's cached tokens."""
+        return {
+            "prefix_tokens": self.prefix_tokens,
+            "state_source": self.state_source,
+            "lost_state": self.lost_state,
+        }
 
 
 @dataclass(frozen=True)
@@ -170,6 +193,9 @@ class Job:
     # Trailing prompt tokens of the chat template's generation prompt; zero
     # when unknown.
     generation_prompt_tokens: int = 0
+    # Where the prompt's head (a system prompt and tools) ends; zero without
+    # one (frontend._head_tokens).
+    head_tokens: int = 0
     flags: wire.RequestFlag = wire.RequestFlag(0)
     # The request asked for more output than the context leaves, and
     # max_new_tokens was lowered to what it leaves.
@@ -177,12 +203,6 @@ class Job:
     # The request's cache_salt hashed to 128 bits; zero without one.
     cache_salt: int = 0
     latency: RequestLatency | None = None
-    frontend_queue_ms: float = 0.0
-    # HTTP-thread callback for queued heartbeats and disconnect detection.
-    queue_poll: object | None = None
-    # Correlation IDs only; never request bodies, prompts, or tool arguments.
-    telemetry: dict = field(default_factory=dict)
-    telemetry_progress_at: float = 0.0
 
     @property
     def may_call_tools(self):
@@ -193,24 +213,27 @@ class Job:
 
 class CallbackStreamer:
     def __init__(
-        self, tokenizer, callback, stop_sequences=(), on_stop=None, control_tokens=()
+        self, tokenizer, callback, stop_sequences=(), on_stop=None, visible_tags=()
     ):
         self.tokenizer = tokenizer
         self.callback = callback
         self.stops = StopSearch(stop_sequences) if stop_sequences else None
         self.on_stop = on_stop
         self.backend = tokenizer.backend_tokenizer
-        self.skip_special = not control_tokens
-        self.hidden_tokens = (
-            {
-                i
-                for i, token in tokenizer.added_tokens_decoder.items()
-                if token.special and i not in control_tokens
-            }
-            if control_tokens
-            else frozenset()
-        )
-        self.decode_stream = DecodeStream(skip_special_tokens=self.skip_special)
+        # Special tokens the text holds (ChatFormat.visible_tags), by ID; every
+        # other special token decodes to nothing. The text is each run of
+        # other tokens decoded on its own, then each tag's text (_decode): at
+        # a tag, the run before it is finished as that decode finishes it,
+        # an unfinished character's bytes as its replacement, and the next
+        # run starts a new stream.
+        self.visible = {
+            tokenizer.convert_tokens_to_ids(tag): tag for tag in visible_tags
+        }
+        # The tokens of the run since the last visible tag, and the text the
+        # stream decoded of them.
+        self.run = []
+        self.run_text = ""
+        self.decode_stream = DecodeStream(skip_special_tokens=True)
         self.token_ids = []
         self.emitted = []
         self.pending_text = ""
@@ -247,9 +270,15 @@ class CallbackStreamer:
             return
         for token_id in token_ids:
             token_id = int(token_id)
-            if token_id in self.hidden_tokens:
-                continue
             self.token_ids.append(token_id)
+            if token_id in self.visible:
+                self._end_run()
+                self._emit(self.visible[token_id])
+                if self.stop_sequence is not None:
+                    break
+                continue
+            if self.visible:
+                self.run.append(token_id)
             if self.decode_stream is None:
                 continue
             try:
@@ -263,18 +292,26 @@ class CallbackStreamer:
                 self.decode_stream = None
                 continue
             if text:
+                if self.visible:
+                    self.run_text += text
                 self._emit(text)
                 if self.stop_sequence is not None:
                     break
 
+    def _end_run(self):
+        """Finish the run before a visible tag as _decode decodes it, and
+        start a new stream for the run after it."""
+        decoded = self._decode_run(self.run)
+        if not decoded.startswith(self.run_text):
+            raise RuntimeError("incremental tokenizer output diverged")
+        self._emit(decoded[len(self.run_text) :])
+        self.run, self.run_text = [], ""
+        self.decode_stream = DecodeStream(skip_special_tokens=True)
+
     def end(self):
         if self.stop_sequence is not None:
             return
-        decoded = self.tokenizer.decode(
-            self.token_ids,
-            skip_special_tokens=self.skip_special,
-            clean_up_tokenization_spaces=False,
-        )
+        decoded = self._decode(self.token_ids)
         handled = "".join(self.emitted) + self.pending_text
         if not decoded.startswith(handled):
             raise RuntimeError("incremental tokenizer output diverged")
@@ -286,32 +323,56 @@ class CallbackStreamer:
             self._send(self.pending_text)
             self.pending_text = ""
 
+    def _decode(self, token_ids):
+        """The text of token_ids, each visible tag as its text between the
+        runs of other tokens, decoded without the other special tokens."""
+        if not self.visible:
+            return self._decode_run(token_ids)
+        text, run = [], []
+        for token_id in token_ids:
+            if token_id in self.visible:
+                text += [self._decode_run(run), self.visible[token_id]]
+                run = []
+            else:
+                run.append(token_id)
+        return "".join([*text, self._decode_run(run)])
+
+    def _decode_run(self, token_ids):
+        return self.tokenizer.decode(
+            token_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
+        )
+
     def count_reasoning_tokens(self, chat_format, thinking, tool_calls=False):
         """The reasoning's tokens, as ReasoningSplitter reads the text: from
         the start of the output where the generation prompt opened the
         reasoning (thinking), or after the model's own opening of it
-        (chat_format.think_start_id), to its close or, where a call may follow
-        and a call's opening ends the reasoning, a call's opening; none for
-        a request without a chat format."""
+        (chat_format.think_start_ids), to its close or, where a call may
+        follow and a call's opening ends the reasoning, a call's opening;
+        where the format's reasoning returns after text, those inside each
+        of its reasoning blocks; none for a request without a chat format."""
         if chat_format is None:
             return 0
-        if chat_format.channel_framing:
-            count = 0
-            reasoning = False
-            for token in self.token_ids:
-                if token == chat_format.think_start_id:
-                    reasoning = True
-                elif token in chat_format.output_control_tokens:
-                    reasoning = False
-                elif reasoning:
-                    count += 1
+        opening = chat_format.think_start_ids
+        if chat_format.reasoning_returns:
+            count, index, inside = 0, 0, thinking
+            while index < len(self.token_ids):
+                if inside:
+                    inside = self.token_ids[index] != chat_format.think_end_id
+                    count += inside
+                    index += 1
+                elif (
+                    opening
+                    and tuple(self.token_ids[index : index + len(opening)]) == opening
+                ):
+                    inside = True
+                    index += len(opening)
+                else:
+                    index += 1
             return count
         if thinking:
             start = 0
-        elif chat_format.think_start_id is not None and self.token_ids[:1] == [
-            chat_format.think_start_id
-        ]:
-            start = 1
+        elif opening and tuple(self.token_ids[: len(opening)]) == opening:
+            start = len(opening)
         else:
             return 0
         calls_end = tool_calls and chat_format.calls_end_reasoning
@@ -375,20 +436,7 @@ class NativeBackend:
         wire.FinishReason.CANCELLED: "cancelled",
     }
 
-    def __init__(
-        self,
-        runtime,
-        tokenizer,
-        request_logger=None,
-        max_active_requests=0,
-        thinking_end=None,
-    ):
-        if (
-            isinstance(max_active_requests, bool)
-            or not isinstance(max_active_requests, int)
-            or max_active_requests < 0
-        ):
-            raise ValueError("max_active_requests must be a nonnegative integer")
+    def __init__(self, runtime, tokenizer, request_logger, thinking_end=None):
         self.runtime = runtime
         self.tokenizer = tokenizer
         self.request_logger = request_logger
@@ -399,9 +447,6 @@ class NativeBackend:
         self.active = {}
         self.closing = False
         self.lock = threading.RLock()
-        self.submission_condition = threading.Condition(self.lock)
-        self.max_active_requests = max_active_requests
-        self.submission_queue = []
         self.status_snapshot = None
         self.status_snapshot_at = None
         # Since when the engine loop has left status probes unanswered.
@@ -833,9 +878,6 @@ class NativeBackend:
         }
         if stale_error is not None:
             snapshot["transport"]["error"] = engine_error or str(stale_error)
-        with self.lock:
-            snapshot["transport"]["max_active_requests"] = self.max_active_requests
-            snapshot["transport"]["frontend_waiting"] = len(self.submission_queue)
         if not transport_ready:
             snapshot["ready"] = False
         return snapshot
@@ -878,6 +920,7 @@ class NativeBackend:
             flags=job.flags,
             cache_salt=job.cache_salt,
             thinking_budget=self._thinking_budget(job),
+            head_tokens=job.head_tokens,
         )
         return engine_runtime.GenerationRequest(
             frame,
@@ -955,7 +998,7 @@ class NativeBackend:
             emit,
             job.stop_sequences,
             stop_matched,
-            job.chat_format.output_control_tokens if job.chat_format else (),
+            () if job.chat_format is None else job.chat_format.visible_tags,
         )
         state = _JobState(job, streamer)
         request = self._generation_request(job)
@@ -982,14 +1025,7 @@ class NativeBackend:
                 self.terminals.put((state, call))
 
         try:
-            self._admit_submission(state)
             self._admit(state, request, on_event, on_complete)
-        except Exception as error:
-            with self.lock:
-                self._detach_locked(state)
-            error = self._api_error(error)
-            self._record(job, error=error)
-            job.events.put(("error", error))
         finally:
             # The frame, the request's last copy of its pixels, is written
             # or refused: the pixels and their charge end here, not with the
@@ -1001,12 +1037,12 @@ class NativeBackend:
         job = state.job
         with self.lock:
             if self.closing:
-                self._detach_locked(state)
+                state.detach()
                 job.events.put(("error", self._closed_error_locked()))
                 return
             if self.quarantine.refuses(request.fingerprint):
                 # Retrying fails the same way until the quarantine ends.
-                self._detach_locked(state)
+                state.detach()
                 trace = self.runtime.last_crash_trace
                 job.events.put(
                     (
@@ -1053,54 +1089,10 @@ class NativeBackend:
                     refusal = self.refusal()
                 job.events.put(("error", refusal or self._api_error(error)))
 
-    def _admit_submission(self, state):
-        """FIFO submission without allocating native model state for waiters."""
-        job = state.job
-        started = time.monotonic()
-        self._telemetry(job, "request_queue_enter")
-        with self.submission_condition:
-            self.submission_queue.append(job.request_id)
-        try:
-            while True:
-                with self.submission_condition:
-                    if self.closing:
-                        raise self._closed_error_locked()
-                    if job.cancelled.is_set():
-                        raise APIError(
-                            499, "request cancelled while queued", "request_cancelled"
-                        )
-                    remaining = remaining_request_time(job.deadline)
-                    if self.submission_queue[0] == job.request_id and (
-                        not self.max_active_requests
-                        or len(self.active) < self.max_active_requests
-                    ):
-                        self.active[job.request_id] = state
-                        return
-                if job.queue_poll is not None:
-                    job.queue_poll()
-                with self.submission_condition:
-                    self.submission_condition.wait(min(remaining, 0.2))
-        finally:
-            # The HTTP callback captures its handler and job. Keep it only
-            # while waiting, so completed jobs release ingress reservations
-            # without depending on cyclic garbage collection.
-            job.queue_poll = None
-            with self.submission_condition:
-                self.submission_queue.remove(job.request_id)
-                job.frontend_queue_ms = (time.monotonic() - started) * 1000.0
-                self.submission_condition.notify_all()
-            self._telemetry(
-                job,
-                "request_queue_leave",
-                frontend_queue_ms=job.frontend_queue_ms,
-                cancelled=job.cancelled.is_set(),
-            )
-
     def _detach_locked(self, state):
         state.detach()
         if self.active.get(state.job.request_id) is state:
             del self.active[state.job.request_id]
-        self.submission_condition.notify_all()
 
     def _on_event(self, state, event):
         job = state.job
@@ -1109,6 +1101,9 @@ class NativeBackend:
                 "hit" if event.matched_prompt_tokens else "miss",
                 event.matched_prompt_tokens,
                 event.lane,
+                prefix_tokens=event.prefix_tokens,
+                state_source=_STATE_SOURCES[event.state_source],
+                lost_state=event.lost_state,
             )
             with self.lock:
                 job.cache = cache
@@ -1124,22 +1119,18 @@ class NativeBackend:
                     "effort": job.reasoning.effort,
                     "enable_thinking": job.reasoning.enable_thinking,
                     "template_effort": job.reasoning.template,
-                    "thinking": job.thinking,
+                    # Whether the generation prompt opened the reasoning, where
+                    # the prompt decides it; None where the model opens its own
+                    # (ChatFormat.prompt_switches_reasoning: Inkling 2's, Flint's).
+                    "thinking": (
+                        job.thinking
+                        if job.chat_format.prompt_switches_reasoning
+                        else None
+                    ),
                 }
-            self.terminals.put(functools.partial(self._log, record))
-            self._telemetry(
-                job, "request_native_start", cached_tokens=cache.matched_tokens
-            )
+            self._log(record)
             job.events.put(("start", None))
         elif isinstance(event, wire.PromptProgressEvent):
-            if time.monotonic() - job.telemetry_progress_at >= 1.0:
-                job.telemetry_progress_at = time.monotonic()
-                self._telemetry(
-                    job,
-                    "request_prefill_progress",
-                    processed_tokens=event.processed_tokens,
-                    native_elapsed_ms=event.elapsed_micros / 1000.0,
-                )
             job.events.put(
                 (
                     "progress",
@@ -1152,10 +1143,6 @@ class NativeBackend:
                 )
             )
         elif isinstance(event, wire.TokensEvent):
-            if event.tokens and event.sequence_offset == 0:
-                self._telemetry(
-                    job, "request_first_token", first_batch_tokens=len(event.tokens)
-                )
             if job.latency is not None and event.tokens:
                 job.latency.tokens()
             if event.sequence_offset == 0:
@@ -1167,7 +1154,6 @@ class NativeBackend:
     def cancel(self, job):
         call = None
         with self.lock:
-            self.submission_condition.notify_all()
             job.cancelled.set()
             state = self.active.get(job.request_id)
             if state is not None:
@@ -1180,10 +1166,6 @@ class NativeBackend:
             item = self.terminals.get()
             if item is None:
                 return
-            if callable(item):
-                item()
-                del item
-                continue
             state, call = item
             self._finalize(state, call)
             # Do not keep a finished request, its output and its events,
@@ -1332,8 +1314,6 @@ class NativeBackend:
 
     def _record(self, job, result=None, error=None, request_id=None):
         record = {
-            "request_id": job.request_id,
-            "frontend_queue_ms": job.frontend_queue_ms,
             "outcome": result.reason if result else "error",
             "prompt_tokens": len(job.prompt_tokens),
         }
@@ -1352,51 +1332,7 @@ class NativeBackend:
             if error.code in _ENGINE_RESOURCE_CODES:
                 record["engine_reason"] = error.message
             error.logged = True
-        self._telemetry(
-            job,
-            "request_end",
-            outcome=record["outcome"],
-            completion_tokens=result.completion_tokens if result else None,
-            reasoning_tokens=job.reasoning_tokens,
-            frontend_queue_ms=job.frontend_queue_ms,
-            metrics=result.metrics if result else None,
-            error_code=error.code if error else None,
-        )
         self._log(record)
-
-    def _telemetry(self, job, event, **fields):
-        # Capture clocks on the originating thread, write off the native reader.
-        snapshot = self.status_snapshot or {}
-        record = {
-            **telemetry.clocks(),
-            "event": event,
-            "request_id": job.request_id,
-            "public_response_id": job.public_id,
-            "correlation": job.telemetry,
-            "prompt_tokens": len(job.prompt_tokens),
-            "max_new_tokens": job.max_new_tokens,
-            "seed": job.seed,
-            "sampling": asdict(job.sampling),
-            "thinking": job.thinking,
-            "thinking_token_budget": job.thinking_token_budget,
-            "reasoning_effort_sent": job.reasoning.sent if job.reasoning else None,
-            "reasoning_effort_effective": job.reasoning.effort
-            if job.reasoning
-            else None,
-            "enable_thinking": job.reasoning.enable_thinking if job.reasoning else None,
-            "offered_tools_count": job.tools_signature[0] if job.tools_signature else 0,
-            "tool_schema_signature": job.tools_signature[1]
-            if job.tools_signature
-            else None,
-            "build_id": snapshot.get("identity", {}).get("cache", {}).get("build_id"),
-            "memory_pressure": snapshot.get("memory_pressure"),
-            "thermal_state": snapshot.get("thermal_state"),
-            "timing_scope": "request_stage_elapsed_not_gpu_kernel_time",
-            "gpu_kernel_ms": None,
-            "cpu_compute_ms": None,
-            **fields,
-        }
-        telemetry.enqueue(record)
 
     def _log(self, record):
         # A request's start, when the engine admits it, and its end.
@@ -1410,7 +1346,6 @@ class NativeBackend:
             if self.closing:
                 return
             self.closing = True
-            self.submission_condition.notify_all()
             for state in self.active.values():
                 state.shutdown_requested = True
         # A word being told ends before close returns, and none follows it.

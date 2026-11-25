@@ -51,6 +51,9 @@ inline half4 quant_e4m3_word(uint word) {
   const half2 even = quant_e4m3_pair(word & 0x00FF00FFu), odd = quant_e4m3_pair((word >> 8) & 0x00FF00FFu);
   return half4(even.x, odd.x, even.y, odd.y);
 }
+// The scale of quant_e4m3_pair's halves in an MXFP8 group of E8M0 exponent e: 2^(e - 127) 2^8 = 2^(e - 119), a
+// normal float for every e below 247 and infinite from there (255 is E8M0's NaN; no weight's scale is near 2^120).
+inline float quant_mxfp8_scale(uint e) { return as_type<float>(min(e + 8u, 255u) << 23); }
 
 // s.x scales and m.x offsets pairs 0, 1, s.y and m.y pairs 2, 3 (equal where
 // one coefficient covers 32 elements or more: the register tile then reads the
@@ -486,6 +489,22 @@ struct FmtNVFP4 {
     return {float2(quant_e4m3_pair(quant_byte_pairs(pair).x)) * (128.0f * mt.g)};
   }
 };
+// NVFP4_64: NVFP4's codes and value in 64-element blocks (a row that is not whole 256-element ones); meta the 4
+// E4M3 scales of the unit's 16-groups (bytes 2j, 2j + 1 of group j), then g.
+struct FmtNVFP464 {
+  QUANT_FORMAT(GGUF_FMT_NVFP464, QuantCodebook, 0, 16, false);
+  struct Payload { uint4 a; }; typedef uint Chunk; struct Meta { uint sc; float g; }; typedef float Scale;
+  static half value(uint i) { return half(kFP4Values[i]); }
+  static Payload load(device uchar *p0, device uchar *) { return {*((device uint4 *)p0)}; }
+  static Meta loadMeta(device uchar *m) { Meta r; r.sc = *((device uint *)m); r.g = *((device float *)(m + 4)); return r; }
+  static Chunk chunk(Payload w, ushort c) { return w.a[c]; }
+  static Chunk loadChunk(device uchar *p0, device uchar *, ushort c) { return *((device uint *)(p0 + 4 * c)); }
+  static uint indices(Chunk q) { return q; }
+  static QuantCoef coef(Meta mt, ushort j) {
+    const uint pair = mt.sc >> (16u * (j & 1));   // the E4M3 scales of both 16-groups
+    return {float2(quant_e4m3_pair(quant_byte_pairs(pair).x)) * (128.0f * mt.g)};
+  }
+};
 // FP8: plane0 E4M3 values (bytes 8c..8c+7 = chunk c, as Q8_0's); meta the tensor's FP32 scale g. value = g * e4m3,
 // whose scale is 256 g.
 struct FmtFP8 {
@@ -497,6 +516,18 @@ struct FmtFP8 {
   static Chunk loadChunk(device uchar *p0, device uchar *, ushort c) { return *((device uint2 *)(p0 + 8 * c)); }
   static uint2 values(Chunk q) { return q; }
   static QuantCoef coef(Meta g, ushort) { return {float2(256.0f * g)}; }
+};
+// MXFP8: FP8's planes; meta the E8M0 exponent e of the group, as MXFP4's. value = 2^(e - 127) e4m3, whose scale is
+// quant_mxfp8_scale(e).
+struct FmtMXFP8 {
+  QUANT_FORMAT(GGUF_FMT_MXFP8, QuantFloat8, 0, 32, false);
+  typedef FmtFP8::Payload Payload; typedef FmtFP8::Chunk Chunk; typedef uchar Meta;
+  static Payload load(device uchar *p0, device uchar *p1) { return FmtFP8::load(p0, p1); }
+  static Meta loadMeta(device uchar *m) { return *m; }
+  static Chunk chunk(Payload w, ushort c) { return FmtFP8::chunk(w, c); }
+  static Chunk loadChunk(device uchar *p0, device uchar *p1, ushort c) { return FmtFP8::loadChunk(p0, p1, c); }
+  static uint2 values(Chunk q) { return q; }
+  static QuantCoef coef(Meta e, ushort) { return {float2(quant_mxfp8_scale(e))}; }
 };
 // BF16, F16: plane0 the group's 16-bit values (16 bytes 16c..16c+15 = chunk c); meta the FP32 scale g of 256
 // elements (1 for a GGUF tensor). value = g * x.
@@ -528,6 +559,9 @@ template <uint F> struct FmtTwoBit {
   static uint4 codes(Chunk q) { return (uint4(q) >> uint4(0, 4, 8, 12)) & 0x00030003u; }
   static QuantCoef coef(Meta mt, ushort) { return {float2(float(as_type<half>(mt)))}; }
 };
+typedef FmtTwoBit<GGUF_FMT_PQ20> FmtPQ20;
+typedef FmtTwoBit<GGUF_FMT_Q20> FmtQ20;
+
 // TQK6/7: each group keeps its reversed stream slice and two circular
 // lookahead bytes. Read individual bytes: TQK7 groups need not be aligned.
 template <uint F, uint Bits> struct FmtGyro {
@@ -554,9 +588,46 @@ template <uint F, uint Bits> struct FmtGyro {
 typedef FmtGyro<GGUF_FMT_TQK6, 6> FmtTQK6;
 typedef FmtGyro<GGUF_FMT_TQK7, 7> FmtTQK7;
 
+// The GGUF format whose planes hold Bits-bit linear codes, which an MLX affine format keeps as it does
+// (metal/abi/QuantFormat.h).
+template <uint Bits> struct AffinePlanes;
+template <> struct AffinePlanes<2> { typedef FmtQ2K F; };
+template <> struct AffinePlanes<3> { typedef FmtQ3K F; };
+template <> struct AffinePlanes<4> { typedef FmtQ4K F; };
+template <> struct AffinePlanes<5> { typedef FmtQ5K F; };
+template <> struct AffinePlanes<6> { typedef FmtQ6K F; };
+template <> struct AffinePlanes<8> { typedef FmtQ80 F; };
+// MLX affine, Bits-bit codes in groups of 32 * Groups elements: the planes of AffinePlanes<Bits>, the 8-bit codes
+// unsigned; meta the group's bf16 scale s and bias z. value = s * code + z.
+template <uint Bits, uint Groups> struct FmtAffine {
+  typedef typename AffinePlanes<Bits>::F Planes;
+  QUANT_FORMAT(quant_affine_format_of(Bits, 32 * Groups), QuantLinear, 0, 32 * MetaGroups, false);
+  typedef typename Planes::Payload Payload; typedef typename Planes::Chunk Chunk; typedef uint Meta;
+  static Payload load(device uchar *p0, device uchar *p1) { return Planes::load(p0, p1); }
+  static Meta loadMeta(device uchar *m) { return *((device uint *)m); }
+  static Chunk chunk(Payload w, ushort c) { return Planes::chunk(w, c); }
+  static Chunk loadChunk(device uchar *p0, device uchar *p1, ushort c) { return Planes::loadChunk(p0, p1, c); }
+  static uint4 codes(Chunk q) {
+    if constexpr (Bits == 8) return uint4(quant_byte_pairs(q.x), quant_byte_pairs(q.y));
+    else return Planes::codes(q);
+  }
+  static QuantCoef coef(Meta mt, ushort) {
+    return {float2(float(as_type<bfloat>(ushort(mt & 0xFFFF)))), float2(float(as_type<bfloat>(ushort(mt >> 16))))};
+  }
+};
+// Whether a linear format's codes reach 128, past the 7-bit codes a bf16 operand 128 + code holds exactly
+// (kernels/decode/linear_gguf_sgmatrix.metal).
+template <class F> struct QuantWideCodes { static constexpr constant bool value = false; };
+template <uint Groups> struct QuantWideCodes<FmtAffine<8, Groups>> { static constexpr constant bool value = true; };
+#define QUANT_AFFINE_GROUPS(B)                                                                                     \
+  typedef FmtAffine<B, 1> FmtAF##B##G32; typedef FmtAffine<B, 2> FmtAF##B##G64; typedef FmtAffine<B, 4> FmtAF##B##G128;
+QUANT_AFFINE_GROUPS(2) QUANT_AFFINE_GROUPS(3) QUANT_AFFINE_GROUPS(4) QUANT_AFFINE_GROUPS(5) QUANT_AFFINE_GROUPS(6)
+QUANT_AFFINE_GROUPS(8)
+#undef QUANT_AFFINE_GROUPS
+
 // PTQ1_0 is repacked losslessly into seven bytes per 32-value group. The
-// independent groups let the common GEMM tiles decode their 32 columns
-// without reading neighboring groups; the shared FP16 scale is per 128.
+// independent groups let the common GEMM tiles decode their 32 columns without
+// reading neighboring groups; the shared FP16 scale is per 128.
 // Five base-3 digits packed as two-bit codes, most significant digit first.
 // A 512-byte constant lookup replaces per-weight division in PTQ1_0 decode
 // staging, retaining the seven-byte prepared group layout.
@@ -638,45 +709,6 @@ struct FmtPTQ10Lookup {
     return result;
   }
 };
-typedef FmtTwoBit<GGUF_FMT_PQ20> FmtPQ20;
-typedef FmtTwoBit<GGUF_FMT_Q20> FmtQ20;
-
-// The GGUF format whose planes hold Bits-bit linear codes, which an MLX affine format keeps as it does
-// (metal/abi/QuantFormat.h).
-template <uint Bits> struct AffinePlanes;
-template <> struct AffinePlanes<2> { typedef FmtQ2K F; };
-template <> struct AffinePlanes<3> { typedef FmtQ3K F; };
-template <> struct AffinePlanes<4> { typedef FmtQ4K F; };
-template <> struct AffinePlanes<5> { typedef FmtQ5K F; };
-template <> struct AffinePlanes<6> { typedef FmtQ6K F; };
-template <> struct AffinePlanes<8> { typedef FmtQ80 F; };
-// MLX affine, Bits-bit codes in groups of 32 * Groups elements: the planes of AffinePlanes<Bits>, the 8-bit codes
-// unsigned; meta the group's bf16 scale s and bias z. value = s * code + z.
-template <uint Bits, uint Groups> struct FmtAffine {
-  typedef typename AffinePlanes<Bits>::F Planes;
-  QUANT_FORMAT(quant_affine_format_of(Bits, 32 * Groups), QuantLinear, 0, 32 * MetaGroups, false);
-  typedef typename Planes::Payload Payload; typedef typename Planes::Chunk Chunk; typedef uint Meta;
-  static Payload load(device uchar *p0, device uchar *p1) { return Planes::load(p0, p1); }
-  static Meta loadMeta(device uchar *m) { return *((device uint *)m); }
-  static Chunk chunk(Payload w, ushort c) { return Planes::chunk(w, c); }
-  static Chunk loadChunk(device uchar *p0, device uchar *p1, ushort c) { return Planes::loadChunk(p0, p1, c); }
-  static uint4 codes(Chunk q) {
-    if constexpr (Bits == 8) return uint4(quant_byte_pairs(q.x), quant_byte_pairs(q.y));
-    else return Planes::codes(q);
-  }
-  static QuantCoef coef(Meta mt, ushort) {
-    return {float2(float(as_type<bfloat>(ushort(mt & 0xFFFF)))), float2(float(as_type<bfloat>(ushort(mt >> 16))))};
-  }
-};
-// Whether a linear format's codes reach 128, past the 7-bit codes a bf16 operand 128 + code holds exactly
-// (kernels/decode/linear_gguf_sgmatrix.metal).
-template <class F> struct QuantWideCodes { static constexpr constant bool value = false; };
-template <uint Groups> struct QuantWideCodes<FmtAffine<8, Groups>> { static constexpr constant bool value = true; };
-#define QUANT_AFFINE_GROUPS(B)                                                                                     \
-  typedef FmtAffine<B, 1> FmtAF##B##G32; typedef FmtAffine<B, 2> FmtAF##B##G64; typedef FmtAffine<B, 4> FmtAF##B##G128;
-QUANT_AFFINE_GROUPS(2) QUANT_AFFINE_GROUPS(3) QUANT_AFFINE_GROUPS(4) QUANT_AFFINE_GROUPS(5) QUANT_AFFINE_GROUPS(6)
-QUANT_AFFINE_GROUPS(8)
-#undef QUANT_AFFINE_GROUPS
 
 #undef QUANT_FORMAT
 
@@ -690,7 +722,8 @@ QUANT_AFFINE_GROUPS(8)
   X(FmtAF3G128, af3g128) X(FmtAF4G32, af4g32) X(FmtAF4G64, af4g64) X(FmtAF4G128, af4g128) X(FmtAF5G32, af5g32)    \
   X(FmtAF5G64, af5g64) X(FmtAF5G128, af5g128) X(FmtAF6G32, af6g32) X(FmtAF6G64, af6g64) X(FmtAF6G128, af6g128)    \
   X(FmtAF8G32, af8g32) X(FmtAF8G64, af8g64) X(FmtAF8G128, af8g128) X(FmtNVFP4, nvfp4) X(FmtFP8, fp8)            \
-  X(FmtQ50, q50) X(FmtQ51, q51) X(FmtBF16, bf16) X(FmtQ20, q20) X(FmtPTQ10, ptq10)
+  X(FmtQ50, q50) X(FmtQ51, q51) X(FmtBF16, bf16) X(FmtQ20, q20) X(FmtNVFP464, nvfp464) X(FmtMXFP8, mxfp8) \
+  X(FmtPTQ10, ptq10)
 #define QUANT_FORMATS(X) QUANT_REGISTER_FORMATS(X) X(FmtF16, f16) X(FmtTQK6, tqk6) X(FmtTQK7, tqk7)
 
 // Runs body(F()) with the format type of run-time format id `format` (GGUF_FMT_*), for kernels whose tiles pick

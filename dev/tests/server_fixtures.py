@@ -34,7 +34,7 @@ from server import frontend as request_frontend
 from server import protocol as wire
 from server import runtime as engine_runtime
 from server import server as api
-from server.chat_format import FLINT, QWEN
+from server.chat_format import FLINT, INKLING2, QWEN
 from server.chat_templates import ChatTemplates
 from server.dialects import responses as responses_dialect
 from server.lru import LRUCache
@@ -47,10 +47,11 @@ FOREVER = math.inf
 # (QwenTargetDimensions::nativeContextTokens).
 NATIVE_CONTEXT = 262144
 # The vocabulary and stop tokens the engine of each chat format's targets
-# announces in Ready (runtime/model/Qwen3_8.hpp, Flint.hpp).
+# announces in Ready (runtime/model/Qwen3_8.hpp, Flint.hpp, Inkling2Loop.hpp).
 ENGINE_TOKENS = {
     QWEN: (248_320, (248_044, 248_046)),
     FLINT: (150_144, (150_001, 150_003, 150_005, 150_018)),
+    INKLING2: (201_024, (200_006,)),
 }
 
 
@@ -328,6 +329,7 @@ class Plan:
         after_terminal=False,
         matched_tokens=1,
         logits=None,
+        start=None,
     ):
         self.batches = list(batches)
         self.reason = reason
@@ -336,6 +338,13 @@ class Plan:
         self.delay = delay
         self.matched_tokens = matched_tokens
         self.logits = logits
+        # What the start found beside matched_tokens: prefix tokens, state
+        # source and lost state; by default the matched prefix, in RAM.
+        self.start = start or (
+            matched_tokens,
+            wire.StateSource.MEMORY if matched_tokens else wire.StateSource.NONE,
+            False,
+        )
         self.started = threading.Event()
         self.release = threading.Event()
         if not block:
@@ -466,6 +475,10 @@ class FakeRuntime:
     def pending_count(self):
         return sum(not call.done for call in self.calls)
 
+    def start(self):
+        # The fake starts no engine: wait_ready reads it as the test sets it.
+        pass
+
     def wait_ready(self, timeout=None):
         # The fake starts no engine: it is as ready as the test sets it.
         return self.ready
@@ -511,7 +524,7 @@ class FakeRuntime:
         plan.start_release.wait(2)
         if call.done:
             return
-        call.emit(wire.StartEvent(call.request_id, 0, plan.matched_tokens))
+        call.emit(wire.StartEvent(call.request_id, 0, plan.matched_tokens, *plan.start))
         plan.started.set()
         plan.release.wait(2)
         if plan.exception:
@@ -892,11 +905,10 @@ def main_args(**overrides):
         **{
             "model_root": "model",
             "model": "test-model",
-            "glm_flash": False,
-            "glm_flash_max_output": None,
             "served_model_name": [],
             "announce_served_name": False,
             "reasoning_effort": None,
+            "sampling_default": [],
             "default_reasoning_effort": None,
             "thinking_token_budget": None,
             "thinking_end_text": None,
@@ -909,10 +921,9 @@ def main_args(**overrides):
             "persistent_cache": False,
             "cache_dir": None,
             "decode_share": None,
-            "prefill_chunk_tokens": serve_options.DEFAULT_PREFILL_CHUNK_TOKENS,
-            "resource_wait_timeout": 30,
-            "max_active_requests": 0,
+            "max_concurrent_requests": serve_options.DEFAULT_CONCURRENT_REQUESTS,
             "disable_ane": False,
+            "recalibrate_ane": False,
             "activations": "auto",
             "verify_rows": "auto",
             "max_image_pixels": images.MAX_PIXELS,
@@ -943,10 +954,11 @@ def main_args(**overrides):
 def unprepared_hold(family="Qwen3.8-27B"):
     """main()'s hold of its model directory, for a test of a directory Splash
     did not prepare: the directory as it is, held by nothing, and a model of
-    `family` by its family's name."""
+    `family` by its family's name, of the Qwen families' vocabulary."""
     with (
         mock.patch.object(api.assembly, "hold", side_effect=lambda path: (path, None)),
         mock.patch.object(api.assembly, "family", return_value=families.named(family)),
+        mock.patch.object(api.assembly, "vocabulary", return_value=248320),
     ):
         yield
 
@@ -1036,7 +1048,6 @@ class Harness:
         runtime,
         tokenizer=None,
         queue_size=4,
-        max_active_requests=0,
         timeout=2,
         max_context=128,
         model="test-model",
@@ -1060,7 +1071,6 @@ class Harness:
             runtime,
             self.tokenizer,
             request_logger=request_logger,
-            max_active_requests=max_active_requests,
             thinking_end=thinking_end,
         )
         self.app = make_frontend(

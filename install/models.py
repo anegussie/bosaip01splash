@@ -3,7 +3,7 @@
 """Install and verify the model a Splash selection names.
 
 Terms the installer modules share:
-- selection: what `--model OWNER/REPO[:VARIANT]` or a local GGUF and its source options name
+- selection: what `--model OWNER/REPO[:VARIANT]` and its source options name
   (Selection), or the local files a model is prepared from (local.py); its
   selection link, under the models root, points to what serves it.
 - assembly: the directory an upstream model is served from, of links to
@@ -68,11 +68,20 @@ ENTRY_STAGING = ".loading-"
 class ModelError(RuntimeError):
     """A refusal or failure the installers report without a traceback;
     `kind` classes a Hub or network failure for the app
-    (hub.failure_kind), None for any other."""
+    (hub.failure_kind), or a disk without room ("disk"), None for any other;
+    `details` are the numbers the app words that class by, which the error
+    event carries beside it."""
 
-    def __init__(self, message, kind=None):
+    def __init__(self, message, kind=None, details=None):
         super().__init__(message)
         self.kind = kind
+        self.details = details or {}
+
+
+class EngineRefusal(ModelError):
+    """The engine's refusal of the files or configuration a check gave it
+    (run_engine), which it refuses again, not a failure to run the check:
+    one it does not know, an I/O error, a crash."""
 
 
 class VisionError(ModelError):
@@ -100,8 +109,8 @@ def run_engine(arguments, check):
     check names. A ModelError names an engine that cannot run, or that
     refuses the command line as one built before the check does, and what
     replaces it; else it gives the engine's refusal, its error: line without
-    that prefix, or the whole report of an engine that ended before main()
-    (dyld on an older macOS)."""
+    that prefix (an EngineRefusal, but for an I/O failure), or the whole
+    report of an engine that ended before main() (dyld on an older macOS)."""
     engine = paths.BINARY
     replace = "reinstall Splash" if paths.PACKAGED else "rebuild it with make"
     try:
@@ -121,6 +130,8 @@ def run_engine(arguments, check):
             for line in report.splitlines()
             if line.startswith("error: ")
         ]
+        if result.returncode in (os.EX_DATAERR, os.EX_SOFTWARE) and refusals:
+            raise EngineRefusal(refusals[-1])
         raise ModelError(
             refusals[-1]
             if result.returncode > 0 and refusals
@@ -168,14 +179,6 @@ def split_model_id(value: str) -> tuple[str, str | None]:
         raise ModelError(str(error)) from None
 
 
-def split_model_source(value: str) -> tuple[str, str | None]:
-    try:
-        value = serve_options.parse_model_source(value)
-    except argparse.ArgumentTypeError as error:
-        raise ModelError(str(error)) from None
-    return (value, None) if Path(value).is_absolute() else split_model_id(value)
-
-
 def parse_draft_model(value: str) -> str:
     # A local draft directory is recorded as an absolute path, so the
     # installation it selects does not depend on the working directory.
@@ -200,15 +203,6 @@ def hash_file(path: Path, digest) -> str:
 
 def sha256(path: Path) -> str:
     return hash_file(path, hashlib.sha256())
-
-
-def content_digest(path: Path, digest: str) -> str:
-    """path's content digest in the scheme of digest: the SHA-256 of a 64-digit
-    one, the Git blob SHA-1 ("blob <size>" and a NUL, then the content) of a
-    40-digit one, as the Hub names the blob of a small file."""
-    if len(digest) == 64:
-        return sha256(path)
-    return hash_file(path, hashlib.sha1(f"blob {path.stat().st_size}\0".encode()))
 
 
 def read_json(path: Path):
@@ -236,8 +230,8 @@ def selection_link(
     """The selection link of model_id with these source options:
     OWNER/REPO[:VARIANT] under models for the model alone, else
     .selections/<hash of the selection>."""
-    repo_id, variant = split_model_source(model_id)
-    if Path(repo_id).is_absolute() or revision or language_only or draft_model:
+    repo_id, variant = split_model_id(model_id)
+    if revision or language_only or draft_model:
         return _hashed_link(models, [model_id, revision, language_only, draft_model])
     if variant is None:
         return models / repo_id
@@ -287,11 +281,7 @@ class Selection:
     def of(
         cls, models_root, model, *, revision=None, language_only=False, draft_model=None
     ):
-        repo_id, variant = split_model_source(model)
-        if Path(repo_id).is_absolute():
-            if revision:
-                raise ModelError("--revision cannot be used with a local GGUF")
-            model = repo_id
+        repo_id, variant = split_model_id(model)
         models_root = Path(models_root).resolve()
         link = selection_link(
             models_root,
@@ -388,8 +378,8 @@ def parse_args(argv=None):
     parser.add_argument(
         "--model",
         required=True,
-        type=serve_options.parse_model_source,
-        help="Hugging Face repository ID (owner/repo[:variant]) or local GGUF file",
+        type=serve_options.parse_model_id,
+        help="Hugging Face repository ID (owner/repo[:variant])",
     )
     parser.add_argument("--revision", help="optional upstream branch, tag or commit")
     parser.add_argument(
@@ -415,10 +405,7 @@ def parse_args(argv=None):
         "remove",
         help="remove the model's installations and the Hub cache files no other uses",
     )
-    args = parser.parse_args(argv)
-    if Path(args.model).is_absolute() and args.revision:
-        parser.error("--revision cannot be used with a local GGUF")
-    return args
+    return parser.parse_args(argv)
 
 
 def main(argv=None):
@@ -469,9 +456,17 @@ def main(argv=None):
         if args.command in ("prepare", "remove"):
             # The app and the launcher word the failure by it, beside any
             # progress and messages.
-            kind = error.kind if isinstance(error, ModelError) else None
+            # An OSError of the installer's own, as a disk that fills while
+            # the model is put together, by the kind a download's has.
+            kind, details = (
+                (error.kind, error.details)
+                if isinstance(error, ModelError)
+                else (hub.failure_kind(error), {})
+            )
             print(
-                json.dumps({"event": "error", "kind": kind, "message": str(error)}),
+                json.dumps(
+                    {"event": "error", "kind": kind, **details, "message": str(error)}
+                ),
                 flush=True,
             )
         print(f"error: {error}", file=sys.stderr)

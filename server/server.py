@@ -15,7 +15,6 @@ import select
 import signal
 import socket
 import sys
-import tempfile
 import threading
 import time
 from collections.abc import Callable
@@ -25,13 +24,10 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import unquote
 
-from transformers import AutoTokenizer
-
-from install import assembly, gguf
-from install.families import GLM_FLASH_FAMILY, INKLING_FAMILY
+from install import assembly
 from install.models import ModelError
 
-from . import dialects, json_codec, serve_options, serve_record, telemetry, unix_socket
+from . import dialects, json_codec, serve_options, serve_record, unix_socket
 from . import runtime as engine_runtime
 from .backend import (
     NativeBackend,
@@ -53,7 +49,6 @@ from .errors import (
     OPENAI_ERRORS,
     RETRY_STATUSES,
     APIError,
-    ContextLengthError,
     ErrorDialect,
     RequestValidationError,
     field_error,
@@ -67,12 +62,11 @@ from .http_security import (
     socket_hosts,
     validate_headers,
 )
-from .images import MAX_IMAGE_BYTES
+from .images import MAX_ASPECT, MAX_IMAGE_BYTES
 from .latency import RequestLatency
 from .metrics import prometheus_metrics
 from .origins import ANY_ORIGIN
 from .output import (
-    InklingChannels,
     ReasoningSplitter,
     StreamingToolCallProjector,
     validate_response_content,
@@ -398,21 +392,15 @@ class FrontendHandler(BaseHTTPRequestHandler):
             return
         self._send(status, data, "application/json", retry_after)
 
-    def _log_api_error(self, code, *, context_error=None):
+    def _log_api_error(self, code):
         path = "".join(char if char.isprintable() else "?" for char in self.route)
         # A request the engine took is named as the backend's lines name it,
         # so that the app joins them.
         job = self._submitted
         engine_id = job.engine_request_id if job is not None else None
         request = "" if engine_id is None else f"request {engine_id} · "
-        context = (
-            f" · input {context_error.input_tokens:,} · limit {context_error.maximum_input_tokens:,}"
-            if context_error is not None
-            else ""
-        )
         print_status(
-            f"Error · {request}{code} · {self.command} {path[:256]}{context}",
-            error=True,
+            f"Error · {request}{code} · {self.command} {path[:256]}", error=True
         )
 
     def safe_error(self, error, *, log=True):
@@ -422,34 +410,8 @@ class FrontendHandler(BaseHTTPRequestHandler):
         if self.response_started:
             return
         status, code, payload = self.errors.answer(error)
-        context_error = error if isinstance(error, ContextLengthError) else None
-        telemetry.emit(
-            {
-                "event": "http_request_error",
-                "http_status": status,
-                "error_code": code,
-                "method": self.command,
-                "route": self.route
-                if find_route(self.route, "POST")[0] is not None
-                else "unmatched",
-                "correlation": getattr(self, "_telemetry_correlation", {})
-                if self.command == "POST"
-                else telemetry.correlation(getattr(self, "headers", {})),
-                **(
-                    {
-                        "input_tokens": context_error.input_tokens,
-                        "maximum_input_tokens": context_error.maximum_input_tokens,
-                    }
-                    if context_error is not None
-                    else {}
-                ),
-            }
-        )
         if log and not error.logged:
-            if context_error is None:
-                self._log_api_error(code)
-            else:
-                self._log_api_error(code, context_error=context_error)
+            self._log_api_error(code)
         try:
             self.send_json(status, payload, error.retry_after)
         except (BrokenPipeError, ConnectionResetError, TimeoutError):
@@ -621,12 +583,14 @@ class FrontendHandler(BaseHTTPRequestHandler):
     def _limits(self):
         """What a request may carry, which a client can check an attachment
         against before it sends: its bytes (--max-request-size); its images,
-        a PDF's pages counted among them; an image's bytes; a PDF's bytes,
-        which the request's PDFs share, and its pages."""
+        a PDF's pages counted among them; an image's bytes and its longer
+        side over its shorter; a PDF's bytes, which the request's PDFs share,
+        and its pages."""
         return {
             "request_bytes": self.server.max_request_bytes,
             "images": MAX_IMAGE_SPANS,
             "image_bytes": MAX_IMAGE_BYTES,
+            "image_aspect": MAX_ASPECT,
             "pdf_bytes": MAX_PDF_BYTES,
             "pdf_pages": MAX_PAGES,
         }
@@ -651,20 +615,6 @@ class FrontendHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         started_at = time.monotonic()
-        self._telemetry_correlation = {
-            **telemetry.correlation(self.headers),
-            "http_request_id": secrets.token_hex(16),
-        }
-        telemetry.emit(
-            {
-                "event": "http_request_ingress",
-                "method": "POST",
-                "route": self.route
-                if find_route(self.route, "POST")[0] is not None
-                else "unmatched",
-                "correlation": self._telemetry_correlation,
-            }
-        )
         route, _ = find_route(self.route, "POST")
         if route is None:
             self.safe_error(APIError(404, "not found", "not_found"))
@@ -735,47 +685,24 @@ class FrontendHandler(BaseHTTPRequestHandler):
             body = {key: value for key, value in body.items() if value is not None}
             if route.fieldless and body:
                 raise APIError(400, "this endpoint takes no fields")
-        self._generation_streaming = bool(body.get("stream"))
         return route.handler(self, body, self.app.request_deadline(body, started_at))
 
     def _generate(self, job, respond, started_at):
         """Submit a prepared generation and answer with its output. The
         request's input bytes stay reserved only for what the job retains."""
-        streaming = getattr(self, "_generation_streaming", False)
-        job.telemetry = dict(self._telemetry_correlation)
-        job.telemetry["http_preparation_ms"] = (time.monotonic() - started_at) * 1000.0
-        job.telemetry["route"] = self.route
-        self.app.backend._telemetry(job, "request_prepared", streaming=streaming)
         self._body_reservation.retain_for(job)
         self._body_reservation = None
         job.latency = RequestLatency(self.app.latencies, started_at)
-        self.submit(job, streaming=streaming)
+        self.submit(job)
         respond(job)
 
-    def submit(self, job, *, streaming=False):
+    def submit(self, job):
         """Submit `job` unless its deadline has passed or its client has
         left; from then on a failure cancels it."""
         remaining_request_time(job.deadline)
         if self.client_disconnected():
             raise ConnectionResetError("client disconnected before submission")
-
-        def queue_poll():
-            if self.client_disconnected():
-                job.cancelled.set()
-                raise APIError(
-                    499, "client disconnected while queued", "request_cancelled"
-                )
-            if (
-                streaming
-                and time.monotonic() - self._last_sse_write >= SSE_KEEPALIVE_SECONDS
-            ):
-                self.sse_keepalive()
-
-        job.queue_poll = queue_poll
-        try:
-            self.app.backend.submit(job)
-        finally:
-            job.queue_poll = None
+        self.app.backend.submit(job)
         self._submitted = job
 
     def reserve_input(self, size):
@@ -891,28 +818,21 @@ class FrontendHandler(BaseHTTPRequestHandler):
         start, each piece of output, the idle waits and prompt progress:
         streams send them, and complete Messages and Responses gather the
         output into blocks."""
-        channel_framing = (
-            job.chat_format is not None and job.chat_format.channel_framing
-        )
-        splitter = (
-            InklingChannels(job.tool_policy, job.public_id)
-            if channel_framing
-            else ReasoningSplitter(job.thinking, job.may_call_tools, job.chat_format)
-        )
+        splitter = ReasoningSplitter(job.thinking, job.may_call_tools, job.chat_format)
         # A chat answer is parsed as it arrives whether it streams or not:
-        # its calls where tools may be called, and in any answer, a </think>
-        # the model writes after its reasoning ended is dropped. A text
-        # completion, without a chat template, is its text as written.
+        # its calls where tools may be called, and in any answer, a close of
+        # the reasoning the model writes after its reasoning ended is
+        # dropped. A text completion, without a chat template, is its text as
+        # written.
         projector = (
             StreamingToolCallProjector(
                 job.tool_policy,
                 job.public_id,
                 job.response_validator is not None,
                 job.chat_format.call_syntax,
-                job.chat_format.think_end,
+                job.chat_format.think_close,
             )
-            if not channel_framing
-            and (job.tool_policy is not None or job.reasoning is not None)
+            if job.tool_policy is not None or job.reasoning is not None
             else None
         )
         reasoning, content, result = [], [], None
@@ -927,9 +847,7 @@ class FrontendHandler(BaseHTTPRequestHandler):
                     on_text(kind, value)
 
         def append(field, text):
-            if field == "tool":
-                publish([(field, text)])
-            elif field == "content" and projector is not None:
+            if field == "content" and projector is not None:
                 publish(projector.put(text))
             else:
                 (reasoning if field == "reasoning_content" else content).append(text)
@@ -948,17 +866,6 @@ class FrontendHandler(BaseHTTPRequestHandler):
                 result = value
         for field, text in splitter.finish():
             append(field, text)
-        if channel_framing:
-            return Collected(
-                "".join(reasoning),
-                "".join(content),
-                splitter.calls,
-                result,
-                splitter.reasoning,
-                splitter.in_call
-                and (result.reason == "length" or result.stop_sequence is not None),
-                splitter.call_id,
-            )
         cut_in_call = (
             projector is not None
             and projector.in_call
@@ -1047,7 +954,6 @@ class FrontendHandler(BaseHTTPRequestHandler):
 
 
 _MODEL_PATH = re.compile(r"/v1/models/(.*)", re.DOTALL)
-INKLING_MAX_CONTEXT = 131_072
 _PAGE = Route(FrontendHandler._get_page, public=True)
 
 # Every endpoint, by its method and its path or path pattern.
@@ -1206,7 +1112,6 @@ class FrontendServer(HTTPServer):
 
     def status(self):
         status = self.app.status()
-        status["telemetry"] = telemetry.health()
         status["instance"] = {
             "id": self.instance_id,
             "pid": os.getpid(),
@@ -1316,35 +1221,12 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--model",
-        type=serve_options.parse_model_source,
+        type=serve_options.parse_model_id,
         required=True,
-        metavar="MODEL",
+        metavar="OWNER/REPO",
     )
     parser.add_argument("--port", type=int, default=serve_options.DEFAULT_PORT)
     parser.add_argument("--binary", default=str(ROOT / "build" / "splash"))
-    standalone = parser.add_mutually_exclusive_group()
-    standalone.add_argument(
-        "--glm-flash",
-        action="store_true",
-        help="serve GLM-5.3-Flash from local GGUF shards",
-    )
-    standalone.add_argument(
-        "--inkling",
-        action="store_true",
-        help="serve text from a local Inkling 2 Mini GGUF",
-    )
-    parser.add_argument(
-        "--glm-flash-max-output",
-        type=int,
-        metavar="TOKENS",
-        help="maximum generated tokens per GLM Flash request (default: 2048)",
-    )
-    parser.add_argument(
-        "--inkling-max-output",
-        type=int,
-        metavar="TOKENS",
-        help="maximum generated tokens per Inkling request (default: 1024)",
-    )
     # The launcher's, not a serve option: where the app follows a start and
     # reads why one failed (serve_record).
     parser.add_argument("--serve-record", type=Path, metavar="PATH")
@@ -1353,33 +1235,14 @@ def parse_args(argv=None):
     serve_options.check_serve_arguments(parser, args)
     if not 0 <= args.port <= 65535:
         parser.error("--port must be in [0, 65535]")
-    if args.glm_flash:
-        context = args.max_context or 8192
-        if context > 8192:
-            parser.error("GLM Flash supports at most 8192 context tokens")
-        if args.glm_flash_max_output is None:
-            args.glm_flash_max_output = min(2048, context - 1)
-        if not 1 <= args.glm_flash_max_output < context:
-            parser.error(
-                "--glm-flash-max-output must be positive and smaller than context"
-            )
-    elif args.glm_flash_max_output is not None:
-        parser.error("--glm-flash-max-output requires --glm-flash")
-    if args.inkling:
-        context = args.max_context or INKLING_MAX_CONTEXT
-        if context > INKLING_MAX_CONTEXT:
-            parser.error(
-                f"the native Inkling profile supports at most {INKLING_MAX_CONTEXT} context tokens"
-            )
-        if args.inkling_max_output is None:
-            args.inkling_max_output = min(1024, context - 1)
-        if not 1 <= args.inkling_max_output < context:
-            parser.error(
-                "--inkling-max-output must be positive and smaller than context"
-            )
-    elif args.inkling_max_output is not None:
-        parser.error("--inkling-max-output requires --inkling")
     return args
+
+
+def _sampling_defaults(family, args):
+    """What a request gets for each sampling field it leaves out: the
+    family's published sampling, with --sampling-default's values over it,
+    the last of a name winning."""
+    return {**asdict(family.sampling), **dict(args.sampling_default)}
 
 
 def _native_command(args, model_root, relaunch_context=None):
@@ -1389,12 +1252,6 @@ def _native_command(args, model_root, relaunch_context=None):
     context, and serves what its plan holds of the first engine's context,
     where its own automatic one would follow a Neural Engine split calibrated
     anew."""
-    if getattr(args, "glm_flash", False):
-        context = relaunch_context or args.max_context or 8192
-        return [args.binary, "serve-glm-flash", str(model_root), str(context)]
-    if getattr(args, "inkling", False):
-        context = relaunch_context or args.max_context or INKLING_MAX_CONTEXT
-        return [args.binary, "serve-inkling", str(model_root), str(context)]
     command = [
         args.binary,
         "serve-native",
@@ -1453,41 +1310,25 @@ class OptionError(Exception):
     """An option the served model's family cannot follow."""
 
 
-def _start_failed(args, error, failure):
-    """End a start that failed, saying why in the log and, for the app, in
-    the launcher's serve record (serve_record)."""
+def _start_failed(error):
+    """End a start that failed, saying why in the log; main says it for the
+    app in the launcher's serve record (serve_record) once the engine has
+    stopped."""
     print_status(f"Error · {error}", error=True)
-    serve_record.failed(args.serve_record, failure)
     raise SystemExit(1) from None
-
-
-def _glm_tokenizer(model_root, directory):
-    shards = sorted(model_root.glob("*.gguf"))
-    if not shards:
-        raise ModelError(f"no GLM Flash GGUF shards in {model_root}")
-    return _standalone_tokenizer(shards[0], directory, "glm5-next")
-
-
-def _standalone_tokenizer(source, directory, architecture):
-    metadata = gguf.Metadata(source)
-    if metadata.require("general.architecture", str) != architecture:
-        raise ModelError(f"expected GGUF architecture {architecture}")
-    for relative, content in gguf.tokenizer_files(metadata).items():
-        destination = directory / relative
-        destination.parent.mkdir(exist_ok=True, parents=True)
-        destination.write_bytes(content)
-    return directory / "tokenizer"
 
 
 def main():
     args = parse_args()
-    inkling = getattr(args, "inkling", False)
     server = None
     runtime = None
     backend = None
-    standalone_tokenizer_dir = None
     # Why the backend stopped restarting the engine, once it has.
     stopped = None
+    # Why the start failed, which the record says once the engine has stopped
+    # (finally, below): the engine's warm-up, which records its steps from the
+    # reader thread, would otherwise record over it.
+    failure = None
 
     def stop_serving(reason):
         nonlocal stopped
@@ -1536,32 +1377,22 @@ def main():
         # Nothing reads `held`: it keeps the assembly held until the server
         # exits, so that no installation collects the assembly its tokenizer
         # and engines, a relaunched one too, serve.
-        if args.glm_flash or inkling:
-            model_root = Path(args.model_root).resolve()
-            standalone_tokenizer_dir = tempfile.TemporaryDirectory(
-                prefix="splash-gguf-tokenizer-"
-            )
-            scratch = Path(standalone_tokenizer_dir.name)
-            if inkling:
-                family = INKLING_FAMILY
-                tokenizer_path = _standalone_tokenizer(model_root, scratch, "inkling2")
-            else:
-                family = GLM_FLASH_FAMILY
-                tokenizer_path = _glm_tokenizer(model_root, scratch)
-        else:
-            model_root, held = assembly.hold(Path(args.model_root))
-            family = assembly.family(model_root)
-            tokenizer_path = model_root / "tokenizer"
+        model_root, held = assembly.hold(Path(args.model_root))
+        # The family the installation found the model to be, whose chat
+        # format its output is read in.
+        family = assembly.family(model_root)
         if family is None:
             raise ModelError(
                 f"{args.model} is not prepared as a model of a family this "
                 "release serves: prepare it again"
             )
+        # Its vocabulary, which the grammars' table covers (ConstraintFactory).
+        vocabulary = assembly.vocabulary(model_root)
         if args.reasoning_effort is not None and not (
             family.chat_format.reasoning_switch
         ):
-            # No effort reaches a model that opens its reasoning itself, so
-            # the server cannot set every request's.
+            # No effort reaches a model its format gives no reasoning switch,
+            # so the server cannot set every request's.
             raise OptionError(
                 f"--reasoning-effort cannot set how {args.model} reasons: a "
                 f"{family.name} model decides each turn whether to reason, "
@@ -1574,39 +1405,6 @@ def main():
         if args.chat_template_file is not None:
             custom = read_template_file(args.chat_template_file)
             print_status(f"Chat template file · {args.chat_template_file}")
-        # A tokenizer the loader cannot read fails with whatever its parsers
-        # raise, such as a KeyError for a tokenizer.json without added_tokens:
-        # each is the model's.
-        try:
-            tokenizer = AutoTokenizer.from_pretrained(
-                tokenizer_path, local_files_only=True, trust_remote_code=False
-            )
-        except Exception as error:
-            raise ModelError(
-                f"cannot load the tokenizer of {args.model}: "
-                f"{type(error).__name__}: {error}"
-            ) from error
-        validate_tokenizer(tokenizer, family.chat_format)
-        thinking_end = thinking_end_tokens(
-            tokenizer, args.thinking_end_text, family.chat_format
-        )
-        chat_templates = ChatTemplates(tokenizer, override=custom)
-        print_status(f"Chat template · {chat_templates.describe()}")
-        # Unset, a budget ends thinking as the template closes it, so that the
-        # next request renders that close back as the tokens the reply ended
-        # its thinking with; Qwen's templates still trim a space or line break
-        # the cut leaves before it.
-        if thinking_end is None:
-            thinking_end = thinking_end_tokens(
-                tokenizer, chat_templates.select(None).thinking_end, family.chat_format
-            )
-        runtime = engine_runtime.MultiplexedRuntime(
-            _native_command(args, model_root),
-            relaunch_command=lambda first: _native_command(
-                args, model_root, first.max_context_tokens
-            ),
-            pending_limit=args.queue_size,
-        )
 
         def warming(event):
             # As the warm-up begins and as each of its steps ends: it can take
@@ -1618,7 +1416,61 @@ def main():
             print_status(f"Warming up · {event.steps_done} of {event.steps} steps")
             serve_record.warming(args.serve_record, event.steps_done, event.steps)
 
+        # The engine starts now and reads its weights while this process
+        # imports the tokenizer's library and loads the tokenizer and the
+        # chat template, which it needs none of: on a 32-core M5 Max, with
+        # the 27B and the 35B, they take 1.2-1.3 s of a 12.2 s start. A
+        # failure here closes the engine (finally, below); one of the
+        # engine's is raised by wait_ready.
+        runtime = engine_runtime.MultiplexedRuntime(
+            _native_command(args, model_root),
+            relaunch_command=lambda first: _native_command(
+                args, model_root, first.max_context_tokens
+            ),
+            pending_limit=args.queue_size,
+        )
         runtime.on_warming = warming
+        runtime.start()
+        # Imported here, while the engine loads: transformers takes 0.35-0.75 s.
+        from transformers import AutoTokenizer
+
+        # A tokenizer the loader cannot read fails with whatever its parsers
+        # raise, such as a KeyError for a tokenizer.json without added_tokens:
+        # each is the model's.
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(
+                model_root / "tokenizer", local_files_only=True, trust_remote_code=False
+            )
+        except Exception as error:
+            raise ModelError(
+                f"cannot load the tokenizer of {args.model}: "
+                f"{type(error).__name__}: {error}"
+            ) from error
+        validate_tokenizer(tokenizer, family.chat_format)
+        thinking_end = thinking_end_tokens(
+            tokenizer, args.thinking_end_text, family.chat_format
+        )
+        chat_templates = ChatTemplates(
+            tokenizer,
+            override=custom,
+            opens_own_message=family.chat_format.opens_own_message,
+        )
+        print_status(f"Chat template · {chat_templates.describe()}")
+        # Unset, a budget ends thinking as the template closes it, so that the
+        # next request renders that close back as the tokens the reply ended
+        # its thinking with; Qwen's templates still trim a space or line break
+        # the cut leaves before it.
+        if thinking_end is None:
+            thinking_end = thinking_end_tokens(
+                tokenizer, chat_templates.select(None).thinking_end, family.chat_format
+            )
+        # The grammars' table, built while the engine loads (0.82 s on a
+        # 32-core M5 Max): its vocabulary is the draft's, which the engine
+        # holds to its target's as it loads, and its stop tokens those
+        # check_capabilities holds to the Ready's.
+        grammar_table = ConstraintFactory.table(
+            tokenizer, family.chat_format, vocabulary
+        )
 
         def engine_recovering(recovering):
             # The record follows the engine once the server is ready, for
@@ -1634,14 +1486,15 @@ def main():
             runtime,
             tokenizer,
             request_logger=print_request,
-            max_active_requests=args.max_active_requests,
             thinking_end=thinking_end,
         )
         # A server that serves nothing more stops as on SIGTERM and exits
         # ENGINE_STOPPED_STATUS below.
         backend.on_stopped = stop_serving
         if not runtime.wait_ready():
-            raise engine_runtime.EngineUnhealthy("native runtime did not become ready")
+            raise engine_runtime.EngineUnhealthy(
+                "native runtime failed after it became ready"
+            )
         # The engine is authoritative for what it serves: it refuses a
         # --max-context it cannot serve.
         served = runtime.capabilities
@@ -1653,11 +1506,12 @@ def main():
             # No deadline unless given, as in vLLM and SGLang; a request still
             # ends when its client disconnects.
             math.inf if args.request_timeout is None else args.request_timeout,
-            constraint_factory=ConstraintFactory(tokenizer, served),
+            constraint_factory=ConstraintFactory(grammar_table, served),
             chat_templates=chat_templates,
             chat_format=family.chat_format,
-            sampling_defaults=asdict(family.sampling),
+            sampling_defaults=_sampling_defaults(family, args),
             max_image_pixels=args.max_image_pixels,
+            image_format=family.image_format,
             thinking_codec=thinking_codec,
             response_store=dialects.responses.ResponseStore(),
             served_model_names=args.served_model_name,
@@ -1665,18 +1519,8 @@ def main():
             reasoning_effort=args.reasoning_effort,
             default_reasoning_effort=args.default_reasoning_effort,
             default_thinking_token_budget=args.thinking_token_budget,
-            max_output_tokens=args.inkling_max_output
-            if inkling
-            else args.glm_flash_max_output,
         )
         server.app = app
-        telemetry.run_manifest(
-            args,
-            model_root,
-            _native_command(args, model_root),
-            backend.status,
-            server.instance_id,
-        )
         server.server_activate()
         # The app takes the server for ready from its record alone: one that
         # cannot say so has not started (serve_record).
@@ -1694,24 +1538,25 @@ def main():
         print_status(f"Ready · {args.model} · context {context}{mode} · {address}")
         server.serve_forever()
     except engine_runtime.EngineStartFailed as error:
-        _start_failed(args, error, serve_record.engine_failure(error.event, str(error)))
+        failure = serve_record.engine_failure(error.event, str(error))
+        _start_failed(error)
     except ListenError as error:
-        _start_failed(args, error, serve_record.failure(serve_record.PORT, str(error)))
+        failure = serve_record.failure(serve_record.PORT, str(error))
+        _start_failed(error)
     except OptionError as error:
-        _start_failed(
-            args, error, serve_record.failure(serve_record.CONFIGURATION, str(error))
-        )
+        failure = serve_record.failure(serve_record.CONFIGURATION, str(error))
+        _start_failed(error)
     except (
         ModelError,
         ChatTemplateError,
         ThinkingEndError,
         TokenizerContractError,
     ) as error:
-        _start_failed(args, error, serve_record.failure(serve_record.MODEL, str(error)))
+        failure = serve_record.failure(serve_record.MODEL, str(error))
+        _start_failed(error)
     except (engine_runtime.EngineRuntimeError, ThinkingKeyError, OSError) as error:
-        _start_failed(
-            args, error, serve_record.failure(serve_record.INTERNAL, str(error))
-        )
+        failure = serve_record.failure(serve_record.INTERNAL, str(error))
+        _start_failed(error)
     except serve_record.NotRecorded as error:
         # The record that cannot say ready cannot say why either: the app
         # takes the exit for the failure, which the log words.
@@ -1721,11 +1566,8 @@ def main():
         # An error no clause above names is a bug: the record still names the
         # failure, so that the app reports it instead of a crash, and the
         # traceback reaches the log.
-        serve_record.failed(
-            args.serve_record,
-            serve_record.failure(
-                serve_record.INTERNAL, f"{type(error).__name__}: {error}"
-            ),
+        failure = serve_record.failure(
+            serve_record.INTERNAL, f"{type(error).__name__}: {error}"
         )
         raise
     except KeyboardInterrupt:
@@ -1750,12 +1592,15 @@ def main():
             if backend is not None:
                 print_status("Stopping · releasing engine resources")
                 backend.close()
+            elif runtime is not None:
+                # A start that failed while the engine loaded stops it.
+                runtime.close()
         finally:
             signal.signal(signal.SIGINT, signal.SIG_IGN)
             if server is not None:
                 server.server_close()
-            if standalone_tokenizer_dir is not None:
-                standalone_tokenizer_dir.cleanup()
+            if failure is not None:
+                serve_record.failed(args.serve_record, failure)
     if stopped is not None:
         serve_record.failed(
             args.serve_record, serve_record.failure(serve_record.STOPPED, stopped)

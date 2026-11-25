@@ -1430,7 +1430,7 @@ case "$choice" in
       --inkling --binary "$INKLING25_SERVER" --model "${INKLING25_REPO}:UD-IQ3_XXS" \
       --served-model-name "$INKLING25_ALIAS" --announce-served-name \
       --max-context "$INKLING25_CONTEXT" --inkling-max-output "$INKLING25_OUTPUT" \
-      --host "$HOST" --port "$PORT" --max-active-requests 1 \
+      --host "$HOST" --port "$PORT" --max-concurrent-requests 1 \
       --default-reasoning-effort "$INKLING25_REASONING" \
       > >(tee -a "$SPLASH_RUN_LOG") 2>&1
     ;;
@@ -1476,7 +1476,7 @@ case "$choice" in
         --glm-flash --binary "$GLM53_FLASH_SPLASH_BINARY" --model "$GLM53_FLASH_REPO" \
         --served-model-name "$GLM53_FLASH_ALIAS" --announce-served-name \
         --max-context "$GLM53_FLASH_CONTEXT" --glm-flash-max-output "$GLM53_FLASH_OUTPUT" \
-        --host "$HOST" --port "$PORT" --max-active-requests 1 \
+        --host "$HOST" --port "$PORT" --max-concurrent-requests 1 \
         --default-reasoning-effort "$GLM53_FLASH_REASONING_EFFORT" \
         > >(tee -a "$SPLASH_RUN_LOG") 2>&1
     fi
@@ -2492,7 +2492,7 @@ case "$choice" in
         --state-format "$SPLASH_BONSAI_STATE_FORMAT" \
         --prefill-chunk-tokens "$SPLASH_BONSAI_PREFILL_CHUNK_TOKENS" \
         --resource-wait-timeout "$SPLASH_BONSAI_RESOURCE_WAIT_TIMEOUT" \
-        --max-active-requests "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" \
+        --max-concurrent-requests "$SPLASH_BONSAI_MAX_ACTIVE_REQUESTS" \
         --max-context "$SPLASH_BONSAI_MAX_CONTEXT" \
         --max-cache-disk "$splash_cache_disk_limit" \
         ${splash_model_args[@]+"${splash_model_args[@]}"} \

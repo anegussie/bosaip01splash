@@ -11,9 +11,10 @@ inline constexpr ops::MoeShape kGlmFlashMoeShape{
     .experts = Glm5FlashCheckpoint::experts,
     .expertsPerToken = Glm5FlashCheckpoint::expertsPerToken,
     .expertIntermediateSize = 2048,
-    .router = ops::MoeRouter::GlmFlash,
+    .router = ops::MoeRouter::SigmoidNormalized,
     .sharedSlices = 1,
     .sharedGate = false,
+    .selectionBias = true,
 };
 
 // Plans streamed rows in the original shards. The plan holds the open files

@@ -102,7 +102,6 @@ struct CacheDiskQuota final {
 
 struct RuntimeResourcesConfig {
   kv::Format kvFormat = kv::Format::Int8;
-  uint32_t prefillChunkTokens = model::ExecutionLimits::defaultPrefillChunkTokens;
   ops::GdnStateFormat stateFormat = ops::GdnStateFormat::Float32;
   // Cached states keep stateFormat rather than codes (--cached-states exact).
   bool exactCachedStates = false;
@@ -113,44 +112,65 @@ struct RuntimeResourcesConfig {
   uint64_t maximumMemoryBytes = 0;
   // No tier unless set.
   CacheDiskQuota cacheDisk;
-  // Daily average write budget (--max-cache-disk-writes); zero is unlimited.
+  // The tier's write budget, the most it writes a day on average
+  // (--max-cache-disk-writes, model::DiskBudget::setWriteBudget); zero for
+  // none, when every write passes.
   uint64_t cacheDiskWritesPerDay = 0;
-  // Persistent cache namespaces; starts remove ones unused for two weeks. Empty for none.
+  // Where persistent caches live, one directory per persistentCacheNamespace():
+  // every start removes those nobody used for two weeks. Empty for none.
   std::filesystem::path cacheRoot;
-  // Keep files under cacheRoot across processes (--persistent-cache).
+  // The tier keeps its files under cacheRoot for the next process to take
+  // back (--persistent-cache), instead of temporary files that go with the
+  // process.
   bool persistentCache = false;
-  // Volume probes for automatic quotas and the live tier (DiskSpace).
+  // The volume a directory lives on (volumeOf), which the automatic quota
+  // reads for each place the tier may keep its files before it opens them,
+  // and the tier at each measure for the place they opened in (DiskSpace).
   std::function<std::optional<DiskVolume>(const std::filesystem::path &directory)> diskVolume =
       volumeOf;
-  // --max-image-patches, within the wire ceiling; images require loaded vision.
+  // Patches per image, from --max-image-patches: the engine admits images up
+  // to it when the model loaded vision and none otherwise. The wire parser
+  // keeps the protocol ceiling.
   uint32_t maximumImagePatches = ops::kMaximumImagePatches;
-  // --idle-release: keep buffers wired after the last command, and weights
-  // allocated after the last request, this long. Infinite keeps both.
+  // How long the engine keeps its memory without work (--idle-release): every
+  // buffer stays wired that long after the last command (the backend's
+  // residency keep-alive), and the weights' memory is freed once that long
+  // passes without a request (NativeRuntime::releaseIdleWeights). Infinite
+  // keeps both while the engine runs.
   double idleReleaseSeconds = metal::kResidencyKeepAliveSeconds;
-  // Preserve the model-lifetime sleep assertion unless explicitly allowed.
-  bool preventIdleSleep = true;
-  // Host memory, sampled per Metal operation at startup, then by the governor.
+  // Reclaimable host memory, sampled at every Metal operation during startup
+  // and by the governor afterwards.
   MemoryGovernor::HostMemoryProvider hostMemory = queryHostMemory;
-  // --ple-memory: sized row cache, resident (off), or planned (auto). A size
-  // holding the whole PLE table loads it; a target without one warns and ignores it.
+  // --ple-memory: a target's PLE n-gram table, which its GGUF holds, streams
+  // from the file through a row cache of a size, or loads (off); auto leaves
+  // it to the memory plan (planStreamedMemory). Ignored, with a warning, for
+  // a target without one, and a size that holds the whole table loads it.
   StreamedSetting pleMemory;
-  // --expert-memory: fixed-size store (slots, staging, tables), resident
-  // layers (off), or planned capacity with the store's floor (auto). A fixed
-  // size never grows or shrinks. Dense targets and sizes holding every expert
-  // load the layers and report that this setting is ignored.
+  // --expert-memory: a MoE target's routed experts stream from their files
+  // through a store of exactly a size (its slots, staging and tables), all
+  // of it its floor, so it neither grows nor gives memory back; or load with
+  // their layers (off); auto leaves them to the memory plan, the floor to the
+  // store. A size that holds every expert loads them with their layers and
+  // says it is ignored, and so does a dense target.
   StreamedSetting expertMemory;
-  // --sparse-kv-memory: hot block cache target, at least its floor; auto keeps the floor.
+  // --sparse-kv-memory: the target of a spill-capable target's hot block
+  // cache, at least its floor; none (auto) keeps its floor.
   std::optional<uint64_t> sparseKvMemory;
-  // --kv-spill always: force spilling for validation (EngineSpillConfig::always).
+  // --kv-spill always: every request of a spill-capable target spills, for
+  // validation (EngineSpillConfig::always).
   bool kvSpillAlways = false;
   // --kv-window-trim off: a windowed target's pages keep every layer's K/V,
   // for validation that trimming changes no output (CacheWindowPolicy::trim).
   bool kvWindowTrim = true;
-  // --verify-rows: rows verified per cycle (reportVerifyRows). Benchmarks use
-  // every row of a draft block per lane (all) for repeatable rounds.
+  // --verify-rows: the rows a decode cycle verifies (reportVerifyRows); a
+  // benchmark round verifies every row of a draft's block a lane (all) so
+  // that rounds repeat one another.
   model::VerifyRows verifyRows = model::VerifyRows::Auto;
-  // --activations: allow supported int8 paths, or keep all activations bf16
-  // (ops::Int8Activations), fixed for this engine's ExecutionPlans.
+  // --max-concurrent-requests: the lanes the runtime runs and plans for.
+  uint32_t lanes = model::ExecutionLimits::defaultLanes;
+  // --activations: whether the plans may round activations to int8
+  // where an int8-activation path takes them, or keep every activation bf16
+  // (ops::Int8Activations), for the life of the engine (ops::ExecutionPlans).
   ops::Int8Activations int8Activations = ops::Int8Activations::On;
   // The prefill FFN's Neural Engine split (startAneFfn): off with
   // --disable-ane, and a benchmark round runs the split of the first so that
@@ -306,12 +326,22 @@ public:
   [[nodiscard]] const RuntimeCacheIdentity &cacheIdentity() const noexcept {
     return cacheIdentity_;
   }
-  // The share the prefill FFN's Neural Engine split runs at and the least
-  // rows of a chunk it takes; 0 for none.
-  [[nodiscard]] double aneFfnShare() const noexcept { return aneFfn_ ? aneFfn_->share() : 0.0; }
+  // The larger share the prefill FFN's Neural Engine split runs at, of one
+  // step or two, and the least rows of a command it takes; 0 for none.
+  [[nodiscard]] double aneFfnShare() const noexcept {
+    using Steps = ops::AneFfn::Steps;
+    return aneFfn_ ? std::max(aneFfn_->share(Steps::One), aneFfn_->share(Steps::Two)) : 0.0;
+  }
   [[nodiscard]] uint32_t aneFfnMinimumRows() const noexcept { return aneFfn_ ? aneFfn_->minimumRows() : 0; }
   // How the start's split came out, and the automatic context.
   [[nodiscard]] const AneFfnOutcome &aneFfnOutcome() const noexcept { return aneFfnOutcome_; }
+  // Whether the start left the split to set up once `runtime`, the engine's,
+  // has prefilled a full chunk on the GPU alone; and setting it up then, on
+  // `runtime`'s prefill buffers, with that prefill's `prefillMilliseconds`
+  // of GPU time (engine::finishAneFfn), which `runtime` takes from its next
+  // command on (model::RuntimeModel::setAneFfn).
+  [[nodiscard]] bool aneFfnPending() const noexcept { return aneFfnPending_.has_value(); }
+  void finishAneFfn(double prefillMilliseconds, model::RuntimeModel &runtime);
   // The split as it stands now, for /status.
   [[nodiscard]] AneFfnSnapshot aneFfnSnapshot() const;
   // The streamed PLE table's store (--ple-memory), if the model has one.
@@ -351,10 +381,10 @@ private:
                    std::unique_ptr<DiskSpace> diskSpace,
                    std::unique_ptr<KvPool> kvPool,
                    std::unique_ptr<engine::Cache> cache,
-                   std::unique_ptr<ops::AneFfn> aneFfn, AneFfnOutcome aneFfnOutcome,
+                   AneFfnStart aneFfn, kv::Format kvFormat, std::string buildId, std::function<bool()> cancelled,
                    std::unique_ptr<model::KvBlockCache> blockCache,
                    std::unique_ptr<model::KvHistoryStream> historyStream, bool spillAlways,
-                   model::VerifyRows verifyRows, uint32_t prefillChunkTokens);
+                   model::VerifyRows verifyRows);
   // Takes back the restore points the last process left in a persistent
   // tier (Cache::adopt) and opens its files for this one.
   void adoptPersistentCache();
@@ -388,7 +418,12 @@ private:
   // Over model_'s images, its expert store if it has one, and aneFfn_.
   ReleasableMemory releasableMemory_;
   AneFfnOutcome aneFfnOutcome_;
-  uint32_t prefillChunkTokens_;
+  // The start's split left to set up (aneFfnPending), and what its model
+  // needs then: the KV format, the build and the start's cancellation.
+  std::optional<AneFfnStart> aneFfnPending_;
+  kv::Format kvFormat_;
+  std::string buildId_;
+  std::function<bool()> cancelled_;
   // --kv-spill always.
   bool spillAlways_ = false;
   // --verify-rows, which modelContext() passes on.
@@ -400,16 +435,26 @@ private:
   bool probationStopped_ = false;
 };
 
+// Where the model's side of the split (aneFfnModel) times and prepares it:
+// with `buffers`, on the prefill buffers of a dense FFN and the hidden rows
+// its layers alternate between that `buffers` hands its use, the engine's
+// own; without, on a prefill arena allocated for each call. Its programs wait
+// for the ANE's service until `cancelled` returns true.
+struct AneFfnTiming final {
+  using Use = std::function<void(const ops::PrefillFfnBuffers &, const std::array<metal::MetalBuffer, 2> &)>;
+  std::function<bool()> cancelled;
+  std::function<void(const Use &)> buffers;
+};
+
 // The model's side of the split of `loaded`'s target on `backend`, valid
-// while `backend`, `loaded` and `operators` are: its timing and prepared split
-// run on a prefill arena of their own, its programs wait for the ANE's
-// service until `cancelled` returns true, and its calibrations are
-// remembered beside the programs (ane::recall) under its layers' shapes and
-// formats and the Int8Activations its GPU part plans with
-// (ops::AneFfn::calibrationKey), the device, the macOS version, the engine's
-// `buildId` and the most units the plan holds.
+// while `backend`, `loaded` and `operators` are: it times and prepares the
+// split as `timing` says, and its calibrations are remembered beside the
+// programs (ane::recall) under its layers' shapes and formats and the
+// Int8Activations its GPU part plans with (ops::AneFfn::calibrationKey), the
+// device, the macOS version, the engine's `buildId` and the most units the
+// plan holds.
 [[nodiscard]] AneFfnModel aneFfnModel(metal::MetalBackend &backend, const model::LoadedModel &loaded,
                                       const ops::ExecutionPlans &operators, kv::Format format,
-                                      std::string_view buildId, std::function<bool()> cancelled);
+                                      std::string_view buildId, AneFfnTiming timing);
 
 } // namespace splash::engine
