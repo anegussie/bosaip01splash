@@ -915,6 +915,8 @@ def main_args(**overrides):
             "chat_template_file": None,
             "max_context": None,
             "max_memory": None,
+            "prefill_chunk_tokens": serve_options.DEFAULT_PREFILL_CHUNK_TOKENS,
+            "resource_wait_timeout": 30,
             "idle_release": None,
             "max_cache_disk": None,
             "max_cache_disk_writes": 0,

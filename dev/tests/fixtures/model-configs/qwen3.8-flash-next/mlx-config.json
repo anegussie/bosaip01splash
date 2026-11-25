@@ -106,7 +106,7 @@
         "heads_per_ngram": 8,
         "hidden_act": "silu",
         "hidden_size": 2560,
-        "indexer_budget": 2048,
+        "indexer_budget": 4096,
         "indexer_compress_ratio": 4,
         "indexer_head_dim": 128,
         "indexer_kv_heads": 1,

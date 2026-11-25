@@ -43,6 +43,14 @@ void requireSegment(const QuantizedSegment &segment, uint32_t output, uint32_t i
 void validate(const BlockMoeWeights &weights, MoeShape shape) {
   const uint32_t hidden = shape.hiddenSize, intermediate = shape.expertIntermediateSize;
   requireSegment(weights.router, shape.experts, hidden, true, "MoE router");
+  // A Gyro rotation (a GgufRotation of 128-wide blocks) signs an expert's
+  // inputs and its intermediate values: the widths divide into whole blocks.
+  if (weights.gateUpRotationSigns || weights.downRotationSigns) {
+    if (hidden % 128 || intermediate % 128)
+      throw std::invalid_argument("Gyro rotation width must be a multiple of 128");
+    requireBytes(weights.gateUpRotationSigns, hidden, "Gyro gate/up signs");
+    requireBytes(weights.downRotationSigns, intermediate, "Gyro down signs");
+  }
   if (shape.sharedGate) {
     requireSegment(weights.sharedScalarGate, 1, hidden, true, "MoE shared scalar gate");
     // The select kernel reads the scalar gate's fp32 weights.

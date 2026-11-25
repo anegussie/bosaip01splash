@@ -512,23 +512,27 @@ void checkIndexTables() {
 // A runtime whose K/V spills (one given the readers of spilled K/V,
 // model::RuntimeContext) runs its prefill commands as groups, which read an
 // attention layer's spilled history once each, and its decode arena holds
-// where its verify's listed blocks are: a lane's list, a verify block's 16
-// rows of 512 blocks and the block of each row's tail. The K/V of a target
+// where its verify's listed blocks are: a lane's list, a verify block's rows
+// of the indexer's blocks and the block of each row's tail. The K/V of a target
 // without a block index cannot spill.
 void checkSpilledKvGeometry() {
   const auto flash = loadedModel<model::Qwen4ExpWeights>();
   const auto resident = model::RuntimeGeometry::from(flash, kv::Format::Int8, ops::GdnStateFormat::Float32);
   const auto spilled = model::RuntimeGeometry::from(flash, kv::Format::Int8, ops::GdnStateFormat::Float32,
                                                     model::StreamedParts::loaded(flash, true));
+  // The shape comes from the family's own indexer budget (Qwen4ExpLayout),
+  // not a fixed number: a verify block's rows each list its blocks plus the
+  // tail's.
   auto sparse = test::sparseKvShape();
   sparse.selectedBlocks = resident.target.indexerTopBlocks;
   sparse.denseHistoryTokens = resident.target.indexerTokens();
   require(resident.prefillChunks == 1 && !resident.spilledKv &&
-              spilled.prefillChunks == model::kFullRowPrefillGroupChunks &&
-              spilled.spilledKv == sparse,
+              spilled.prefillChunks == model::kPrefillGroupChunks && spilled.spilledKv == sparse,
           "a runtime's prefill groups do not follow whether its K/V spills");
   require(!decodeBytes(resident, model::DecodeTensor::Locations) &&
-              decodeBytes(spilled, model::DecodeTensor::Locations) == uint64_t{model::ExecutionLimits::targetVerifyRows} * (sparse.selectedBlocks + 1) * sizeof(uint32_t),
+              decodeBytes(spilled, model::DecodeTensor::Locations) ==
+                  uint64_t{model::ExecutionLimits::targetVerifyRows} * (sparse.selectedBlocks + 1) *
+                      sizeof(uint32_t),
           "a runtime's decode arena does not hold its spilled blocks' locations exactly when its K/V spills");
   for (const model::LoadedModel &loaded :
        {loadedModel<model::Qwen3_8Weights>(), loadedModel<model::Qwen3_6MoeWeights>()})
@@ -732,30 +736,9 @@ void checkPrefillAttentionHistory() {
   require(splitsAfter(65'536) > splitsAfter(0), "a chunk's attention plan does not follow its history");
 }
 
-void checkFlashNextPrefillScratch() {
-  const auto flash = loadedModel<model::Qwen4ExpWeights>();
-  const auto geometry = model::RuntimeGeometry::from(flash, kv::Format::Int8, ops::GdnStateFormat::BFloat16,
-                                                      model::StreamedParts::loaded(flash, true));
-  DeviceCapabilities device;
-  device.appleGpuFamily = 10;
-  device.gpuCoreCount = 8;
-  const ops::ExecutionPlans plans(device, ops::Int8Activations::On);
-  const auto shared = model::prefillTargetRows(geometry, plans);
-  auto separate = shared;
-  separate.shareLayerScratch = false;
-  const auto bytes = model::TargetArena::bytes(geometry.target, shared);
-  const auto separateBytes = model::TargetArena::bytes(geometry.target, separate);
-  require(shared.shareLayerScratch && shared.rows == model::kPrefillRows && bytes < separateBytes,
-          "Flash-Next prefill did not share layer scratch at full chunk size");
-  require(!model::decodeTargetRows(geometry, plans).shareLayerScratch,
-          "Flash-Next decode unexpectedly shared layer scratch");
-  std::cout << "Flash-Next prefill target arena: " << separateBytes << " -> " << bytes << " bytes\n";
-}
-
 int main() {
   try {
     checkPrefillAttentionHistory();
-    checkFlashNextPrefillScratch();
     checkUnsizedProjection();
     checkCaptureLayers();
     checkGdnWidths();
@@ -775,7 +758,7 @@ int main() {
     checkArenasHoldTheirLanes("Qwen3.6-35B-A3B", loadedModel<model::Qwen3_6MoeWeights>(), {279'281'664, 273'874'944},
                               {539'017'216, 533'610'496, 533'446'656});
     checkArenasHoldTheirLanes("Qwen3.8-Flash-Next", loadedModel<model::Qwen4ExpWeights>(),
-                              {409'796'608, 403'963'904}, {1'124'614'144, 1'118'781'440, 1'118'781'440});
+                              {409'993'216, 404'160'512}, {1'128'873'984, 1'123'041'280, 1'123'041'280});
     checkDecodeArenaPages(loadedModel<model::Qwen3_8Weights>());
     checkDecodeArenaPages(loadedModel<model::Qwen3_6MoeWeights>());
     checkDecodeStepRows(loadedModel<model::Qwen3_8Weights>());

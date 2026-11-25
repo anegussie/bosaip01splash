@@ -257,6 +257,16 @@ OPTIONS = {
     "--max-concurrent-requests": values(
         "--max-concurrent-requests", {"8": 8, "1": 1}, ("0", "9", "1.5", "all")
     ),
+    "--prefill-chunk-tokens": values(
+        "--prefill-chunk-tokens",
+        {"128": 128, "512": 512, "2048": 2048},
+        ("0", "129", "100", "2048.5", "-128", "many", "4096"),
+    ),
+    "--resource-wait-timeout": values(
+        "--resource-wait-timeout",
+        {"1": 1, "60": 60},
+        ("0", "-1", "1.5", "many", "4294967296"),
+    ),
     "--api-key": values(
         "--api-key",
         {"secret-key": "secret-key"},

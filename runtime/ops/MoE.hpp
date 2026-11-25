@@ -268,6 +268,9 @@ struct BlockMoeWeights final {
   ExpertChunks chunks = {};
   // A biased selection's bias (MoeShape::selectionBias), F32 [experts].
   metal::MetalBuffer selectionBias = {};
+  // A Gyro rotation's signs (one signed byte per element), empty when the
+  // expert's weights are stored unrotated (GgufImage::requireRotation).
+  metal::MetalBuffer gateUpRotationSigns = {}, downRotationSigns = {};
 };
 
 // The one chunk of a block whose routed segments hold all its `slots`

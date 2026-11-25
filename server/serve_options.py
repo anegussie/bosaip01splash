@@ -29,6 +29,10 @@ MAX_YARN_CONTEXT_TOKENS = 1010000
 _CONTEXT_UNITS = {"K": 1024, "M": 1000000}
 DEFAULT_MAX_REQUEST_BYTES = 128 * 1024 * 1024
 DEFAULT_QUEUE_SIZE = 32
+# The prompt tokens one native prefill batch takes by default: small enough to
+# keep the shared prefill arena modest on a Mac, raiseable to the engine's own
+# chunk limit of 2,048 for models that prefill faster in bigger batches.
+DEFAULT_PREFILL_CHUNK_TOKENS = 512
 # The requests the engine decodes at once unless --max-concurrent-requests
 # says otherwise (ExecutionLimits::defaultLanes), and the most it can
 # (SPLASH_MAXIMUM_BATCH_WIDTH).
@@ -193,28 +197,34 @@ def parse_expert_memory(value):
 
 
 def parse_prefill_chunk_tokens(value):
-    """The tokens one native prefill batch takes: a multiple of 128 up to the
-    engine's own chunk limit of 2,048."""
+    """The prompt tokens one native prefill batch takes: a multiple of 128 up to
+    the engine's own chunk limit of 2,048."""
     try:
         tokens = int(value)
     except ValueError:
         tokens = 0
     if not 128 <= tokens <= 2048 or tokens % 128:
         raise argparse.ArgumentTypeError(
-            "must be a multiple of 128 in [128, 2048]"
+            "must be a multiple of 128 tokens in [128, 2048]"
         )
     return tokens
 
 
 def parse_resource_wait_timeout(value):
-    """How long a request waits for engine resources after a suspension, in
-    seconds."""
-    if (seconds := _duration_seconds(value)) is None or seconds != int(seconds):
-        raise argparse.ArgumentTypeError("must be a positive whole number of seconds")
-    return int(seconds)
+    """Seconds a request waits for engine resources after a suspension."""
+    try:
+        seconds = int(value)
+    except ValueError:
+        seconds = 0
+    if not 1 <= seconds <= 2**32 - 1:
+        raise argparse.ArgumentTypeError(
+            "resource wait timeout must be a positive integer in seconds (at most 4294967295)"
+        )
+    return seconds
 
 
-def parse_sparse_kv_memory(value):    return _memory_size(value, "1200M", ())
+def parse_sparse_kv_memory(value):
+    return _memory_size(value, "1200M", ())
 
 
 def parse_cache_dir(value):
@@ -607,30 +617,6 @@ SERVE_OPTIONS = (
         needs="experts",
     ),
     ServeOption(
-        "--prefill-chunk-tokens",
-        "memory",
-        dict(
-            type=parse_prefill_chunk_tokens,
-            default=2048,
-            metavar="TOKENS",
-            help="maximum prompt tokens per native batch, in multiples of 128 up to "
-            "2048 (default: 2048); smaller chunks reduce scratch memory",
-        ),
-        engine=EngineArgument("--prefill-chunk-tokens"),
-    ),
-    ServeOption(
-        "--resource-wait-timeout",
-        "requests",
-        dict(
-            type=parse_resource_wait_timeout,
-            default=30,
-            metavar="SECONDS",
-            help="seconds a request waits for engine resources after a suspension "
-            "(default: 30)",
-        ),
-        engine=EngineArgument("--resource-wait-timeout"),
-    ),
-    ServeOption(
         "--sparse-kv-memory",
         "memory",
         dict(
@@ -643,6 +629,18 @@ SERVE_OPTIONS = (
         ),
         engine=EngineArgument("--sparse-kv-memory"),
         needs="sparse_kv",
+    ),
+    ServeOption(
+        "--prefill-chunk-tokens",
+        "memory",
+        dict(
+            type=parse_prefill_chunk_tokens,
+            default=DEFAULT_PREFILL_CHUNK_TOKENS,
+            metavar="TOKENS",
+            help="prompt tokens per native prefill batch, a multiple of 128 up to "
+            "2048 (default: 512); bigger chunks prefill faster on a Mac with headroom",
+        ),
+        engine=EngineArgument("--prefill-chunk-tokens"),
     ),
     ServeOption(
         "--kv-format",
@@ -920,6 +918,18 @@ SERVE_OPTIONS = (
             f"{DEFAULT_CONCURRENT_REQUESTS})",
         ),
         engine=EngineArgument("--max-concurrent-requests"),
+    ),
+    ServeOption(
+        "--resource-wait-timeout",
+        "requests",
+        dict(
+            type=parse_resource_wait_timeout,
+            default=30,
+            metavar="SECONDS",
+            help="seconds a request waits for engine resources after a suspension "
+            "before it fails (default: 30)",
+        ),
+        engine=EngineArgument("--resource-wait-timeout"),
     ),
     ServeOption(
         "--decode-share",

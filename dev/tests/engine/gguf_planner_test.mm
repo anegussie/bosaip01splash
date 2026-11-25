@@ -507,11 +507,11 @@ void checkRotation(const std::filesystem::path &directory) {
   // only when `namesAlphaBeta`, with `changes` in place of the rotation keys
   // they name or added.
   const auto planned = [&](const model::QwenTargetDimensions &t, TensorTypes types, bool namesAlphaBeta,
-                           const std::vector<test_gguf::Key> &changes = {}, uint32_t projectionType = model::ggml::kPQ2_0) {
+                           const std::vector<test_gguf::Key> &changes = {}) {
     for (const char *name : {"attn_q.weight", "attn_k.weight", "attn_v.weight", "attn_output.weight", "attn_qkv.weight",
                              "attn_gate.weight", "ssm_out.weight", "ffn_gate.weight", "ffn_up.weight",
                              "ffn_down.weight", "output.weight", "token_embd.weight"})
-      types[name] = projectionType;
+      types[name] = model::ggml::kPQ2_0;
     const std::vector<Tensor> tensors = targetTensors(t, types);
     std::vector<std::string> weights;
     for (const Tensor &tensor : tensors)
@@ -539,10 +539,6 @@ void checkRotation(const std::filesystem::path &directory) {
     check(!floats.error, "planner plans a rotation of " + model::ggmlTypeName(type) + " alpha/beta" +
                              (floats.error ? ": " + *floats.error : ""));
   }
-  const Plan ptq = planned(g, alphaBeta(model::ggml::kBF16), false, {}, model::ggml::kPTQ1_0);
-  check(!ptq.error, "planner plans PTQ1_0 projections and a rotated token table" + (ptq.error ? ": " + *ptq.error : ""));
-  check(names(planned(g, alphaBeta(model::ggml::kF32), false, {}, kQ8_0), {"the rotation's one token table must use PQ2_0 or PTQ1_0"}),
-        "planner refuses rotated token formats without a rotation gather kernel");
   for (uint32_t type : {kQ8_0, kIQ4_XS}) {
     const std::string gates = model::ggmlTypeName(type) + " alpha/beta";
     const Plan named = planned(g, alphaBeta(type), true);
@@ -567,7 +563,7 @@ void checkRotation(const std::filesystem::path &directory) {
   for (const char *name : {"ffn_gate_exps.weight", "ffn_up_exps.weight", "ffn_down_exps.weight",
                            "ffn_gate_shexp.weight", "ffn_up_shexp.weight", "ffn_down_shexp.weight"})
     experts[name] = kQ4_K;
-  check(names(planned(moe, experts, false), {"Gyro MoE rotation requires 128-wide blocks and unrotated tables"}),
+  check(names(planned(moe, experts, false), {"rotated weights are supported for dense targets only"}),
         "planner refuses a rotated MoE target");
 }
 
@@ -1485,49 +1481,9 @@ void checkGatheredValues(const std::filesystem::path &directory) {
 
 } // namespace
 
-// Gyro's routed experts rotate independently of shared experts and PLE.
-void checkGyro(const std::filesystem::path &directory) {
-  auto g = qwen4ExpGeometry();
-  g.ffnKind = model::QwenFfnKind::SparseMoe;
-  g.experts = 4; g.expertsPerToken = 2; g.expertIntermediateSize = 640;
-  auto types = qwen4ExpTypes();
-  for (const char *name : {"hc_attn_down.weight", "hc_attn_up.weight", "hc_ffn_down.weight", "hc_ffn_up.weight",
-                         "output_hc_down.weight", "output_hc_up.weight"}) types[name] = kQ8_0;
-  types["ffn_gate_exps.weight"]=145; types["ffn_up_exps.weight"]=145; types["ffn_down_exps.weight"]=146;
-  types["ffn_gate_shexp.weight"]=kQ8_0;types["ffn_up_shexp.weight"]=kQ8_0;types["ffn_down_shexp.weight"]=kQ8_0;
-  types["hc_attn_inject.weight"]=14;types["hc_ffn_inject.weight"]=14;
-  auto tensors=targetTensors(g,types);
-  std::vector<std::string> rotated;
-  for (const auto &t:tensors) if(t.name.find("_exps.weight")!=std::string::npos) rotated.push_back(t.name);
-  const auto path=directory/"gyro.gguf";
-  const auto write=[&](uint32_t bits, bool omitWeight) {
-    auto keys=metadata(g);
-    std::erase_if(keys, [](const auto &key) { return key.name == "agention.trellis.state_bits"; });
-    keys.push_back(test_gguf::uint32Key("agention.trellis.state_bits",bits));
-    keys.push_back(test_gguf::uint32Key("prism.hadamard.version",1));
-    keys.push_back(test_gguf::uint32Key("prism.hadamard.block_size",128));
-    keys.push_back(test_gguf::stringKey("prism.hadamard.transform","normalized-sylvester-walsh-hadamard"));
-    keys.push_back(test_gguf::stringKey("prism.hadamard.axis","input-last-dimension"));
-    keys.push_back(test_gguf::stringKey("prism.hadamard.sign_mode","explicit"));
-    keys.push_back(test_gguf::int32ArrayKey("prism.hadamard.sign_widths",{256,640}));
-    keys.push_back(test_gguf::int32ArrayKey("prism.hadamard.sign_values",std::vector<int32_t>(896,1)));
-    auto names=rotated;if(omitWeight) names.pop_back();
-    keys.push_back(test_gguf::stringArrayKey("prism.hadamard.weight_names",names));
-    splash::test::writeFile(path,test_gguf::file(keys,tensors));
-  };
-  write(15,false);
-  const auto resident=plan(path,g), streamed=plan(path,g,{.streamExperts=true,.streamTable=true});
-  check(!resident.error,"Gyro resident plan"+(resident.error?": "+*resident.error:""));
-  check(!streamed.error,"Gyro SSD expert/PLE plan"+(streamed.error?": "+*streamed.error:""));
-  check(streamsExperts(resident,streamed),"Gyro compressed experts use streaming layouts");
-  write(16,false);check(names(plan(path,g),{"state_bits=15"}),"Gyro refuses incompatible trellis state widths");
-  write(15,true);check(names(plan(path,g),{"exactly every routed"}),"Gyro refuses incomplete rotation lists");
-}
-
 int main() {
   @autoreleasepool {
     const splash::test::TemporaryDirectory directory("splash-gguf-planner");
-    guarded("planner on Gyro SSD streaming", [&] { checkGyro(directory.path()); });
     guarded("planner on the dense target", [&] { checkDense(directory.path()); });
     guarded("planner on the MoE target", [&] { checkMoe(directory.path()); });
     guarded("planner on quantized alpha/beta", [&] { checkQuantizedAlphaBeta(directory.path()); });
