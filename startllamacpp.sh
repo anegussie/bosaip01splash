@@ -2200,6 +2200,15 @@ case "$choice" in
         # launch loop halves the chunk if the warmup trips the Metal window.
         splash_flash_next_q2_profile
         SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=1
+        # The 1.7.3 engine's auto split gives the routed experts a smaller store
+        # than the Q2_0 decode wants: 2,355 MiB (1,445 of 24,576 experts) against
+        # 3,072 MiB (1,988). Paired on this M5, the named store decodes 25.1 tok/s
+        # with a 0.52 expert hit rate against 20.2 at 0.34 on the same build, and
+        # it still keeps the 131,000-token context resident; 3,584 MiB does not,
+        # the plan caps context at 98,289 tokens. See docs/merge-1.7.3-ab-results.md.
+        if [[ "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" == "auto" ]]; then
+          SPLASH_FLASH_NEXT_EXPERT_MEMORY=3072M
+        fi
       fi
       SPLASH_BONSAI_STATE_FORMAT=bf16
       SPLASH_BONSAI_PREFILL_CHUNK_TOKENS="$SPLASH_FLASH_NEXT_PREFILL_CHUNK_TOKENS"

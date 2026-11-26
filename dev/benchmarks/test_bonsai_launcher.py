@@ -202,7 +202,7 @@ print('Ready test server',flush=True)
             "--max-memory": "8G",
             "--kv-format": "int8",
             "--state-format": "bf16",
-            "--max-active-requests": "1",
+            "--max-concurrent-requests": "1",
             "--prefill-chunk-tokens": "512",
             "--max-cache-disk": "2147483648",
             "--cache-dir": str(cache),
@@ -314,7 +314,7 @@ print('Ready test server',flush=True)
             "--max-memory": "10G",
             "--kv-format": "int8",
             "--state-format": "bf16",
-            "--max-active-requests": "1",
+            "--max-concurrent-requests": "1",
             "--prefill-chunk-tokens": "512",
             "--max-cache-disk": "2147483648",
             "--default-reasoning-effort": "xhigh",
@@ -466,7 +466,7 @@ print('Ready test server',flush=True)
             "--max-context": "131072",
             "--inkling-max-output": "1024",
             "--binary": str(self.mock),
-            "--max-active-requests": "1",
+            "--max-concurrent-requests": "1",
             "--default-reasoning-effort": "low",
             "--port": "12425",
         }.items():
@@ -590,7 +590,7 @@ print('Ready test server',flush=True)
             "--kv-format": "int8",
             "--state-format": "bf16",
             "--prefill-chunk-tokens": "1024",
-            "--max-active-requests": "2",
+            "--max-concurrent-requests": "2",
             "--default-reasoning-effort": "low",
             "--max-cache-disk": "17179869184",
         }.items():
@@ -717,7 +717,7 @@ print('Ready test server',flush=True)
         r = self.run_launcher("20", SPLASH_HOST_MEM_BYTES=str(17179869184))
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         args = json.loads((self.root / "argv.json").read_text())
-        self.assertEqual(args[args.index("--max-active-requests") + 1], "1")
+        self.assertEqual(args[args.index("--max-concurrent-requests") + 1], "1")
         self.assertEqual(args[args.index("--max-context") + 1], "131072")
         self.assertEqual(args[args.index("--max-memory") + 1], "10.8G")
         self.assertEqual(args[args.index("--ple-memory") + 1], "64M")
@@ -838,7 +838,7 @@ print('Ready test server',flush=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("One active request on a 12 GB Mac", r.stdout)
         args = json.loads((self.root / "argv.json").read_text())
-        self.assertEqual(args[args.index("--max-active-requests") + 1], "1")
+        self.assertEqual(args[args.index("--max-concurrent-requests") + 1], "1")
 
         # Asking for a second lane below 16 GB is refused.
         (self.root / "attempts").unlink(missing_ok=True)
@@ -864,7 +864,7 @@ print('Ready test server',flush=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertNotIn("below the 24 GB gate", r.stdout)
         args = json.loads((self.root / "argv.json").read_text())
-        self.assertEqual(args[args.index("--max-active-requests") + 1], "2")
+        self.assertEqual(args[args.index("--max-concurrent-requests") + 1], "2")
         self.assertEqual(args[args.index("--max-context") + 1], "65536")
 
         # 24 GB admits the second lane at the full 131,072 context, with no note.
@@ -876,7 +876,7 @@ print('Ready test server',flush=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertNotIn("below the 24 GB gate", r.stdout)
         args = json.loads((self.root / "argv.json").read_text())
-        self.assertEqual(args[args.index("--max-active-requests") + 1], "2")
+        self.assertEqual(args[args.index("--max-concurrent-requests") + 1], "2")
 
     def test_option20_second_lane_below_the_gate_is_an_explicit_override(self):
         # A second lane on 16 GB remains available explicitly, with its
@@ -890,7 +890,7 @@ print('Ready test server',flush=True)
         self.assertIn("below the 24 GB gate", r.stdout)
         self.assertIn("memory_governor.growth_allowed", r.stdout)
         args = json.loads((self.root / "argv.json").read_text())
-        self.assertEqual(args[args.index("--max-active-requests") + 1], "2")
+        self.assertEqual(args[args.index("--max-concurrent-requests") + 1], "2")
         self.assertEqual(args[args.index("--max-context") + 1], "131072")
 
         # An explicit single lane uses the Air's new default cap and context.
@@ -902,7 +902,7 @@ print('Ready test server',flush=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertNotIn("below the 24 GB gate", r.stdout)
         args = json.loads((self.root / "argv.json").read_text())
-        self.assertEqual(args[args.index("--max-active-requests") + 1], "1")
+        self.assertEqual(args[args.index("--max-concurrent-requests") + 1], "1")
         self.assertEqual(args[args.index("--max-context") + 1], "131072")
         self.assertEqual(args[args.index("--max-memory") + 1], "10.8G")
 
@@ -1071,7 +1071,7 @@ print('Ready test server',flush=True)
             "--max-memory": "10G",
             "--expert-memory": "auto",
             "--ple-memory": "64M",
-            "--max-active-requests": "1",
+            "--max-concurrent-requests": "1",
             "--max-cache-disk": str(2 * 1024**3),
         }.items():
             self.assertEqual(args[args.index(flag) + 1], value)
@@ -1135,7 +1135,7 @@ print('Ready test server',flush=True)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertEqual(args[args.index("--max-memory") + 1], "10.8G")
         self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "2048")
-        self.assertEqual(args[args.index("--max-active-requests") + 1], "1")
+        self.assertEqual(args[args.index("--max-concurrent-requests") + 1], "1")
         self.assertIn(
             "Option 21 profile: 10.8G Metal cap with 2048-token prefill chunks",
             r.stdout,
@@ -1283,6 +1283,32 @@ print('Ready test server',flush=True)
         args = json.loads((self.root / "argv.json").read_text())
         self.assertEqual(args[args.index("--max-memory") + 1], "12G")
         self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "1024")
+
+    def test_option21_names_the_expert_store_the_q2_decode_needs(self):
+        # --expert-memory auto leaves the routed experts 2,355 MiB here, 1,445 of
+        # 24,576 experts, and paired runs on this M5 decode 17.2 tok/s with a 0.34
+        # expert hit rate. Naming 3,072 MiB gives 1,988 slots and 25.1 tok/s at
+        # 0.52, and it still keeps the 131,072-token context resident. See
+        # docs/merge-1.7.3-ab-results.md.
+        r = self.run_launcher(
+            "21",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
+            SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.draft()),
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--expert-memory") + 1], "3072M")
+
+        # An explicit store still wins over the named default.
+        r = self.run_launcher(
+            "21",
+            SPLASH_HOST_MEM_BYTES=str(17179869184),
+            SPLASH_FLASH_NEXT_DFLASH2_MODEL=str(self.draft()),
+            SPLASH_FLASH_NEXT_EXPERT_MEMORY="2G",
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = json.loads((self.root / "argv.json").read_text())
+        self.assertEqual(args[args.index("--expert-memory") + 1], "2G")
 
     def test_option21_streamed_override_note_names_the_pair_it_holds(self):
         # A streamed expert or PLE store holds the cap at 10G and the chunk at

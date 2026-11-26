@@ -70,7 +70,6 @@ void writeCheckpoints(const std::filesystem::path &root, const model::ModelDescr
 RuntimeResourcesConfig budgetConfig(const char *metallibPath, const std::filesystem::path &root) {
   const PlannedModel planned = plannedModel();
   RuntimeResourcesConfig config;
-  config.prefillChunkTokens = model::ExecutionLimits::prefillTokenBudget;
   config.metallibPath = metallibPath;
   config.modelRoot = root;
   config.model = model::makeModelDescriptor("budget-test", planned.target, planned.draft, planned.vision,
@@ -834,8 +833,8 @@ void testLoadedVisionIsRequiredOnlyWithVision() {
 
 // Resource assembly names the step it fails at, at its real throw site: a
 // host with less than its reserve refuses the start before the weights are
-// opened, and the startup retry window retries it. Past the weights, each
-// required allocation still preserves the available-memory reserve.
+// opened, and the startup retry window retries it. Past the weights the host
+// refuses only what loading would (testStartGrowsThroughHostPressure).
 void testFailedStepIsNamed(const char *metallibPath) {
   using namespace std::chrono_literals;
   const test::TemporaryDirectory root("splash-assembly");
@@ -882,13 +881,9 @@ void testFailedStepIsNamed(const char *metallibPath) {
           "a start the host refused before the weights loaded named another step");
   require(before.message.find("--max-memory") != std::string::npos,
           "a start the host refused did not name --max-memory as a remedy");
-  StartupRetryWindow window(30s);
-  RuntimeBootstrapReport after = before;
-  after.resourceStage = RuntimeResourceStage::StorageAllocation;
   const auto first = StartupRetryWindow::Clock::time_point{};
-  require(window.retryUntil(before, first) == first + 30s &&
-              window.retryUntil(after, first + 20s) == first + 50s,
-          "a failure after the weights loaded did not count as progress");
+  require(StartupRetryWindow(30s).retryUntil(before, first) == first + 30s,
+          "a start the host refused was not retried");
 }
 
 // A Metal command of resource assembly that ran out of GPU memory fails the
@@ -1046,9 +1041,7 @@ void testYarnRuntime(const char *metallibPath) {
                        "--max-context above 262144 only when a request needs it.") != std::string::npos,
           "a start with YaRN did not name its factor and the context it serves");
   const model::RuntimeContext context = resources->modelContext();
-  const auto geometry = model::RuntimeGeometry::from(context.model, kv::Format::Int8,
-                                                    ops::GdnStateFormat::Float32,
-                                                    context.prefillChunkTokens);
+  const auto geometry = model::RuntimeGeometry::from(context.model, kv::Format::Int8, ops::GdnStateFormat::Float32);
   require(geometry.target.ropeScaling == config.model.ropeScaling && geometry.target.contextTokens() == 1'010'000,
           "the runtime's geometry lost YaRN or its window");
   std::array<float, SPLASH_TARGET_ROPE_PAIRS> expected{};
@@ -2151,7 +2144,7 @@ void testStreamedRuntimeBoundary(RuntimeResourcesConfig moe) {
   const std::unique_ptr<RuntimeResources> resources = RuntimeResources::create(moe, 0);
   const std::unique_ptr<model::Runtime> runtime = runtimeOf(*resources);
   require(resources->streamedExpertStats().has_value(), "the MoE start did not stream its experts");
-  require(runtime->commandLimits() == model::CommandLimits{.commandRows = model::kFullRowPrefillGroupChunks * kChunk,
+  require(runtime->commandLimits() == model::CommandLimits{.commandRows = 4 * kChunk,
                                                            .layers = kMoeLayers,
                                                            .maximumPasses = kMoeLayers,
                                                            .lanesPastChunk = 1,
@@ -2216,7 +2209,7 @@ void testSpilledRuntimeBoundary(const char *metallibPath) {
   const bool streamsExperts = resources->streamedExpertStats().has_value();
   const std::unique_ptr<model::Runtime> runtime = runtimeOf(*resources);
   const uint32_t layers = std::get<model::Qwen4ExpLayout>(config.model.target).layers;
-  require(runtime->commandLimits() == model::CommandLimits{.commandRows = model::kFullRowPrefillGroupChunks * kChunk,
+  require(runtime->commandLimits() == model::CommandLimits{.commandRows = 4 * kChunk,
                                                            .layers = layers,
                                                            .maximumPasses = layers,
                                                            .lanesPastChunk = 1,

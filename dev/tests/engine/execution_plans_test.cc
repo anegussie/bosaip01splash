@@ -423,6 +423,9 @@ void workspaceBounds() {
   require(plans.gateUpWorkspace(gateUp(matrices[0]), kMaximumDecodeTileRows) == 2228224 &&
               plans.gateUpWorkspace(gateUp(matrices[1]), kMaximumDecodeTileRows) == 786432,
           "gate/up workspace omitted the gate pass of the decode tiles' 64 rows");
+  const ProjectionShape compactGateUp{3840, 5120};
+  require(plans.gateUpWorkspace(compactGateUp, 24) == 245760,
+          "gate/up workspace omitted staged-row padding when its pair needs separate passes");
   const auto draft = plans.draftAttentionWorkspacePerLane(draftShapes[0]);
   // Grouped queries per lane plus eight heads x four splits of 32 x 130 fp32
   // attention partials behind them.

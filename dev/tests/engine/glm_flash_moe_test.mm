@@ -25,8 +25,8 @@ metal::MetalBuffer upload(metal::MetalBackend &backend, std::span<const T> value
 
 void check(metal::MetalBackend &backend) {
   const ops::MoeShape shape{.hiddenSize = hidden, .experts = experts, .expertsPerToken = routes,
-                            .expertIntermediateSize = 256, .router = ops::MoeRouter::GlmFlash,
-                            .sharedSlices = 1, .sharedGate = false};
+                            .expertIntermediateSize = 256, .router = ops::MoeRouter::SigmoidNormalized,
+                            .sharedSlices = 1, .sharedGate = false, .selectionBias = true};
   test::require(shape.valid(), "GLM Flash MoE shape is not supported");
 
   std::vector<uint16_t> input(rows * hidden, 0);
@@ -50,8 +50,8 @@ void check(metal::MetalBackend &backend) {
   const auto mixture = test::sharedBuffer(backend, rows * (routes + 1) * sizeof(float));
 
   metal::CommandGraph graph;
-  ops::MoE::addRoutes(graph, inputBuffer, router, {}, scores, selected, mixture, rows, shape,
-                     ops::FloatTile::Simdgroup, biasBuffer);
+  ops::MoE::addRoutes(graph, inputBuffer, router, {}, biasBuffer, scores, selected, mixture, rows, shape,
+                     ops::FloatTile::Simdgroup);
   static_cast<void>(backend.submitCommandAsync(graph.dispatches()).wait());
 
   const auto *ids = static_cast<const uint32_t *>(selected.contents());
@@ -82,8 +82,8 @@ void check(metal::MetalBackend &backend) {
 
 void checkExpertClamp(metal::MetalBackend &backend, uint32_t count) {
   const ops::MoeShape shape{.hiddenSize = hidden, .experts = experts, .expertsPerToken = routes,
-                           .expertIntermediateSize = hidden, .router = ops::MoeRouter::GlmFlash,
-                           .sharedSlices = 1, .sharedGate = false};
+                           .expertIntermediateSize = hidden, .router = ops::MoeRouter::SigmoidNormalized,
+                           .sharedSlices = 1, .sharedGate = false, .selectionBias = true};
   const auto quantized = [&](uint32_t numRows, uint32_t period) {
     std::vector<float> values(uint64_t{numRows} * hidden);
     for (uint32_t row = 0; row < numRows; ++row)

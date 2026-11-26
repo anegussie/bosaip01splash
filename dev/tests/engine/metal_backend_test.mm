@@ -2,9 +2,6 @@
 #include "../../../runtime/metal/BackendInstrumentation.hpp"
 #include "../../../runtime/metal/MetalBackend.hpp"
 #include "TestBuffers.hpp"
-#include "TestRuntimeGeometry.hpp"
-#include "model/RuntimeArenas.hpp"
-#include "metal/CommandGraph.hpp"
 #include "TestChecks.hpp"
 #include "TestFiles.hpp"
 #include "TestMethodReplacement.hpp"
@@ -73,105 +70,6 @@ using splash::metal::kResidencyKeepAliveSeconds;
 
 // The watchdog limit of the tests whose commands the GPU holds for 200 ms.
 constexpr double kShortCommandTimeoutSeconds = 0.1;
-
-// Prefill and decode now own upstream TargetArena layouts. Check their
-// live tensors remain independent and that a smaller chunk shrinks allocation.
-void prefillScratchLifetimes(const std::string &metallibPath, uint32_t chunk) {
-    using namespace splash;
-    using namespace splash::model;
-    MetalBackend backend(metallibPath);
-    ops::ExecutionPlans plans(backend.capabilities(), ops::Int8Activations::Off);
-    const auto package = test::runtimeGeometryPackage<Qwen3_8Weights>();
-    const auto geometry = RuntimeGeometry::from(package, kv::Format::Int8, ops::GdnStateFormat::Float32, chunk);
-    auto full = geometry;
-    full.prefillChunkTokens = kPrefillRows;
-    if (prefillArenaBytes(geometry, plans) >= prefillArenaBytes(full, plans))
-        throw std::runtime_error("small prefill chunk did not shrink its arena");
-    PrefillArena arena(backend, geometry, plans);
-    DecodeArena decode(backend, geometry, plans);
-    const std::array<MetalBuffer, 3> buffers{
-        arena.target().get(TargetTensor::Hidden0),
-        arena.target().get(TargetTensor::Hidden1),
-        decode.target().get(TargetTensor::Hidden0)};
-    constexpr uint32_t words = 8;
-    CommandGraph graph;
-    std::vector<MetalBuffer> outputs;
-    for (uint32_t i = 0; i < buffers.size(); ++i) {
-        auto input = sharedBuffer(backend, words * sizeof(uint32_t));
-        std::fill_n(static_cast<uint32_t *>(input.contents()), words, 1000 + i);
-        graph.add("test_copy_u32", {input, buffers[i]}, words, {1, 1, 1}, {words, 1, 1});
-    }
-    for (const auto &buffer : buffers) {
-        auto output = sharedBuffer(backend, words * sizeof(uint32_t));
-        graph.add("test_copy_u32", {buffer, output}, words, {1, 1, 1}, {words, 1, 1});
-        outputs.push_back(output);
-    }
-    (void)backend.submitCommandAsync(graph.dispatches()).wait();
-    for (uint32_t i = 0; i < outputs.size(); ++i) {
-        const auto *output = static_cast<const uint32_t *>(outputs[i].contents());
-        if (!std::all_of(output, output + words, [&](uint32_t value) { return value == 1000 + i; }))
-            throw std::runtime_error("target arenas overlapped live tensors");
-    }
-    std::cout << "PASS target arena chunk capacity: " << chunk << " rows\n";
-}
-
-void flashNextPrefillScratchLifetimes(const std::string &metallibPath) {
-    using namespace splash;
-    using namespace splash::model;
-    MetalBackend backend(metallibPath);
-    const ops::ExecutionPlans plans(backend.capabilities(), ops::Int8Activations::Off);
-    const Qwen4ExpLayout layout;
-    RuntimeGeometry geometry;
-    geometry.target = QwenTargetGeometry(layout, {});
-    geometry.target.kvLayout = layout.kvLayout();
-    geometry.target.kvLayout.format = kv::Format::Int8;
-    geometry.target.stateLayout = layout.gdnStateLayout();
-    geometry.prefillChunkTokens = 128;
-    geometry.prefillChunks = 2;
-    const auto shape = prefillTargetRows(geometry, plans);
-    const auto base = sharedBuffer(backend, TargetArena::bytes(geometry.target, shape));
-    const TargetArena arena(backend, base, 0, geometry.target, shape);
-    const std::array<MetalBuffer, 3> phases{
-        arena.get(TargetTensor::GdnPacked, 0),
-        arena.get(TargetTensor::FullPacked, 0),
-        arena.moeScratch(0).expertIntermediate};
-    if (!std::all_of(phases.begin(), phases.end(), [&](const MetalBuffer &buffer) {
-            return buffer && buffer.contents() == phases.front().contents();
-        }))
-        throw std::runtime_error("Flash-Next prefill phases did not reuse scratch");
-
-    const std::array<MetalBuffer, 2> carried{
-        arena.get(TargetTensor::Hidden0, 0),
-        arena.get(TargetTensor::Hidden0, 1)};
-    constexpr uint32_t words = 8;
-    CommandGraph graph;
-    const auto copy = [&](const MetalBuffer &source, const MetalBuffer &target) {
-        graph.add("test_copy_u32", {source, target}, words, {1, 1, 1}, {words, 1, 1});
-    };
-    std::vector<MetalBuffer> inputs;
-    std::vector<MetalBuffer> outputs;
-    const auto write = [&](const MetalBuffer &target) {
-        auto &input = inputs.emplace_back(sharedBuffer(backend, words * sizeof(uint32_t)));
-        std::fill_n(static_cast<uint32_t *>(input.contents()), words, 1000 + inputs.size());
-        copy(input, target);
-    };
-    const auto read = [&](const MetalBuffer &source) {
-        copy(source, outputs.emplace_back(sharedBuffer(backend, words * sizeof(uint32_t))));
-    };
-    for (const auto &buffer : carried) write(buffer);
-    for (const auto &buffer : phases) {
-        write(buffer);
-        read(buffer);
-    }
-    for (const auto &buffer : carried) read(buffer);
-    (void)backend.submitCommandAsync(graph.dispatches()).wait();
-    constexpr std::array<uint32_t, 5> expected{1003, 1004, 1005, 1001, 1002};
-    for (size_t i = 0; i < outputs.size(); ++i) {
-        const auto *output = static_cast<const uint32_t *>(outputs[i].contents());
-        if (!std::all_of(output, output + words, [&](uint32_t value) { return value == expected[i]; }))
-            throw std::runtime_error("Flash-Next arena overlapped live tensors");
-    }
-}
 
 [[noreturn]] void fail(const std::string &message) {
     std::cerr << "FAIL: " << message << '\n';
@@ -764,7 +662,7 @@ void dispatchProfilingCoversEveryCommand(const std::string &metallibPath) {
     const uint32_t count = 1, increment = 1;
     const ComputeDispatch dispatch{"test_add_u32", {{0, buffer}},
         {{1, &count, sizeof(count)}, {2, &increment, sizeof(increment)}},
-        {1, 1, 1}, {1, 1, 1}, {}, splash::metal::ProfileScope::DraftSelector};
+        {1, 1, 1}, {1, 1, 1}};
     BackendInstrumentation::setDispatchProfiling(backend, true);
     for (const size_t dispatches : {1, 2}) {
         const std::vector<ComputeDispatch> command(dispatches, dispatch);
@@ -779,8 +677,6 @@ void dispatchProfilingCoversEveryCommand(const std::string &metallibPath) {
         for (const auto &entry : profile) {
             require(entry.pipelineName == dispatch.pipelineName,
                     "a profiled dispatch lost its pipeline name");
-            require(entry.scope == dispatch.profileScope,
-                    "a profiled dispatch lost its stage attribution");
             total += entry.gpuSeconds;
         }
         require(profile.size() == dispatches && timing.gpuSeconds == total,
@@ -3582,8 +3478,6 @@ std::string metallib;
 // test-sanitizers-metal also runs under ThreadSanitizer.
 std::span<const splash::test::TestCase> behaviourTests() {
     static constexpr splash::test::TestCase kTests[] = {
-        {"prefillChunkCapacity", [] { prefillScratchLifetimes(metallib, 512); }},
-        {"flashNextPrefillScratchLifetimes", [] { flashNextPrefillScratchLifetimes(metallib); }},
         {"testACommandOutOfMemoryIsClassed", [] { testACommandOutOfMemoryIsClassed(); }},
         {"completionDoesNotWaitForMemoryTelemetry", [] { completionDoesNotWaitForMemoryTelemetry(metallib); }},
         {"terminalCommandRecovers", [] { terminalCommandRecovers(metallib, false); }},

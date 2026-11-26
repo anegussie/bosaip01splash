@@ -71,7 +71,6 @@ inline engine::RuntimeResourcesConfig loadableConfig(const char *metallibPath, c
   const PlannedModel planned = plannedModel();
   static_cast<void>(test::writeSyntheticModel(root, planned.target, planned.draft, planned.vision));
   engine::RuntimeResourcesConfig config;
-  config.prefillChunkTokens = model::ExecutionLimits::prefillTokenBudget;
   config.metallibPath = metallibPath;
   config.modelRoot = root;
   config.model = model::makeModelDescriptor(name, planned.target, planned.draft, planned.vision,
@@ -123,7 +122,6 @@ inline engine::RuntimeResourcesConfig moeConfig(const char *metallibPath, const 
   target.experts = kMoeExperts;
   static_cast<void>(test::writeSyntheticModel(root, target, planned.draft, planned.vision));
   engine::RuntimeResourcesConfig config;
-  config.prefillChunkTokens = model::ExecutionLimits::prefillTokenBudget;
   config.metallibPath = metallibPath;
   config.modelRoot = root;
   config.model = model::makeModelDescriptor("moe-test", target, planned.draft, planned.vision,
@@ -146,8 +144,6 @@ inline engine::RuntimeResourcesConfig moeConfig(const char *metallibPath, const 
 inline engine::RuntimeResourcesConfig flashNextConfig(const char *metallibPath, const std::filesystem::path &root,
                                                       uint64_t pleRows = gguf_fixtures::kPleTableRows) {
   model::Qwen4ExpLayout target;
-  // Keep this small fixture's spill floor below its full resident window.
-  target.indexerTopBlocks = 512;
   target.layers = 8;
   target.hiddenSize = 256;
   target.vocabularySize = 256;
@@ -187,7 +183,6 @@ inline engine::RuntimeResourcesConfig flashNextConfig(const char *metallibPath, 
       model::draftLayout(target.hiddenSize, target.vocabularySize, 1, 512, 1'000'000.0F, draftReads);
   test::writeSyntheticShard(root / "draft" / "model.safetensors", test::draftTensors(draft));
   engine::RuntimeResourcesConfig config;
-  config.prefillChunkTokens = model::ExecutionLimits::prefillTokenBudget;
   config.metallibPath = metallibPath;
   config.modelRoot = root;
   config.model = model::makeModelDescriptor("flash-next-test", target, draft,

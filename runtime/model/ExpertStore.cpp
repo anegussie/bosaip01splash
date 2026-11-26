@@ -99,7 +99,7 @@ ExpertLayout expertLayout(const gguf::StreamedExperts &experts, ops::MoeShape sh
     layout[z] = {repack.format, rows[z], columns[z], ggufRowBytes(format, columns[z]),
                  {planes.plane0, planes.plane1, planes.meta}, {}};
     if (const auto stored = storedPlanes(repack))
-      for (size_t p = 0; p < 3; ++p) layout[z].stored[p] = (*stored)[p].rowBytes;
+        for (size_t p = 0; p < 3; ++p) layout[z].stored[p] = (*stored)[p].rowBytes;
   }
   return layout;
 }
