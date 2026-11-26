@@ -109,6 +109,13 @@ SPLASH_FLASH_NEXT_WORKER_REASONING_EFFORT="${SPLASH_FLASH_NEXT_WORKER_REASONING_
 SPLASH_FLASH_NEXT_PERSISTENT_CACHE="${SPLASH_FLASH_NEXT_PERSISTENT_CACHE:-1}"
 SPLASH_FLASH_NEXT_CACHE_DIR="${SPLASH_FLASH_NEXT_CACHE_DIR:-$HOME/Library/Caches/Splash/flash-next-option20-iq3-xxs}"
 SPLASH_FLASH_NEXT_EXPERT_MEMORY="${SPLASH_FLASH_NEXT_EXPERT_MEMORY:-auto}"
+# The Q2_0 target needs a named store: --expert-memory auto leaves the routed
+# experts 2,355 MiB and 1,445 of 24,576 experts on this M5, which decodes 17.2
+# tok/s at a 0.34 hit rate. 3,072 MiB holds 1,988 experts and decodes 25.1 tok/s
+# at 0.52, and it is still under the 3,136 MiB context ceiling. Set
+# SPLASH_FLASH_NEXT_EXPERT_MEMORY to override, or to auto for the engine's own
+# split.
+SPLASH_FLASH_NEXT_Q2_EXPERT_MEMORY="${SPLASH_FLASH_NEXT_Q2_EXPERT_MEMORY:-3072M}"
 # The PLE n-gram table row cache (--ple-memory). Option 20 shipped this
 # hardcoded at 64M; the measured cache sits at its 504,370-row capacity, so the
 # value is now a knob with the same default. Explicit sizes stay explicit.
@@ -332,7 +339,7 @@ print_models() {
   echo "   Separate option-20 prefix cache: ${SPLASH_FLASH_NEXT_MAX_CACHE_DISK} | persistent: ${SPLASH_FLASH_NEXT_PERSISTENT_CACHE}"
   echo "21) Qwen3.8 Flash-Next GSQ-RCO Q2_0 - Splash with local BF16 DFlash2${splash_status}"
   echo "   ${SPLASH_FLASH_NEXT_MAX_CONTEXT} server context | ${SPLASH_FLASH_NEXT_Q2_MAX_TOKENS} output tokens | ${SPLASH_FLASH_NEXT_Q2_MAX_MEMORY} Metal cap | reasoning ${SPLASH_FLASH_NEXT_Q2_REASONING_EFFORT} | thinking budget ${SPLASH_FLASH_NEXT_Q2_THINKING_TOKEN_BUDGET}"
-  echo "   INT8 KV | BF16 state | text only | ${SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE} | expert memory ${SPLASH_FLASH_NEXT_EXPERT_MEMORY} | ${SPLASH_FLASH_NEXT_Q2_PREFILL_CHUNK_TOKENS}-token prefill chunks | PLE row cache ${SPLASH_FLASH_NEXT_PLE_MEMORY}"
+  echo "   INT8 KV | BF16 state | text only | ${SPLASH_FLASH_NEXT_ACTIVE_REQUESTS_NOTE} | expert memory ${SPLASH_FLASH_NEXT_Q2_EXPERT_MEMORY} | ${SPLASH_FLASH_NEXT_Q2_PREFILL_CHUNK_TOKENS}-token prefill chunks | PLE row cache ${SPLASH_FLASH_NEXT_PLE_MEMORY}"
   echo "   Source: ${SPLASH_FLASH_NEXT_Q2_MODEL_ID} | local BF16 DFlash2 draft: ${SPLASH_FLASH_NEXT_DFLASH2_MODEL}"
   echo "   Option 21 uses option 20's 16 GiB preset; if a 2,048-token chunk trips the 5 s Metal event window the launcher retries with 10G and 1,024-token chunks"
   echo "24) GLM-5.3-Flash UD-IQ2_XXS - $GLM53_FLASH_ENGINE"
@@ -2204,10 +2211,11 @@ case "$choice" in
         # than the Q2_0 decode wants: 2,355 MiB (1,445 of 24,576 experts) against
         # 3,072 MiB (1,988). Paired on this M5, the named store decodes 25.1 tok/s
         # with a 0.52 expert hit rate against 20.2 at 0.34 on the same build, and
-        # it still keeps the 131,000-token context resident; 3,584 MiB does not,
-        # the plan caps context at 98,289 tokens. See docs/merge-1.7.3-ab-results.md.
+        # it still keeps the 131,072-token context resident. 3,136 MiB is the ceiling
+        # for that context (2,037 slots); 3,200 MiB caps context at 122,865 tokens.
+        # See docs/merge-1.7.3-ab-results.md.
         if [[ "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" == "auto" ]]; then
-          SPLASH_FLASH_NEXT_EXPERT_MEMORY=3072M
+          SPLASH_FLASH_NEXT_EXPERT_MEMORY="$SPLASH_FLASH_NEXT_Q2_EXPERT_MEMORY"
         fi
       fi
       SPLASH_BONSAI_STATE_FORMAT=bf16
