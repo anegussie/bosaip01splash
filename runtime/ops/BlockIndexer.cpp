@@ -117,13 +117,13 @@ void BlockIndexer::addSelect(metal::CommandGraph &graph, metal::MetalBuffer quer
   requireBytes(scores, uint64_t{std::min(scoreRows, sequence.rows)} * sequence.scoreStride * sizeof(float),
                "indexer score");
   requireBytes(mask, uint64_t{sequence.rows} * sequence.maskWords * sizeof(uint32_t), "indexer bitmap");
-  const uint32_t blockTiles = (blocks + BLOCK_INDEXER_SCORE_BLOCKS - 1) / BLOCK_INDEXER_SCORE_BLOCKS;
+  const uint32_t blockTiles = (blocks + BLOCK_INDEXER_PREFILL_SCORE_BLOCKS - 1) / BLOCK_INDEXER_PREFILL_SCORE_BLOCKS;
   for (uint32_t offset = 0; offset < sequence.rows; offset += scoreRows) {
     params.row_offset = offset;
     params.rows = std::min(scoreRows, sequence.rows - offset);
     graph.add("block_indexer_score", {queries, sequence.indexTable, scores}, params,
               {(blockTiles + BLOCK_INDEXER_SCORE_TILES - 1) / BLOCK_INDEXER_SCORE_TILES,
-               (params.rows + BLOCK_INDEXER_SCORE_ROWS - 1) / BLOCK_INDEXER_SCORE_ROWS, 1},
+               (params.rows + BLOCK_INDEXER_PREFILL_SCORE_ROWS - 1) / BLOCK_INDEXER_PREFILL_SCORE_ROWS, 1},
               {BLOCK_INDEXER_SCORE_THREADS, 1, 1});
     graph.add("block_indexer_select", {scores, mask}, params, {params.rows, 1, 1},
               {BLOCK_INDEXER_SELECT_THREADS, 1, 1});

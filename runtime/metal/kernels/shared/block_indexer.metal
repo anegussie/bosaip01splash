@@ -354,11 +354,26 @@ inline void indexer_tile_products(threadgroup IndexerScoreTile &tile) {
 }
 
 // The tile's row `row`'s score of its key `key`.
+constant constexpr float kInvSqrtDimension = 0.08838834764831845f; // 1 / sqrt(128)
+static_assert(kDimension == 128, "kInvSqrtDimension matches kDimension");
+
 inline float indexer_tile_score(threadgroup const IndexerScoreTile &tile, uint row, uint key) {
   float score = 0.0f;
   for (uint h = 0; h < kHeads; ++h) score += max(tile.products[(row * kHeads + h) * kScoreBlocks + key], 0.0f);
-  return score / sqrt(float(kDimension));
+  return score * kInvSqrtDimension;
 }
+
+// Prefill score tile: 16 rows (M = 64 query heads) by 64 blocks (N = 64 keys).
+// Queries are read directly from device memory (L1/L2 cached across the tile's
+// BLOCK_INDEXER_SCORE_TILES key sweeps), while staged keys (16 KiB) and
+// products (16 KiB) fit in 32 KiB of threadgroup memory.
+constant constexpr uint kPrefillScoreRows = BLOCK_INDEXER_PREFILL_SCORE_ROWS;
+constant constexpr uint kPrefillScoreBlocks = BLOCK_INDEXER_PREFILL_SCORE_BLOCKS;
+
+struct IndexerPrefillScoreTile {
+  alignas(16) bfloat k[kPrefillScoreBlocks * kDimension];
+  alignas(16) float products[kPrefillScoreRows * kHeads * kPrefillScoreBlocks];
+};
 
 // Key `key` of the tile, blocks of the index from block0: zero past `blocks`.
 inline void indexer_load_index(threadgroup IndexerScoreTile &tile, device const SplashKvPage *index_table,
@@ -372,36 +387,65 @@ inline void indexer_load_index(threadgroup IndexerScoreTile &tile, device const 
   }
 }
 
-// Threadgroup per row tile of kScoreRows rows of a prompt sequence's batch
-// by BLOCK_INDEXER_SCORE_TILES key tiles of kScoreBlocks blocks: loads the
-// row tile's queries once into threadgroup memory and sweeps consecutive key
-// tiles, writing each row's scores of complete blocks into the score scratch.
+// Threadgroup per row tile of kPrefillScoreRows rows of a prompt sequence's
+// batch by BLOCK_INDEXER_SCORE_TILES key tiles of kPrefillScoreBlocks blocks:
+// sweeps consecutive key tiles against the row tile's queries in device memory,
+// writing each row's scores of complete blocks into the score scratch.
 kernel void block_indexer_score(device const bfloat *queries [[buffer(0)]],
                                 device const SplashKvPage *index_table [[buffer(1)]],
                                 device float *scores [[buffer(2)]],
                                 constant BlockIndexerSequenceParams &p [[buffer(3)]],
                                 uint2 group [[threadgroup_position_in_grid]],
                                 uint tid [[thread_index_in_threadgroup]]) {
-  threadgroup IndexerScoreTile tile;
-  const uint row0 = group.y * kScoreRows;
+  threadgroup IndexerPrefillScoreTile tile;
+  const uint row0 = group.y * kPrefillScoreRows;
   if (row0 >= p.rows) return;
-  const uint last = min(p.rows, row0 + kScoreRows);
+  const uint last = min(p.rows, row0 + kPrefillScoreRows);
+  const uint active_rows = last - row0;
   // Rows attend sparsely past top_blocks complete blocks; complete blocks
   // grow with the row.
   const uint complete = (p.first_position + p.row_offset + last) / kBlock;
   const uint tile0 = group.x * BLOCK_INDEXER_SCORE_TILES;
-  if (tile0 * kScoreBlocks >= complete || complete <= p.top_blocks) return;
-  indexer_load_queries(tile, queries + (ulong(p.row_offset) + row0) * kHeads * kDimension, last - row0, tid);
+  if (tile0 * kPrefillScoreBlocks >= complete || complete <= p.top_blocks) return;
+  constexpr ushort M = kPrefillScoreRows * kHeads, N = kPrefillScoreBlocks, D = kDimension;
+  // A full row tile reads directly from device memory (dynamic_extent handles
+  // partial last tiles cleanly without reading past queries).
+  device const bfloat *row_queries = queries + (ulong(p.row_offset) + row0) * kHeads * kDimension;
+  auto qt = tensor(const_cast<device bfloat *>(row_queries),
+                   dextents<int, 2>{D, int(active_rows * kHeads)}, array<int, 2>{1, D});
+  auto kt = tensor(tile.k, dextents<int, 2>{D, N}, array<int, 2>{1, D});
+  auto pt = tensor(tile.products, dextents<int, 2>{N, M}, array<int, 2>{1, N});
+  auto q0 = qt.template slice<D, M>(0, 0);
+  auto k0 = kt.template slice<D, N>(0, 0);
+  constexpr auto descriptor =
+      matmul2d_descriptor(M, N, D, false, true, false, matmul2d_descriptor::mode::multiply);
+  matmul2d<descriptor, execution_simdgroups<kScoreThreads / 32>> product;
   for (uint t = 0; t < BLOCK_INDEXER_SCORE_TILES; ++t) {
-    const uint block0 = (tile0 + t) * kScoreBlocks;
+    const uint block0 = (tile0 + t) * kPrefillScoreBlocks;
     if (block0 >= complete) break;
-    indexer_load_index(tile, index_table, p.index_offset, block0, complete, tid);
-    indexer_tile_products(tile);
-    for (uint index = tid; index < kScoreRows * kScoreBlocks; index += kScoreThreads) {
-      const uint r = index / kScoreBlocks, b = index % kScoreBlocks;
-      if (row0 + r >= p.rows || block0 + b >= complete) continue;
-      scores[ulong(row0 + r) * p.score_stride + block0 + b] = indexer_tile_score(tile, r, b);
+    for (uint chunk = tid; chunk < kPrefillScoreBlocks * kScoreChunks; chunk += kScoreThreads) {
+      const uint block = block0 + chunk / kScoreChunks;
+      uint4 data = 0;
+      if (block < complete)
+        data = reinterpret_cast<device const uint4 *>(
+            indexer_block_key(index_table, p.index_offset, block))[chunk % kScoreChunks];
+      reinterpret_cast<threadgroup uint4 *>(tile.k)[chunk] = data;
     }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    auto dots = product.template get_destination_cooperative_tensor<decltype(q0), decltype(k0), float>();
+    product.run(q0, k0, dots);
+    dots.store(pt.template slice<N, M>(0, 0));
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint index = tid; index < active_rows * kPrefillScoreBlocks; index += kScoreThreads) {
+      const uint r = index / kPrefillScoreBlocks, b = index % kPrefillScoreBlocks;
+      if (block0 + b >= complete) continue;
+      float score = 0.0f;
+#pragma unroll
+      for (uint h = 0; h < kHeads; ++h)
+        score += max(tile.products[(r * kHeads + h) * kPrefillScoreBlocks + b], 0.0f);
+      scores[ulong(row0 + r) * p.score_stride + block0 + b] = score * kInvSqrtDimension;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
   }
 }
 
