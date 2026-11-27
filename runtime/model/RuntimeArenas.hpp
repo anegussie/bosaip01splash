@@ -334,28 +334,18 @@ class TargetArena final {
 public:
   enum class Phase : uint8_t { Persistent, Gdn, Attention, Ffn };
 
-  [[nodiscard]] static constexpr uint32_t moeFieldIndex(metal::MetalBuffer ops::MoeScratch::*field) noexcept {
-    for (size_t i = 0; i < ops::kMoeScratchFields.size(); ++i)
-      if (ops::kMoeScratchFields[i].buffer == field)
-        return static_cast<uint32_t>(moeScratchTensor<TargetTensor>(i));
-    return targetTensorCount;
-  }
-  [[nodiscard]] static constexpr bool isMoeInt8InputTensor(TargetTensor tensor) noexcept {
-    return static_cast<uint32_t>(tensor) == moeFieldIndex(&ops::MoeScratch::inputCodes) ||
-           static_cast<uint32_t>(tensor) == moeFieldIndex(&ops::MoeScratch::inputScales);
-  }
-  [[nodiscard]] static constexpr bool isMoeInt8GroupedTensor(TargetTensor tensor) noexcept {
-    return static_cast<uint32_t>(tensor) == moeFieldIndex(&ops::MoeScratch::groupedCodes) ||
-           static_cast<uint32_t>(tensor) == moeFieldIndex(&ops::MoeScratch::groupedScales);
-  }
   [[nodiscard]] static constexpr bool isMoeInt8Tensor(TargetTensor tensor) noexcept {
-    return isMoeInt8InputTensor(tensor) || isMoeInt8GroupedTensor(tensor);
+    for (const auto field : {&ops::MoeScratch::inputCodes, &ops::MoeScratch::inputScales,
+                             &ops::MoeScratch::groupedCodes, &ops::MoeScratch::groupedScales})
+      for (size_t i = 0; i < ops::kMoeScratchFields.size(); ++i)
+        if (ops::kMoeScratchFields[i].buffer == field && tensor == moeScratchTensor<TargetTensor>(i)) return true;
+    return false;
   }
   [[nodiscard]] static constexpr uint32_t moeGroupedInputIndex() noexcept {
-    return moeFieldIndex(&ops::MoeScratch::groupedInput);
-  }
-  [[nodiscard]] static constexpr uint32_t moeExpertOutputIndex() noexcept {
-    return moeFieldIndex(&ops::MoeScratch::expertOutput);
+    for (size_t i = 0; i < ops::kMoeScratchFields.size(); ++i)
+      if (ops::kMoeScratchFields[i].buffer == &ops::MoeScratch::groupedInput)
+        return static_cast<uint32_t>(moeScratchTensor<TargetTensor>(i));
+    return targetTensorCount;
   }
   // Mutually exclusive layer phases: GDN mixer, Full/Sparse Attention mixer,
   // and FFN/MoE never execute concurrently on the same target step, so their
@@ -386,9 +376,8 @@ public:
   // Persistent/group tensors sit first (with GdnOutput and AttentionOutput
   // aliased, since a layer is either GDN or Attention, never both), followed by
   // a single phase-local region sized to max(Gdn, Attention, Ffn). Within Ffn,
-  // groupedInput (router/staged gate+up) never overlaps expertOutput (down+combine),
-  // and inputCodes/inputScales (int8 quantize+gather) never overlap expertOutput,
-  // so expertOutput sits right after groupedCodes+groupedScales and aliases both.
+  // int8 MoE scratch aliases with groupedInput (which never overlap during
+  // MoE::addRouted).
   struct Layout final {
     uint64_t persistent = 0;
     uint64_t phase = 0;
@@ -396,10 +385,9 @@ public:
   [[nodiscard]] static Layout layout(const QwenTargetGeometry &target, const TargetRows &shape) {
     const auto sizes = targetTensorBytes(target, shape);
     const uint32_t groupedIdx = moeGroupedInputIndex();
-    const uint32_t outputIdx = moeExpertOutputIndex();
     const uint32_t gdnOutIdx = static_cast<uint32_t>(TargetTensor::GdnOutput);
     const uint32_t attnOutIdx = static_cast<uint32_t>(TargetTensor::AttentionOutput);
-    uint64_t persistent = 0, gdn = 0, attention = 0, ffnBase = 0, int8Grouped = 0, int8Input = 0;
+    uint64_t persistent = 0, gdn = 0, attention = 0, ffnBase = 0, int8Bytes = 0;
     for (uint32_t index = 0; index < sizes.size(); ++index) {
       const auto tensor = static_cast<TargetTensor>(index);
       const uint64_t aligned = alignUp(sizes[index]);
@@ -415,18 +403,15 @@ public:
         attention = checkedAdd(attention, aligned, "target arena");
         break;
       case Phase::Ffn:
-        if (isMoeInt8GroupedTensor(tensor)) int8Grouped = checkedAdd(int8Grouped, aligned, "target arena");
-        else if (isMoeInt8InputTensor(tensor)) int8Input = checkedAdd(int8Input, aligned, "target arena");
-        else if (index != groupedIdx && index != outputIdx) ffnBase = checkedAdd(ffnBase, aligned, "target arena");
+        if (isMoeInt8Tensor(tensor)) int8Bytes = checkedAdd(int8Bytes, aligned, "target arena");
+        else if (index != groupedIdx) ffnBase = checkedAdd(ffnBase, aligned, "target arena");
         break;
       }
     }
     const uint64_t mixerOut = std::max(alignUp(sizes[gdnOutIdx]), alignUp(sizes[attnOutIdx]));
     persistent = checkedAdd(persistent, mixerOut, "target arena");
     const uint64_t groupedBytes = groupedIdx < sizes.size() ? alignUp(sizes[groupedIdx]) : 0;
-    const uint64_t outputBytes = outputIdx < sizes.size() ? alignUp(sizes[outputIdx]) : 0;
-    const uint64_t moeShared = std::max(groupedBytes, checkedAdd(int8Grouped, std::max(int8Input, outputBytes), "target arena"));
-    const uint64_t ffn = checkedAdd(ffnBase, moeShared, "target arena");
+    const uint64_t ffn = checkedAdd(ffnBase, std::max(groupedBytes, int8Bytes), "target arena");
     return {.persistent = persistent, .phase = std::max({gdn, attention, ffn})};
   }
   [[nodiscard]] static uint64_t bytes(const QwenTargetGeometry &target, const TargetRows &shape) {
@@ -439,7 +424,6 @@ public:
       : shape_(shape) {
     const auto sizes = targetTensorBytes(target, shape);
     const uint32_t groupedIdx = moeGroupedInputIndex();
-    const uint32_t outputIdx = moeExpertOutputIndex();
     const uint32_t gdnOutIdx = static_cast<uint32_t>(TargetTensor::GdnOutput);
     const uint32_t attnOutIdx = static_cast<uint32_t>(TargetTensor::AttentionOutput);
     uint64_t cursor = offset;
@@ -466,27 +450,19 @@ public:
     for (uint32_t index = 0; index < sizes.size(); ++index) {
       const auto tensor = static_cast<TargetTensor>(index);
       const Phase phase = phaseOf(tensor);
-      if (phase == Phase::Persistent || isMoeInt8Tensor(tensor) || index == groupedIdx || index == outputIdx) continue;
+      if (phase == Phase::Persistent || isMoeInt8Tensor(tensor) || index == groupedIdx) continue;
       uint64_t &c = phase == Phase::Gdn ? gdnCursor : (phase == Phase::Attention ? attnCursor : ffnCursor);
       if (sizes[index]) tensors_[index] = backend.view(base, c, sizes[index]);
       c += alignUp(sizes[index]);
     }
     const uint64_t moeRegionStart = ffnCursor;
+    uint64_t int8Cursor = moeRegionStart;
     if (groupedIdx < sizes.size() && sizes[groupedIdx])
       tensors_[groupedIdx] = backend.view(base, moeRegionStart, sizes[groupedIdx]);
-    uint64_t int8GroupedCursor = moeRegionStart;
     for (uint32_t index = 0; index < sizes.size(); ++index) {
-      if (!isMoeInt8GroupedTensor(static_cast<TargetTensor>(index))) continue;
-      if (sizes[index]) tensors_[index] = backend.view(base, int8GroupedCursor, sizes[index]);
-      int8GroupedCursor += alignUp(sizes[index]);
-    }
-    if (outputIdx < sizes.size() && sizes[outputIdx])
-      tensors_[outputIdx] = backend.view(base, int8GroupedCursor, sizes[outputIdx]);
-    uint64_t int8InputCursor = int8GroupedCursor;
-    for (uint32_t index = 0; index < sizes.size(); ++index) {
-      if (!isMoeInt8InputTensor(static_cast<TargetTensor>(index))) continue;
-      if (sizes[index]) tensors_[index] = backend.view(base, int8InputCursor, sizes[index]);
-      int8InputCursor += alignUp(sizes[index]);
+      if (!isMoeInt8Tensor(static_cast<TargetTensor>(index))) continue;
+      if (sizes[index]) tensors_[index] = backend.view(base, int8Cursor, sizes[index]);
+      int8Cursor += alignUp(sizes[index]);
     }
   }
 
