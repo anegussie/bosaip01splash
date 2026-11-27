@@ -32,22 +32,17 @@ inline uint prefill_int8_fifth(uint b) {
   return ((b & 1u) | ((b & 0x10u) << 4) | ((b & 2u) << 15) | ((b & 0x20u) << 19)) << 4;
 }
 
-// A tile of GGUF_PREFILL_INT8_SIMDGROUPS simdgroups, each 32 rows (two 16-row fragments) by 32 columns, at (column
-// tile, row tile) `tile`, its sums times `scale` (an expert pass's expert scale, moe_int8.metal) before the epilogue.
-// BITS is the weights' code width: 2 for Q2_0, 4 or 5 for af4g64 and af5g64, 8 for Q8_0.
-template <int BITS, GgufEpilogue Ep>
-inline void prefill_int8_tile(device const char *codes, device const float2 *scales, device const uchar *w0,
-                              device const uchar *w1, device const uchar *meta, device bfloat *output,
-                              device const bfloat *aux, PrefillInt8Shape p, uint2 tile, ushort lane,
-                              ushort simd_group, float scale = 1.0f) {
+// Accumulates one 32-row (or <=16-row) by 32-column simdgroup tile of int8
+// activations against quantized weights (BITS = 2, 4, 5, 8) directly into `cf`.
+template <int BITS>
+inline void prefill_int8_accum(device const char *codes, device const float2 *scales, device const uchar *w0,
+                               device const uchar *w1, device const uchar *meta, PrefillInt8Shape p,
+                               int row_base, int col_base, ushort lane,
+                               thread float (&cf)[kInt8RowFrags][kInt8Elements]) {
   using namespace mpp::tensor_ops;
-  constexpr int BM = kInt8RowFrags * kInt8FragM, BN = GGUF_TILE_COLUMNS;
-  static_assert(BN == kInt8FragN * GGUF_PREFILL_INT8_SIMDGROUPS, "the simdgroups cover the column tile");
-  static_assert(BM == GGUF_PREFILL_INT8_ROWS, "a simdgroup holds the tile's rows");
   constexpr uint T = QUANT_TILE_ROWS;
   const int K = int(p.input_size), M = int(p.rows), groups = K / GGUF_PREFILL_INT8_GROUP;
   const uint plane_groups32 = p.plane_input_size / 32, plane_units = p.plane_input_size / GGUF_PREFILL_INT8_GROUP;
-  const int row_base = int(tile.y) * BM, col_base = int(tile.x) * BN + simd_group * kInt8FragN;
   const short2 coord = prefill_int8_coord(lane);
   const int cx = coord.x >> 2;
 
@@ -62,7 +57,6 @@ inline void prefill_int8_tile(device const char *codes, device const float2 *sca
   auto acc0 = op.template get_destination_cooperative_tensor<decltype(ct_a), decltype(ct_b), int32_t>();
   auto acc1 = op.template get_destination_cooperative_tensor<decltype(ct_a), decltype(ct_b), int32_t>();
 
-  float cf[kInt8RowFrags][kInt8Elements];
 #pragma unroll
   for (int i = 0; i < kInt8RowFrags; ++i)
 #pragma unroll
@@ -369,6 +363,25 @@ inline void prefill_int8_tile(device const char *codes, device const float2 *sca
       }
     }
   }
+}
+
+// A tile of GGUF_PREFILL_INT8_SIMDGROUPS simdgroups, each 32 rows (two 16-row fragments) by 32 columns, at (column
+// tile, row tile) `tile`, its sums times `scale` (an expert pass's expert scale, moe_int8.metal) before the epilogue.
+// BITS is the weights' code width: 2 for Q2_0, 4 or 5 for af4g64 and af5g64, 8 for Q8_0.
+template <int BITS, GgufEpilogue Ep>
+inline void prefill_int8_tile(device const char *codes, device const float2 *scales, device const uchar *w0,
+                              device const uchar *w1, device const uchar *meta, device bfloat *output,
+                              device const bfloat *aux, PrefillInt8Shape p, uint2 tile, ushort lane,
+                              ushort simd_group, float scale = 1.0f) {
+  constexpr int BM = kInt8RowFrags * kInt8FragM, BN = GGUF_TILE_COLUMNS;
+  static_assert(BN == kInt8FragN * GGUF_PREFILL_INT8_SIMDGROUPS, "the simdgroups cover the column tile");
+  static_assert(BM == GGUF_PREFILL_INT8_ROWS, "a simdgroup holds the tile's rows");
+  const int row_base = int(tile.y) * BM, col_base = int(tile.x) * BN + simd_group * kInt8FragN;
+  float cf[kInt8RowFrags][kInt8Elements];
+  prefill_int8_accum<BITS>(codes, scales, w0, w1, meta, p, row_base, col_base, lane, cf);
+  const short2 coord = prefill_int8_coord(lane);
+  const uint n_run = uint(col_base + coord.x);
+  const int m_base = row_base + coord.y, M = int(p.rows);
 #pragma unroll
   for (int i = 0; i < kInt8RowFrags; ++i)
 #pragma unroll

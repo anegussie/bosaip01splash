@@ -949,8 +949,10 @@ MoeRun runPlan(MetalBackend &backend, const Model &m, Buffers &b, const MoePlan 
     int8Passes += pass.starts_with("moe_expert_int8_");
   }
   const bool int8 = int8Passes != 0;
-  require(int8 ? int8Passes == 3 && downPasses == 1 && gateUpPasses == 0 : gateUpPasses == 1 && downPasses == 1,
-          label + (int8 ? ": the int8 passes are not gate, up and down" :
+  require(int8 ? (int8Passes == 2 && gateUpPasses == 1 && downPasses == 1) ||
+                     (int8Passes == 3 && downPasses == 1 && gateUpPasses == 0)
+               : gateUpPasses == 1 && downPasses == 1,
+          label + (int8 ? ": the int8 passes are not gate_up/gate+up and down" :
                           ": gate and up do not run in one pass before down"));
   for (uint32_t r = 0; r < rows; ++r) {
     const float *x = b.input.data() + uint64_t{r} * kHidden;

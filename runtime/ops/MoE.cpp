@@ -271,8 +271,22 @@ void addInt8Experts(metal::CommandGraph &graph, const MoeBuffers &buffers, const
               {n / GGUF_TILE_COLUMNS, plan.maximumTiles(), 1}, {GGUF_PREFILL_INT8_THREADS, 1, 1});
     graph.addresses(weights.chunks.planes());
   };
-  pass("gate", weights.gate, hidden, intermediate, scratch.expertIntermediate);
-  pass("up", weights.up, hidden, intermediate, scratch.expertIntermediate);
+  if (weights.gate.routed.formatId == weights.up.routed.formatId) {
+    graph.add(std::string("moe_expert_int8_") + weights.gate.routed.name() + "_gate_up" + slices,
+              {scratch.groupedCodes, scratch.groupedScales, scratch.tileDescriptors, scratch.tileCount,
+               weights.gate.shared.plane0, weights.gate.shared.plane1Slot(), weights.gate.shared.meta,
+               weights.up.shared.plane0, weights.up.shared.plane1Slot(), weights.up.shared.meta,
+               scratch.expertIntermediate, slots, weights.expertScales},
+              MoeInt8GateUpParams{hidden, intermediate, shape.experts, weights.gate.routed.formatId,
+                                  weights.gate.shared.formatId, weights.up.routed.formatId,
+                                  weights.up.shared.formatId, weights.chunks.floorSlots(), weights.chunks.chunkSlots(),
+                                  range, routes},
+              {intermediate / (GGUF_TILE_COLUMNS / 2), plan.maximumTiles(), 1}, {GGUF_PREFILL_INT8_THREADS, 1, 1});
+    graph.addresses(weights.chunks.planes());
+  } else {
+    pass("gate", weights.gate, hidden, intermediate, scratch.expertIntermediate);
+    pass("up", weights.up, hidden, intermediate, scratch.expertIntermediate);
+  }
   addGgufPrefillInt8Quantize(graph, scratch.expertIntermediate, scratch.groupedCodes, scratch.groupedScales,
                              intermediate, routes, routes);
   pass("down", weights.down, intermediate, hidden, scratch.expertOutput);

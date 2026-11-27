@@ -63,16 +63,84 @@ kernel void moe_expert_int8(device const char *codes [[buffer(0)]], device const
                               moe_expert_scale(expert_scales, tile.expert, p.experts, Projection));
 }
 
+// Fused gate + up expert pass: simdgroup 0 computes gate (projection 0) and
+// simdgroup 1 computes up (projection 1) on the same 32-column tile, sharing
+// L1 activation reads and combining silu(gate) * up via 2 KiB of threadgroup
+// memory without round-tripping the intermediate buffer to device memory.
+template <int BITS, uint Shared>
+kernel void moe_expert_int8_gate_up(device const char *codes [[buffer(0)]], device const float2 *scales [[buffer(1)]],
+                                    device const MoeTileDescriptor *tiles [[buffer(2)]],
+                                    device const uint *tile_count [[buffer(3)]], device uchar *gsw0 [[buffer(4)]],
+                                    device uchar *gsw1 [[buffer(5)]], device uchar *gsmeta [[buffer(6)]],
+                                    device uchar *usw0 [[buffer(7)]], device uchar *usw1 [[buffer(8)]],
+                                    device uchar *usmeta [[buffer(9)]], device bfloat *output [[buffer(10)]],
+                                    device const uint *slots [[buffer(11)]],
+                                    device const float *expert_scales [[buffer(12)]],
+                                    constant MoeInt8GateUpParams &p [[buffer(13)]], constant ulong *chunks [[buffer(14)]],
+                                    uint2 group [[threadgroup_position_in_grid]],
+                                    ushort lane [[thread_index_in_simdgroup]],
+                                    ushort simd_group [[simdgroup_index_in_threadgroup]]) {
+  threadgroup bfloat park[kInt8RowFrags * kInt8Elements * 32];
+  const uint t = moe_first_tile(tile_count, p.tiles) + group.y;
+  if (t >= moe_end_tile(tile_count, p.tiles)) return;
+  const MoeTileDescriptor tile = tiles[t];
+  const bool up = simd_group == 1;
+  const MoeGgufSegment s =
+      up ? moe_gguf_segment<Shared>(tile.expert, p.experts, p.input_size, p.output_size, p.up_routed_format,
+                                    p.up_shared_format, slots, chunks, p.floor_slots, p.chunk_slots, 1, usw0, usw1,
+                                    usmeta)
+         : moe_gguf_segment<Shared>(tile.expert, p.experts, p.input_size, p.output_size, p.gate_routed_format,
+                                    p.gate_shared_format, slots, chunks, p.floor_slots, p.chunk_slots, 0, gsw0, gsw1,
+                                    gsmeta);
+  const float scale = moe_expert_scale(expert_scales, tile.expert, p.experts, up ? 1 : 0);
+  const ulong out = ulong(tile.first_row) * p.output_size;
+  const PrefillInt8Shape shape{p.input_size, tile.rows, p.routes, p.output_size, 0, p.input_size};
+  const int col_base = int(group.x) * kInt8FragN;
+  float cf[kInt8RowFrags][kInt8Elements];
+  prefill_int8_accum<BITS>(codes + ulong(tile.first_row) * p.input_size, scales + tile.first_row, s.w0, s.w1, s.meta,
+                           shape, 0, col_base, lane, cf);
+  const short2 coord = prefill_int8_coord(lane);
+  const int m_base = coord.y;
+  const int frags = int(tile.rows) > kInt8FragM ? kInt8RowFrags : 1;
+  if (!up) {
+    for (int i = 0; i < frags; ++i)
+#pragma unroll
+      for (int e = 0; e < kInt8Elements; ++e)
+        park[(i * kInt8Elements + e) * 32 + lane] = bfloat(cf[i][e] * scale);
+  }
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (up) {
+    const uint n_run = uint(col_base + coord.x);
+    for (int i = 0; i < frags; ++i)
+#pragma unroll
+      for (int e = 0; e < kInt8Elements; ++e) {
+        const int m = m_base + i * kInt8FragM + ((e & 7) >> 2) * 8;
+        if (m >= int(tile.rows)) continue;
+        const ulong o = out + ulong(m) * p.output_size + n_run + (e & 3) + 16 * (e >> 3);
+        const float gate_v = float(park[(i * kInt8Elements + e) * 32 + lane]);
+        const float up_v = float(bfloat(cf[i][e] * scale));
+        output[o] = bfloat(up_v * splash_silu(gate_v));
+      }
+  }
+}
+
 using MoeExpertInt8Kernel = void(device const char *, device const float2 *, device const MoeTileDescriptor *,
                                  device const uint *, device uchar *, device uchar *, device uchar *, device bfloat *,
                                  device const uint *, device const float *, constant MoeInt8ExpertParams &,
                                  constant ulong *, uint2, ushort, ushort);
-// moe_expert_int8_<format>_<pass><slices suffix>: the gate (plain), up (times the gate's SiLU) and down passes.
+using MoeExpertInt8GateUpKernel = void(device const char *, device const float2 *, device const MoeTileDescriptor *,
+                                       device const uint *, device uchar *, device uchar *, device uchar *,
+                                       device uchar *, device uchar *, device uchar *, device bfloat *,
+                                       device const uint *, device const float *, constant MoeInt8GateUpParams &,
+                                       constant ulong *, uint2, ushort, ushort);
+// moe_expert_int8_<format>_<pass><slices suffix>: the gate (plain), up (times the gate's SiLU), fused gate_up, and down passes.
 #define MOE_EXPERT_INT8(B, f, Shared, suffix)                                                                         \
   template [[host_name("moe_expert_int8_" #f "_gate" suffix)]] kernel MoeExpertInt8Kernel                            \
       moe_expert_int8<B, EpNone, Shared, 0>;                                                                         \
   template [[host_name("moe_expert_int8_" #f "_up" suffix)]] kernel MoeExpertInt8Kernel                              \
       moe_expert_int8<B, EpUpWithGate, Shared, 1>;                                                                   \
+  template [[host_name("moe_expert_int8_" #f "_gate_up" suffix)]] kernel MoeExpertInt8GateUpKernel                   \
+      moe_expert_int8_gate_up<B, Shared>;                                                                            \
   template [[host_name("moe_expert_int8_" #f "_down" suffix)]] kernel MoeExpertInt8Kernel                            \
       moe_expert_int8<B, EpNone, Shared, 2>;
 MOE_EXPERT_INT8(2, q20, 1, "")

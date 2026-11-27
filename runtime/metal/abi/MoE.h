@@ -221,6 +221,27 @@ struct MoeInt8ExpertParams {
 static_assert(sizeof(MoeInt8ExpertParams) == 36,
               "MoE int8 expert parameters are 36 bytes on both sides");
 
+// Fused gate and up int8 expert pass (moe_expert_int8_<fmt>_gate_up[_s2]):
+// simdgroup 0 runs gate (projection 0) and simdgroup 1 runs up (projection 1)
+// on the same 32-column tile, combining silu(gate) * up through threadgroup
+// memory without round-tripping the intermediate buffer to device memory.
+struct MoeInt8GateUpParams {
+  uint32_t input_size;
+  uint32_t output_size; // per expert
+  uint32_t experts;
+  uint32_t gate_routed_format;
+  uint32_t gate_shared_format;
+  uint32_t up_routed_format;
+  uint32_t up_shared_format;
+  uint32_t floor_slots;
+  uint32_t chunk_slots;
+  uint32_t tiles; // MOE_TILES_*
+  uint32_t routes;
+};
+
+static_assert(sizeof(MoeInt8GateUpParams) == 44,
+              "MoE int8 gate/up parameters are 44 bytes on both sides");
+
 // moe_gather_int8: the grouped rows' codes and scales from the chunk's
 // (rows of input_size codes, scales [input_size / 64][rows]).
 struct MoeGatherInt8Params {
