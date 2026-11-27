@@ -791,8 +791,8 @@ struct ModelMemoryPlan final {
 // Fixed reserves the memory plan carries beside the planned arenas: Metal
 // pipeline objects and encoder scratch, and the process's own runtime
 // overhead. Startup counts them before a model loads.
-inline constexpr uint64_t kPipelineReserveBytes = 256ULL << 20;
-inline constexpr uint64_t kRuntimeOverheadReserveBytes = 512ULL << 20;
+inline constexpr uint64_t kPipelineReserveBytes = 128ULL << 20;
+inline constexpr uint64_t kRuntimeOverheadReserveBytes = 192ULL << 20;
 // What a resident request's lookup index (LookupIndex) holds on the host a
 // token: 84 bytes on a traced 128K-token prompt, 89 on a 100K one. The plan
 // counts it with the tokens of the KV pages it prices.

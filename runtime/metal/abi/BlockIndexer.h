@@ -50,6 +50,7 @@
 #define BLOCK_INDEXER_SCORE_ROWS 8u
 #define BLOCK_INDEXER_SCORE_BLOCKS 32u
 #define BLOCK_INDEXER_SCORE_THREADS 256u
+#define BLOCK_INDEXER_SCORE_TILES 8u
 // The select kernel's threads, a threadgroup per row.
 #define BLOCK_INDEXER_SELECT_THREADS 1024u
 // How far past a row's own tail block the block lists of the tile that holds

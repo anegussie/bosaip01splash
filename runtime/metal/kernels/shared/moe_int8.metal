@@ -75,8 +75,10 @@ using MoeExpertInt8Kernel = void(device const char *, device const float2 *, dev
       moe_expert_int8<B, EpUpWithGate, Shared, 1>;                                                                   \
   template [[host_name("moe_expert_int8_" #f "_down" suffix)]] kernel MoeExpertInt8Kernel                            \
       moe_expert_int8<B, EpNone, Shared, 2>;
+MOE_EXPERT_INT8(2, q20, 1, "")
 MOE_EXPERT_INT8(4, af4g64, 1, "")
 MOE_EXPERT_INT8(5, af5g64, 1, "")
+MOE_EXPERT_INT8(2, q20, 2, "_s2")
 MOE_EXPERT_INT8(4, af4g64, 2, "_s2")
 MOE_EXPERT_INT8(5, af5g64, 2, "_s2")
 #undef MOE_EXPERT_INT8

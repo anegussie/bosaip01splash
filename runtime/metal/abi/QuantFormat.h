@@ -263,17 +263,18 @@ inline constexpr bool quant_register_format(uint32_t format) {
 inline constexpr bool quant_decode_int8_format(uint32_t format) { return format == GGUF_FMT_PQ20; }
 // Whether the int8 prefill tile (kernels/prefill/gguf_prefill_int8.metal
 // gguf_prefill_int8_*) takes a format: MLX affine 4 and 5 bits in groups of
-// 64 and Q8_0, whose codes are int8 exactly, each Q8_0 32-group with its d.
+// 64, Q8_0 (each 32-group with its d), and Q2_0 (2-bit codes in 64-element blocks).
 inline constexpr bool quant_prefill_int8_format(uint32_t format) {
-  return format == GGUF_FMT_AF4G64 || format == GGUF_FMT_AF5G64 || format == GGUF_FMT_Q80;
+  return format == GGUF_FMT_AF4G64 || format == GGUF_FMT_AF5G64 || format == GGUF_FMT_Q80 ||
+         format == GGUF_FMT_Q20;
 }
 // Whether the MoE experts' int8 prefill passes (kernels/shared/moe_int8.metal
-// moe_expert_int8_*) take a format: MLX affine 4 and 5 bits in groups of 64.
-// Not Q8_0, which the dense tile takes: no real model has run Q8_0 experts on
-// these passes, and their six routes an expert (ops::selectMoe) were measured
-// on af4g64.
+// moe_expert_int8_*) take a format: MLX affine 4 and 5 bits in groups of 64
+// and Q2_0. Not Q8_0, which the dense tile takes: no real model has run Q8_0
+// experts on these passes, and their six routes an expert (ops::selectMoe)
+// were measured on af4g64.
 inline constexpr bool quant_moe_int8_format(uint32_t format) {
-  return format == GGUF_FMT_AF4G64 || format == GGUF_FMT_AF5G64;
+  return format == GGUF_FMT_AF4G64 || format == GGUF_FMT_AF5G64 || format == GGUF_FMT_Q20;
 }
 // The MLX affine format of b bits in groups of g; GGUF_FMT_COUNT when none
 // (QUANT_AFFINE_TYPE holds b and g in a byte each).

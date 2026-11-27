@@ -672,7 +672,7 @@ void testSpillAllowanceFollowsASmallerRequestedContext() {
 // beside the whole Q2_K_XL, the others the 256K window of UD-Q4_K_M.
 void testDense35BKeepsMainsPlan() {
   const std::tuple<Mac, Target, uint32_t, uint64_t> pinned[] = {
-      {kM6, k35BQ2, 229'361, 229'376}, {kStudio, k35BQ4, 262'144, 344'064}, {kM5Pro, k35BQ4, 262'144, 2'777'088}};
+      {kM6, k35BQ2, 262'144, 270'336}, {kStudio, k35BQ4, 262'144, 393'216}, {kM5Pro, k35BQ4, 262'144, 2'818'048}};
   for (const auto &[mac, target, context, capacityTokens] : pinned) {
     const StreamedMemoryPlan plan = requirePlan(target.inputs(mac));
     require(!plan.expertBytes && !plan.tableBytes && !plan.spill.enabled,
@@ -729,13 +729,21 @@ void testEightLanesArePlannedAsEight() {
 // streams them. 225,000 tokens load them beside the staging, and 233,000
 // without it.
 void testDenseExplicitContextKeepsMainsExperts() {
+  // With the smaller runtime reserves, M6 holds all 256K of Q2_K_XL; keep the
+  // explicit-context boundary test at the 768 MiB-reserve working-set cap.
+  constexpr uint64_t kLegacyReservesDelta = (256ULL + 512ULL) * kMiB -
+      (model::kPipelineReserveBytes + model::kRuntimeOverheadReserveBytes);
+  const uint64_t m6LegacyBudget = hardBudget(kM6) - kLegacyReservesDelta;
   ModelMemoryProfile withoutStaging = k35BQ2.profile();
   withoutStaging.footprint.stateStagingBytes = 0;
-  const uint32_t beside = test::requireMemoryPlan(deviceOf(kM6), k35BQ2.profile()).maximumContextTokens(),
-                 alone = test::requireMemoryPlan(deviceOf(kM6), withoutStaging).maximumContextTokens();
+  const uint32_t beside =
+                     test::requireMemoryPlan(deviceOf(kM6), k35BQ2.profile(), m6LegacyBudget).maximumContextTokens(),
+                 alone =
+                     test::requireMemoryPlan(deviceOf(kM6), withoutStaging, m6LegacyBudget).maximumContextTokens();
   require(beside == 229'361 && beside < 233'000 && alone >= 233'000 && alone < 262'144,
           "main's contexts of the 35B on the M6 moved");
   StreamedMemoryInputs inputs = k35BQ2.inputs(kM6);
+  inputs.hardBudgetBytes = m6LegacyBudget;
   const auto streams = [&](uint32_t context) {
     inputs.requestedContextTokens = context;
     return requirePlan(inputs).expertBytes != 0;
@@ -750,7 +758,11 @@ void testDenseExplicitContextKeepsMainsExperts() {
 // A dense target's explicit context is its KV allowance: where the experts
 // loaded whole leave less, they stream, and the plan then holds the context.
 void testDenseExplicitContextStreamsExperts() {
+  constexpr uint64_t kLegacyReservesDelta = (256ULL + 512ULL) * kMiB -
+      (model::kPipelineReserveBytes + model::kRuntimeOverheadReserveBytes);
+  const uint64_t m6LegacyBudget = hardBudget(kM6) - kLegacyReservesDelta;
   StreamedMemoryInputs inputs = k35BQ2.inputs(kM6);
+  inputs.hardBudgetBytes = m6LegacyBudget;
   inputs.requestedContextTokens = 262'144;
   const StreamedMemoryPlan plan = requirePlan(inputs);
   require(plan.expertBytes && plan.expertBytes < k35BQ2.experts.allBytes,
@@ -762,7 +774,8 @@ void testDenseExplicitContextStreamsExperts() {
     return test::requireMemoryPlan(deviceOf(kM6), k35BQ2.profile(expertBytes), maximumMemoryBytes)
         .maximumContextTokens();
   };
-  require(context(plan.expertBytes, 0) == 262'144 && context(plan.expertBytes + page, 0) < 262'144,
+  require(context(plan.expertBytes, m6LegacyBudget) == 262'144 &&
+              context(plan.expertBytes + page, m6LegacyBudget) < 262'144,
           "the streamed plan does not hold the context it was sized for, or holds more");
   // Without one, the experts that do not fit stream and the KV keeps the
   // first 64K tokens: the M6 with --max-memory 12G.

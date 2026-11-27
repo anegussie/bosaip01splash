@@ -1285,11 +1285,8 @@ print('Ready test server',flush=True)
         self.assertEqual(args[args.index("--prefill-chunk-tokens") + 1], "1024")
 
     def test_option21_names_the_expert_store_the_q2_decode_needs(self):
-        # --expert-memory auto leaves the routed experts 2,355 MiB here, 1,445 of
-        # 24,576 experts, and paired runs on this M5 decode 17.2 tok/s with a 0.34
-        # expert hit rate. Naming 3,072 MiB gives 1,988 slots and 25.1 tok/s at
-        # 0.52, and it still keeps the 131,072-token context resident. See
-        # docs/merge-1.7.3-ab-results.md.
+        # Naming 3,648 MiB gives 2,425 expert slots while keeping 131,072
+        # tokens resident at 10.8G with 2,048-token prefill chunks.
         r = self.run_launcher(
             "21",
             SPLASH_HOST_MEM_BYTES=str(17179869184),

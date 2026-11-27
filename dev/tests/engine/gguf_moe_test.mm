@@ -1280,7 +1280,7 @@ int int8Experts(MetalBackend &backend) {
   b.moe.input = bfloatBuffer(backend, b.input, "moe-input");
   b.moe.residual = bfloatBuffer(backend, b.residual, "moe-residual");
   b.moe.output = zeros(backend, uint64_t{kMaximumRows} * kHidden * 2, "moe-output");
-  for (const Fmt f : {fmtNamed("af4g64"), fmtNamed("af5g64"), fmtNamed("q80"), fmtNamed("af3g64")}) {
+  for (const Fmt f : {fmtNamed("q20"), fmtNamed("af4g64"), fmtNamed("af5g64"), fmtNamed("q80"), fmtNamed("af3g64")}) {
     const Model m = makeModel(backend, kShape, f, false, true);
     std::map<std::pair<uint32_t, uint32_t>, GateUp> products;
     const bool takes = quant_moe_int8_format(f);

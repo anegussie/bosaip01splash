@@ -34,7 +34,7 @@ inline uint prefill_int8_fifth(uint b) {
 
 // A tile of GGUF_PREFILL_INT8_SIMDGROUPS simdgroups, each 32 rows (two 16-row fragments) by 32 columns, at (column
 // tile, row tile) `tile`, its sums times `scale` (an expert pass's expert scale, moe_int8.metal) before the epilogue.
-// BITS is the weights' code width: 4 or 5 for af4g64 and af5g64, 8 for Q8_0.
+// BITS is the weights' code width: 2 for Q2_0, 4 or 5 for af4g64 and af5g64, 8 for Q8_0.
 template <int BITS, GgufEpilogue Ep>
 inline void prefill_int8_tile(device const char *codes, device const float2 *scales, device const uchar *w0,
                               device const uchar *w1, device const uchar *meta, device bfloat *output,
@@ -82,7 +82,59 @@ inline void prefill_int8_tile(device const char *codes, device const float2 *sca
   device const uint *ml = (device const uint *)(meta) + ulong(n_run / T) * plane_units * T + n_run % T;
   const int m_base = row_base + coord.y;
 
-  if constexpr (BITS == 8) {
+  if constexpr (BITS == 2) {
+    // Q2_0: plane0 records of 8 bytes (32 2-bit codes in little-endian slot order), meta a half d per 64-input
+    // group. Steps t = 0..3 match the affine loop: q - 1 in {-1, 0, 1, 2} packs straight into int8_t with
+    // ((bits + 0x7F7F7F7Fu) ^ 0x80808080u) without cross-byte borrow, leaving only the scale d per group.
+    device const uchar *wq2 = w0 + record0 * 8 + 4 * (cx & 1);
+    device const half *mq2 = (device const half *)(meta) + ulong(n_run / T) * plane_units * T + n_run % T;
+    for (int g = 0; g < groups; ++g) {
+      const ulong g32 = ulong(2 * g + h32) * T;
+      uint wv[4];
+#pragma unroll
+      for (int q = 0; q < 4; ++q)
+        wv[q] = *((device const uint *)(wq2 + (g32 + (q & 1) * 8 + (q >> 1) * 16) * 8));
+#pragma unroll
+      for (int t = 0; t < 4; ++t) {
+        const uint shift = 16 * (t >> 1) + 4 * (t & 1);
+#pragma unroll
+        for (int q = 0; q < 4; ++q) {
+          const uint s = wv[q] >> shift;
+          const uint bits = (s & 0x0303u) | ((s & 0x0C0Cu) << 14);
+          const char4 quad = as_type<char4>((bits + 0x7F7F7F7Fu) ^ 0x80808080u);
+          const int base = (q >> 1) * 8 + (q & 1) * 4;
+          ct_b[base + 0] = quad.x; ct_b[base + 1] = quad.y; ct_b[base + 2] = quad.z; ct_b[base + 3] = quad.w;
+        }
+#pragma unroll
+        for (int hf = 0; hf < kInt8RowFrags; ++hf) {
+#pragma unroll
+          for (int r = 0; r < 2; ++r) {
+            const int m = min(m_base + hf * kInt8FragM + r * 8, M - 1);
+            const ulong at = ulong(m) * K + g * GGUF_PREFILL_INT8_GROUP + cx * 16 + t * 4;
+            const char4 quad = as_type<char4>(*((device const uint *)(codes + at)));
+            ct_a[r * 4 + 0] = quad.x; ct_a[r * 4 + 1] = quad.y; ct_a[r * 4 + 2] = quad.z; ct_a[r * 4 + 3] = quad.w;
+          }
+          if (t == 0) { if (hf == 0) op_set.run(ct_a, ct_b, acc0); else op_set.run(ct_a, ct_b, acc1); }
+          else { if (hf == 0) op.run(ct_a, ct_b, acc0); else op.run(ct_a, ct_b, acc1); }
+        }
+      }
+      const half4 d0 = *((device const half4 *)(mq2 + ulong(g) * T));
+      const half4 d1 = *((device const half4 *)(mq2 + ulong(g) * T + 16));
+      float sa[kInt8RowFrags][2];
+#pragma unroll
+      for (int i = 0; i < kInt8RowFrags; ++i)
+#pragma unroll
+        for (int r = 0; r < 2; ++r)
+          sa[i][r] = scales[ulong(g) * p.storage_rows + min(m_base + i * kInt8FragM + r * 8, M - 1)].x;
+#pragma unroll
+      for (int e = 0; e < kInt8Elements; ++e) {
+        const int r = (e & 7) >> 2;
+        const float d = float((e >> 3) ? d1[e & 3] : d0[e & 3]);
+        cf[0][e] = fma(sa[0][r] * d, float(acc0[e]), cf[0][e]);
+        cf[1][e] = fma(sa[1][r] * d, float(acc1[e]), cf[1][e]);
+      }
+    }
+  } else if constexpr (BITS == 8) {
     // Q8_0: plane0 records of 32 int8 codes, chunk c at bytes 8c .. 8c + 7 (slots 8c .. 8c + 7), meta a half d per
     // 32-group. Steps 2h and 2h + 1 of a 64-input group take its 32-group h alone, lane column x its chunk x, chunk
     // slots {0, 4, 1, 5} in the even step and {2, 6, 3, 7} in the odd one, which the quantizer's order holds at

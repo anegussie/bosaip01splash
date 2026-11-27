@@ -81,16 +81,20 @@ uint32_t listStride(const QwenTargetGeometry &g) { return kTileRows * (g.indexer
 // The tokens before a lane's verify rows that its rows' n-grams reach.
 uint32_t priorCount(const QwenTargetGeometry &g) { return g.pleNgram - 1; }
 
-// A scratch tensor (Qwen4Scratch): its bytes per row of a step and its fixed
-// bytes, and whether a prefill group's chunks each hold their own: the
-// residual streams and injection weights, which a layer's combine reads after
-// the group's load of the layer's experts (QwenTarget::addPrefill), and the
-// inputs the CPU writes before the command runs.
+// A scratch tensor (Qwen4Scratch): its bytes per row of a step, its fixed
+// bytes, whether a prefill group's chunks each hold their own, and its
+// lifetime phase within a prefill layer: Carried and Shared stay distinct
+// across the whole command, while Ple (layer 1 only, before its mixer) and
+// MixerQsa (the mixer and attention layers' QSA, never active during Ple)
+// share the same scratch region.
+enum class ScratchPhase { Carried, Shared, Ple, MixerQsa };
+
 struct Tensor final {
   metal::MetalBuffer Qwen4Scratch::*field;
   uint64_t rowBytes;
   uint64_t fixedBytes;
   bool carried;
+  ScratchPhase phase;
 };
 
 // A step's QSA raw keys: a prefill chunk's of the layer it runs, which its
@@ -106,48 +110,80 @@ uint64_t keyFixedBytes(const QwenTargetGeometry &g, bool decode) {
 // are `pleRowBytes` each (zero for a table in memory).
 std::vector<Tensor> tensors(const QwenTargetGeometry &g, uint64_t pleRowBytes, bool decode) {
   const uint32_t scoreRows = decode ? g.stepRows() : prefillScoreRows(g);
+  const ScratchPhase ple = decode ? ScratchPhase::Shared : ScratchPhase::Ple;
+  const ScratchPhase mixerQsa = decode ? ScratchPhase::Shared : ScratchPhase::MixerQsa;
   std::vector<Tensor> result{
-      {&Qwen4Scratch::streams, bytesFor<float>(g.streamWidth()), 0, true},
-      {&Qwen4Scratch::normalized, bytesFor<uint16_t>(g.streamWidth()), 0, false},
-      {&Qwen4Scratch::low, bytesFor<uint16_t>(g.hyperRank), 0, false},
-      {&Qwen4Scratch::gate, bytesFor<uint16_t>(g.streamWidth()), 0, false},
-      {&Qwen4Scratch::weights, bytesFor<float>(g.hyperConnections), 0, true},
-      {&Qwen4Scratch::branch, bytesFor<uint16_t>(g.hiddenSize), 0, false},
-      {&Qwen4Scratch::zeros, bytesFor<uint16_t>(g.hiddenSize), 0, false},
-      {&Qwen4Scratch::pleIndices, bytesFor<uint32_t>(g.pleHeads()), 0, true},
-      {&Qwen4Scratch::pleRows, bytesFor<uint16_t>(g.pleWidth()), 0, false},
-      {&Qwen4Scratch::pleValue, bytesFor<uint16_t>(g.hiddenSize), 0, false},
-      {&Qwen4Scratch::pleGated, bytesFor<float>(g.streamWidth()), 0, false},
-      {&Qwen4Scratch::pleConvolution, bytesFor<uint16_t>(g.streamWidth()), 0, false},
-      {&Qwen4Scratch::indexerQuery, bytesFor<float>(kIndexWidth), 0, false},
-      {&Qwen4Scratch::indexerKey, bytesFor<float>(BLOCK_INDEXER_DIMENSION), 0, false},
-      {&Qwen4Scratch::qsaQueries, bytesFor<uint16_t>(kIndexWidth), 0, false},
-      {&Qwen4Scratch::qsaKeys, keyRowBytes(decode), keyFixedBytes(g, decode), false},
-      {&Qwen4Scratch::qsaScores, 0, bytesFor<float>(uint64_t{scoreRows} * scoreStride(g)), false},
-      {&Qwen4Scratch::qsaMask, bytesFor<uint32_t>(maskWords(g)), 0, false},
+      {&Qwen4Scratch::streams, bytesFor<float>(g.streamWidth()), 0, true, ScratchPhase::Carried},
+      {&Qwen4Scratch::normalized, bytesFor<uint16_t>(g.streamWidth()), 0, false, mixerQsa},
+      {&Qwen4Scratch::low, bytesFor<uint16_t>(g.hyperRank), 0, false, mixerQsa},
+      {&Qwen4Scratch::gate, bytesFor<uint16_t>(g.streamWidth()), 0, false, ScratchPhase::Shared},
+      {&Qwen4Scratch::weights, bytesFor<float>(g.hyperConnections), 0, true, ScratchPhase::Carried},
+      {&Qwen4Scratch::branch, bytesFor<uint16_t>(g.hiddenSize), 0, false, mixerQsa},
+      {&Qwen4Scratch::zeros, bytesFor<uint16_t>(g.hiddenSize), 0, false, ScratchPhase::Shared},
+      {&Qwen4Scratch::pleIndices, bytesFor<uint32_t>(g.pleHeads()), 0, true, ScratchPhase::Carried},
+      {&Qwen4Scratch::pleRows, bytesFor<uint16_t>(g.pleWidth()), 0, false, ple},
+      {&Qwen4Scratch::pleValue, bytesFor<uint16_t>(g.hiddenSize), 0, false, ple},
+      {&Qwen4Scratch::pleGated, bytesFor<float>(g.streamWidth()), 0, false, ple},
+      {&Qwen4Scratch::pleConvolution, bytesFor<uint16_t>(g.streamWidth()), 0, false, ple},
+      {&Qwen4Scratch::indexerQuery, bytesFor<float>(kIndexWidth), 0, false, mixerQsa},
+      {&Qwen4Scratch::indexerKey, bytesFor<float>(BLOCK_INDEXER_DIMENSION), 0, false, mixerQsa},
+      {&Qwen4Scratch::qsaQueries, bytesFor<uint16_t>(kIndexWidth), 0, false, mixerQsa},
+      {&Qwen4Scratch::qsaKeys, keyRowBytes(decode), keyFixedBytes(g, decode), false, mixerQsa},
+      {&Qwen4Scratch::qsaScores, 0, bytesFor<float>(uint64_t{scoreRows} * scoreStride(g)), false, mixerQsa},
+      {&Qwen4Scratch::qsaMask, bytesFor<uint32_t>(maskWords(g)), 0, false, mixerQsa},
       // A list of listStride entries per tile of rows, and a word per row
       // for the lists' counts: a step's rows fill whole tiles but the last of
       // each of its sequences (at most one a lane), which may hold fewer.
       {&Qwen4Scratch::qsaLists, bytesFor<uint32_t>(listStride(g) / kTileRows),
-       bytesFor<uint32_t>(uint64_t{g.lanes} * listStride(g)), false},
-      {&Qwen4Scratch::qsaListCounts, bytesFor<uint32_t>(1), bytesFor<uint32_t>(g.lanes), false},
+       bytesFor<uint32_t>(uint64_t{g.lanes} * listStride(g)), false, mixerQsa},
+      {&Qwen4Scratch::qsaListCounts, bytesFor<uint32_t>(1), bytesFor<uint32_t>(g.lanes), false, mixerQsa},
   };
   // A decode step's block keys of every attention layer and each row's mask
   // of its lane's rows it attends (ops::BlockIndexer::addTreeSelect).
   if (decode) {
-    result.push_back({&Qwen4Scratch::qsaBlockKeys, 0, keyFixedBytes(g, true), false});
-    result.push_back({&Qwen4Scratch::qsaRowMasks, bytesFor<uint32_t>(1), 0, false});
+    result.push_back({&Qwen4Scratch::qsaBlockKeys, 0, keyFixedBytes(g, true), false, ScratchPhase::Shared});
+    result.push_back({&Qwen4Scratch::qsaRowMasks, bytesFor<uint32_t>(1), 0, false, ScratchPhase::Shared});
   }
   // A streamed table's step stages up to every row id's row, each distinct
   // one once, and each id's slot.
   if (pleRowBytes) {
-    result.push_back({&Qwen4Scratch::pleSlots, bytesFor<uint32_t>(g.pleHeads()), 0, true});
-    result.push_back({&Qwen4Scratch::pleStaging, uint64_t{g.pleHeads()} * pleRowBytes, 0, true});
+    result.push_back({&Qwen4Scratch::pleSlots, bytesFor<uint32_t>(g.pleHeads()), 0, true, ScratchPhase::Carried});
+    result.push_back({&Qwen4Scratch::pleStaging, uint64_t{g.pleHeads()} * pleRowBytes, 0, true, ScratchPhase::Carried});
   }
   return result;
 }
 
 uint64_t bytesOf(const Tensor &tensor, uint64_t rows) noexcept { return tensor.rowBytes * rows + tensor.fixedBytes; }
+
+struct PrefillPlacement final {
+  std::vector<uint64_t> offsets;
+  uint64_t totalBytes = 0;
+};
+
+PrefillPlacement placePrefill(std::span<const Tensor> list, uint32_t chunks) {
+  PrefillPlacement result;
+  result.offsets.resize(list.size());
+  uint64_t cursor = 0;
+  for (size_t i = 0; i < list.size(); ++i) {
+    const Tensor &t = list[i];
+    if (t.phase != ScratchPhase::Carried && t.phase != ScratchPhase::Shared) continue;
+    result.offsets[i] = cursor;
+    cursor += alignUp(bytesOf(t, kChunkRows)) * (t.carried ? chunks : 1);
+  }
+  uint64_t pleCursor = cursor, mixerCursor = cursor;
+  for (size_t i = 0; i < list.size(); ++i) {
+    const Tensor &t = list[i];
+    if (t.phase == ScratchPhase::Ple) {
+      result.offsets[i] = pleCursor;
+      pleCursor += alignUp(bytesOf(t, kChunkRows));
+    } else if (t.phase == ScratchPhase::MixerQsa) {
+      result.offsets[i] = mixerCursor;
+      mixerCursor += alignUp(bytesOf(t, kChunkRows));
+    }
+  }
+  result.totalBytes = std::max(pleCursor, mixerCursor);
+  return result;
+}
 
 // Where the scratch's regions start and the bytes of each of its buffers.
 struct Layout final {
@@ -160,8 +196,8 @@ struct Layout final {
 
 Layout layout(const QwenTargetGeometry &g, uint64_t pleRowBytes, uint32_t chunks) {
   Layout result;
-  for (const Tensor &tensor : tensors(g, pleRowBytes, false))
-    result.prefillBlocks += alignUp(bytesOf(tensor, kChunkRows)) * (tensor.carried ? chunks : 1);
+  const std::vector<Tensor> prefillList = tensors(g, pleRowBytes, false);
+  result.prefillBlocks = placePrefill(prefillList, chunks).totalBytes;
   result.prefillBytes = result.prefillBlocks + alignUp(chunkBlockBytes(g)) * chunks;
   for (const Tensor &tensor : tensors(g, pleRowBytes, true)) result.decodeBlocks += alignUp(bytesOf(tensor, decodeStorageRows(g.lanes)));
   result.decodePrior = result.decodeBlocks + alignUp(g.lanes * kLaneBlockBytes);
@@ -206,12 +242,13 @@ Qwen4Steps::Qwen4Steps(const Qwen4ExpWeights &weights, const QwenTargetGeometry 
   prefillBlocksOffset_ = bytes.prefillBlocks;
   decodeBlocksOffset_ = bytes.decodeBlocks;
   decodePriorOffset_ = bytes.decodePrior;
-  uint64_t cursor = 0;
-  for (const Tensor &tensor : tensors(geometry_, pleRowBytes_, false)) {
-    prefillTensors_.push_back({tensor.field, tensor.rowBytes, tensor.fixedBytes, tensor.carried, cursor});
-    cursor += alignUp(bytesOf(tensor, kChunkRows)) * (tensor.carried ? prefillChunks_ : 1);
+  const std::vector<Tensor> prefillList = tensors(geometry_, pleRowBytes_, false);
+  const PrefillPlacement placed = placePrefill(prefillList, prefillChunks_);
+  for (size_t i = 0; i < prefillList.size(); ++i) {
+    const Tensor &tensor = prefillList[i];
+    prefillTensors_.push_back({tensor.field, tensor.rowBytes, tensor.fixedBytes, tensor.carried, placed.offsets[i]});
   }
-  cursor = 0;
+  uint64_t cursor = 0;
   for (const Tensor &tensor : tensors(geometry_, pleRowBytes_, true)) {
     decodeTensors_.push_back({tensor.field, tensor.rowBytes, tensor.fixedBytes, tensor.carried, cursor});
     cursor += alignUp(bytesOf(tensor, decodeStorageRows(geometry_.lanes)));

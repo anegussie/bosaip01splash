@@ -1412,7 +1412,7 @@ void prefillInt8(MetalBackend &backend, const Linear &linear) {
       if (!sameRows(alone.output, 0, out.output, rows - last, last, columns)) fail(own + ": differ from the chunk's");
     }
   };
-  for (const Fmt f : {Fmt(GGUF_FMT_AF4G64), Fmt(GGUF_FMT_AF5G64), Fmt(GGUF_FMT_Q80)}) {
+  for (const Fmt f : {Fmt(GGUF_FMT_Q20), Fmt(GGUF_FMT_AF4G64), Fmt(GGUF_FMT_AF5G64), Fmt(GGUF_FMT_Q80)}) {
     for (const uint32_t K : {1024u, 5120u}) {
       const Tensor t = tensor(backend, f, 1024, K);
       const Projection p = projection({&t}, t.N);
@@ -1521,7 +1521,7 @@ void prefillInt8(MetalBackend &backend, const Linear &linear) {
   }
   // A NaN in one row's inputs and an infinity in another's leave those rows' outputs not finite, on this tile as on
   // the bf16 tile, and every other row's as they were.
-  for (const Fmt f : {Fmt(GGUF_FMT_AF4G64), Fmt(GGUF_FMT_AF5G64), Fmt(GGUF_FMT_Q80)}) {
+  for (const Fmt f : {Fmt(GGUF_FMT_Q20), Fmt(GGUF_FMT_AF4G64), Fmt(GGUF_FMT_AF5G64), Fmt(GGUF_FMT_Q80)}) {
     constexpr uint32_t K = 1024, kRows = 136, kNaNRow = 3, kInfiniteRow = 70;
     const Tensor t = tensor(backend, f, 256, K);
     const Projection p = projection({&t}, t.N);
@@ -1548,7 +1548,7 @@ void prefillInt8(MetalBackend &backend, const Linear &linear) {
       }
     }
   }
-  section("int8 prefill: af4g64, af5g64, q80, af4g64 fused with af5g64 and with q80, K 1024 and 5120 (q80 320 too), "
+  section("int8 prefill: q20, af4g64, af5g64, q80, af4g64 fused with af5g64 and with q80, K 1024 and 5120 (q80 320 too), "
           "plain/residual/up-with-gate over 168-, 136- and 65-row chunks with and without outliers, 600 rows and the " +
           std::to_string(SPLASH_PREFILL_TOKEN_BUDGET) + "-row budget: worst added relative RMS " +
           std::to_string(worst) + ", worst error from the inputs rounded per group " + std::to_string(worstRounded) +

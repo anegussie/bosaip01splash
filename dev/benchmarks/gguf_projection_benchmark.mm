@@ -418,7 +418,10 @@ int main(int argc, char **argv) {
       for (const Case &c : cases) {
         size.include(c.plan.scratchSize());
         rows = std::max<uint64_t>(rows, c.plan.storageRows());
-        if (c.rest) size.include(c.rest->scratchSize());
+        if (c.rest) {
+          size.include(c.rest->scratchSize());
+          rows = std::max<uint64_t>(rows, kMaximumDecodeTileRows + c.rest->storageRows());
+        }
       }
       const auto zeros = [&](uint64_t n) {
         if (!n) return MetalBuffer{};

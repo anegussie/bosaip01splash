@@ -110,12 +110,13 @@ SPLASH_FLASH_NEXT_PERSISTENT_CACHE="${SPLASH_FLASH_NEXT_PERSISTENT_CACHE:-1}"
 SPLASH_FLASH_NEXT_CACHE_DIR="${SPLASH_FLASH_NEXT_CACHE_DIR:-$HOME/Library/Caches/Splash/flash-next-option20-iq3-xxs}"
 SPLASH_FLASH_NEXT_EXPERT_MEMORY="${SPLASH_FLASH_NEXT_EXPERT_MEMORY:-auto}"
 # The Q2_0 target needs a named store: --expert-memory auto leaves the routed
-# experts 2,355 MiB and 1,445 of 24,576 experts on this M5, which decodes 17.2
-# tok/s at a 0.34 hit rate. 3,072 MiB holds 1,988 experts and decodes 25.1 tok/s
-# at 0.52, and it is still under the 3,136 MiB context ceiling. Set
-# SPLASH_FLASH_NEXT_EXPERT_MEMORY to override, or to auto for the engine's own
-# split.
-SPLASH_FLASH_NEXT_Q2_EXPERT_MEMORY="${SPLASH_FLASH_NEXT_Q2_EXPERT_MEMORY:-3072M}"
+# experts smaller for decode on a 16 GiB M5, so option 21 pins the largest
+# 64 MiB step keeping 131,072 tokens resident at 10.8G with 2,048-token prefill
+# chunks: 3,648 MiB holds 2,425 of 24,576 experts (up from 3,072 MiB / 1,988
+# slots after reclaiming prefill scratch and runtime reserve headroom; 3,712 MiB
+# trims resident context to 131,057 tokens). Set SPLASH_FLASH_NEXT_EXPERT_MEMORY
+# to override, or to auto for the engine's own split.
+SPLASH_FLASH_NEXT_Q2_EXPERT_MEMORY="${SPLASH_FLASH_NEXT_Q2_EXPERT_MEMORY:-3648M}"
 # The PLE n-gram table row cache (--ple-memory). Option 20 shipped this
 # hardcoded at 64M; the measured cache sits at its 504,370-row capacity, so the
 # value is now a knob with the same default. Explicit sizes stay explicit.
@@ -2207,13 +2208,8 @@ case "$choice" in
         # launch loop halves the chunk if the warmup trips the Metal window.
         splash_flash_next_q2_profile
         SPLASH_FLASH_NEXT_MAX_ACTIVE_REQUESTS=1
-        # The 1.7.3 engine's auto split gives the routed experts a smaller store
-        # than the Q2_0 decode wants: 2,355 MiB (1,445 of 24,576 experts) against
-        # 3,072 MiB (1,988). Paired on this M5, the named store decodes 25.1 tok/s
-        # with a 0.52 expert hit rate against 20.2 at 0.34 on the same build, and
-        # it still keeps the 131,072-token context resident. 3,136 MiB is the ceiling
-        # for that context (2,037 slots); 3,200 MiB caps context at 122,865 tokens.
-        # See docs/merge-1.7.3-ab-results.md.
+        # Option 21 pins SPLASH_FLASH_NEXT_Q2_EXPERT_MEMORY (3,648 MiB: 2,425 of
+        # 24,576 slots while keeping 139,249 tokens resident >= 131,072 on M5).
         if [[ "$SPLASH_FLASH_NEXT_EXPERT_MEMORY" == "auto" ]]; then
           SPLASH_FLASH_NEXT_EXPERT_MEMORY="$SPLASH_FLASH_NEXT_Q2_EXPERT_MEMORY"
         fi

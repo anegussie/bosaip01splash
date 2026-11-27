@@ -95,6 +95,7 @@ inline uint2 prefill_int8_walk(uint at, uint2 grid) {
 #define GGUF_PREFILL_INT8_FORMAT(B, f)                                                                                 \
   GGUF_PREFILL_INT8_KERNEL(B, f, a, EpNone) GGUF_PREFILL_INT8_KERNEL(B, f, r, EpResidual)                              \
   GGUF_PREFILL_INT8_KERNEL(B, f, g, EpUpWithGate)
+GGUF_PREFILL_INT8_FORMAT(2, q20)
 GGUF_PREFILL_INT8_FORMAT(4, af4g64)
 GGUF_PREFILL_INT8_FORMAT(5, af5g64)
 GGUF_PREFILL_INT8_FORMAT(8, q80)

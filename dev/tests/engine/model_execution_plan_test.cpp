@@ -792,7 +792,7 @@ int main() {
     checkArenasHoldTheirLanes("Qwen3.6-35B-A3B", loadedModel<model::Qwen3_6MoeWeights>(), {279'281'664, 273'874'944},
                               {539'017'216, 533'610'496, 533'446'656});
     checkArenasHoldTheirLanes("Qwen3.8-Flash-Next", loadedModel<model::Qwen4ExpWeights>(),
-                              {409'993'216, 404'160'512}, {1'128'873'984, 1'123'041'280, 1'123'041'280});
+                              {409'993'216, 404'160'512}, {982'073'344, 976'240'640, 976'240'640});
     checkDecodeArenaPages(loadedModel<model::Qwen3_8Weights>());
     checkDecodeArenaPages(loadedModel<model::Qwen3_6MoeWeights>());
     checkDecodeStepRows(loadedModel<model::Qwen3_8Weights>());

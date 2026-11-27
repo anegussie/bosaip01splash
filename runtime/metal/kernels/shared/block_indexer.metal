@@ -372,10 +372,10 @@ inline void indexer_load_index(threadgroup IndexerScoreTile &tile, device const 
   }
 }
 
-// Threadgroup per tile of kScoreRows rows of a prompt sequence's batch by
-// kScoreBlocks blocks: each row's scores of the tile's complete blocks, in
-// the score scratch's rows from the batch's first; a tile past the batch's
-// rows has none.
+// Threadgroup per row tile of kScoreRows rows of a prompt sequence's batch
+// by BLOCK_INDEXER_SCORE_TILES key tiles of kScoreBlocks blocks: loads the
+// row tile's queries once into threadgroup memory and sweeps consecutive key
+// tiles, writing each row's scores of complete blocks into the score scratch.
 kernel void block_indexer_score(device const bfloat *queries [[buffer(0)]],
                                 device const SplashKvPage *index_table [[buffer(1)]],
                                 device float *scores [[buffer(2)]],
@@ -383,20 +383,25 @@ kernel void block_indexer_score(device const bfloat *queries [[buffer(0)]],
                                 uint2 group [[threadgroup_position_in_grid]],
                                 uint tid [[thread_index_in_threadgroup]]) {
   threadgroup IndexerScoreTile tile;
-  const uint row0 = group.y * kScoreRows, block0 = group.x * kScoreBlocks;
+  const uint row0 = group.y * kScoreRows;
   if (row0 >= p.rows) return;
   const uint last = min(p.rows, row0 + kScoreRows);
   // Rows attend sparsely past top_blocks complete blocks; complete blocks
   // grow with the row.
   const uint complete = (p.first_position + p.row_offset + last) / kBlock;
-  if (block0 >= complete || complete <= p.top_blocks) return;
+  const uint tile0 = group.x * BLOCK_INDEXER_SCORE_TILES;
+  if (tile0 * kScoreBlocks >= complete || complete <= p.top_blocks) return;
   indexer_load_queries(tile, queries + (ulong(p.row_offset) + row0) * kHeads * kDimension, last - row0, tid);
-  indexer_load_index(tile, index_table, p.index_offset, block0, complete, tid);
-  indexer_tile_products(tile);
-  for (uint index = tid; index < kScoreRows * kScoreBlocks; index += kScoreThreads) {
-    const uint r = index / kScoreBlocks, b = index % kScoreBlocks;
-    if (row0 + r >= p.rows || block0 + b >= complete) continue;
-    scores[ulong(row0 + r) * p.score_stride + block0 + b] = indexer_tile_score(tile, r, b);
+  for (uint t = 0; t < BLOCK_INDEXER_SCORE_TILES; ++t) {
+    const uint block0 = (tile0 + t) * kScoreBlocks;
+    if (block0 >= complete) break;
+    indexer_load_index(tile, index_table, p.index_offset, block0, complete, tid);
+    indexer_tile_products(tile);
+    for (uint index = tid; index < kScoreRows * kScoreBlocks; index += kScoreThreads) {
+      const uint r = index / kScoreBlocks, b = index % kScoreBlocks;
+      if (row0 + r >= p.rows || block0 + b >= complete) continue;
+      scores[ulong(row0 + r) * p.score_stride + block0 + b] = indexer_tile_score(tile, r, b);
+    }
   }
 }
 
