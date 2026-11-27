@@ -182,11 +182,19 @@ std::array<uint64_t, prefillTensorCount> prefillTensorBytes(const RuntimeGeometr
 
 uint64_t prefillArenaBytes(const RuntimeGeometry &geometry,
                           const ops::ExecutionPlans &operators) {
-  uint64_t bytes = TargetArena::bytes(geometry.target, prefillTargetRows(geometry, operators));
-  for (uint64_t value : prefillTensorBytes(geometry, operators)) {
-    bytes = checkedAdd(bytes, alignUp(value), "prefill arena");
+  const TargetArena::Layout targetLayout =
+      TargetArena::layout(geometry.target, prefillTargetRows(geometry, operators));
+  const auto sizes = prefillTensorBytes(geometry, operators);
+  uint64_t contextBytes = 0, otherBytes = 0;
+  for (uint32_t index = 0; index < sizes.size(); ++index) {
+    const uint64_t aligned = alignUp(sizes[index]);
+    if (prefillContextTensor(static_cast<PrefillTensor>(index)))
+      contextBytes = checkedAdd(contextBytes, aligned, "prefill arena");
+    else
+      otherBytes = checkedAdd(otherBytes, aligned, "prefill arena");
   }
-  return bytes;
+  const uint64_t shared = std::max(targetLayout.phase, contextBytes);
+  return checkedAdd(checkedAdd(targetLayout.persistent, shared, "prefill arena"), otherBytes, "prefill arena");
 }
 
 uint64_t plannedPrefillBytes(const RuntimeGeometry &geometry,

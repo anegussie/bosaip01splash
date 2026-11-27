@@ -378,7 +378,11 @@ public:
   // a single phase-local region sized to max(Gdn, Attention, Ffn). Within Ffn,
   // int8 MoE scratch aliases with groupedInput (which never overlap during
   // MoE::addRouted).
-  [[nodiscard]] static uint64_t bytes(const QwenTargetGeometry &target, const TargetRows &shape) {
+  struct Layout final {
+    uint64_t persistent = 0;
+    uint64_t phase = 0;
+  };
+  [[nodiscard]] static Layout layout(const QwenTargetGeometry &target, const TargetRows &shape) {
     const auto sizes = targetTensorBytes(target, shape);
     const uint32_t groupedIdx = moeGroupedInputIndex();
     const uint32_t gdnOutIdx = static_cast<uint32_t>(TargetTensor::GdnOutput);
@@ -408,7 +412,11 @@ public:
     persistent = checkedAdd(persistent, mixerOut, "target arena");
     const uint64_t groupedBytes = groupedIdx < sizes.size() ? alignUp(sizes[groupedIdx]) : 0;
     const uint64_t ffn = checkedAdd(ffnBase, std::max(groupedBytes, int8Bytes), "target arena");
-    return checkedAdd(persistent, std::max({gdn, attention, ffn}), "target arena");
+    return {.persistent = persistent, .phase = std::max({gdn, attention, ffn})};
+  }
+  [[nodiscard]] static uint64_t bytes(const QwenTargetGeometry &target, const TargetRows &shape) {
+    const Layout l = layout(target, shape);
+    return checkedAdd(l.persistent, l.phase, "target arena");
   }
 
   TargetArena(metal::MetalBackend &backend, const metal::MetalBuffer &base, uint64_t offset,
@@ -566,6 +574,19 @@ prefillTensorBytes(const RuntimeGeometry &geometry,
 [[nodiscard]] uint64_t plannedPrefillBytes(const RuntimeGeometry &geometry,
                                            const ops::ExecutionPlans &operators);
 
+// Draft context projections run after all target layers finish (or standalone
+// on rebuild), so they never overlap with TargetArena's phase-local scratch.
+[[nodiscard]] constexpr bool prefillContextTensor(PrefillTensor tensor) noexcept {
+  switch (tensor) {
+  case PrefillTensor::ContextProjected:
+  case PrefillTensor::ContextHidden:
+  case PrefillTensor::ContextKv:
+    return true;
+  default:
+    return false;
+  }
+}
+
 // The target step tensors (target(), prefillTargetRows) and the prompt's
 // own. A group's tensors (prefillGroupTensor) hold chunk c's rows from c
 // times a chunk's (aligned) bytes on, which get(tensor, c) views.
@@ -577,8 +598,17 @@ public:
         base_(backend.allocateBuffer(bytes_, metal::BufferStorage::Shared, "qwen-shared-prefill")),
         target_(backend, base_, 0, geometry.target, prefillTargetRows(geometry, operators)) {
     const auto sizes = prefillTensorBytes(geometry, operators);
-    uint64_t cursor = TargetArena::bytes(geometry.target, target_.shape());
+    const TargetArena::Layout targetLayout = TargetArena::layout(geometry.target, target_.shape());
+    uint64_t contextCursor = targetLayout.persistent;
     for (uint32_t index = 0; index < sizes.size(); ++index) {
+      if (!prefillContextTensor(static_cast<PrefillTensor>(index))) continue;
+      if (sizes[index]) tensors_[index] = backend.view(base_, contextCursor, sizes[index]);
+      contextCursor += alignUp(sizes[index]);
+    }
+    const uint64_t contextBytes = contextCursor - targetLayout.persistent;
+    uint64_t cursor = checkedAdd(targetLayout.persistent, std::max(targetLayout.phase, contextBytes), "prefill arena");
+    for (uint32_t index = 0; index < sizes.size(); ++index) {
+      if (prefillContextTensor(static_cast<PrefillTensor>(index))) continue;
       if (sizes[index]) {
         tensors_[index] = backend.view(base_, cursor, sizes[index]);
         if (chunks_ > 1 && prefillGroupTensor(static_cast<PrefillTensor>(index)))

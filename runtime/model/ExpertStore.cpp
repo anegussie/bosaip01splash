@@ -48,9 +48,10 @@ constexpr unsigned kAheadReaders = 6;
 // two rounds, 29% more GPU a step at 48 rows and 19% more at 64.
 constexpr uint32_t kCycleRows = 32;
 // A load's rows are a long chunk when they route at least this many times as
-// many experts as a block has: routed evenly, that many routes leave about
-// e^-3, 5%, of the experts unrouted, so it routes nearly every expert.
-constexpr uint64_t kLongChunkRoutes = 3;
+// many experts as a block has: under skewed Zipf routing, 6 routes/expert
+// (~308 rows on 512-expert Flash-Next) avoids blindly reading all unrouted
+// experts ahead on short cached delta turns.
+constexpr uint64_t kLongChunkRoutes = 6;
 
 // What a load serves, which ExpertStoreStats::uses and Impl::stepTimes hold a
 // use for, at its value: a prompt's chunks, or a decode step, whose steps
