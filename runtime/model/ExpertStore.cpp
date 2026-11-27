@@ -48,10 +48,10 @@ constexpr unsigned kAheadReaders = 6;
 // two rounds, 29% more GPU a step at 48 rows and 19% more at 64.
 constexpr uint32_t kCycleRows = 32;
 // A load's rows are a long chunk when they route at least this many times as
-// many experts as a block has: under skewed Zipf routing, 6 routes/expert
-// (~308 rows on 512-expert Flash-Next) avoids blindly reading all unrouted
+// many experts as a block has: under skewed Zipf routing, 8 routes/expert
+// (512 rows on 512-expert Flash-Next) avoids blindly reading all unrouted
 // experts ahead on short cached delta turns.
-constexpr uint64_t kLongChunkRoutes = 6;
+constexpr uint64_t kLongChunkRoutes = 8;
 
 // What a load serves, which ExpertStoreStats::uses and Impl::stepTimes hold a
 // use for, at its value: a prompt's chunks, or a decode step, whose steps
@@ -709,7 +709,7 @@ void ExpertStore::Impl::stage(uint32_t index, uint32_t capacity, ExpertStoreStat
 
 // The next block's experts a step's prediction names for those of its `rows`
 // rows it routes, by their summed routing weights, the largest first. Drops
-// the low-weight tail past 90% of total predicted routing mass (always keeping
+// the low-weight tail past 68% of total predicted routing mass (always keeping
 // at least shape.expertsPerToken experts) so noisy tail predictions do not
 // saturate SSD bandwidth while preserving high decode prefetch coverage.
 std::span<const uint32_t> ExpertStore::Impl::predictedExperts(uint32_t rows, const RoutedRows &routed) {
@@ -738,7 +738,7 @@ std::span<const uint32_t> ExpertStore::Impl::predictedExperts(uint32_t rows, con
                            [&](uint32_t expert) { return predictionSum[expert]; });
   size_t keep = predictionOrder.size();
   if (totalWeight > 0.0 && predictionOrder.size() > shape.expertsPerToken) {
-    const double cutoff = 0.78 * totalWeight;
+    const double cutoff = 0.68 * totalWeight;
     double cumulative = 0.0;
     keep = 0;
     for (const uint32_t expert : predictionOrder) {

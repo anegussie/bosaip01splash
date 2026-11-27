@@ -44,12 +44,13 @@ void QwenTargetGeometry::finish(std::span<const ops::BlockMoeWeights *const> moe
   moeRouterFormat = ops::moeRouterFormat(moeBlocks);
   moeInt8Experts = ops::moeInt8Experts(moeBlockShape(), moeBlocks);
   moeInt8RoutedExperts = ops::moeInt8RoutedExperts(moeBlockShape(), moeBlocks);
-  // Q2_0 int8 expert passes beat staged starting at 96-128 rows (~2 routes/expert
-  // on 512-expert Flash-Next), unlike af4g64 which crosses over at 6.
+  // With the hoisted 1-fragment fast path for <=16-row tiles, Q2_0 int8 expert
+  // passes beat staged from 64 rows (~1 route/expert on 512-expert Flash-Next)
+  // by 23%, unlike af4g64 which crosses over at 6.
   moeInt8MinRoutes = !moeBlocks.empty() && std::ranges::all_of(moeBlocks, [](const ops::BlockMoeWeights *b) {
     return b->gate.routed.formatId == GGUF_FMT_Q20 && b->up.routed.formatId == GGUF_FMT_Q20 &&
            b->down.routed.formatId == GGUF_FMT_Q20;
-  }) ? 2u : 0u;
+  }) ? 1u : 0u;
   prefillProjections = decodeProjections;
   include(logits);
   // The draft's head over its subset of the vocabulary: a view of the head's
