@@ -80,7 +80,7 @@
 // columns of one row. The thread count follows from the rows: 128 columns /
 // 16 per lane = 8 lanes per row, times the 16 rows; a static_assert in
 // prefill/gdn.metal ties the two literals together.
-#define SPLASH_GDN_SCAN_STATE_ROWS 16u
+#define SPLASH_GDN_SCAN_STATE_ROWS 32u
 #define SPLASH_GDN_SCAN_THREADS 128u
 // The epsilon of every RMS norm the kernels compute, which a target's and a
 // draft's configurations must state. Unsuffixed, so the host compares a
