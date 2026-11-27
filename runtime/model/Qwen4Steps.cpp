@@ -21,7 +21,7 @@ constexpr uint32_t kChunkRows = ExecutionLimits::prefillTokenBudget;
 // its score scratch (a row scores every block of the context): of this many
 // rows at the native window (prefillScoreRows); a verify scores every lane's
 // rows at once.
-constexpr uint32_t kPrefillScoreRows = 256;
+constexpr uint32_t kPrefillScoreRows = 128;
 constexpr uint32_t kIndexWidth = BLOCK_INDEXER_HEADS * BLOCK_INDEXER_DIMENSION;
 
 template <class T> constexpr uint64_t bytesFor(uint64_t elements) noexcept { return elements * sizeof(T); }

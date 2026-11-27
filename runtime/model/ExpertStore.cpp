@@ -738,7 +738,7 @@ std::span<const uint32_t> ExpertStore::Impl::predictedExperts(uint32_t rows, con
                            [&](uint32_t expert) { return predictionSum[expert]; });
   size_t keep = predictionOrder.size();
   if (totalWeight > 0.0 && predictionOrder.size() > shape.expertsPerToken) {
-    const double cutoff = 0.90 * totalWeight;
+    const double cutoff = 0.78 * totalWeight;
     double cumulative = 0.0;
     keep = 0;
     for (const uint32_t expert : predictionOrder) {
