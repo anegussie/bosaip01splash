@@ -266,7 +266,7 @@ inline constexpr bool quant_decode_int8_format(uint32_t format) { return format 
 // 64, Q8_0 (each 32-group with its d), and Q2_0 (2-bit codes in 64-element blocks).
 inline constexpr bool quant_prefill_int8_format(uint32_t format) {
   return format == GGUF_FMT_AF4G64 || format == GGUF_FMT_AF5G64 || format == GGUF_FMT_Q80 ||
-         format == GGUF_FMT_Q20;
+         format == GGUF_FMT_Q20 || format == GGUF_FMT_Q3K || format == GGUF_FMT_IQ4XS;
 }
 // Whether the MoE experts' int8 prefill passes (kernels/shared/moe_int8.metal
 // moe_expert_int8_*) take a format: MLX affine 4 and 5 bits in groups of 64

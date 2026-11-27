@@ -466,8 +466,7 @@ void Linear::addGgufPrefillInt8(metal::CommandGraph &graph, const LinearBuffers 
                                 const LinearPlan &plan) const {
   const LinearWorkload w = plan.workload();
   const auto [n, k] = w.matrix;
-  const uint32_t storage = plan.storageRows(),
-                 rowTiles = (w.rows + GGUF_PREFILL_INT8_ROWS - 1) / GGUF_PREFILL_INT8_ROWS;
+  const uint32_t storage = plan.storageRows();
   for (const QuantizedSegment &s : p.blocks().segments)
     if (!quant_prefill_int8_format(s.formatId))
       throw std::invalid_argument(std::string("the int8 prefill tile does not take ") + s.name() + " weights");
@@ -476,13 +475,17 @@ void Linear::addGgufPrefillInt8(metal::CommandGraph &graph, const LinearBuffers 
   const std::string epilogue(1, epilogueSuffix(w.epilogue));
   for (const QuantizedSegment &s : p.blocks().segments) {
     const uint32_t columnTiles = s.outputSize / GGUF_TILE_COLUMNS;
+    const bool staged128 = s.formatId == GGUF_FMT_Q3K || s.formatId == GGUF_FMT_IQ4XS;
+    const uint32_t segRows = staged128 ? 128u : GGUF_PREFILL_INT8_ROWS;
+    const uint32_t segRowTiles = (w.rows + segRows - 1) / segRows;
+    const uint32_t threads = staged128 ? 256u : GGUF_PREFILL_INT8_THREADS;
     graph.add(std::string("gguf_prefill_int8_") + s.name() + "_" + epilogue,
               {b.scratch.input, b.scratch.sums, s.plane0, s.plane1Slot(), s.meta, b.output,
                epilogueInput(b, w.epilogue)},
               GgufPrefillInt8Params{k, w.rows, storage, n, s.columnOffset, p.planeInputs() ? p.planeInputs() : k,
                                     columnTiles},
-              {GGUF_PREFILL_INT8_WALK, (columnTiles * rowTiles + GGUF_PREFILL_INT8_WALK - 1) / GGUF_PREFILL_INT8_WALK, 1},
-              {GGUF_PREFILL_INT8_THREADS, 1, 1});
+              {GGUF_PREFILL_INT8_WALK, (columnTiles * segRowTiles + GGUF_PREFILL_INT8_WALK - 1) / GGUF_PREFILL_INT8_WALK, 1},
+              {threads, 1, 1});
   }
 }
 
