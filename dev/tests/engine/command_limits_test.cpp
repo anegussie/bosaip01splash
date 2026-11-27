@@ -134,10 +134,10 @@ void testLimitsAreTheRuntimes() {
     uint32_t rows, streams;
   } runtimes[] = {{geometryOf<model::Qwen3_8Layout>(), kChunk, 0},
                   {geometryOf<model::Qwen3_6MoeLayout>(), kChunk, 0},
-                  {geometryOf<model::Qwen3_6MoeLayout>(true), 4 * kChunk, 0},
-                  {geometryOf<model::FlintLayout>(true), 4 * kChunk, 0},
-                  {geometryOf<model::Qwen4ExpLayout>(true), 4 * kChunk, 0},
-                  {geometryOf<model::Qwen4ExpLayout>(true, true), 4 * kChunk, 1}};
+                  {geometryOf<model::Qwen3_6MoeLayout>(true), model::kPrefillGroupChunks * kChunk, 0},
+                  {geometryOf<model::FlintLayout>(true), model::kPrefillGroupChunks * kChunk, 0},
+                  {geometryOf<model::Qwen4ExpLayout>(true), model::kPrefillGroupChunks * kChunk, 0},
+                  {geometryOf<model::Qwen4ExpLayout>(true, true), model::kPrefillGroupChunks * kChunk, 1}};
   for (const auto &runtime : runtimes) {
     const model::CommandLimits limits = model::commandLimits(runtime.geometry, 0);
     require(limits == model::CommandLimits{.commandRows = runtime.rows,

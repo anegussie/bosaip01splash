@@ -45,9 +45,10 @@ inline constexpr uint32_t kPrefillRows = ExecutionLimits::prefillTokenBudget;
 // spills reads each attention layer's spilled history once
 // (model::SpilledKvReads). A group holds the tensors its chunks carry from
 // layer to layer once per chunk (prefillGroupTensor), and requests that
-// arrive while it runs wait for the whole command: four chunks read a layer
-// once per 8192 rows and keep both bounded.
-inline constexpr uint32_t kPrefillGroupChunks = 4;
+// arrive while it runs wait for the whole command: two chunks read a layer
+// once per 4096 rows, cover >95% of cached agent turns in one group, and
+// reclaim ~270 MiB of idle prefill scratch for resident expert slots.
+inline constexpr uint32_t kPrefillGroupChunks = 2;
 inline constexpr uint32_t kTileRows = kv::kPageTokens;
 inline constexpr uint32_t kDraftCacheStride = ExecutionLimits::draftContextTokens;
 inline constexpr uint32_t kMaximumPageTableEntries =
@@ -372,19 +373,24 @@ public:
     }
   }
 
-  // Persistent/group tensors sit first, followed by a single phase-local region
-  // sized to max(Gdn, Attention, Ffn). Within Ffn, int8 MoE scratch aliases
-  // with groupedInput (which never overlap during MoE::addRouted).
+  // Persistent/group tensors sit first (with GdnOutput and AttentionOutput
+  // aliased, since a layer is either GDN or Attention, never both), followed by
+  // a single phase-local region sized to max(Gdn, Attention, Ffn). Within Ffn,
+  // int8 MoE scratch aliases with groupedInput (which never overlap during
+  // MoE::addRouted).
   [[nodiscard]] static uint64_t bytes(const QwenTargetGeometry &target, const TargetRows &shape) {
     const auto sizes = targetTensorBytes(target, shape);
     const uint32_t groupedIdx = moeGroupedInputIndex();
+    const uint32_t gdnOutIdx = static_cast<uint32_t>(TargetTensor::GdnOutput);
+    const uint32_t attnOutIdx = static_cast<uint32_t>(TargetTensor::AttentionOutput);
     uint64_t persistent = 0, gdn = 0, attention = 0, ffnBase = 0, int8Bytes = 0;
     for (uint32_t index = 0; index < sizes.size(); ++index) {
       const auto tensor = static_cast<TargetTensor>(index);
       const uint64_t aligned = alignUp(sizes[index]);
       switch (phaseOf(tensor)) {
       case Phase::Persistent:
-        persistent = checkedAdd(persistent, aligned, "target arena");
+        if (index != gdnOutIdx && index != attnOutIdx)
+          persistent = checkedAdd(persistent, aligned, "target arena");
         break;
       case Phase::Gdn:
         gdn = checkedAdd(gdn, aligned, "target arena");
@@ -398,6 +404,8 @@ public:
         break;
       }
     }
+    const uint64_t mixerOut = std::max(alignUp(sizes[gdnOutIdx]), alignUp(sizes[attnOutIdx]));
+    persistent = checkedAdd(persistent, mixerOut, "target arena");
     const uint64_t groupedBytes = groupedIdx < sizes.size() ? alignUp(sizes[groupedIdx]) : 0;
     const uint64_t ffn = checkedAdd(ffnBase, std::max(groupedBytes, int8Bytes), "target arena");
     return checkedAdd(persistent, std::max({gdn, attention, ffn}), "target arena");
@@ -408,10 +416,12 @@ public:
       : shape_(shape) {
     const auto sizes = targetTensorBytes(target, shape);
     const uint32_t groupedIdx = moeGroupedInputIndex();
+    const uint32_t gdnOutIdx = static_cast<uint32_t>(TargetTensor::GdnOutput);
+    const uint32_t attnOutIdx = static_cast<uint32_t>(TargetTensor::AttentionOutput);
     uint64_t cursor = offset;
     for (uint32_t index = 0; index < sizes.size(); ++index) {
       const auto tensor = static_cast<TargetTensor>(index);
-      if (phaseOf(tensor) != Phase::Persistent) continue;
+      if (phaseOf(tensor) != Phase::Persistent || index == gdnOutIdx || index == attnOutIdx) continue;
       if (sizes[index]) {
         tensors_[index] = backend.view(base, cursor, sizes[index]);
         if (shape.chunks > 1 && targetGroupTensor(tensor))
@@ -419,6 +429,14 @@ public:
       }
       cursor += alignUp(sizes[index]);
     }
+    const uint64_t mixerOutStart = cursor;
+    for (const uint32_t index : {gdnOutIdx, attnOutIdx}) {
+      if (sizes[index]) {
+        tensors_[index] = backend.view(base, mixerOutStart, sizes[index]);
+        if (shape.chunks > 1) chunkViews_[index] = groupViews(backend, base, mixerOutStart, sizes[index], shape.chunks);
+      }
+    }
+    cursor += std::max(alignUp(sizes[gdnOutIdx]), alignUp(sizes[attnOutIdx]));
     const uint64_t phaseStart = cursor;
     uint64_t gdnCursor = phaseStart, attnCursor = phaseStart, ffnCursor = phaseStart;
     for (uint32_t index = 0; index < sizes.size(); ++index) {

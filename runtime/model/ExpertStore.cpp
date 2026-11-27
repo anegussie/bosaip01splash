@@ -38,7 +38,7 @@ constexpr uint32_t kNoSlot = UINT32_MAX;
 // the SSD's full bandwidth, and a piece takes about 280 us, a quarter of
 // what it takes on eighteen.
 constexpr uint64_t kAheadPieceBytes = 512 << 10;
-constexpr unsigned kAheadReaders = 4;
+constexpr unsigned kAheadReaders = 6;
 // The rows a load stages its experts for in one round (Impl::cycleLoad),
 // predicting the next block's and keeping the GPU awake as a decode step's
 // load does: four lanes of a draft's block. On a 48 GB M5 Pro, staging for
@@ -706,9 +706,9 @@ void ExpertStore::Impl::stage(uint32_t index, uint32_t capacity, ExpertStoreStat
 
 // The next block's experts a step's prediction names for those of its `rows`
 // rows it routes, by their summed routing weights, the largest first. Drops
-// the low-weight tail past 80% of total predicted routing mass (always keeping
+// the low-weight tail past 90% of total predicted routing mass (always keeping
 // at least shape.expertsPerToken experts) so noisy tail predictions do not
-// saturate SSD bandwidth with unused read-ahead pieces.
+// saturate SSD bandwidth while preserving high decode prefetch coverage.
 std::span<const uint32_t> ExpertStore::Impl::predictedExperts(uint32_t rows, const RoutedRows &routed) {
   const auto *selected = static_cast<const uint32_t *>(predictionRoutes.contents());
   const auto *weights = static_cast<const float *>(predictionWeights.contents());
@@ -735,7 +735,7 @@ std::span<const uint32_t> ExpertStore::Impl::predictedExperts(uint32_t rows, con
                            [&](uint32_t expert) { return predictionSum[expert]; });
   size_t keep = predictionOrder.size();
   if (totalWeight > 0.0 && predictionOrder.size() > shape.expertsPerToken) {
-    const double cutoff = 0.80 * totalWeight;
+    const double cutoff = 0.90 * totalWeight;
     double cumulative = 0.0;
     keep = 0;
     for (const uint32_t expert : predictionOrder) {
