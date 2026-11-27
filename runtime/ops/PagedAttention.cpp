@@ -22,10 +22,10 @@ constexpr uint32_t kMaximumSequences = SPLASH_MAXIMUM_BATCH_WIDTH;
 // the sparse kernels and block lists.
 bool selectsBlocks(kv::Layout layout) { return layout.reads == kv::Reads::SelectedBlocks; }
 
-// The parts a dense tile of a layout's GQA group runs in, each a threadgroup
-// of the split (SPLASH_ATTENTION_TILE_PARTS); a sparse tile is one.
+// The parts a tile of a layout's GQA group runs in, each a threadgroup of the
+// split (SPLASH_ATTENTION_TILE_PARTS).
 uint32_t tileParts(uint32_t queryHeads, kv::Layout layout) {
-  return selectsBlocks(layout) ? 1 : SPLASH_ATTENTION_TILE_PARTS(queryHeads / layout.kvHeads);
+  return SPLASH_ATTENTION_TILE_PARTS(queryHeads / layout.kvHeads);
 }
 
 // The compiled attention geometries (kernels/shared/attention_qkv.metal,
@@ -235,7 +235,7 @@ AttentionWorkspace AttentionPlan::workspace() const noexcept {
 // split grid is one-dimensional, x the KV head and then the split
 // (sparse_attention.metal).
 metal::DispatchSize AttentionPlan::splitGroups(const Dispatch &dispatch) const noexcept {
-  if (sparse) return {uint64_t{layout.kvHeads} * dispatch.splits, dispatch.tiles, 1};
+  if (sparse) return {uint64_t{layout.kvHeads} * tileParts(queryHeads, layout) * dispatch.splits, dispatch.tiles, 1};
   return {uint64_t{layout.kvHeads} * tileParts(queryHeads, layout), dispatch.tiles, dispatch.splits};
 }
 
@@ -263,20 +263,19 @@ AttentionPlan PagedAttention::plan(std::span<const kv::ChunkedPrefillParams> seq
     // (by its history it ran up to 47% slower: Qwen3.8-Flash-Next's 64-row
     // chunk after 64K tokens), and a decode lane's one tile splits by its
     // history, which caps how far a long list spreads.
-    const uint64_t pages = sparse && tiles > 1
-                               ? 0
-                               : readPages(uint64_t{chunk.committed_tokens} + chunk.chunk_tokens,
-                                           variant.windowTokens);
+    const uint64_t visiblePages =
+        readPages(uint64_t{chunk.committed_tokens} + chunk.chunk_tokens, variant.windowTokens);
+    const uint64_t pages = sparse && tiles > 1 ? 0 : visiblePages;
     const uint32_t splits = attentionSplits(tiles, pages, variant.windowTokens, calibration.pagesPerSplit);
-    splitReads = std::max(splitReads, (pages + splits - 1) / splits);
+    splitReads = std::max(splitReads, (visiblePages + splits - 1) / splits);
     plan.sequences_[plan.sequenceCount_++] = {chunk.chunk_tokens, chunk.committed_tokens, 0, splits};
   }
   const std::string suffix = splitSuffix(kernel, variant);
-  const bool int8Queries = !sparse && int8Activations == Int8Activations::On && layout.format == kv::Format::Int8 &&
+  const bool int8Queries = int8Activations == Int8Activations::On && layout.format == kv::Format::Int8 &&
                            splitReads >= calibration.int8QueriesFromPages;
-  plan.splitPipeline_ =
-      kernelName((int8Queries ? "q8q" : kernelFormat(layout)) + (sparse ? "_sparse" : "_split"), suffix);
-  if (sparse) plan.locatedSplitPipeline_ = kernelName(kernelFormat(layout) + "_sparse_located", kernel.suffix);
+  const std::string format = int8Queries ? "q8q" : kernelFormat(layout);
+  plan.splitPipeline_ = kernelName(format + (sparse ? "_sparse" : "_split"), suffix);
+  if (sparse) plan.locatedSplitPipeline_ = kernelName(format + "_sparse_located", kernel.suffix);
   plan.reducePipeline_ =
       kernelName(sparse ? "sparse_reduce" : "reduce", suffix + (kernel.sinks ? "_sinks" : ""));
   group(plan);

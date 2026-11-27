@@ -93,6 +93,8 @@ template <typename CacheElement, uint M, uint HeadDim> struct SplashSparseScratc
   float row_max[M];
   float row_sum[M];
   float previous_scale[M];
+  uint next_cursor;
+  uint step_filled;
   atomic_uint rescale;
 };
 
@@ -141,22 +143,23 @@ inline void splash_sparse_gather(
 // path or, through a list, one its row mask (`attended`, the indexer's of
 // the tile's rows) leaves out; rows past the tile's active ones mirror the
 // last active row.
-template <uint QueryHeadsPerKVHead, uint Tokens, uint HeadDim, bool Quantized>
+template <uint QueryHeadsPerKVHead, uint Tokens, uint HeadDim, bool Quantized, typename Score = float>
 inline void splash_sparse_softmax_lane(
-    threadgroup const float *scores, threadgroup bfloat *probabilities,
+    threadgroup const Score *scores, float score_scale, threadgroup bfloat *probabilities,
     threadgroup float *row_max, threadgroup float *row_sum,
     threadgroup float *previous_scale, threadgroup atomic_uint *rescale,
     threadgroup const float *key_scales, threadgroup const float *value_scales,
     threadgroup const uint *entries, uint first_position, uint active_rows,
-    SplashAttentionTree tree, device const uint *attended, uint lane_index) {
+    uint row_bit_offset, SplashAttentionTree tree, device const uint *attended,
+    uint lane_index) {
   constexpr uint TokensPerLane = 8;
   constexpr uint LanesPerRow = Tokens / TokensPerLane;
-  constexpr float Scale = splash_attention_scale<HeadDim>();
   static_assert(TokensPerLane == 2 * SplashSparseBlockTokens, "a lane's tokens are two blocks");
   static_assert(LanesPerRow == 2 || LanesPerRow == 4, "a row's lanes shuffle as a pair or a quad");
   const uint fused_row = lane_index / LanesPerRow;
   const uint column = lane_index % LanesPerRow * TokensPerLane;
   const uint row = min(fused_row / QueryHeadsPerKVHead, active_rows - 1);
+  const uint row_bit = row_bit_offset + row;
   const uint causal_end = first_position + row + 1;
   // Of a tree's block, the row's path, through a list only its rows in
   // blocks the row attends: every other token sees all of it.
@@ -166,27 +169,42 @@ inline void splash_sparse_softmax_lane(
 #pragma unroll
   for (uint slot = 0; slot < 2; ++slot) {
     const uint entry = entries[column / SplashSparseBlockTokens + slot];
-    if (entry == SplashSparseNoEntry || !((entry >> row) & 1u))
+    if (entry == SplashSparseNoEntry || !((entry >> row_bit) & 1u))
       continue;
     const uint first = (entry >> SPLASH_ATTENTION_BLOCK_ROW_BITS) * SplashSparseBlockTokens;
+    if (first + SplashSparseBlockTokens <= min(causal_end, anchor)) {
+      allowed |= ((1u << SplashSparseBlockTokens) - 1u) << (slot * SplashSparseBlockTokens);
+    } else {
 #pragma unroll
-    for (uint t = 0; t < SplashSparseBlockTokens; ++t)
-      if (first + t < causal_end &&
-          (first + t < anchor || ((ancestors >> min(first + t - anchor, 31u)) & 1u)))
-        allowed |= 1u << (slot * SplashSparseBlockTokens + t);
+      for (uint t = 0; t < SplashSparseBlockTokens; ++t)
+        if (first + t < causal_end &&
+            (first + t < anchor || ((ancestors >> min(first + t - anchor, 31u)) & 1u)))
+          allowed |= 1u << (slot * SplashSparseBlockTokens + t);
+    }
   }
-  float score[TokensPerLane];
-#pragma unroll
-  for (uint j = 0; j < TokensPerLane; ++j) {
-    float value = scores[fused_row * Tokens + column + j];
-    if constexpr (Quantized)
-      value *= key_scales[column + j];
-    score[j] = (allowed >> j) & 1u ? value * Scale : -INFINITY;
+  threadgroup const vec<Score, 4> *scores4 =
+      reinterpret_cast<threadgroup const vec<Score, 4> *>(scores + fused_row * Tokens + column);
+  const uint vector = column / 4;
+  float4 low = float4(scores4[0]), high = float4(scores4[1]);
+  if constexpr (Quantized) {
+    threadgroup const float4 *kscales4 = reinterpret_cast<threadgroup const float4 *>(key_scales);
+    low *= kscales4[vector];
+    high *= kscales4[vector + 1];
   }
-  float local_max = -INFINITY;
-#pragma unroll
-  for (uint j = 0; j < TokensPerLane; ++j)
-    local_max = max(local_max, score[j]);
+  low *= score_scale;
+  high *= score_scale;
+  float score[TokensPerLane] = {
+      (allowed & 1u) ? low.x : -INFINITY,
+      (allowed & 2u) ? low.y : -INFINITY,
+      (allowed & 4u) ? low.z : -INFINITY,
+      (allowed & 8u) ? low.w : -INFINITY,
+      (allowed & 16u) ? high.x : -INFINITY,
+      (allowed & 32u) ? high.y : -INFINITY,
+      (allowed & 64u) ? high.z : -INFINITY,
+      (allowed & 128u) ? high.w : -INFINITY,
+  };
+  float local_max = max(max(max(score[0], score[1]), max(score[2], score[3])),
+                        max(max(score[4], score[5]), max(score[6], score[7])));
   local_max = max(local_max, simd_shuffle_xor(local_max, 1));
   if (LanesPerRow == 4)
     local_max = max(local_max, simd_shuffle_xor(local_max, 2));
@@ -212,13 +230,24 @@ inline void splash_sparse_softmax_lane(
     if (scale != 1.0f)
       atomic_store_explicit(rescale, 1u, memory_order_relaxed);
   }
-#pragma unroll
-  for (uint j = 0; j < TokensPerLane; ++j) {
-    float weighted = probability[j];
-    if constexpr (Quantized)
-      weighted = (allowed >> j) & 1u ? weighted * value_scales[column + j] : 0.0f;
-    probabilities[fused_row * Tokens + column + j] = bfloat(weighted);
+  float4 vlow(1.0f), vhigh(1.0f);
+  if constexpr (Quantized) {
+    threadgroup const float4 *vscales4 = reinterpret_cast<threadgroup const float4 *>(value_scales);
+    vlow = vscales4[vector];
+    vhigh = vscales4[vector + 1];
   }
+  const float4 plow((allowed & 1u) ? probability[0] * vlow.x : 0.0f,
+                    (allowed & 2u) ? probability[1] * vlow.y : 0.0f,
+                    (allowed & 4u) ? probability[2] * vlow.z : 0.0f,
+                    (allowed & 8u) ? probability[3] * vlow.w : 0.0f);
+  const float4 phigh((allowed & 16u) ? probability[4] * vhigh.x : 0.0f,
+                     (allowed & 32u) ? probability[5] * vhigh.y : 0.0f,
+                     (allowed & 64u) ? probability[6] * vhigh.z : 0.0f,
+                     (allowed & 128u) ? probability[7] * vhigh.w : 0.0f);
+  threadgroup bfloat4 *probs4 =
+      reinterpret_cast<threadgroup bfloat4 *>(probabilities + fused_row * Tokens + column);
+  probs4[0] = bfloat4(plow);
+  probs4[1] = bfloat4(phigh);
 }
 
 // One tile over its split's run of its block list (`list`, `count` entries),
@@ -240,10 +269,11 @@ inline void splash_sparse_softmax_lane(
 // probabilities and values before PV; and PV's reads before the next step's
 // entries and stage.
 template <uint KVHeads, uint QueryHeadsPerKVHead, uint RowsPerTile, uint HeadDim,
-          typename CacheElement, bool Located = false>
+          typename CacheElement, bool Located = false, bool Int8Queries = false>
 inline void splash_sparse_attention_tile(
     device bfloat *tile_queries, device const SplashKvPage *page_table,
     SplashKvLayer kv, uint kv_head, uint first_position, uint active_rows,
+    uint row_bit_offset,
     device const uint *list, uint count, device const uint *locations,
     device const SplashKvPage *location_pages, threadgroup uint *places, uint splits,
     uint split, device float *partials, device float *statistics, ulong slot,
@@ -254,7 +284,11 @@ inline void splash_sparse_attention_tile(
   constexpr uint Blocks = SplashSparseStep<CacheElement>::Blocks;
   constexpr ushort D = HeadDim;
   constexpr bool Quantized = is_same<CacheElement, int8_t>::value;
-  constexpr uint AllRows = (1u << RowsPerTile) - 1u;
+  static_assert(Quantized || !Int8Queries, "INT8 queries take INT8 keys");
+  static_assert(!Int8Queries || M * N / 8 <= 256,
+                "INT8 queries hold one score scale per softmax lane");
+  constexpr uint AllRows = (1u << SPLASH_ATTENTION_TILE_ROWS) - 1u;
+  const uint part_mask = ((1u << RowsPerTile) - 1u) << row_bit_offset;
   static_assert(RowsPerTile <= SPLASH_ATTENTION_BLOCK_ROW_BITS, "an entry has a bit per row");
   const uint per_split = splash_sparse_split_entries(count, splits);
   const uint begin = split * per_split;
@@ -262,18 +296,33 @@ inline void splash_sparse_attention_tile(
     return;
   const uint end = min(count, begin + per_split);
   const uint history = splash_sparse_history_blocks(first_position, active_rows);
+  using QueryElement = conditional_t<Int8Queries, int8_t, bfloat>;
+  using Score = conditional_t<Int8Queries, int, float>;
+  device QueryElement *queries;
+  float score_scale = splash_attention_scale<HeadDim>();
+  if constexpr (Int8Queries) {
+    queries = reinterpret_cast<device int8_t *>(partials + slot * M * D);
+    score_scale *= splash_attention_query_codes<M, HeadDim>(tile_queries, queries, thread_index);
+  } else {
+    queries = tile_queries;
+  }
   if (thread_index < M) {
     scratch.row_max[thread_index] = -INFINITY;
     scratch.row_sum[thread_index] = 0.0f;
   }
+  if (thread_index == 0)
+    scratch.next_cursor = begin;
+  threadgroup_barrier(Int8Queries ? mem_flags::mem_threadgroup | mem_flags::mem_device
+                                  : mem_flags::mem_threadgroup);
 
-  auto qt = tensor(tile_queries, dextents<int, 2>{D, M}, array<int, 2>{1, D});
-  auto st = tensor(scratch.scores, dextents<int, 2>{N, M}, array<int, 2>{1, N});
+  threadgroup Score *step_score_tile = reinterpret_cast<threadgroup Score *>(scratch.scores);
+  auto qt = tensor(queries, dextents<int, 2>{D, M}, array<int, 2>{1, D});
+  auto st = tensor(step_score_tile, dextents<int, 2>{N, M}, array<int, 2>{1, N});
   auto pt = tensor(scratch.probabilities, dextents<int, 2>{N, M}, array<int, 2>{1, N});
   // The stage holds the step's keys, then its values, both [token][dimension].
   tensor<threadgroup CacheElement, dextents<int, 2>, tensor_inline> kv_stage(
       scratch.stage, dextents<int, 2>{D, N}, array<int, 2>{1, D});
-  auto q0 = qt.slice<D, M>(0, 0);
+  auto q0 = qt.template slice<D, M>(0, 0);
   auto p0 = pt.template slice<N, M>(0, 0);
   auto stage0 = kv_stage.template slice<D, N>(0, 0);
   const SplashKvAddressing<KVHeads, HeadDim, CacheElement> addressing(kv, kv_head);
@@ -295,33 +344,58 @@ inline void splash_sparse_attention_tile(
       running[index] = 0.0f;
   }
 
-  for (uint step = begin; step < end; step += Blocks) {
-    if (thread_index < Blocks) {
+  for (;;) {
+    if (thread_index < 32) {
       constexpr uint PageBlocks = SplashKvPageTokens / SplashSparseBlockTokens;
-      const uint index = step + thread_index;
-      uint entry = SplashSparseNoEntry;
-      if (index < end)
-        entry = list ? list[index] : index << SPLASH_ATTENTION_BLOCK_ROW_BITS | AllRows;
-      if ((entry >> SPLASH_ATTENTION_BLOCK_ROW_BITS) >= history)
-        entry = SplashSparseNoEntry;
-      const uint block = entry >> SPLASH_ATTENTION_BLOCK_ROW_BITS;
-      scratch.entries[thread_index] = entry;
-      if constexpr (Located) {
-        const uint location = entry == SplashSparseNoEntry ? SPLASH_ATTENTION_PAGED : locations[index];
-        const bool paged = location == SPLASH_ATTENTION_PAGED;
-        scratch.pages[thread_index] =
-            entry == SplashSparseNoEntry ? SplashKvPage(0)
-            : paged                      ? page_table[block / PageBlocks]
-                                         : location_pages[location >> SPLASH_ATTENTION_LOCATION_BLOCK_BITS];
-        places[thread_index] = (paged ? block : location) % PageBlocks;
-      } else {
-        scratch.pages[thread_index] =
-            entry == SplashSparseNoEntry ? SplashKvPage(0) : page_table[block / PageBlocks];
+      uint cursor = scratch.next_cursor;
+      uint filled = 0;
+      while (filled < Blocks && cursor < end) {
+        const uint index = cursor + thread_index;
+        uint entry = SplashSparseNoEntry;
+        if (index < end)
+          entry = list ? list[index] : (index << SPLASH_ATTENTION_BLOCK_ROW_BITS | AllRows);
+        const bool keep = index < end && (entry & part_mask) != 0 &&
+                          (entry >> SPLASH_ATTENTION_BLOCK_ROW_BITS) < history;
+        const uint rank = simd_prefix_exclusive_sum(uint(keep));
+        const uint matched = simd_sum(uint(keep));
+        const uint need = Blocks - filled;
+        if (keep && rank < need) {
+          const uint slot_idx = filled + rank;
+          const uint block = entry >> SPLASH_ATTENTION_BLOCK_ROW_BITS;
+          scratch.entries[slot_idx] = entry;
+          if constexpr (Located) {
+            const uint location = locations[index];
+            const bool paged = location == SPLASH_ATTENTION_PAGED;
+            scratch.pages[slot_idx] =
+                paged ? page_table[block / PageBlocks]
+                      : location_pages[location >> SPLASH_ATTENTION_LOCATION_BLOCK_BITS];
+            places[slot_idx] = (paged ? block : location) % PageBlocks;
+          } else {
+            scratch.pages[slot_idx] = page_table[block / PageBlocks];
+          }
+        }
+        if (matched >= need) {
+          const uint advance = simd_max(keep && rank == need - 1 ? thread_index + 1 : 0u);
+          cursor += advance;
+          filled = Blocks;
+        } else {
+          cursor += min(32u, end - cursor);
+          filled += matched;
+        }
+      }
+      if (thread_index < Blocks && thread_index >= filled) {
+        scratch.entries[thread_index] = SplashSparseNoEntry;
+        scratch.pages[thread_index] = SplashKvPage(0);
+      }
+      if (thread_index == 0) {
+        scratch.next_cursor = cursor;
+        scratch.step_filled = filled;
+        atomic_store_explicit(&scratch.rescale, 0u, memory_order_relaxed);
       }
     }
-    if (thread_index == 0)
-      atomic_store_explicit(&scratch.rescale, 0u, memory_order_relaxed);
     threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (scratch.step_filled == 0)
+      break;
     splash_sparse_gather<KVHeads, HeadDim, CacheElement, N, Located>(scratch.stage, scratch.entries, scratch.pages,
                                                                       places, addressing, false, thread_index);
     if constexpr (Quantized) {
@@ -344,7 +418,7 @@ inline void splash_sparse_attention_tile(
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
     auto step_scores = qk.template get_destination_cooperative_tensor<
-        decltype(q0), decltype(stage0), float>();
+        decltype(q0), decltype(stage0), Score>();
     qk.run(q0, stage0, step_scores);
     step_scores.store(st.template slice<N, M>(0, 0));
     threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -354,10 +428,11 @@ inline void splash_sparse_attention_tile(
     splash_sparse_gather<KVHeads, HeadDim, CacheElement, N, Located>(scratch.stage, scratch.entries, scratch.pages,
                                                                       places, addressing, true, thread_index);
     for (uint lane = thread_index; lane < M * N / 8; lane += 256)
-      splash_sparse_softmax_lane<QueryHeadsPerKVHead, N, HeadDim, Quantized>(
-          scratch.scores, scratch.probabilities, scratch.row_max, scratch.row_sum,
+      splash_sparse_softmax_lane<QueryHeadsPerKVHead, N, HeadDim, Quantized, Score>(
+          step_score_tile, score_scale, scratch.probabilities, scratch.row_max, scratch.row_sum,
           scratch.previous_scale, &scratch.rescale, scratch.key_scales,
-          scratch.value_scales, scratch.entries, first_position, active_rows, tree, attended, lane);
+          scratch.value_scales, scratch.entries, first_position, active_rows,
+          row_bit_offset, tree, attended, lane);
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if (atomic_load_explicit(&scratch.rescale, memory_order_relaxed)) {
 #pragma unroll

@@ -51,7 +51,7 @@ struct Shape {
   uint32_t queryHeads() const { return kvHeads * queryHeadsPerKvHead; }
   uint32_t fusedRows() const { return kRows * queryHeadsPerKvHead; }
   bool sparse() const { return reads == splash::kv::Reads::SelectedBlocks; }
-  uint32_t parts() const { return sparse() ? 1 : SPLASH_ATTENTION_TILE_PARTS(queryHeadsPerKvHead); }
+  uint32_t parts() const { return SPLASH_ATTENTION_TILE_PARTS(queryHeadsPerKvHead); }
   // The partial of a fused row of the tile of KV head `head` from split
   // `split` of `slotSplits`: [KV head][part][split][part's fused row].
   uint64_t partialRow(uint32_t head, uint32_t slotSplits, uint32_t split, uint32_t row) const {
@@ -80,8 +80,7 @@ const std::vector<Shape> kShapes = [] {
   std::vector<Shape> shapes;
   for (const splash::test::AttentionGeometry &geometry : splash::test::familyAttentionGeometries()) {
     shapes.push_back({geometry.kvHeads, geometry.queryHeads / geometry.kvHeads, geometry.reads});
-    if (geometry.reads == splash::kv::Reads::EveryPage)
-      shapes.push_back({geometry.kvHeads, geometry.queryHeads / geometry.kvHeads, geometry.reads, true});
+    shapes.push_back({geometry.kvHeads, geometry.queryHeads / geometry.kvHeads, geometry.reads, true});
   }
   return shapes;
 }();
@@ -679,7 +678,7 @@ Dispatch dispatch(id<MTLDevice> device, id<MTLCommandQueue> queue,
   for (id<MTLBuffer> extent : data.extents)
     [encoder useResource:extent usage:MTLResourceUsageRead];
   // The sparse split's grid is one-dimensional (AttentionPlan::splitGroups).
-  [encoder dispatchThreadgroups:shape.sparse() ? MTLSizeMake(shape.kvHeads * splits, width * laneTiles, 1)
+  [encoder dispatchThreadgroups:shape.sparse() ? MTLSizeMake(shape.kvHeads * shape.parts() * splits, width * laneTiles, 1)
                                                : MTLSizeMake(shape.kvHeads * shape.parts(), width * laneTiles, splits)
           threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
   // The plain reduce writes no table: the output rows take the table's and

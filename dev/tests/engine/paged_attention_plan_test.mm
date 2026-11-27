@@ -73,7 +73,7 @@ bool selectsBlocks(kv::Layout layout) { return layout.reads == kv::Reads::Select
 // The parts of a layout's tiles, each a threadgroup of the split grid's x
 // beside its KV head.
 uint32_t tileParts(uint32_t queryHeads, kv::Layout layout) {
-  return selectsBlocks(layout) ? 1 : SPLASH_ATTENTION_TILE_PARTS(queryHeads / layout.kvHeads);
+  return SPLASH_ATTENTION_TILE_PARTS(queryHeads / layout.kvHeads);
 }
 
 // A sequence of `rows` rows after `history` tokens, staged in whole KV
@@ -135,7 +135,8 @@ void checkSplitRule(uint32_t queryHeads, kv::Layout layout) {
       const auto groups = plan.splitGroups(dispatch), reduceGroups = plan.reduceGroups(dispatch);
       require(dispatch.sequences == 1 && dispatch.tiles == tiles && dispatch.splits == splits &&
                   dispatch.slots == tiles * splits &&
-                  (sparse ? groups.x == layout.kvHeads * splits && groups.y == tiles && groups.z == 1
+                  (sparse ? groups.x == layout.kvHeads * tileParts(queryHeads, layout) * splits &&
+                                groups.y == tiles && groups.z == 1
                           : groups.x == layout.kvHeads * tileParts(queryHeads, layout) && groups.y == tiles &&
                                 groups.z == splits) &&
                   reduceGroups.x == layout.kvHeads && reduceGroups.y == 8 * queryHeads / layout.kvHeads &&
@@ -258,7 +259,7 @@ void checkGrouping(uint32_t queryHeads, kv::Layout layout) {
 void checkInt8Queries(uint32_t queryHeads, kv::Layout layout) {
   const std::string split = pipelineName(true, queryHeads, layout);
   std::string int8Split = split;
-  if (layout.format == kv::Format::Int8 && !selectsBlocks(layout)) int8Split.replace(int8Split.find("q8_"), 3, "q8q_");
+  if (layout.format == kv::Format::Int8) int8Split.replace(int8Split.find("q8_"), 3, "q8q_");
   constexpr ops::AttentionCalibration fromEight = attentionRow(8);
   const auto after = [&](std::vector<kv::ChunkedPrefillParams> sequences, ops::Int8Activations int8) {
     return planOf(sequences, queryHeads, layout, int8, 4 * ops::kAttentionSequenceSplits, fromEight).splitPipeline();
