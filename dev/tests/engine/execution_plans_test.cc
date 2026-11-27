@@ -247,6 +247,15 @@ void decodeStepsRoundNoActivations() {
                   !plans.moe(shape, kRouterFormat, rows, StepKind::Decode).configuration().int8Passes,
               "a decode step's MoE plan took the int8 passes, or a chunk's did not");
     }
+    // A custom int8MinRoutes (as Q2_0 sets to 2 on 512-expert Flash-Next) lowers the
+    // activation threshold from 6 routes/expert (308 rows) to 2 (103 rows) on prefill only.
+    MoeShape q2Shape{2560, 512, 10, 512};
+    q2Shape.int8Experts = true;
+    q2Shape.int8MinRoutes = 2;
+    require(!plans.moe(q2Shape, kRouterFormat, 102, StepKind::Prefill).configuration().int8Passes &&
+                plans.moe(q2Shape, kRouterFormat, 103, StepKind::Prefill).configuration().int8Passes &&
+                !plans.moe(q2Shape, kRouterFormat, 128, StepKind::Decode).configuration().int8Passes,
+            "int8MinRoutes did not lower the prefill int8 MoE threshold as configured");
     bool decodeInt8 = false;
     for (const uint32_t rows : {16U, 32U}) {
       const LinearWorkload w{{6144, 5120}, rows};

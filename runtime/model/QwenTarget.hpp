@@ -130,10 +130,12 @@ struct QwenTargetGeometry final : QwenTargetDimensions {
   // ops::moeInt8RoutedExperts for streamed blocks' loaded routed tiles).
   bool moeInt8Experts = false;
   bool moeInt8RoutedExperts = false;
+  uint32_t moeInt8MinRoutes = 0;
   // The blocks' shape as their plans take it.
   [[nodiscard]] ops::MoeShape moeShape() const noexcept {
     ops::MoeShape shape = moeBlockShape();
     shape.int8Experts = moeInt8Experts;
+    shape.int8MinRoutes = moeInt8MinRoutes;
     return shape;
   }
   // The target layer ids whose rows the DFlash2 draft reads, ascending.

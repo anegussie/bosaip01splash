@@ -92,6 +92,9 @@ struct MoeShape final {
   // its prefill plans then run the int8 passes and size their scratch
   // (MoeConfig::int8Passes).
   bool int8Experts = false;
+  // Minimum average routes per expert for int8Passes (0 uses
+  // kInt8PassRoutesPerExpert; Q2_0 routed experts beat staged from 2).
+  uint32_t int8MinRoutes = 0;
   // A biased selection ranks the experts by sigmoid(score) plus each one's
   // bias (BlockMoeWeights::selectionBias) and scales its weights by
   // routedScale, which is 1 for every other selection.

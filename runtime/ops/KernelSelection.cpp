@@ -439,8 +439,9 @@ MoeConfig selectMoe(const KernelCalibration &calibration, Int8Activations int8Ac
   const uint64_t routes = uint64_t{rows} * shape.expertsPerToken;
   MoeConfig config;
   config.ggufRouterTile = selectFloatTile(calibration, rows, shape.experts, routerFormat);
+  const uint32_t minRoutes = shape.int8MinRoutes ? shape.int8MinRoutes : kInt8PassRoutesPerExpert;
   config.int8Passes = shape.int8Experts && int8PrefillPaths(calibration, int8Activations, step) &&
-                      rows > kMaximumDecodeTileRows && routes >= uint64_t{kInt8PassRoutesPerExpert} * shape.experts;
+                      rows > kMaximumDecodeTileRows && routes >= uint64_t{minRoutes} * shape.experts;
   config.expertTile = routes <= shape.experts ? MoeExpertTile::M8
                       : step == StepKind::Prefill && !config.int8Passes &&
                               routes >= uint64_t{calibration.moe.wideTileRoutes} * shape.experts
