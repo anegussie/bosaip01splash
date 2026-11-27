@@ -51,6 +51,7 @@ struct ModelLoadOptions final {
   uint64_t expertMemoryBytes = 0;
   uint64_t expertFloorBytes = 0;
   double expertFloorShare = kExpertFloorShare;
+  uint32_t expertCycleRows = 0;
   std::shared_ptr<SsdReaders> readers;
 };
 

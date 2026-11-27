@@ -93,7 +93,8 @@ TargetWeights loadTarget(metal::MetalBackend &backend, WeightImages &images, con
   const ExpertStoreOptions experts{.memoryBytes = options.expertMemoryBytes,
                                    .floorBytes = options.expertFloorBytes,
                                    .floorShare = options.expertFloorShare,
-                                   .readers = options.readers};
+                                   .readers = options.readers,
+                                   .cycleRows = options.expertCycleRows};
   return std::visit(
       [&](const auto &layout) -> TargetWeights {
         const std::filesystem::path directory = root / "target";

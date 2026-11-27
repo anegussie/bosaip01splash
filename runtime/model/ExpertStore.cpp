@@ -175,19 +175,24 @@ Geometry geometryOf(const StreamedBlocks &streamed, ops::MoeShape shape) {
   return g;
 }
 
-// The staging: the experts of a block kCycleRows rows may route, and at
-// least two places, of which a round of a load of more rows than those
-// stages one half.
-Places stagingOf(const Geometry &g, ops::MoeShape shape) {
-  return {g.placeBytes,
-          static_cast<uint32_t>(std::max<uint64_t>(
-              2, std::min<uint64_t>(shape.experts, uint64_t{kCycleRows} * shape.expertsPerToken)))};
+constexpr uint32_t resolvedCycleRows(uint32_t requested) noexcept {
+  return requested ? std::min(requested, kCycleRows) : kCycleRows;
 }
 
-uint64_t fixedBytesOf(const Geometry &g, uint32_t blocks, ops::MoeShape shape) {
+// The staging: the experts of a block `cycleRows` rows may route, and at
+// least two places, of which a round of a load of more rows than those
+// stages one half.
+Places stagingOf(const Geometry &g, ops::MoeShape shape, uint32_t cycleRows = kCycleRows) {
+  return {g.placeBytes,
+          static_cast<uint32_t>(std::max<uint64_t>(
+              2, std::min<uint64_t>(shape.experts, uint64_t{resolvedCycleRows(cycleRows)} * shape.expertsPerToken)))};
+}
+
+uint64_t fixedBytesOf(const Geometry &g, uint32_t blocks, ops::MoeShape shape, uint32_t cycleRows = kCycleRows) {
+  const uint32_t rows = resolvedCycleRows(cycleRows);
   const uint64_t prediction =
-      uint64_t{kCycleRows} * (shape.routerWidth() + 2ULL * shape.routesPerToken()) * sizeof(float);
-  return stagingOf(g, shape).bytes() + 2 * uint64_t{blocks} * shape.experts * sizeof(uint32_t) +
+      uint64_t{rows} * (shape.routerWidth() + 2ULL * shape.routesPerToken()) * sizeof(float);
+  return stagingOf(g, shape, rows).bytes() + 2 * uint64_t{blocks} * shape.experts * sizeof(uint32_t) +
          uint64_t{shape.experts} * (sizeof(uint32_t) + 3 * g.sourcePlanes * sizeof(uint64_t)) + 4 * sizeof(uint32_t) +
          prediction;
 }
@@ -195,8 +200,8 @@ uint64_t fixedBytesOf(const Geometry &g, uint32_t blocks, ops::MoeShape shape) {
 // The smallest store (ExpertStore::minimumBytes): its fixed bytes and the
 // chunks of each layout of a block's experts, which for a layout of one block
 // are all of its experts.
-uint64_t minimumBytesOf(const Geometry &g, uint32_t blocks, ops::MoeShape shape) {
-  uint64_t bytes = fixedBytesOf(g, blocks, shape);
+uint64_t minimumBytesOf(const Geometry &g, uint32_t blocks, ops::MoeShape shape, uint32_t cycleRows = kCycleRows) {
+  uint64_t bytes = fixedBytesOf(g, blocks, shape, cycleRows);
   for (const ExpertLayout &layout : g.layouts)
     bytes += arenaBytes(layout, shape.experts);
   return bytes;
@@ -297,8 +302,10 @@ struct ExpertStore::Impl {
     }
   };
 
-  Impl(metal::MetalBackend &backend, ops::MoeShape shape, Geometry geometry, std::shared_ptr<SsdReaders> readers)
-      : backend(backend), shape(shape), geometry(std::move(geometry)), readers(std::move(readers)) {}
+  Impl(metal::MetalBackend &backend, ops::MoeShape shape, Geometry geometry, std::shared_ptr<SsdReaders> readers,
+       uint32_t cycleRows)
+      : backend(backend), shape(shape), geometry(std::move(geometry)), readers(std::move(readers)),
+        cycleRows(resolvedCycleRows(cycleRows)) {}
   // The readers of a read-ahead read into this store's memory: they end the
   // pieces they took before it goes.
   ~Impl() {
@@ -313,11 +320,11 @@ struct ExpertStore::Impl {
             uint32_t round, uint32_t rounds, const RoutedRows &routed);
   void route(uint32_t block, std::span<const std::span<const MoeTileDescriptor>> parts, uint32_t rows,
              ExpertStoreStats::Use &use);
-  // Whether a load of `rows` rows is at most kCycleRows: the staging
+  // Whether a load of `rows` rows is at most cycleRows: the staging
   // holds the experts they may route (stagingOf), the prediction's buffers
   // their rows, and the reads of so few experts end within about a
   // millisecond.
-  [[nodiscard]] static bool cycleLoad(uint32_t rows) noexcept { return rows <= kCycleRows; }
+  [[nodiscard]] bool cycleLoad(uint32_t rows) const noexcept { return rows <= cycleRows; }
   // Whether a load of `rows` rows is a long chunk's, which routes nearly
   // every expert of its block.
   [[nodiscard]] bool longChunk(uint32_t rows) const noexcept {
@@ -409,6 +416,7 @@ struct ExpertStore::Impl {
   const ops::MoeShape shape;
   const Geometry geometry;
   const std::shared_ptr<SsdReaders> readers;
+  const uint32_t cycleRows = kCycleRows;
   // What holds the sources open, and their checks (StreamedBlocks).
   std::shared_ptr<const void> files;
   std::vector<std::function<void()>> checks;
@@ -697,29 +705,47 @@ void ExpertStore::Impl::stage(uint32_t index, uint32_t capacity, ExpertStoreStat
 }
 
 // The next block's experts a step's prediction names for those of its `rows`
-// rows it routes, by their summed routing weights, the largest first.
+// rows it routes, by their summed routing weights, the largest first. Drops
+// the low-weight tail past 80% of total predicted routing mass (always keeping
+// at least shape.expertsPerToken experts) so noisy tail predictions do not
+// saturate SSD bandwidth with unused read-ahead pieces.
 std::span<const uint32_t> ExpertStore::Impl::predictedExperts(uint32_t rows, const RoutedRows &routed) {
   const auto *selected = static_cast<const uint32_t *>(predictionRoutes.contents());
   const auto *weights = static_cast<const float *>(predictionWeights.contents());
   const uint32_t routes = shape.routesPerToken();
   predictionOrder.clear();
+  double totalWeight = 0.0;
   for (uint32_t row = 0; row < rows; ++row) {
     if (!routed.routes(row)) continue;
     for (uint32_t route = 0; route < shape.expertsPerToken; ++route) {
       const uint64_t at = uint64_t{row} * routes + route;
       const uint32_t expert = selected[at];
       if (expert >= shape.experts) continue;
+      const float w = weights[at];
       float &sum = predictionSum[expert];
       if (sum < 0) {
         sum = 0;
         predictionOrder.push_back(expert);
       }
-      sum += weights[at];
+      sum += w;
+      if (w > 0.0f) totalWeight += w;
     }
   }
   std::ranges::stable_sort(predictionOrder, std::ranges::greater{},
                            [&](uint32_t expert) { return predictionSum[expert]; });
+  size_t keep = predictionOrder.size();
+  if (totalWeight > 0.0 && predictionOrder.size() > shape.expertsPerToken) {
+    const double cutoff = 0.80 * totalWeight;
+    double cumulative = 0.0;
+    keep = 0;
+    for (const uint32_t expert : predictionOrder) {
+      ++keep;
+      cumulative += std::max(0.0f, predictionSum[expert]);
+      if (keep >= shape.expertsPerToken && cumulative >= cutoff) break;
+    }
+  }
   for (const uint32_t expert : predictionOrder) predictionSum[expert] = -1;
+  predictionOrder.resize(keep);
   return predictionOrder;
 }
 
@@ -1127,7 +1153,8 @@ void ExpertStore::Impl::readBlockAhead(uint32_t index, LoadUse use) {
 
 ExpertStore::ExpertStore(metal::MetalBackend &backend, StreamedBlocks streamed, ops::MoeShape shape,
                          ExpertStoreOptions options)
-    : impl_(std::make_shared<Impl>(backend, shape, geometryOf(streamed, shape), std::move(options.readers))) {
+    : impl_(std::make_shared<Impl>(backend, shape, geometryOf(streamed, shape), std::move(options.readers),
+                                   options.cycleRows)) {
   Impl &impl = *impl_;
   const Geometry &geometry = impl.geometry;
   if (!options.memoryBytes || !impl.readers) throw std::invalid_argument("invalid expert store");
@@ -1137,7 +1164,7 @@ ExpertStore::ExpertStore(metal::MetalBackend &backend, StreamedBlocks streamed, 
     impl.blocks.push_back(
         {.experts = std::move(streamed.blocks[block]), .slot = std::vector<uint32_t>(shape.experts, kNoSlot)});
   const uint32_t blocks = static_cast<uint32_t>(impl.blocks.size());
-  const uint64_t minimum = minimumBytesOf(geometry, blocks, shape);
+  const uint64_t minimum = minimumBytesOf(geometry, blocks, shape, impl.cycleRows);
   if (options.memoryBytes < minimum)
     throw std::invalid_argument("expert memory of " + std::to_string(options.memoryBytes >> 20) +
                                 " MiB holds fewer slots than the smallest store (" + std::to_string(minimum >> 20) +
@@ -1147,7 +1174,7 @@ ExpertStore::ExpertStore(metal::MetalBackend &backend, StreamedBlocks streamed, 
     throw std::invalid_argument("an expert floor of " + std::to_string(options.floorBytes >> 20) +
                                 " MiB lies outside the smallest store and the store's " +
                                 std::to_string(options.memoryBytes >> 20) + " MiB");
-  const uint64_t fixed = fixedBytesOf(geometry, blocks, shape);
+  const uint64_t fixed = fixedBytesOf(geometry, blocks, shape, impl.cycleRows);
   const uint64_t largest = options.bufferBytes && options.bufferBytes < backend.capabilities().maxBufferLengthBytes
                                ? options.bufferBytes
                                : backend.capabilities().maxBufferLengthBytes;
@@ -1246,7 +1273,7 @@ ExpertStore::ExpertStore(metal::MetalBackend &backend, StreamedBlocks streamed, 
     size.ownerBlock.assign(size.slots, kNoSlot);
     size.ownerExpert.assign(size.slots, kNoSlot);
   }
-  impl.places = stagingOf(geometry, shape);
+  impl.places = stagingOf(geometry, shape, impl.cycleRows);
   impl.taken.assign(impl.places.count, 0);
   impl.staging = backend.allocateBuffer(impl.places.bytes(), metal::BufferStorage::Shared, "experts/staging");
   const uint64_t tableBytes = uint64_t{shape.experts} * impl.blocks.size() * sizeof(uint32_t);
@@ -1255,7 +1282,7 @@ ExpertStore::ExpertStore(metal::MetalBackend &backend, StreamedBlocks streamed, 
   impl.loadTables = backend.allocateBuffer(tableBytes, metal::BufferStorage::Shared, "experts/load-slot-tables");
   std::memset(impl.loadTables.contents(), 0, tableBytes);
   const auto predictionBuffer = [&](uint64_t perRow, const char *label) {
-    return backend.allocateBuffer(uint64_t{kCycleRows} * perRow * sizeof(float),
+    return backend.allocateBuffer(uint64_t{impl.cycleRows} * perRow * sizeof(float),
                                   metal::BufferStorage::Shared, label);
   };
   impl.predictionScores = predictionBuffer(shape.routerWidth(), "experts/prediction-scores");
@@ -1338,7 +1365,7 @@ void ExpertStore::addLoad(metal::CommandGraph &graph, std::span<const ops::MoeLo
   // A cycle's load predicts the next block's routes, when its experts
   // stream: that block's routing of this block's input, over the rows the
   // step routes.
-  const bool cycle = Impl::cycleLoad(rows);
+  const bool cycle = impl.cycleLoad(rows);
   const bool predicted = cycle && block + 1 < impl.blocks.size() && impl.streams(block + 1);
   Impl::RoutedRows routed;
   if (predicted) {
@@ -1520,12 +1547,12 @@ metal::AllocationResult ExpertStore::growTowardCap(const metal::AllocationAdmiss
   return {};
 }
 
-uint64_t ExpertStore::fixedBytes(const StreamedBlocks &blocks, ops::MoeShape shape) {
-  return fixedBytesOf(geometryOf(blocks, shape), static_cast<uint32_t>(blocks.blocks.size()), shape);
+uint64_t ExpertStore::fixedBytes(const StreamedBlocks &blocks, ops::MoeShape shape, uint32_t cycleRows) {
+  return fixedBytesOf(geometryOf(blocks, shape), static_cast<uint32_t>(blocks.blocks.size()), shape, cycleRows);
 }
 
-uint64_t ExpertStore::minimumBytes(const StreamedBlocks &blocks, ops::MoeShape shape) {
-  return minimumBytesOf(geometryOf(blocks, shape), static_cast<uint32_t>(blocks.blocks.size()), shape);
+uint64_t ExpertStore::minimumBytes(const StreamedBlocks &blocks, ops::MoeShape shape, uint32_t cycleRows) {
+  return minimumBytesOf(geometryOf(blocks, shape), static_cast<uint32_t>(blocks.blocks.size()), shape, cycleRows);
 }
 
 metal::MetalBuffer residentExpertSlots(metal::MetalBackend &backend, uint32_t experts) {

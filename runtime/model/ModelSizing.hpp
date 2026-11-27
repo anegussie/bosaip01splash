@@ -46,6 +46,7 @@ struct StreamableWeights final {
 // stream as parts of their own: one it does not is among the images that
 // load.
 [[nodiscard]] StreamableWeights streamableWeights(const std::filesystem::path &root,
-                                                  const ModelDescriptor &descriptor, gguf::PlanOptions streams);
+                                                  const ModelDescriptor &descriptor, gguf::PlanOptions streams,
+                                                  uint32_t expertCycleRows = 0);
 
 } // namespace splash::model

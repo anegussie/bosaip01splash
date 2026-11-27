@@ -159,6 +159,10 @@ struct ExpertStoreOptions final {
   // size needs larger ones to fit the expert kernels' table
   // (streamedExpertChunkLayout).
   uint64_t elasticChunkBytes = kExpertElasticChunkBytes;
+  // Maximum decode step rows staged in one round (0 defaults to cycleRows() = 32;
+  // single-lane runtimes pass 16 to halve staging memory and give those bytes to
+  // resident expert cache slots).
+  uint32_t cycleRows = 0;
 };
 
 class ExpertStore final : public ops::MoeExpertStream, public WeightMemory {
@@ -231,11 +235,11 @@ public:
   [[nodiscard]] metal::AllocationResult growTowardCap(const metal::AllocationAdmission &admit);
   // The bytes a store of these blocks allocates besides its chunks: its
   // staging, slot tables, jobs and a cycle's load's prediction buffers.
-  [[nodiscard]] static uint64_t fixedBytes(const StreamedBlocks &blocks, ops::MoeShape shape);
+  [[nodiscard]] static uint64_t fixedBytes(const StreamedBlocks &blocks, ops::MoeShape shape, uint32_t cycleRows = 0);
   // The smallest store of these blocks (ExpertStoreOptions::memoryBytes and
   // floorBytes), which the constructor refuses a byte less than: its fixed
   // bytes and one shared arena holding the largest layer of experts.
-  [[nodiscard]] static uint64_t minimumBytes(const StreamedBlocks &blocks, ops::MoeShape shape);
+  [[nodiscard]] static uint64_t minimumBytes(const StreamedBlocks &blocks, ops::MoeShape shape, uint32_t cycleRows = 0);
 
 private:
   struct Impl;

@@ -886,11 +886,14 @@ RuntimeResources::create(const RuntimeResourcesConfig &config,
   };
   // The stores the plan gives the parts: the routed experts' store at its
   // cap, which starts at its floor.
+  const uint32_t expertCycleRows =
+      std::min<uint32_t>(model::ExpertStore::cycleRows(), lanes * model::ExecutionLimits::targetVerifyRows);
   const auto storesOf = [&](const StreamedMemoryPlan &plan) {
     return model::ModelLoadOptions{.streamedTableBytes = plan.tableBytes,
                                    .expertMemoryBytes = plan.expertBytes,
                                    .expertFloorBytes = plan.expertFloorBytes,
                                    .expertFloorShare = plan.expertFloorShare,
+                                   .expertCycleRows = expertCycleRows,
                                    .readers = readers};
   };
   model::ModelLoadOptions loadOptions;
@@ -899,7 +902,8 @@ RuntimeResources::create(const RuntimeResourcesConfig &config,
     // planned.
     streamable = model::streamableWeights(
         config.modelRoot, config.model,
-        {.streamExperts = true, .streamTable = config.pleMemory.mode != StreamedSetting::Mode::Off});
+        {.streamExperts = true, .streamTable = config.pleMemory.mode != StreamedSetting::Mode::Off},
+        expertCycleRows);
     if (!streamable.tableRefusal.empty()) {
       if (config.pleMemory.mode == StreamedSetting::Mode::Size)
         throw RuntimeResourcesError(RuntimeResourceStage::Configuration,

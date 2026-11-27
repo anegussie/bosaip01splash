@@ -37,7 +37,7 @@ uint64_t loadedBytes(std::span<const gguf::Image> images) {
 // `layerImages` layer images, the first MoE layer's `firstMoeLayer`.
 template <class Layout, class Plan>
 StreamableWeights targetWeights(const Layout &layout, const Plan &plan, gguf::PlanOptions streams,
-                                uint32_t layerImages, uint32_t firstMoeLayer) {
+                                uint32_t layerImages, uint32_t firstMoeLayer, uint32_t expertCycleRows) {
   streams.streamExperts = streams.streamExperts && layout.ffnKind == QwenFfnKind::SparseMoe;
   StreamableWeights result;
   std::vector<gguf::Image> streamed;
@@ -73,7 +73,7 @@ StreamableWeights targetWeights(const Layout &layout, const Plan &plan, gguf::Pl
     StreamedBlocks blocks;
     blocks.blocks = gguf::streamedExperts(
         std::span(streamed).subspan(firstMoeLayer, layerImages - firstMoeLayer));
-    result.expertMinimumBytes = ExpertStore::minimumBytes(blocks, layout.moeBlockShape());
+    result.expertMinimumBytes = ExpertStore::minimumBytes(blocks, layout.moeBlockShape(), expertCycleRows);
   }
   return result;
 }
@@ -81,7 +81,7 @@ StreamableWeights targetWeights(const Layout &layout, const Plan &plan, gguf::Pl
 } // namespace
 
 StreamableWeights streamableWeights(const std::filesystem::path &root, const ModelDescriptor &descriptor,
-                                    gguf::PlanOptions streams) {
+                                    gguf::PlanOptions streams, uint32_t expertCycleRows) {
   StreamableWeights result = std::visit(
       [&](const auto &layout) {
         const std::filesystem::path directory = root / "target";
@@ -94,7 +94,7 @@ StreamableWeights streamableWeights(const std::filesystem::path &root, const Mod
                 options.exactlyMxfp8 = exactlyMxfp8;
                 return plan.images(target.file(), options);
               },
-              streams, plan.layerImages, plan.firstMoeLayer);
+              streams, plan.layerImages, plan.firstMoeLayer, expertCycleRows);
         }
         const SafetensorsCheckpoint checkpoint(directory);
         const SafetensorsTargetPlan plan = safetensorsTargetPlan(layout);
@@ -104,7 +104,7 @@ StreamableWeights streamableWeights(const std::filesystem::path &root, const Mod
               options.exactlyMxfp8 = exactlyMxfp8;
               return plan.images(checkpoint, options).images;
             },
-            streams, plan.layerImages, plan.firstMoeLayer);
+            streams, plan.layerImages, plan.firstMoeLayer, expertCycleRows);
       },
       descriptor.target);
   result.loadedBytes += draftImageBytes(root / "draft", descriptor.draft);
