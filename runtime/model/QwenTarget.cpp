@@ -43,6 +43,7 @@ void QwenTargetGeometry::finish(std::span<const ops::BlockMoeWeights *const> moe
                                 const ops::Projection &logits) {
   moeRouterFormat = ops::moeRouterFormat(moeBlocks);
   moeInt8Experts = ops::moeInt8Experts(moeBlockShape(), moeBlocks);
+  moeInt8RoutedExperts = ops::moeInt8RoutedExperts(moeBlockShape(), moeBlocks);
   prefillProjections = decodeProjections;
   include(logits);
   // The draft's head over its subset of the vocabulary: a view of the head's

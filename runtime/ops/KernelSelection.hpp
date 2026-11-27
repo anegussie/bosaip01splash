@@ -92,6 +92,11 @@ struct SplitChoice final {
 // they load. Whether the experts stream is the start's choice
 // (RuntimeGeometry::from takes it); MoeShape::int8Experts is both.
 [[nodiscard]] bool moeInt8Experts(const MoeShape &shape, std::span<const BlockMoeWeights *const> blocks) noexcept;
+// Whether the int8 expert passes take the routed experts of `shape` alone, as
+// a streamed block's loaded tiles run them (MOE_TILES_LOADED, without shared
+// slices): same routing check as moeInt8Experts, requiring only each
+// projection's routed experts to be in quant_moe_int8_format.
+[[nodiscard]] bool moeInt8RoutedExperts(const MoeShape &shape, std::span<const BlockMoeWeights *const> blocks) noexcept;
 // The routes an expert takes on average from which a chunk's experts run the
 // int8 passes (selectMoe).
 inline constexpr uint32_t kInt8PassRoutesPerExpert = 6;

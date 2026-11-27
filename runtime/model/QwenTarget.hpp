@@ -126,8 +126,10 @@ struct QwenTargetGeometry final : QwenTargetDimensions {
   // (ops::moeRouterFormat).
   uint32_t moeRouterFormat = ops::QuantizedSegment::kFloat32;
   // Whether the blocks' experts take the int8 prefill passes: their routing
-  // and formats (ops::moeInt8Experts), and resident (RuntimeGeometry::from).
+  // and formats (ops::moeInt8Experts for resident blocks, and
+  // ops::moeInt8RoutedExperts for streamed blocks' loaded routed tiles).
   bool moeInt8Experts = false;
+  bool moeInt8RoutedExperts = false;
   // The blocks' shape as their plans take it.
   [[nodiscard]] ops::MoeShape moeShape() const noexcept {
     ops::MoeShape shape = moeBlockShape();

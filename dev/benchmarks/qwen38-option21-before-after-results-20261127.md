@@ -55,3 +55,18 @@ Measured on port `11235` with `SPLASH_FLASH_NEXT_MAX_MEMORY=10.8G`, `SPLASH_FLAS
 | **Expert host-step work / token (Run 1 / Run 2)** | `34.43` / `33.87 ms` | **`28.84`** / **`32.05 ms`** | **`-16.2%`** / **`-5.4%`** |
 | **Cached `11,328`-token prefill (Run 1 / Run 2)** | `1.772 s` / `1.646 s` | **`1.712 s`** / **`1.557 s`** | **`-3.4%`** / **`-5.4%`** |
 | **Cold `11,363`-token prefill (Run 2, single-shot)** | `28.344 s` (`400.9 tok/s`) | `30.751 s` (`369.5 tok/s`) | Single-shot variance (total round time: `72.40 s` vs `72.92 s`) |
+
+---
+
+## 4. Follow-Up: Streamed `Q2_0` INT8 MoE (`MOE_TILES_LOADED`) + Aliased Scratch
+
+Enabled `moe_expert_int8_q20` for streamed `Q2_0` routed expert tiles (`MOE_TILES_LOADED`, without requiring mixed-format `shexp` slices to match) via `ops::moeInt8RoutedExperts` ([`KernelSelection.cpp`](../../runtime/ops/KernelSelection.cpp), [`MoE.cpp`](../../runtime/ops/MoE.cpp), [`QwenTarget.hpp`](../../runtime/model/QwenTarget.hpp), [`RuntimeArenas.hpp`](../../runtime/model/RuntimeArenas.hpp)) and aliased `{inputCodes, inputScales, groupedCodes, groupedScales}` (`67.5 MiB`) inside `groupedInput` (`110.2 MiB`) in `TargetArena` (`0` extra prefill arena bytes).
+
+| Metric (`3648M`, `10.8G`, `2048` chunk) | Before Streamed INT8 MoE (`task-478`) | After Streamed INT8 MoE (`task-604` / `task-621` aliased) | Change |
+| :--- | :--- | :--- | :--- |
+| **Served / resident context** | `131,072` / `139,249` | **`131,072` / `139,249`** (aliased; `131,057` unaliased) | `0` bytes extra scratch (`1,531,297,792` B) |
+| **Cold `11.4K`-token prefill (`cached=0`)** | `30.751 s` (`369.5 tok/s`; `3072M`: `28.344 s` / `400.9 tok/s`) | **`26.057–26.992 s`** (**`421.2–436.2 tok/s`**) | **`+5.1%` to `+18.1%` faster cold PP** |
+| **Cached `11.4K`-token prefill** | `1.557 s` | **`0.300–0.352 s`** | **`4.4x–5.2x` faster** |
+| **Decode throughput** | `18.88 tok/s` (`52.95 ms/tok`) | **`18.50–18.97 tok/s`** (`52.71–54.06 ms/tok`) | Preserved (`50.3%–51.8%` expert hit rate) |
+| **Total probe round time** | `72.40 s` (`3072M`: `72.92 s`) | **`67.25–67.33 s`** | **`-5.1 to -5.6 s` (`-7.0%` to `-7.7%`)** |
+| **Live answer checks** | All `true` | All `true` (`cold_final_code`, `cached_final_code`, `decode_returns_code`) | Verified |

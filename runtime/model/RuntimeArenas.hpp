@@ -125,10 +125,10 @@ struct RuntimeGeometry final {
     result.target.ropeScaling = descriptor.ropeScaling;
     if (parts.kv) result.spilledKv = descriptor.capabilities.sparseKv;
     result.streamedExperts = parts.experts;
-    // Streamed experts run the staged passes on the slots their load fills
-    // (MoE::addRouted), so a start that streams them takes no int8 passes:
-    // the plan from the files and the model as it loaded decide it alike.
-    if (parts.experts) result.target.moeInt8Experts = false;
+    // Streamed experts run the int8 passes on their loaded routed tiles
+    // (MOE_TILES_LOADED in MoE::addRouted), which hold routed experts alone
+    // without shared slices, so they follow moeInt8RoutedExperts.
+    if (parts.experts) result.target.moeInt8Experts = result.target.moeInt8RoutedExperts;
     if (parts.experts || parts.kv) {
       result.prefillChunks = kPrefillGroupChunks;
     } else if (result.target.ffnKind != QwenFfnKind::SparseMoe) {
@@ -331,25 +331,64 @@ struct TargetRows final {
 // from c times a chunk's bytes on.
 class TargetArena final {
 public:
+  [[nodiscard]] static constexpr bool isMoeInt8Tensor(TargetTensor tensor) noexcept {
+    for (const auto field : {&ops::MoeScratch::inputCodes, &ops::MoeScratch::inputScales,
+                             &ops::MoeScratch::groupedCodes, &ops::MoeScratch::groupedScales})
+      for (size_t i = 0; i < ops::kMoeScratchFields.size(); ++i)
+        if (ops::kMoeScratchFields[i].buffer == field && tensor == moeScratchTensor<TargetTensor>(i)) return true;
+    return false;
+  }
+  [[nodiscard]] static constexpr uint32_t moeGroupedInputIndex() noexcept {
+    for (size_t i = 0; i < ops::kMoeScratchFields.size(); ++i)
+      if (ops::kMoeScratchFields[i].buffer == &ops::MoeScratch::groupedInput)
+        return static_cast<uint32_t>(moeScratchTensor<TargetTensor>(i));
+    return targetTensorCount;
+  }
+
+  // The int8 MoE scratch (inputCodes, inputScales, groupedCodes, groupedScales)
+  // only lives during MoE::addRouted's int8 passes, which never overlap with
+  // groupedInput (used only by routing scores and staged gather/passes), so
+  // both share the same arena region.
   [[nodiscard]] static uint64_t bytes(const QwenTargetGeometry &target, const TargetRows &shape) {
-    uint64_t total = 0;
-    for (const uint64_t value : targetTensorBytes(target, shape))
-      total = checkedAdd(total, alignUp(value), "target arena");
-    return total;
+    const auto sizes = targetTensorBytes(target, shape);
+    const uint32_t groupedIdx = moeGroupedInputIndex();
+    uint64_t total = 0, int8Bytes = 0;
+    for (uint32_t index = 0; index < sizes.size(); ++index) {
+      const auto tensor = static_cast<TargetTensor>(index);
+      if (isMoeInt8Tensor(tensor)) {
+        int8Bytes = checkedAdd(int8Bytes, alignUp(sizes[index]), "target arena");
+      } else if (index != groupedIdx) {
+        total = checkedAdd(total, alignUp(sizes[index]), "target arena");
+      }
+    }
+    const uint64_t groupedBytes = groupedIdx < sizes.size() ? alignUp(sizes[groupedIdx]) : 0;
+    return checkedAdd(total, std::max(groupedBytes, int8Bytes), "target arena");
   }
 
   TargetArena(metal::MetalBackend &backend, const metal::MetalBuffer &base, uint64_t offset,
               const QwenTargetGeometry &target, const TargetRows &shape)
       : shape_(shape) {
     const auto sizes = targetTensorBytes(target, shape);
+    const uint32_t groupedIdx = moeGroupedInputIndex();
     uint64_t cursor = offset;
     for (uint32_t index = 0; index < sizes.size(); ++index) {
+      const auto tensor = static_cast<TargetTensor>(index);
+      if (isMoeInt8Tensor(tensor) || index == groupedIdx) continue;
       if (sizes[index]) {
         tensors_[index] = backend.view(base, cursor, sizes[index]);
-        if (shape.chunks > 1 && targetGroupTensor(static_cast<TargetTensor>(index)))
+        if (shape.chunks > 1 && targetGroupTensor(tensor))
           chunkViews_[index] = groupViews(backend, base, cursor, sizes[index], shape.chunks);
       }
       cursor += alignUp(sizes[index]);
+    }
+    const uint64_t regionStart = cursor;
+    uint64_t int8Cursor = regionStart;
+    if (groupedIdx < sizes.size() && sizes[groupedIdx])
+      tensors_[groupedIdx] = backend.view(base, regionStart, sizes[groupedIdx]);
+    for (uint32_t index = 0; index < sizes.size(); ++index) {
+      if (!isMoeInt8Tensor(static_cast<TargetTensor>(index))) continue;
+      if (sizes[index]) tensors_[index] = backend.view(base, int8Cursor, sizes[index]);
+      int8Cursor += alignUp(sizes[index]);
     }
   }
 

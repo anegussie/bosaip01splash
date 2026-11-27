@@ -248,7 +248,7 @@ void addGather(metal::CommandGraph &graph, const MoeBuffers &buffers, const MoeP
 // format, which its routed and shared experts share where the plan has the
 // passes (moeInt8Experts).
 void addInt8Experts(metal::CommandGraph &graph, const MoeBuffers &buffers, const BlockMoeWeights &weights,
-                    const MoePlan &plan) {
+                    const MoePlan &plan, const metal::MetalBuffer &slots, uint32_t range) {
   const MoeShape shape = plan.shape();
   const MoeScratch &scratch = buffers.scratch;
   const uint32_t rows = plan.rows(), hidden = shape.hiddenSize, intermediate = shape.expertIntermediateSize;
@@ -264,10 +264,10 @@ void addInt8Experts(metal::CommandGraph &graph, const MoeBuffers &buffers, const
                         const metal::MetalBuffer &output) {
     graph.add(std::string("moe_expert_int8_") + p.routed.name() + "_" + name + slices,
               {scratch.groupedCodes, scratch.groupedScales, scratch.tileDescriptors, scratch.tileCount,
-               p.shared.plane0, p.shared.plane1Slot(), p.shared.meta, output, weights.slotTable,
+               p.shared.plane0, p.shared.plane1Slot(), p.shared.meta, output, slots,
                weights.expertScales},
               MoeInt8ExpertParams{k, n, shape.experts, p.routed.formatId, p.shared.formatId,
-                                  weights.chunks.floorSlots(), weights.chunks.chunkSlots(), MOE_TILES_ALL, routes},
+                                  weights.chunks.floorSlots(), weights.chunks.chunkSlots(), range, routes},
               {n / GGUF_TILE_COLUMNS, plan.maximumTiles(), 1}, {GGUF_PREFILL_INT8_THREADS, 1, 1});
     graph.addresses(weights.chunks.planes());
   };
@@ -354,9 +354,12 @@ void MoE::addRouted(metal::CommandGraph &graph, const MoeBuffers &buffers,
                     const MoeCombineConvolution *convolution) {
   const MoeGroupParams group = groupParams(plan, weights);
   if (weights.stream) {
-    addExperts(graph, buffers.scratch, weights, weights.loadSlotTable, plan, group, MOE_TILES_LOADED);
+    if (plan.configuration().int8Passes)
+      addInt8Experts(graph, buffers, weights, plan, weights.loadSlotTable, MOE_TILES_LOADED);
+    else
+      addExperts(graph, buffers.scratch, weights, weights.loadSlotTable, plan, group, MOE_TILES_LOADED);
   } else if (plan.configuration().int8Passes) {
-    addInt8Experts(graph, buffers, weights, plan);
+    addInt8Experts(graph, buffers, weights, plan, weights.slotTable, MOE_TILES_ALL);
   } else {
     addGather(graph, buffers, plan);
     addExperts(graph, buffers.scratch, weights, weights.slotTable, plan, group, MOE_TILES_ALL);
