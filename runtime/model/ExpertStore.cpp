@@ -280,6 +280,10 @@ struct ExpertStore::Impl {
     // predict its routes.
     ops::QuantizedSegment router, scalarGate;
     metal::MetalBuffer selectionBias;
+    // Online EWMA of decode read-ahead precision for this block (used / total),
+    // initialized with a mild optimistic prior so cold layers start enabled.
+    float aheadUsed = 4.0f;
+    float aheadTotal = 5.0f;
   };
   // A step's tiles (ops::MoeLoadPart): the grouping's descriptors and count.
   struct PartTiles final {
@@ -361,7 +365,7 @@ struct ExpertStore::Impl {
   }
   void readPiece(const Group &group, const Piece &piece) const;
   void stage(uint32_t block, uint32_t capacity, ExpertStoreStats::Use &use);
-  std::span<const uint32_t> predictedExperts(uint32_t rows, const RoutedRows &routed);
+  std::span<const uint32_t> predictedExperts(uint32_t rows, const RoutedRows &routed, uint32_t nextBlock);
   void planAhead(uint32_t block, std::span<const uint32_t> experts, ExpertStoreStats::Use &use);
   void startAhead();
   // The host step after a long chunk's load for `use`: block `block`'s
@@ -653,6 +657,11 @@ void ExpertStore::Impl::stage(uint32_t index, uint32_t capacity, ExpertStoreStat
       continue;
     }
     countAhead(at, piece, end);
+    if (ahead.use == &counters.uses[static_cast<size_t>(LoadUse::Decode)] && ahead.block < blocks.size()) {
+      Block &ab = blocks[ahead.block];
+      ab.aheadUsed = 0.96f * ab.aheadUsed + (routed ? 1.0f : 0.0f);
+      ab.aheadTotal = 0.96f * ab.aheadTotal + 1.0f;
+    }
     if (!routed) continue;
     taken[group.place] = 1;
     now.groups.push_back(group);
@@ -708,11 +717,12 @@ void ExpertStore::Impl::stage(uint32_t index, uint32_t capacity, ExpertStoreStat
 }
 
 // The next block's experts a step's prediction names for those of its `rows`
-// rows it routes, by their summed routing weights, the largest first. Drops
-// the low-weight tail past 68% of total predicted routing mass (always keeping
-// at least shape.expertsPerToken experts) so noisy tail predictions do not
-// saturate SSD bandwidth while preserving high decode prefetch coverage.
-std::span<const uint32_t> ExpertStore::Impl::predictedExperts(uint32_t rows, const RoutedRows &routed) {
+// rows it routes, by their summed routing weights, the largest first. Scales
+// the cumulative routing-mass cutoff adaptively by the target block's online
+// decode read-ahead precision EWMA so high-precision layers prefetch cleanly
+// while noisy layers do not saturate SSD bandwidth with unused tail reads.
+std::span<const uint32_t> ExpertStore::Impl::predictedExperts(uint32_t rows, const RoutedRows &routed,
+                                                              uint32_t nextBlock) {
   const auto *selected = static_cast<const uint32_t *>(predictionRoutes.contents());
   const auto *weights = static_cast<const float *>(predictionWeights.contents());
   const uint32_t routes = shape.routesPerToken();
@@ -737,14 +747,21 @@ std::span<const uint32_t> ExpertStore::Impl::predictedExperts(uint32_t rows, con
   std::ranges::stable_sort(predictionOrder, std::ranges::greater{},
                            [&](uint32_t expert) { return predictionSum[expert]; });
   size_t keep = predictionOrder.size();
-  if (totalWeight > 0.0 && predictionOrder.size() > shape.expertsPerToken) {
-    const double cutoff = 0.68 * totalWeight;
+  const Block &nb = blocks[nextBlock];
+  const float precision = nb.aheadTotal > 0.0f ? nb.aheadUsed / nb.aheadTotal : 0.75f;
+  // High-precision layers (>=75%) keep 0.72 mass; medium layers scale down
+  // smoothly; noisy layers (<45%) cap to the top half of expertsPerToken so
+  // they keep probing without burning SSD bandwidth.
+  const double massShare = std::clamp<double>(0.35 + 0.50 * precision, 0.45, 0.72);
+  const size_t minKeep = precision < 0.45f ? std::max<size_t>(1, shape.expertsPerToken / 2) : shape.expertsPerToken;
+  if (totalWeight > 0.0 && predictionOrder.size() > minKeep) {
+    const double cutoff = massShare * totalWeight;
     double cumulative = 0.0;
     keep = 0;
     for (const uint32_t expert : predictionOrder) {
       ++keep;
       cumulative += std::max(0.0f, predictionSum[expert]);
-      if (keep >= shape.expertsPerToken && cumulative >= cutoff) break;
+      if (keep >= minKeep && cumulative >= cutoff) break;
     }
   }
   for (const uint32_t expert : predictionOrder) predictionSum[expert] = -1;
@@ -1130,7 +1147,7 @@ void ExpertStore::Impl::load(uint32_t index, LoadUse loadUse, uint32_t rows, boo
     // last repack (readBlockAhead).
     if (predicted) {
       std::vector<uint32_t> experts;
-      for (const uint32_t expert : predictedExperts(rows, routed))
+      for (const uint32_t expert : predictedExperts(rows, routed, index + 1))
         if (blocks[index + 1].slot[expert] == kNoSlot) experts.push_back(expert);
       planAhead(index + 1, experts, use);
     }
