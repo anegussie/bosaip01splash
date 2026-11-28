@@ -886,11 +886,10 @@ RuntimeResources::create(const RuntimeResourcesConfig &config,
   };
   // The stores the plan gives the parts: the routed experts' store at its
   // cap, which starts at its floor.
-  // Single-lane runtimes use 24 cycle rows (240 staging places = 337.5 MiB on
-  // Flash-Next) instead of 32 (450 MiB), keeping prefill rounds at ~4/load
-  // while returning 112.5 MiB to resident expert cache slots.
-  const uint32_t expertCycleRows = std::clamp<uint32_t>(
-      lanes * model::ExecutionLimits::targetVerifyRows, 24u, model::ExpertStore::cycleRows());
+  // Give streamed runtimes the full 32 cycle rows (320 staging places on
+  // Flash-Next instead of 240: +80 prefetched experts/block during prefill for
+  // +41 MiB on Q2_0, cutting synchronous Round-1 SSD misses by ~38%).
+  const uint32_t expertCycleRows = model::ExpertStore::cycleRows();
   const auto storesOf = [&](const StreamedMemoryPlan &plan) {
     return model::ModelLoadOptions{.streamedTableBytes = plan.tableBytes,
                                    .expertMemoryBytes = plan.expertBytes,

@@ -788,8 +788,8 @@ std::span<const uint32_t> ExpertStore::Impl::predictedExperts(uint32_t rows, con
     // medium layers scale down smoothly; noisy layers (<45%) cap to the top
     // half of expertsPerToken. Scale the per-expert weight floor inversely with
     // rows (2.8% at 1 row down to 1.375% at 8-row verify).
-    const double massShare = std::clamp<double>(0.35 + 0.56 * precision, 0.45, 0.78);
-    const double minShare = std::min(0.028, 0.11 / std::max<uint32_t>(rows, 1u));
+    const double massShare = std::clamp<double>(0.35 + 0.52 * precision, 0.45, 0.74);
+    const double minShare = std::min(0.032, 0.125 / std::max<uint32_t>(rows, 1u));
     const double minExpertWeight = minShare * totalWeight;
     const size_t minKeep = precision < 0.45f ? std::max<size_t>(1, shape.expertsPerToken / 2) : shape.expertsPerToken;
     if (totalWeight > 0.0 && !predictionOrder.empty()) {
