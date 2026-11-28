@@ -31,8 +31,9 @@ using namespace metal;
 
 // grid (groups / GGUF_PREFILL_INT8_QUANTIZE_SIMDGROUPS, rows): simdgroup s of threadgroup (b, row) quantizes group
 // b * GGUF_PREFILL_INT8_QUANTIZE_SIMDGROUPS + s of the row by the int8-activation rule
-// (kernels/common/int8_activations.h), lane l its inputs l and 32 + l, and stores the group's scale and the scale
-// times its codes' sum.
+// (kernels/common/int8_activations.h), loading 64 bfloats as 32 coalesced bfloat2s, packing the
+// prefill_int8_position(quant_slot(e)) permutation in registers with one simd_shuffle_xor(p16, 8), and writing 16
+// coalesced uints (64 bytes) to codes.
 kernel void gguf_prefill_int8_quantize(device const bfloat *input [[buffer(0)]], device char *codes [[buffer(1)]],
                                        device float2 *scales [[buffer(2)]],
                                        constant GgufPrefillInt8QuantizeParams &p [[buffer(3)]],
@@ -42,15 +43,18 @@ kernel void gguf_prefill_int8_quantize(device const bfloat *input [[buffer(0)]],
   const uint g = tid.x * GGUF_PREFILL_INT8_QUANTIZE_SIMDGROUPS + simd_group, row = tid.y;
   if (g >= p.input_size / GGUF_PREFILL_INT8_GROUP || row >= p.rows) return;
   const ulong at = ulong(row) * p.input_size + g * GGUF_PREFILL_INT8_GROUP;
-  const bfloat b0 = input[at + lane], b1 = input[at + 32 + lane];
-  const float x0 = float(b0), x1 = float(b1);
+  const bfloat2 bf = reinterpret_cast<device const bfloat2 *>(input + at)[lane];
+  const float x0 = float(bf.x), x1 = float(bf.y);
   const Int8Block block = int8_activation_block(simd_max(max(fabs(x0), fabs(x1))));
   const int q0 = int8_activation_code(x0, block.inverse), q1 = int8_activation_code(x1, block.inverse);
-  const uint position = prefill_int8_position(quant_slot(lane));
-  codes[at + position] = char(q0);
-  codes[at + 32 + position] = char(q1);
+  const uint p16 = (uint(uchar(q0)) & 0xFFu) | ((uint(uchar(q1)) & 0xFFu) << 16);
+  const uint partner = simd_shuffle_xor(p16, 8);
+  const uint h = lane >> 4, sub = lane & 15u;
+  if (sub < 8u) {
+    reinterpret_cast<device uint *>(codes + at)[h * 8u + sub] = p16 | (partner << 8);
+  }
   const int sum = simd_sum(q0 + q1);
-  const bool finite = simd_all(!int8_activation_not_finite(b0) && !int8_activation_not_finite(b1));
+  const bool finite = simd_all(!int8_activation_not_finite(bf.x) && !int8_activation_not_finite(bf.y));
   if (lane != 0) return;
   ((device uint2 *)scales)[ulong(g) * p.storage_rows + row] =
       uint2(int8_activation_bits(block.scale, finite), int8_activation_bits(block.scale * float(sum), finite));

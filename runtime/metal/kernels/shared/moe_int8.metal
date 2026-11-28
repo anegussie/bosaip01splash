@@ -150,20 +150,23 @@ kernel void moe_expert_int8_gate_up(device const char *codes [[buffer(0)]], devi
   threadgroup_barrier(mem_flags::mem_threadgroup);
   device char *out_codes = reinterpret_cast<device char *>(output);
   device uint2 *out_scales = reinterpret_cast<device uint2 *>(output + p.scales_offset);
-  const uint position = prefill_int8_position(quant_slot(lane));
+  const uint h = lane >> 4, sub = lane & 15u;
   const ulong col_off = ulong(group.x) * GGUF_PREFILL_INT8_GROUP;
   const ulong scale_row_base = ulong(group.x) * p.routes;
   for (uint r = simd_group; r < tile.rows; r += 4u) {
-    const bfloat b0 = park[r][lane], b1 = park[r][32u + lane];
-    const float x0 = float(b0), x1 = float(b1);
+    const bfloat2 bf = reinterpret_cast<threadgroup const bfloat2 *>(park[r])[lane];
+    const float x0 = float(bf.x), x1 = float(bf.y);
     const Int8Block block = int8_activation_block(simd_max(max(fabs(x0), fabs(x1))));
     const int q0 = int8_activation_code(x0, block.inverse), q1 = int8_activation_code(x1, block.inverse);
+    const uint p16 = (uint(uchar(q0)) & 0xFFu) | ((uint(uchar(q1)) & 0xFFu) << 16);
+    const uint partner = simd_shuffle_xor(p16, 8);
     const ulong row_global = ulong(tile.first_row + r);
     const ulong at = row_global * p.output_size + col_off;
-    out_codes[at + position] = char(q0);
-    out_codes[at + 32u + position] = char(q1);
+    if (sub < 8u) {
+      reinterpret_cast<device uint *>(out_codes + at)[h * 8u + sub] = p16 | (partner << 8);
+    }
     const int sum = simd_sum(q0 + q1);
-    const bool finite = simd_all(!int8_activation_not_finite(b0) && !int8_activation_not_finite(b1));
+    const bool finite = simd_all(!int8_activation_not_finite(bf.x) && !int8_activation_not_finite(bf.y));
     if (lane == 0) {
       out_scales[scale_row_base + row_global] =
           uint2(int8_activation_bits(block.scale, finite), int8_activation_bits(block.scale * float(sum), finite));
