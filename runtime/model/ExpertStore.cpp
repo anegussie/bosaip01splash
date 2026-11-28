@@ -345,10 +345,11 @@ struct ExpertStore::Impl {
     return std::min<uint64_t>(shape.experts, uint64_t{rows} * shape.expertsPerToken);
   }
   // The places a round of a load of `rows` rows stages: all places for a
-  // cycle's load, else 3/4 of them so prefill uses fewer rounds than half
-  // staging while leaving 1/4 of places free for inter-round read-ahead.
+  // cycle's load, else 4/5 of them (256/320 on Flash-Next -> 2 rounds instead
+  // of 3, eliminating 48 empty 3rd-round host steps/dispatches per chunk while
+  // keeping 64 places free for inter-round read-ahead).
   [[nodiscard]] uint32_t roundPlaces(uint32_t rows) const noexcept {
-    return cycleLoad(rows) ? places.count : std::max<uint32_t>(1, (places.count * 3) / 4);
+    return cycleLoad(rows) ? places.count : std::max<uint32_t>(1, (places.count * 4) / 5);
   }
   [[nodiscard]] bool streams(uint32_t block) const noexcept { return sizes[blocks[block].size].streams; }
   // Adds to `reads` a group of the experts from `expert` on at the places
