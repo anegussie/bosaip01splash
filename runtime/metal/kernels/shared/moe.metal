@@ -368,11 +368,16 @@ inline void moe_group_routes_phase(
   }
   if (thread_index == 0) {
     const uint live = resident + total.y;
-    *tile_count = MoeTileCount{live, resident,
+    const uint shared_count = resident - total.x;
+    const uint int8_gate_up_columns = params.gate_up_columns / 2;
+    *tile_count = MoeTileCount{live, resident, total.x,
                                {params.gate_up_columns, live, 1}, {params.down_columns, live, 1},
                                {params.gate_up_columns, resident, 1}, {params.down_columns, resident, 1},
-                               {params.gate_up_columns, total.y, 1},
-                               {params.down_columns, total.y, 1}};
+                               {params.gate_up_columns, total.y, 1}, {params.down_columns, total.y, 1},
+                               {params.gate_up_columns, shared_count, 1}, {params.down_columns, shared_count, 1},
+                               {params.down_columns, total.x, 1},
+                               {int8_gate_up_columns, live, 1}, {int8_gate_up_columns, resident, 1},
+                               {int8_gate_up_columns, total.y, 1}, {int8_gate_up_columns, total.x, 1}};
   }
 }
 
@@ -444,8 +449,8 @@ kernel void moe_gather_rows(device const bfloat *input [[buffer(0)]],
                             constant MoeGatherParams &params [[buffer(5)]],
                             uint2 group [[threadgroup_position_in_grid]],
                             uint thread_index [[thread_index_in_threadgroup]]) {
-  const uint first_tile = params.tiles == MOE_TILES_LOADED ? tile_count[1] : 0u;
-  const uint end_tile = params.tiles == MOE_TILES_RESIDENT ? tile_count[1] : tile_count[0];
+  const uint first_tile = moe_first_tile(tile_count, params.tiles);
+  const uint end_tile = moe_end_tile(tile_count, params.tiles);
   const uint t = first_tile + group.x;
   if (t >= end_tile)
     return;

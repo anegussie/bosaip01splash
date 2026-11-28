@@ -105,40 +105,55 @@ static_assert(sizeof(MoeGroupParams) == 32,
 // passes over all of them, over the resident ones and over the others
 // (MOE_TILES_*), which they read as an indirect dispatch
 // (MTLDispatchThreadgroupsIndirectArguments) to launch the live tiles alone.
-// Tiles [0, resident) are the resident experts' and then the shared slices',
-// and tiles [resident, tiles) those of the experts whose slot-table entry is
+// Tiles [0, resident_routed) are the resident routed experts',
+// [resident_routed, resident) are the shared slices', and
+// [resident, tiles) are those of the experts whose slot-table entry is
 // MOE_SLOT_ABSENT, which a load brings.
 struct MoeTileCount {
   uint32_t tiles;
   uint32_t resident;
+  uint32_t resident_routed;
   uint32_t gate_up_grid[3];
   uint32_t down_grid[3];
   uint32_t resident_gate_up_grid[3];
   uint32_t resident_down_grid[3];
   uint32_t loaded_gate_up_grid[3];
   uint32_t loaded_down_grid[3];
+  uint32_t shared_gate_up_grid[3];
+  uint32_t shared_down_grid[3];
+  uint32_t resident_routed_down_grid[3];
+  uint32_t int8_gate_up_grid[3];
+  uint32_t int8_resident_gate_up_grid[3];
+  uint32_t int8_loaded_gate_up_grid[3];
+  uint32_t int8_resident_routed_gate_up_grid[3];
 };
 
-static_assert(sizeof(MoeTileCount) == 80,
-              "the MoE tile count is 80 bytes on both sides");
+static_assert(sizeof(MoeTileCount) == 168,
+              "the MoE tile count is 168 bytes on both sides");
 
 // The tiles an expert pass runs (MoeTileCount): all of them, the resident
-// experts' and shared slices', or the others; tile moe_first_tile + y runs at
-// y of the pass's grid, below moe_end_tile.
+// experts' and shared slices', the loaded ones, the resident routed experts
+// alone, or the shared slices alone; tile moe_first_tile + y runs at y of the
+// pass's grid, below moe_end_tile.
 #define MOE_TILES_ALL 0u
 #define MOE_TILES_RESIDENT 1u
 #define MOE_TILES_LOADED 2u
+#define MOE_TILES_RESIDENT_ROUTED 3u
+#define MOE_TILES_SHARED 4u
 // A branch, not a select: the other ranges' tile loads do not wait for a
 // load of the count.
 template <typename Count>
 inline uint32_t moe_first_tile(Count count, uint32_t tiles) {
   uint32_t first = 0;
   if (tiles == MOE_TILES_LOADED) first = count[1];
+  else if (tiles == MOE_TILES_SHARED) first = count[2];
   return first;
 }
 template <typename Count>
 inline uint32_t moe_end_tile(Count count, uint32_t tiles) {
-  return count[tiles == MOE_TILES_RESIDENT ? 1 : 0];
+  if (tiles == MOE_TILES_RESIDENT_ROUTED) return count[2];
+  if (tiles == MOE_TILES_RESIDENT || tiles == MOE_TILES_SHARED) return count[1];
+  return count[0];
 }
 
 // A slot-table entry (ops::BlockMoeWeights::slotTable) of an expert no slot
