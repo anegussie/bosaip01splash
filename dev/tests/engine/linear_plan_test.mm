@@ -269,7 +269,7 @@ void prefillInt8Rule() {
         const LinearPlan plan = linear.plan(*p, rows, epilogue), off = bf16.plan(*p, rows, epilogue);
         const LinearTile bf16Tile = rows <= kMaximumDecodeTileRows ? LinearTile::GgufStaged : LinearTile::GgufPrefill;
         const LinearTile tile =
-            bf16Tile == LinearTile::GgufPrefill && int8 && p != &mixed ? LinearTile::GgufPrefillInt8 : bf16Tile;
+            bf16Tile == LinearTile::GgufPrefill && int8 ? LinearTile::GgufPrefillInt8 : bf16Tile;
         const uint32_t k = plan.workload().matrix.inputSize;
         if (plan.configuration().tile != tile ||
             (tile == LinearTile::GgufPrefillInt8 &&

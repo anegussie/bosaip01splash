@@ -1412,7 +1412,7 @@ void prefillInt8(MetalBackend &backend, const Linear &linear) {
       if (!sameRows(alone.output, 0, out.output, rows - last, last, columns)) fail(own + ": differ from the chunk's");
     }
   };
-  for (const Fmt f : {Fmt(GGUF_FMT_Q20), Fmt(GGUF_FMT_AF4G64), Fmt(GGUF_FMT_AF5G64), Fmt(GGUF_FMT_Q80)}) {
+  for (const Fmt f : {Fmt(GGUF_FMT_Q20), Fmt(GGUF_FMT_Q3K), Fmt(GGUF_FMT_IQ4XS), Fmt(GGUF_FMT_AF4G64), Fmt(GGUF_FMT_AF5G64), Fmt(GGUF_FMT_Q80)}) {
     for (const uint32_t K : {1024u, 5120u}) {
       const Tensor t = tensor(backend, f, 1024, K);
       const Projection p = projection({&t}, t.N);
@@ -1521,7 +1521,7 @@ void prefillInt8(MetalBackend &backend, const Linear &linear) {
   }
   // A NaN in one row's inputs and an infinity in another's leave those rows' outputs not finite, on this tile as on
   // the bf16 tile, and every other row's as they were.
-  for (const Fmt f : {Fmt(GGUF_FMT_Q20), Fmt(GGUF_FMT_AF4G64), Fmt(GGUF_FMT_AF5G64), Fmt(GGUF_FMT_Q80)}) {
+  for (const Fmt f : {Fmt(GGUF_FMT_Q20), Fmt(GGUF_FMT_Q3K), Fmt(GGUF_FMT_IQ4XS), Fmt(GGUF_FMT_AF4G64), Fmt(GGUF_FMT_AF5G64), Fmt(GGUF_FMT_Q80)}) {
     constexpr uint32_t K = 1024, kRows = 136, kNaNRow = 3, kInfiniteRow = 70;
     const Tensor t = tensor(backend, f, 256, K);
     const Projection p = projection({&t}, t.N);
@@ -1738,7 +1738,7 @@ void prefillInt8Edges(MetalBackend &backend, const Linear &linear) {
     if (tileOf(alone, 168) != LinearTile::GgufPrefillInt8 || tileOf(alone, 65) != LinearTile::GgufPrefillInt8)
       fail("planner: Q8_0 alone past 64 rows is not on the int8 tile");
     if (tileOf(alone, 64) == LinearTile::GgufPrefillInt8) fail("planner: Q8_0 at 64 rows is on the int8 tile");
-    if (tileOf(mixed, 168) == LinearTile::GgufPrefillInt8) fail("planner: Q8_0 beside Q4_K is on the int8 tile");
+    if (tileOf(mixed, 168) != LinearTile::GgufPrefillInt8) fail("planner: Q8_0 beside Q4_K is not on the int8 tile");
     if (tileOf(besideFloats, 168) != LinearTile::GgufPrefillInt8)
       fail("planner: Q8_0 beside F32 rows is not on the int8 tile");
   }
@@ -2094,9 +2094,9 @@ void stagedGather(MetalBackend &backend) {
 
 // Each buffer the token gathers reach, at its extent and one element short:
 // the rows' token ids and bf16 output rows, every token's native blocks (of
-// Q8_0, PQ2_0, MLX's af4g64 and nvfp4, BF16 and F16), BF16 and F16 rows of
-// Flash-Next's 160 PLE values, and the rotation signs of a rotated PQ2_0
-// table.
+// Q8_0, PQ2_0, PTQ1_0, MLX's af4g64 and nvfp4, BF16 and F16), BF16 and F16
+// rows of Flash-Next's 160 PLE values, and the rotation signs of rotated
+// PQ2_0 and PTQ1_0 tables.
 void gatherExtents(MetalBackend &backend) {
   constexpr uint32_t kVocabulary = 64, kHidden = 1024, kRows = 9;
   const MetalBuffer tokens = test::sharedBuffer(backend, kRows * 4),
@@ -2109,11 +2109,11 @@ void gatherExtents(MetalBackend &backend) {
     });
   };
   std::vector<EmbeddingWeights> tables;
-  for (const Fmt f : {Q80, PQ20, Fmt(GGUF_FMT_AF4G64), NVFP4, BF16, F16}) {
+  for (const Fmt f : {Q80, PQ20, PTQ10, Fmt(GGUF_FMT_AF4G64), NVFP4, BF16, F16}) {
     const QuantFormat &format = kQuantFormats[f];
     const uint64_t rowBytes = uint64_t{kHidden} / format.block_elements * format.block_bytes;
     EmbeddingWeights table(kVocabulary, kHidden, StoredRows(test::sharedBuffer(backend, kVocabulary * rowBytes), f));
-    if (f == PQ20) table.rotation.signs = test::sharedBuffer(backend, kHidden);
+    if (f == PQ20 || f == PTQ10) table.rotation.signs = test::sharedBuffer(backend, kHidden);
     requireTableExtent(table.rows().rows, kVocabulary * rowBytes, format.block_bytes, "token table",
                        [&](const MetalBuffer &rows) {
                          EmbeddingWeights changed(kVocabulary, kHidden, StoredRows(rows, f));

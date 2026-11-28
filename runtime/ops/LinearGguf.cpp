@@ -467,13 +467,16 @@ void Linear::addGgufPrefillInt8(metal::CommandGraph &graph, const LinearBuffers 
   const LinearWorkload w = plan.workload();
   const auto [n, k] = w.matrix;
   const uint32_t storage = plan.storageRows();
-  for (const QuantizedSegment &s : p.blocks().segments)
-    if (!quant_prefill_int8_format(s.formatId))
-      throw std::invalid_argument(std::string("the int8 prefill tile does not take ") + s.name() + " weights");
   if (b.prepared.layout != LinearInput::PrefillInt8 || !b.prepared.source.sameView(b.input))
     addGgufPrefillInt8Quantize(graph, b.input, b.scratch.input, b.scratch.sums, k, w.rows, storage);
-  const std::string epilogue(1, epilogueSuffix(w.epilogue));
+  const char epilogueChar = epilogueSuffix(w.epilogue);
+  const std::string epilogue(1, epilogueChar);
+  std::vector<const QuantizedSegment *> bf16Segments;
   for (const QuantizedSegment &s : p.blocks().segments) {
+    if (!quant_prefill_int8_format(s.formatId)) {
+      bf16Segments.push_back(&s);
+      continue;
+    }
     const uint32_t columnTiles = s.outputSize / GGUF_TILE_COLUMNS;
     const bool staged128 = s.formatId == GGUF_FMT_Q3K || s.formatId == GGUF_FMT_IQ4XS;
     const uint32_t segRows = staged128 ? 128u : GGUF_PREFILL_INT8_ROWS;
@@ -486,6 +489,47 @@ void Linear::addGgufPrefillInt8(metal::CommandGraph &graph, const LinearBuffers 
                                     columnTiles},
               {GGUF_PREFILL_INT8_WALK, (columnTiles * segRowTiles + GGUF_PREFILL_INT8_WALK - 1) / GGUF_PREFILL_INT8_WALK, 1},
               {threads, 1, 1});
+  }
+  if (bf16Segments.empty()) return;
+  const uint32_t rowTiles = storage / GGUF_PREFILL_ROWS;
+  if (w.epilogue == LinearEpilogue::None && !p.planeInputs()) {
+    std::vector<uint32_t> formats;
+    for (const QuantizedSegment *s : bf16Segments)
+      if (std::find(formats.begin(), formats.end(), s->formatId) == formats.end()) formats.push_back(s->formatId);
+    for (const uint32_t format : formats) {
+      std::vector<const QuantizedSegment *> group;
+      for (const QuantizedSegment *s : bf16Segments)
+        if (s->formatId == format) group.push_back(s);
+      if (group.size() > kFusedSegments) throw std::invalid_argument("a block prefill takes at most three segments");
+      GgufPrefillSegmentsParams params{k, w.rows, n, {0, 0, 0}, {0, 0, 0}};
+      std::vector<metal::MetalBuffer> bindings{b.input};
+      uint32_t columns = 0;
+      for (size_t i = 0; i < kFusedSegments; ++i) {
+        const QuantizedSegment &s = *group[std::min(i, group.size() - 1)];
+        if (i < group.size()) {
+          params.cols[i] = s.outputSize;
+          params.offset[i] = s.columnOffset;
+          columns += s.outputSize;
+        }
+        bindings.insert(bindings.end(), {s.plane0, s.plane1Slot(), s.meta});
+      }
+      bindings.push_back(b.output);
+      graph.add(prefillKernel(group.front()->name(), epilogueChar), std::move(bindings), params,
+                {rowTiles, columns / GGUF_TILE_COLUMNS, 1}, {GGUF_PREFILL_THREADS, 1, 1});
+    }
+    return;
+  }
+  for (const QuantizedSegment *sp : bf16Segments) {
+    const QuantizedSegment &s = *sp;
+    std::vector<metal::MetalBuffer> bindings{b.input, s.plane0, s.plane1Slot(), s.meta, b.output};
+    if (w.epilogue != LinearEpilogue::None) bindings.push_back(epilogueInput(b, w.epilogue));
+    const GgufPrefillParams params{k, w.rows, n, s.columnOffset};
+    const metal::DispatchSize groups{rowTiles, s.outputSize / GGUF_TILE_COLUMNS, 1};
+    if (p.planeInputs())
+      graph.add(leadingInputsInstance(prefillKernel(s.name(), epilogueChar)), std::move(bindings),
+                GgufPrefillLeadingParams{params, p.planeInputs()}, groups, {GGUF_PREFILL_THREADS, 1, 1});
+    else
+      graph.add(prefillKernel(s.name(), epilogueChar), std::move(bindings), params, groups, {GGUF_PREFILL_THREADS, 1, 1});
   }
 }
 

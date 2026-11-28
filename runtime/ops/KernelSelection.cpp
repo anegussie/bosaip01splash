@@ -250,7 +250,7 @@ UnitFormats unitFormats(std::span<const Projection *const> projections) noexcept
   UnitFormats unit;
   FormatClassifier classes;
   uint32_t bits = 0, count = 0;
-  bool decodeInt8 = true, prefillInt8 = true, quantized = false;
+  bool decodeInt8 = true, prefillInt8 = false, quantized = false;
   for (const Projection *p : projections) {
     if (!p) continue;
     bits += p->shape().weightBits16, ++count;
@@ -259,7 +259,7 @@ UnitFormats unitFormats(std::span<const Projection *const> projections) noexcept
       unit.registerTakes &= quant_register_tensor(s.formatId, s.inputSize);
       classes.add(s.formatId);
       decodeInt8 &= static_cast<bool>(p->rotation) && quant_decode_int8_format(s.formatId);
-      prefillInt8 &= quant_prefill_int8_format(s.formatId);
+      prefillInt8 |= quant_prefill_int8_format(s.formatId);
       quantized = true;
     }
   }
