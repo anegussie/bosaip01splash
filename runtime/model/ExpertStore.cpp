@@ -38,7 +38,7 @@ constexpr uint32_t kNoSlot = UINT32_MAX;
 // the SSD's full bandwidth, and a piece takes about 280 us, a quarter of
 // what it takes on eighteen.
 constexpr uint64_t kDecodeAheadPieceBytes = 256 << 10;
-constexpr uint64_t kPrefillAheadPieceBytes = 512 << 10;
+constexpr uint64_t kPrefillAheadPieceBytes = 1536 << 10;
 constexpr unsigned kDecodeAheadReaders = 8;
 constexpr unsigned kPrefillAheadReaders = 14;
 // The rows a load stages its experts for in one round (Impl::cycleLoad),
