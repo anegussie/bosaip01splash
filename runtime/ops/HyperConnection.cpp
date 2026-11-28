@@ -91,7 +91,7 @@ PreparedInput HyperConnection::addMix(metal::CommandGraph &graph, metal::MetalBu
   requireBytes(mixed, bfloat16Bytes(rows, shape.hidden), "hyper-connection mix");
   if (layout == LinearInput::Plain) {
     graph.add("hyper_connection_mix", {std::move(normalized), std::move(gate), std::move(mixed)},
-              hyperParams(shape, rows), {rows, groups(shape.hidden), 1}, {kThreads, 1, 1});
+              hyperParams(shape, rows), {rows, groups(shape.hidden), 1}, {kThreads / 4, 1, 1});
     return {};
   }
   // Each threadgroup writes whole spans of its 256 values.

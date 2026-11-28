@@ -1,3 +1,4 @@
+#pragma clang fp reassociate(off)
 #include "metal/abi/HyperConnection.h"
 #include "metal/abi/KernelABI.h"
 #include "metal/kernels/common/activation.h"
@@ -39,7 +40,9 @@ inline void hyper_table16_write(device bfloat *table, device float *sums, uint w
 // preparation.
 constant constexpr uint kNormHidden = HYPER_CONNECTION_NORM_HIDDEN;
 constant constexpr uint kNormValues = kNormHidden / kRowThreads; // per thread and stream
-static_assert(kNormHidden % kRowThreads == 0, "a thread's values per stream are whole");
+constant constexpr uint kNormPairs = kNormValues / 2;
+static_assert(kNormHidden % kRowThreads == 0 && kNormValues % 2 == 0,
+              "a thread's values per stream are whole pairs");
 
 // Prefill's rows, and a mix that injects nothing: a threadgroup of
 // kRowThreads threads per row; each thread holds its values of every stream.
@@ -48,28 +51,37 @@ inline void hyper_norm_loaded_row(device const float *streams, device const floa
                                   device float *weights, constant HyperConnectionParams &p, uint row, uint tid,
                                   uint lane, uint sg, threadgroup float *scratch) {
   if (row >= p.rows) return;
-  const uint width = kStreams * kNormHidden;
-  device const float *x = streams + ulong(row) * width;
-  float xs[kStreams][kNormValues];
+  const uint hidden2 = kNormHidden / 2, width2 = kStreams * hidden2;
+  device const float2 *x = reinterpret_cast<device const float2 *>(streams) + ulong(row) * width2;
+  device const float2 *norm2 = reinterpret_cast<device const float2 *>(norm);
+  device const float2 *inject2 = reinterpret_cast<device const float2 *>(inject);
+  float2 xs[kStreams][kNormPairs];
   for (uint s = 0; s < kStreams; ++s)
-    for (uint i = 0; i < kNormValues; ++i) xs[s][i] = x[s * kNormHidden + tid + i * kRowThreads];
+    for (uint i = 0; i < kNormPairs; ++i) xs[s][i] = x[s * hidden2 + tid + i * kRowThreads];
   float sums[kStreams] = {0.0f, 0.0f, 0.0f, 0.0f};
   for (uint s = 0; s < kStreams; ++s)
-    for (uint i = 0; i < kNormValues; ++i) sums[s] += xs[s][i] * xs[s][i];
+    for (uint i = 0; i < kNormPairs; ++i) {
+      sums[s] += xs[s][i].x * xs[s][i].x;
+      sums[s] += xs[s][i].y * xs[s][i].y;
+    }
   reduce_streams(sums, kStreams, scratch, lane, sg);
   float scale[kStreams];
   for (uint s = 0; s < kStreams; ++s) scale[s] = rsqrt(sums[s] / kNormHidden + kRmsEpsilon);
   float dots[kStreams] = {0.0f, 0.0f, 0.0f, 0.0f};
-  device bfloat *out = normalized + ulong(row) * width;
+  device bfloat2 *out = reinterpret_cast<device bfloat2 *>(normalized) + ulong(row) * width2;
   for (uint s = 0; s < kStreams; ++s) {
-    float ns[kNormValues];
-    for (uint i = 0; i < kNormValues; ++i) ns[i] = norm[s * kNormHidden + tid + i * kRowThreads];
-    for (uint i = 0; i < kNormValues; ++i) {
-      const uint c = s * kNormHidden + tid + i * kRowThreads;
-      const float v = xs[s][i] * scale[s] * ns[i];
-      out[c] = bfloat(v);
+    float2 ns[kNormPairs];
+    for (uint i = 0; i < kNormPairs; ++i) ns[i] = norm2[s * hidden2 + tid + i * kRowThreads];
+    for (uint i = 0; i < kNormPairs; ++i) {
+      const uint c = s * hidden2 + tid + i * kRowThreads;
+      const float2 v = xs[s][i] * scale[s] * ns[i];
+      out[c] = bfloat2(v);
       if (p.inject)
-        for (uint j = 0; j < kStreams; ++j) dots[j] += inject[ulong(j) * width + c] * v;
+        for (uint j = 0; j < kStreams; ++j) {
+          const float2 w = inject2[ulong(j) * width2 + c];
+          dots[j] += w.x * v.x;
+          dots[j] += w.y * v.y;
+        }
     }
   }
   if (!p.inject) return;
@@ -90,12 +102,16 @@ inline void hyper_norm_quarter_row(device const float *streams, device const flo
                                    threadgroup float *scales) {
   if (row >= p.rows) return;
   const uint q = thread_id / kRowThreads, tid = thread_id % kRowThreads;
-  const uint width = kStreams * kNormHidden;
-  device const float *x = streams + ulong(row) * width;
-  float mine[kNormValues];
-  for (uint i = 0; i < kNormValues; ++i) mine[i] = x[q * kNormHidden + tid + i * kRowThreads];
+  const uint hidden2 = kNormHidden / 2, width2 = kStreams * hidden2;
+  device const float2 *x = reinterpret_cast<device const float2 *>(streams) + ulong(row) * width2;
+  device const float2 *norm2 = reinterpret_cast<device const float2 *>(norm);
+  float2 mine[kNormPairs];
+  for (uint i = 0; i < kNormPairs; ++i) mine[i] = x[q * hidden2 + tid + i * kRowThreads];
   float sum = 0.0f;
-  for (uint i = 0; i < kNormValues; ++i) sum += mine[i] * mine[i];
+  for (uint i = 0; i < kNormPairs; ++i) {
+    sum += mine[i].x * mine[i].x;
+    sum += mine[i].y * mine[i].y;
+  }
   // The threadgroup's simdgroup `simdgroup` is quarter q's simdgroup
   // simdgroup % kSimdgroups.
   sum = simd_sum(sum);
@@ -107,29 +123,30 @@ inline void hyper_norm_quarter_row(device const float *streams, device const flo
     scales[q] = rsqrt(total / kNormHidden + kRmsEpsilon);
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
-  device bfloat *out = normalized + ulong(row) * width;
+  device bfloat2 *out = reinterpret_cast<device bfloat2 *>(normalized) + ulong(row) * width2;
   float dot = 0.0f;
   if (!p.inject) {
-    for (uint i = 0; i < kNormValues; ++i) {
-      const uint c = q * kNormHidden + tid + i * kRowThreads;
-      out[c] = bfloat(mine[i] * scales[q] * norm[c]);
+    for (uint i = 0; i < kNormPairs; ++i) {
+      const uint c = q * hidden2 + tid + i * kRowThreads;
+      out[c] = bfloat2(mine[i] * scales[q] * norm2[c]);
     }
   } else {
-    device const float *w = inject + ulong(q) * width;
+    device const float2 *w = reinterpret_cast<device const float2 *>(inject) + ulong(q) * width2;
     for (uint s = 0; s < kStreams; ++s) {
       const float scale = scales[s];
-      float xv[kNormValues], ns[kNormValues], ws[kNormValues];
-      for (uint i = 0; i < kNormValues; ++i) {
-        const uint c = s * kNormHidden + tid + i * kRowThreads;
+      float2 xv[kNormPairs], ns[kNormPairs], ws[kNormPairs];
+      for (uint i = 0; i < kNormPairs; ++i) {
+        const uint c = s * hidden2 + tid + i * kRowThreads;
         xv[i] = x[c];
-        ns[i] = norm[c];
+        ns[i] = norm2[c];
         ws[i] = w[c];
       }
-      for (uint i = 0; i < kNormValues; ++i) {
-        const uint c = s * kNormHidden + tid + i * kRowThreads;
-        const float v = xv[i] * scale * ns[i];
-        if (s == q) out[c] = bfloat(v);
-        dot += ws[i] * v;
+      for (uint i = 0; i < kNormPairs; ++i) {
+        const uint c = s * hidden2 + tid + i * kRowThreads;
+        const float2 v = xv[i] * scale * ns[i];
+        if (s == q) out[c] = bfloat2(v);
+        dot += ws[i].x * v.x;
+        dot += ws[i].y * v.y;
       }
     }
   }
@@ -198,20 +215,34 @@ kernel void hyper_connection_low_table16(device const bfloat *low [[buffer(0)]],
 }
 
 // The block's input: the mean over the streams of the normalized streams
-// gated by sigmoid of the mix's up projection.
+// gated by sigmoid of the mix's up projection (64 threads/TG, 4 elements/thread).
 kernel void hyper_connection_mix(device const bfloat *normalized [[buffer(0)]],
                                  device const bfloat *gate [[buffer(1)]],
                                  device bfloat *mixed [[buffer(2)]],
                                  constant HyperConnectionParams &p [[buffer(3)]],
                                  uint2 group [[threadgroup_position_in_grid]],
                                  uint tid [[thread_index_in_threadgroup]]) {
-  const uint row = group.x, d = group.y * kRowThreads + tid;
+  const uint row = group.x, d = group.y * kRowThreads + tid * 4u;
   if (row >= p.rows || d >= p.hidden) return;
   const ulong base = ulong(row) * p.streams * p.hidden + d;
-  float sum = 0.0f;
-  for (uint s = 0; s < p.streams; ++s)
-    sum += float(normalized[base + s * p.hidden]) * splash_sigmoid(float(gate[base + s * p.hidden]));
-  mixed[ulong(row) * p.hidden + d] = bfloat(sum / p.streams);
+  if (d + 4u <= p.hidden && (p.hidden & 3u) == 0u) {
+    float4 sum = float4(0.0f);
+    for (uint s = 0; s < p.streams; ++s) {
+      const ulong off = base + ulong(s) * p.hidden;
+      const float4 n = float4(*reinterpret_cast<device const bfloat4 *>(normalized + off));
+      const float4 g = float4(*reinterpret_cast<device const bfloat4 *>(gate + off));
+      sum += n * float4(splash_sigmoid(g.x), splash_sigmoid(g.y), splash_sigmoid(g.z), splash_sigmoid(g.w));
+    }
+    *reinterpret_cast<device bfloat4 *>(mixed + ulong(row) * p.hidden + d) = bfloat4(sum / float(p.streams));
+    return;
+  }
+  for (uint i = 0; i < 4u && d + i < p.hidden; ++i) {
+    float sum = 0.0f;
+    for (uint s = 0; s < p.streams; ++s)
+      sum += float(normalized[base + i + ulong(s) * p.hidden]) *
+             splash_sigmoid(float(gate[base + i + ulong(s) * p.hidden]));
+    mixed[ulong(row) * p.hidden + d + i] = bfloat(sum / p.streams);
+  }
 }
 
 // The mix with the next projection's table (a decode step's rows, hidden a
