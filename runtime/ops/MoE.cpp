@@ -261,17 +261,23 @@ void addInt8Experts(metal::CommandGraph &graph, const MoeBuffers &buffers, const
             {plan.maximumTiles(), hidden / 256, 1});
   const std::string slices(compiledRouting(shape).slicesSuffix);
   const auto pass = [&](const char *name, const BlockExpertProjection &p, uint32_t k, uint32_t n,
+                        const metal::MetalBuffer &inCodes, const metal::MetalBuffer &inScales, uint32_t scalesOffset,
                         const metal::MetalBuffer &output) {
     graph.add(std::string("moe_expert_int8_") + p.routed.name() + "_" + name + slices,
-              {scratch.groupedCodes, scratch.groupedScales, scratch.tileDescriptors, scratch.tileCount,
+              {inCodes, inScales, scratch.tileDescriptors, scratch.tileCount,
                p.shared.plane0, p.shared.plane1Slot(), p.shared.meta, output, slots,
                weights.expertScales},
               MoeInt8ExpertParams{k, n, shape.experts, p.routed.formatId, p.shared.formatId,
-                                  weights.chunks.floorSlots(), weights.chunks.chunkSlots(), range, routes},
+                                  weights.chunks.floorSlots(), weights.chunks.chunkSlots(), range, routes,
+                                  scalesOffset},
               {n / GGUF_TILE_COLUMNS, plan.maximumTiles(), 1}, {GGUF_PREFILL_INT8_THREADS, 1, 1});
     graph.addresses(weights.chunks.planes());
   };
   if (weights.gate.routed.formatId == weights.up.routed.formatId) {
+    // Fused gate + up + int8-quantize writes int8 codes at expertIntermediate+0
+    // and float2 scales at expertIntermediate+scalesOffset, eliminating the
+    // intermediate bf16 round-trip and separate gguf_prefill_int8_quantize pass.
+    const uint32_t scalesOffset = static_cast<uint32_t>((uint64_t{routes} * intermediate + 255u) & ~255ULL);
     graph.add(std::string("moe_expert_int8_") + weights.gate.routed.name() + "_gate_up" + slices,
               {scratch.groupedCodes, scratch.groupedScales, scratch.tileDescriptors, scratch.tileCount,
                weights.gate.shared.plane0, weights.gate.shared.plane1Slot(), weights.gate.shared.meta,
@@ -280,16 +286,21 @@ void addInt8Experts(metal::CommandGraph &graph, const MoeBuffers &buffers, const
               MoeInt8GateUpParams{hidden, intermediate, shape.experts, weights.gate.routed.formatId,
                                   weights.gate.shared.formatId, weights.up.routed.formatId,
                                   weights.up.shared.formatId, weights.chunks.floorSlots(), weights.chunks.chunkSlots(),
-                                  range, routes},
-              {intermediate / (GGUF_TILE_COLUMNS / 2), plan.maximumTiles(), 1}, {GGUF_PREFILL_INT8_THREADS, 1, 1});
+                                  range, routes, scalesOffset},
+              {intermediate / GGUF_TILE_COLUMNS, plan.maximumTiles(), 1}, {128u, 1, 1});
     graph.addresses(weights.chunks.planes());
+    pass("down", weights.down, intermediate, hidden, scratch.expertIntermediate, scratch.expertIntermediate,
+         scalesOffset, scratch.expertOutput);
   } else {
-    pass("gate", weights.gate, hidden, intermediate, scratch.expertIntermediate);
-    pass("up", weights.up, hidden, intermediate, scratch.expertIntermediate);
+    pass("gate", weights.gate, hidden, intermediate, scratch.groupedCodes, scratch.groupedScales, 0,
+         scratch.expertIntermediate);
+    pass("up", weights.up, hidden, intermediate, scratch.groupedCodes, scratch.groupedScales, 0,
+         scratch.expertIntermediate);
+    addGgufPrefillInt8Quantize(graph, scratch.expertIntermediate, scratch.groupedCodes, scratch.groupedScales,
+                               intermediate, routes, routes);
+    pass("down", weights.down, intermediate, hidden, scratch.groupedCodes, scratch.groupedScales, 0,
+         scratch.expertOutput);
   }
-  addGgufPrefillInt8Quantize(graph, scratch.expertIntermediate, scratch.groupedCodes, scratch.groupedScales,
-                             intermediate, routes, routes);
-  pass("down", weights.down, intermediate, hidden, scratch.expertOutput);
 }
 
 // The combine, or with `convolution` the combine running a verify step's

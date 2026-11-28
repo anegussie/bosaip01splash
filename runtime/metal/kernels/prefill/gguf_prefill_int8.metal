@@ -29,13 +29,6 @@
 #include <metal_stdlib>
 using namespace metal;
 
-// The schedule position, within its 32-group, of the input at slot s of the planes: chunk c = s >> 3 is lane half
-// c >> 1 and step half c & 1; chunk slot u holds step bit (u >> 1) & 1 and lane input ((u & 1) << 1) | (u >> 2).
-inline uint prefill_int8_position(uint slot) {
-  const uint c = slot >> 3, u = slot & 7;
-  return 16 * (c >> 1) + 4 * (2 * (c & 1) + ((u >> 1) & 1)) + (((u & 1) << 1) | (u >> 2));
-}
-
 // grid (groups / GGUF_PREFILL_INT8_QUANTIZE_SIMDGROUPS, rows): simdgroup s of threadgroup (b, row) quantizes group
 // b * GGUF_PREFILL_INT8_QUANTIZE_SIMDGROUPS + s of the row by the int8-activation rule
 // (kernels/common/int8_activations.h), lane l its inputs l and 32 + l, and stores the group's scale and the scale

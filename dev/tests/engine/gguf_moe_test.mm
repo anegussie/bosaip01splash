@@ -1056,8 +1056,26 @@ MoeRun runPlan(MetalBackend &backend, const Model &m, Buffers &b, const MoePlan 
             lo = std::min(lo, uc * sc);
             hi = std::max(hi, uc * sc);
           }
-        const double slack = std::ldexp(std::max(std::fabs(lo), std::fabs(hi)), -8) + 1e-7;
-        const float got = float(intermediate[uint64_t{grouped} * kIntermediate + n]);
+        const bool fusedInt8Quant = int8 && gateUpPasses == 1;
+        float got = 0.0f;
+        double quantSlack = 0.0;
+        if (fusedInt8Quant) {
+          const uint32_t totalRoutes = rows * kRoutes;
+          const uint32_t scalesOffset = static_cast<uint32_t>((uint64_t{totalRoutes} * kIntermediate + 255u) & ~255ULL);
+          const auto *raw = static_cast<const uint8_t *>(b.moe.scratch.expertIntermediate.contents());
+          const auto *qcodes = reinterpret_cast<const int8_t *>(raw);
+          const auto *qscales = reinterpret_cast<const float *>(raw + scalesOffset);
+          const uint32_t g = n / 64u, lane = n & 31u;
+          const uint32_t slot = quant_slot(lane);
+          const uint32_t c = slot >> 3, u = slot & 7u;
+          const uint32_t pos = 16u * (c >> 1) + 4u * (2u * (c & 1u) + ((u >> 1) & 1u)) + (((u & 1u) << 1) | (u >> 2));
+          const float qscale = qscales[(uint64_t{g} * totalRoutes + grouped) * 2u];
+          got = qscale * float(qcodes[uint64_t{grouped} * kIntermediate + g * 64u + (n & 32u) + pos]);
+          quantSlack = 0.55 * std::fabs(double(qscale));
+        } else {
+          got = float(intermediate[uint64_t{grouped} * kIntermediate + n]);
+        }
+        const double slack = std::ldexp(std::max(std::fabs(lo), std::fabs(hi)), -8) + 1e-7 + quantSlack;
         h[n] = got;
         const double exact = upFactor(bf16(u.value)) * gateFactor(bf16(g.value));
         if (!(got >= bf16(lo - slack) && got <= bf16(hi + slack)))

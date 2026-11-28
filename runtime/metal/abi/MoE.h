@@ -217,15 +217,18 @@ struct MoeInt8ExpertParams {
   uint32_t chunk_slots;
   uint32_t tiles; // MOE_TILES_*
   uint32_t routes;
+  uint32_t scales_offset; // byte offset into scales buffer (0 for separate scales buffer)
 };
 
-static_assert(sizeof(MoeInt8ExpertParams) == 36,
-              "MoE int8 expert parameters are 36 bytes on both sides");
+static_assert(sizeof(MoeInt8ExpertParams) == 40,
+              "MoE int8 expert parameters are 40 bytes on both sides");
 
-// Fused gate and up int8 expert pass (moe_expert_int8_<fmt>_gate_up[_s2]):
-// simdgroup 0 runs gate (projection 0) and simdgroup 1 runs up (projection 1)
-// on the same 32-column tile, combining silu(gate) * up through threadgroup
-// memory without round-tripping the intermediate buffer to device memory.
+// Fused gate + up + int8-quantize expert pass (moe_expert_int8_<fmt>_gate_up[_s2]):
+// 4 simdgroups (128 threads) compute a 64-column tile (2 gate + 2 up), combine
+// silu(gate) * up in 4 KiB of threadgroup memory, and quantize each 64-element
+// group directly into int8 codes (at output + 0) and float2 scales (at
+// output + scales_offset), eliminating the intermediate bf16 round-trip and
+// separate gguf_prefill_int8_quantize dispatch.
 struct MoeInt8GateUpParams {
   uint32_t input_size;
   uint32_t output_size; // per expert
@@ -238,10 +241,11 @@ struct MoeInt8GateUpParams {
   uint32_t chunk_slots;
   uint32_t tiles; // MOE_TILES_*
   uint32_t routes;
+  uint32_t scales_offset; // byte offset into output buffer for quantized scales
 };
 
-static_assert(sizeof(MoeInt8GateUpParams) == 44,
-              "MoE int8 gate/up parameters are 44 bytes on both sides");
+static_assert(sizeof(MoeInt8GateUpParams) == 48,
+              "MoE int8 gate/up parameters are 48 bytes on both sides");
 
 // moe_gather_int8: the grouped rows' codes and scales from the chunk's
 // (rows of input_size codes, scales [input_size / 64][rows]), for the tile

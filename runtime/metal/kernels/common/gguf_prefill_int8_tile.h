@@ -18,6 +18,13 @@ struct PrefillInt8Shape {
 
 constant constexpr int kInt8FragM = 16, kInt8FragN = 32, kInt8FragK = 16, kInt8RowFrags = 2, kInt8Elements = 16;
 
+// The schedule position, within its 32-group, of the input at slot s of the planes: chunk c = s >> 3 is lane half
+// c >> 1 and step half c & 1; chunk slot u holds step bit (u >> 1) & 1 and lane input ((u & 1) << 1) | (u >> 2).
+inline uint prefill_int8_position(uint slot) {
+  const uint c = slot >> 3, u = slot & 7;
+  return 16 * (c >> 1) + 4 * (2 * (c & 1) + ((u >> 1) & 1)) + (((u & 1) << 1) | (u >> 2));
+}
+
 // This lane's (column, row) in matmul2d's int8 16x16 fragment layout, the operands' and the destination's, which
 // gguf-projection checks on each family. Taking the destination's from get_multidimensional_index instead loads each
 // element's scales alone: up to 25% more time (16-core M5 Pro, measured).
