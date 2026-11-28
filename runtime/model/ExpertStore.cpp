@@ -1490,7 +1490,7 @@ void ExpertStore::addLoad(metal::CommandGraph &graph, std::span<const ops::MoeLo
   // with the GPU waiting.
   if (impl.longChunk(rows) && block + 1 < impl.blocks.size() && impl.streams(block + 1))
     graph.host([impl = impl_, block, use] { impl->readBlockAhead(block + 1, use); }, timed,
-               metal::HostStepGpu::Idle, startAhead);
+               metal::HostStepGpu::Awake, startAhead);
 }
 
 ExpertStoreStats ExpertStore::stats() const {
