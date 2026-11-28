@@ -653,24 +653,30 @@ void ExpertStore::Impl::stage(uint32_t index, uint32_t capacity, ExpertStoreStat
     const uint32_t at = aheadPieces[piece].group;
     const Group &group = ahead.reads.groups[at];
     while (end < aheadPieces.size() && aheadPieces[end].group == at) ++end;
-    const bool routed = ahead.block == index && waiting[group.expert];
+    bool anyRouted = false;
+    if (ahead.block == index) {
+      for (uint32_t k = 0; k < group.count; ++k)
+        if (waiting[group.expert + k]) {
+          anyRouted = true;
+          break;
+        }
+    }
     bool ended = true;
     for (size_t rest = piece; rest < end; ++rest) {
-      while ((routed || capacity == places.count) && reading(rest)) std::this_thread::yield();
+      while ((anyRouted || capacity == places.count) && reading(rest)) std::this_thread::yield();
       ended = ended && !reading(rest);
     }
     if (!ended) {
-      taken[group.place] = 1;
+      for (uint32_t k = 0; k < group.count; ++k) taken[group.place + k] = 1;
       continue;
     }
     countAhead(at, piece, end);
     if (ahead.use == &counters.uses[static_cast<size_t>(LoadUse::Decode)] && ahead.block < blocks.size()) {
       Block &ab = blocks[ahead.block];
-      ab.aheadUsed = 0.96f * ab.aheadUsed + (routed ? 1.0f : 0.0f);
+      ab.aheadUsed = 0.96f * ab.aheadUsed + (anyRouted ? 1.0f : 0.0f);
       ab.aheadTotal = 0.96f * ab.aheadTotal + 1.0f;
     }
-    if (!routed) continue;
-    taken[group.place] = 1;
+    if (!anyRouted) continue;
     now.groups.push_back(group);
     bool whole = true;
     for (size_t rest = piece; rest < end; ++rest)
@@ -680,11 +686,19 @@ void ExpertStore::Impl::stage(uint32_t index, uint32_t capacity, ExpertStoreStat
             {static_cast<uint32_t>(now.groups.size() - 1), unread.z, unread.p, unread.from, unread.to});
         whole = false;
       }
-    use.prefetched += whole;
-    addJob(now.groups.back(), 0);
+    for (uint32_t k = 0; k < group.count; ++k) {
+      // A coalesced group packs experts at stagedBytes (< placeBytes), so
+      // expert k can overlap place k - 1; reserve every place of the group.
+      taken[group.place + k] = 1;
+      if (!waiting[group.expert + k]) continue;
+      use.prefetched += whole;
+      addJob(now.groups.back(), k);
+    }
   }
   const uint64_t left = std::ranges::count_if(pending, [&](const auto &entry) { return waiting[entry.first]; });
-  const uint64_t due = std::max<uint64_t>(staged.size(), std::min<uint64_t>(capacity, staged.size() + left));
+  const uint64_t freePlaces = std::ranges::count(taken, uint8_t{0});
+  const uint64_t due =
+      std::max<uint64_t>(staged.size(), std::min<uint64_t>(capacity, staged.size() + std::min(left, freePlaces)));
   uint32_t place = 0;
   for (size_t at = 0; at < pending.size() && staged.size() < due;) {
     if (!waiting[pending[at].first]) {
@@ -818,13 +832,24 @@ void ExpertStore::Impl::startAhead() {
     retireAhead();
     const bool isPrefill = plan.use == &counters.uses[static_cast<size_t>(LoadUse::Prefill)];
     const uint64_t pieceBytes = isPrefill ? kPrefillAheadPieceBytes : kDecodeAheadPieceBytes;
+    // Coalesce up to 8 consecutive experts in prefill read-ahead (for Q2_0
+    // Flash-Next, 8 * 460,800B = 225 exact 16 KiB pages, eliminating page-
+    // boundary re-reads and cutting pread() syscalls by ~6-8x).
+    constexpr uint32_t kPrefillAheadMaxCoalesce = 8;
     uint32_t place = 0;
-    for (const uint32_t expert : plan.experts) {
+    for (size_t i = 0; i < plan.experts.size();) {
       while (place < places.count && taken[place]) ++place;
       if (place == places.count) break;
-      // Expert after expert, so that the experts a round finds read whole
-      // are the likeliest; a piece starts on a page and so ends on one.
-      addGroup(ahead.reads, plan.block, expert, 1, place++, places, pieceBytes);
+      uint32_t count = 1;
+      if (isPrefill) {
+        while (count < kPrefillAheadMaxCoalesce && i + count < plan.experts.size() &&
+               plan.experts[i + count] == plan.experts[i] + count && place + count < places.count &&
+               !taken[place + count])
+          ++count;
+      }
+      addGroup(ahead.reads, plan.block, plan.experts[i], count, place, places, pieceBytes);
+      place += count;
+      i += count;
     }
     const uint32_t block = std::exchange(plan.block, kNoSlot);
     if (ahead.reads.groups.empty()) return;
@@ -863,7 +888,7 @@ void ExpertStore::Impl::countAhead(size_t group, size_t from, size_t to) {
       whole = false;
     }
   }
-  ahead.use->readAhead += whole;
+  ahead.use->readAhead += whole ? ahead.reads.groups[group].count : 0;
 }
 
 // Ends the read-ahead once its readers ended the pieces they took; what it
