@@ -82,13 +82,22 @@ inline void prefill_int8_accum(device const char *codes, device const float2 *sc
     // ((bits + 0x7F7F7F7Fu) ^ 0x80808080u) without cross-byte borrow, leaving only the scale d per group.
     device const uchar *wq2 = w0 + record0 * 8 + 4 * (cx & 1);
     device const half *mq2 = (device const half *)(meta) + ulong(n_run / T) * plane_units * T + n_run % T;
+    const int m00 = min(m_base, M - 1);
+    const int m01 = min(m_base + 8, M - 1);
+    device const char *c00 = codes + ulong(m00) * K + cx * 16;
+    device const char *c01 = codes + ulong(m01) * K + cx * 16;
     if (row_base + kInt8FragM < M) {
+      const int m10 = min(m_base + kInt8FragM, M - 1);
+      const int m11 = min(m_base + kInt8FragM + 8, M - 1);
+      device const char *c10 = codes + ulong(m10) * K + cx * 16;
+      device const char *c11 = codes + ulong(m11) * K + cx * 16;
       for (int g = 0; g < groups; ++g) {
         const ulong g32 = ulong(2 * g + h32) * T;
         uint wv[4];
 #pragma unroll
         for (int q = 0; q < 4; ++q)
           wv[q] = *((device const uint *)(wq2 + (g32 + (q & 1) * 8 + (q >> 1) * 16) * 8));
+        const ulong goff = ulong(g) * GGUF_PREFILL_INT8_GROUP;
 #pragma unroll
         for (int t = 0; t < 4; ++t) {
           const uint shift = 16 * (t >> 1) + 4 * (t & 1);
@@ -100,33 +109,35 @@ inline void prefill_int8_accum(device const char *codes, device const float2 *sc
             const int base = (q >> 1) * 8 + (q & 1) * 4;
             ct_b[base + 0] = quad.x; ct_b[base + 1] = quad.y; ct_b[base + 2] = quad.z; ct_b[base + 3] = quad.w;
           }
-#pragma unroll
-          for (int hf = 0; hf < kInt8RowFrags; ++hf) {
-#pragma unroll
-            for (int r = 0; r < 2; ++r) {
-              const int m = min(m_base + hf * kInt8FragM + r * 8, M - 1);
-              const ulong at = ulong(m) * K + g * GGUF_PREFILL_INT8_GROUP + cx * 16 + t * 4;
-              const char4 quad = as_type<char4>(*((device const uint *)(codes + at)));
-              ct_a[r * 4 + 0] = quad.x; ct_a[r * 4 + 1] = quad.y; ct_a[r * 4 + 2] = quad.z; ct_a[r * 4 + 3] = quad.w;
-            }
-            if (t == 0) { if (hf == 0) op_set.run(ct_a, ct_b, acc0); else op_set.run(ct_a, ct_b, acc1); }
-            else { if (hf == 0) op.run(ct_a, ct_b, acc0); else op.run(ct_a, ct_b, acc1); }
+          const ulong toff = goff + ulong(t) * 4;
+          {
+            const char4 q0 = as_type<char4>(*((device const uint *)(c00 + toff)));
+            const char4 q1 = as_type<char4>(*((device const uint *)(c01 + toff)));
+            ct_a[0] = q0.x; ct_a[1] = q0.y; ct_a[2] = q0.z; ct_a[3] = q0.w;
+            ct_a[4] = q1.x; ct_a[5] = q1.y; ct_a[6] = q1.z; ct_a[7] = q1.w;
+            if (t == 0) op_set.run(ct_a, ct_b, acc0);
+            else op.run(ct_a, ct_b, acc0);
+          }
+          {
+            const char4 q0 = as_type<char4>(*((device const uint *)(c10 + toff)));
+            const char4 q1 = as_type<char4>(*((device const uint *)(c11 + toff)));
+            ct_a[0] = q0.x; ct_a[1] = q0.y; ct_a[2] = q0.z; ct_a[3] = q0.w;
+            ct_a[4] = q1.x; ct_a[5] = q1.y; ct_a[6] = q1.z; ct_a[7] = q1.w;
+            if (t == 0) op_set.run(ct_a, ct_b, acc1);
+            else op.run(ct_a, ct_b, acc1);
           }
         }
         const half4 d0 = *((device const half4 *)(mq2 + ulong(g) * T));
         const half4 d1 = *((device const half4 *)(mq2 + ulong(g) * T + 16));
-        float sa[kInt8RowFrags][2];
-#pragma unroll
-        for (int i = 0; i < kInt8RowFrags; ++i)
-#pragma unroll
-          for (int r = 0; r < 2; ++r)
-            sa[i][r] = scales[ulong(g) * p.storage_rows + min(m_base + i * kInt8FragM + r * 8, M - 1)].x;
+        const ulong sbase = ulong(g) * p.storage_rows;
+        const float sa00 = scales[sbase + m00].x, sa01 = scales[sbase + m01].x;
+        const float sa10 = scales[sbase + m10].x, sa11 = scales[sbase + m11].x;
 #pragma unroll
         for (int e = 0; e < kInt8Elements; ++e) {
-          const int r = (e & 7) >> 2;
+          const bool hi_r = ((e & 7) >> 2) != 0;
           const float d = float((e >> 3) ? d1[e & 3] : d0[e & 3]);
-          cf[0][e] = fma(sa[0][r] * d, float(acc0[e]), cf[0][e]);
-          cf[1][e] = fma(sa[1][r] * d, float(acc1[e]), cf[1][e]);
+          cf[0][e] = fma((hi_r ? sa01 : sa00) * d, float(acc0[e]), cf[0][e]);
+          cf[1][e] = fma((hi_r ? sa11 : sa10) * d, float(acc1[e]), cf[1][e]);
         }
       }
     } else {
@@ -136,6 +147,9 @@ inline void prefill_int8_accum(device const char *codes, device const float2 *sc
 #pragma unroll
         for (int q = 0; q < 4; ++q)
           wv[q] = *((device const uint *)(wq2 + (g32 + (q & 1) * 8 + (q >> 1) * 16) * 8));
+        const ulong goff = ulong(g) * GGUF_PREFILL_INT8_GROUP;
+        const uint4 a00 = *((device const uint4 *)(c00 + goff));
+        const uint4 a01 = *((device const uint4 *)(c01 + goff));
 #pragma unroll
         for (int t = 0; t < 4; ++t) {
           const uint shift = 16 * (t >> 1) + 4 * (t & 1);
@@ -147,20 +161,17 @@ inline void prefill_int8_accum(device const char *codes, device const float2 *sc
             const int base = (q >> 1) * 8 + (q & 1) * 4;
             ct_b[base + 0] = quad.x; ct_b[base + 1] = quad.y; ct_b[base + 2] = quad.z; ct_b[base + 3] = quad.w;
           }
-#pragma unroll
-          for (int r = 0; r < 2; ++r) {
-            const int m = min(m_base + r * 8, M - 1);
-            const ulong at = ulong(m) * K + g * GGUF_PREFILL_INT8_GROUP + cx * 16 + t * 4;
-            const char4 quad = as_type<char4>(*((device const uint *)(codes + at)));
-            ct_a[r * 4 + 0] = quad.x; ct_a[r * 4 + 1] = quad.y; ct_a[r * 4 + 2] = quad.z; ct_a[r * 4 + 3] = quad.w;
-          }
+          const char4 q0 = as_type<char4>(a00[t]), q1 = as_type<char4>(a01[t]);
+          ct_a[0] = q0.x; ct_a[1] = q0.y; ct_a[2] = q0.z; ct_a[3] = q0.w;
+          ct_a[4] = q1.x; ct_a[5] = q1.y; ct_a[6] = q1.z; ct_a[7] = q1.w;
           if (t == 0) op_set.run(ct_a, ct_b, acc0);
           else op.run(ct_a, ct_b, acc0);
         }
         const half4 d0 = *((device const half4 *)(mq2 + ulong(g) * T));
         const half4 d1 = *((device const half4 *)(mq2 + ulong(g) * T + 16));
-        float sa0 = scales[ulong(g) * p.storage_rows + min(m_base, M - 1)].x;
-        float sa1 = scales[ulong(g) * p.storage_rows + min(m_base + 8, M - 1)].x;
+        const ulong sbase = ulong(g) * p.storage_rows;
+        const float sa0 = scales[sbase + m00].x;
+        const float sa1 = scales[sbase + m01].x;
 #pragma unroll
         for (int e = 0; e < kInt8Elements; ++e) {
           const float sa = ((e & 7) >> 2) ? sa1 : sa0;

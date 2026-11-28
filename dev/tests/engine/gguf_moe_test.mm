@@ -710,7 +710,7 @@ std::vector<ComputeDispatch> fullGridsTwoPasses(const CommandGraph &graph, const
   for (ComputeDispatch dispatch : graph.dispatches()) {
     dispatch.indirectThreadgroups = {};
     const size_t merged = dispatch.pipelineName.rfind("_gate_up");
-    if (merged == std::string::npos) {
+    if (merged == std::string::npos || !dispatch.pipelineName.starts_with(kMerged)) {
       dispatches.push_back(std::move(dispatch));
       continue;
     }

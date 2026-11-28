@@ -154,10 +154,11 @@ struct MoeGyroRotationParams {
 struct MoeGatherParams {
   uint32_t input_size;
   uint32_t routes_per_row;
+  uint32_t tiles; // MOE_TILES_*
 };
 
-static_assert(sizeof(MoeGatherParams) == 8,
-              "MoE gather parameters are 8 bytes on both sides");
+static_assert(sizeof(MoeGatherParams) == 12,
+              "MoE gather parameters are 12 bytes on both sides");
 
 // The routed experts of a MoE block sit in slots, which chunks hold: the
 // floor chunk, chunk 0, holds the first floor_slots slots, a store size's
@@ -243,16 +244,18 @@ static_assert(sizeof(MoeInt8GateUpParams) == 44,
               "MoE int8 gate/up parameters are 44 bytes on both sides");
 
 // moe_gather_int8: the grouped rows' codes and scales from the chunk's
-// (rows of input_size codes, scales [input_size / 64][rows]).
+// (rows of input_size codes, scales [input_size / 64][rows]), for the tile
+// range `tiles` names (MOE_TILES_*).
 struct MoeGatherInt8Params {
   uint32_t input_size;
   uint32_t routes_per_row;
   uint32_t rows;          // the chunk's, its scales' row stride
   uint32_t routes;        // the grouped rows, their scales' row stride
+  uint32_t tiles;         // MOE_TILES_*
 };
 
-static_assert(sizeof(MoeGatherInt8Params) == 16,
-              "MoE int8 gather parameters are 16 bytes on both sides");
+static_assert(sizeof(MoeGatherInt8Params) == 20,
+              "MoE int8 gather parameters are 20 bytes on both sides");
 
 // The gate and up passes in one (moe_expert_gguf_m<rows>_gate_up[_mixed]):
 // their sizes, expert count, floor and chunk slots, as MoeGgufExpertParams

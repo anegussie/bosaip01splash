@@ -225,13 +225,13 @@ MoeGroupParams groupParams(const MoePlan &plan, const BlockMoeWeights &weights) 
           0};
 }
 
-void addGather(metal::CommandGraph &graph, const MoeBuffers &buffers, const MoePlan &plan) {
+void addGather(metal::CommandGraph &graph, const MoeBuffers &buffers, const MoePlan &plan, uint32_t range) {
   const MoeShape shape = plan.shape();
   const MoeScratch &scratch = buffers.scratch;
   graph.add("moe_gather_rows",
             {buffers.input, scratch.groupedRoutes, scratch.tileDescriptors,
              scratch.tileCount, scratch.groupedInput},
-            MoeGatherParams{shape.hiddenSize, shape.routesPerToken()},
+            MoeGatherParams{shape.hiddenSize, shape.routesPerToken(), range},
             {plan.maximumTiles(), shape.hiddenSize / 256, 1});
 }
 
@@ -257,7 +257,7 @@ void addInt8Experts(metal::CommandGraph &graph, const MoeBuffers &buffers, const
   graph.add("moe_gather_int8",
             {scratch.inputCodes, scratch.inputScales, scratch.groupedRoutes, scratch.tileDescriptors,
              scratch.tileCount, scratch.groupedCodes, scratch.groupedScales},
-            MoeGatherInt8Params{hidden, shape.routesPerToken(), rows, routes},
+            MoeGatherInt8Params{hidden, shape.routesPerToken(), rows, routes, range},
             {plan.maximumTiles(), hidden / 256, 1});
   const std::string slices(compiledRouting(shape).slicesSuffix);
   const auto pass = [&](const char *name, const BlockExpertProjection &p, uint32_t k, uint32_t n,
@@ -308,7 +308,7 @@ void addCombine(metal::CommandGraph &graph, const MoeBuffers &buffers, const Moe
   graph.add("moe_combine",
             {scratch.expertOutput, scratch.routeRows, scratch.routingWeights,
              buffers.residual, buffers.output},
-            params, {plan.rows(), shape.hiddenSize / 256, 1});
+            params, {plan.rows(), shape.hiddenSize / 256, 1}, {64, 1, 1});
 }
 
 } // namespace
@@ -355,7 +355,9 @@ void MoE::addRouting(metal::CommandGraph &graph, const MoeBuffers &buffers, cons
 void MoE::addResident(metal::CommandGraph &graph, const MoeBuffers &buffers,
                       const BlockMoeWeights &weights, const MoePlan &plan) {
   if (!weights.stream) throw std::invalid_argument("a resident MoE block's experts run after its routing alone");
-  addGather(graph, buffers, plan);
+  // When addRouted runs int8Passes on MOE_TILES_LOADED, groupedInput is only
+  // read by MOE_TILES_RESIDENT, so skip gathering loaded tiles.
+  addGather(graph, buffers, plan, plan.configuration().int8Passes ? MOE_TILES_RESIDENT : MOE_TILES_ALL);
   addExperts(graph, buffers.scratch, weights, buffers.scratch.expertSlots, plan, groupParams(plan, weights),
              MOE_TILES_RESIDENT);
 }
@@ -375,7 +377,7 @@ void MoE::addRouted(metal::CommandGraph &graph, const MoeBuffers &buffers,
   } else if (plan.configuration().int8Passes) {
     addInt8Experts(graph, buffers, weights, plan, weights.slotTable, MOE_TILES_ALL);
   } else {
-    addGather(graph, buffers, plan);
+    addGather(graph, buffers, plan, MOE_TILES_ALL);
     addExperts(graph, buffers.scratch, weights, weights.slotTable, plan, group, MOE_TILES_ALL);
   }
   addCombine(graph, buffers, plan, convolution);
@@ -415,7 +417,11 @@ void MoE::addRoutes(metal::CommandGraph &graph, const metal::MetalBuffer &input,
   // kernel of that width reads, which weights gated shared slices by the
   // sigmoid of the input's product with the scalar gate.
   const uint32_t width = shape.routerWidth();
-  addGgufFloat(graph, input, router, scores, rows, width, 0, FloatOutput::Float32, routerTile);
+  const FloatTile effectiveRouterTile =
+      routerTile == FloatTile::NeuralAccelerator && std::string_view(router.name()) != "bf16"
+          ? FloatTile::NeuralAccelerator2Part
+          : routerTile;
+  addGgufFloat(graph, input, router, scores, rows, width, 0, FloatOutput::Float32, effectiveRouterTile);
   const MoeRouteParams route{rows, shape.hiddenSize, shape.experts, shape.expertsPerToken};
   const std::string select = routingKernel("moe_route_select_f32", shape, &CompiledMoeRouting::selectSuffix);
   if (shape.selectionBias) {

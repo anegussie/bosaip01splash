@@ -33,7 +33,7 @@ namespace splash::ops {
 // matmul on each weight's three bf16 parts, which sum to it exactly. Both
 // round only in fp32 accumulation. Vector maps a single input row to one
 // SIMD group per output column. selectFloatTile picks the batched tile.
-enum class FloatTile : uint8_t { Simdgroup, NeuralAccelerator, Vector };
+enum class FloatTile : uint8_t { Simdgroup, NeuralAccelerator, NeuralAccelerator2Part, Vector };
 // out[r][outOffset + n] = sum_k input[r][k] W[n][k] for rows r < `rows` of a
 // float segment, into a destination of `outStride` columns (LinearGguf.cpp).
 void addGgufFloat(metal::CommandGraph &graph, metal::MetalBuffer input, const QuantizedSegment &weights,

@@ -9,8 +9,9 @@
 using namespace metal;
 
 // Copies each grouped row's codes and scales from its chunk row's, so every expert tile is a dense matrix of its
-// live rows. Threadgroup (tile, part) copies the part's 256 codes of the tile's rows, sixteen rows at once, each
-// thread sixteen codes of one row, and its four 64-input groups' scales.
+// live rows. Threadgroup (tile, part) caches the tile's source row indices once in threadgroup memory, copies the
+// part's 256 codes of the tile's rows with 16-byte coalesced vectors, and copies its four 64-input groups' scales
+// with one simdgroup per group so grouped_scales writes are fully coalesced across consecutive grouped rows.
 kernel void moe_gather_int8(device const char *codes [[buffer(0)]], device const float2 *scales [[buffer(1)]],
                             device const uint *grouped_routes [[buffer(2)]],
                             device const MoeTileDescriptor *tiles [[buffer(3)]],
@@ -19,16 +20,32 @@ kernel void moe_gather_int8(device const char *codes [[buffer(0)]], device const
                             constant MoeGatherInt8Params &p [[buffer(7)]],
                             uint2 group [[threadgroup_position_in_grid]],
                             uint thread_index [[thread_index_in_threadgroup]]) {
-  if (group.x >= *tile_count) return;
-  const MoeTileDescriptor tile = tiles[group.x];
-  const uint lane = thread_index % 16, column = group.y * 256 + lane * 16;
-  for (uint row = tile.first_row + thread_index / 16; row < tile.first_row + tile.rows; row += 16) {
-    const uint source = grouped_routes[row] / p.routes_per_row;
-    *reinterpret_cast<device uint4 *>(grouped_codes + ulong(row) * p.input_size + column) =
+  const uint t = moe_first_tile(tile_count, p.tiles) + group.x;
+  if (t >= moe_end_tile(tile_count, p.tiles)) return;
+  const MoeTileDescriptor tile = tiles[t];
+  threadgroup uint src_rows[GGUF_PREFILL_INT8_ROWS];
+  if (thread_index < tile.rows) {
+    src_rows[thread_index] = grouped_routes[tile.first_row + thread_index] / p.routes_per_row;
+  }
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  const uint lane = thread_index & 15u, column = group.y * 256u + lane * 16u;
+  const uint r0 = thread_index >> 4;
+  if (r0 < tile.rows) {
+    const uint source = src_rows[r0];
+    *reinterpret_cast<device uint4 *>(grouped_codes + ulong(tile.first_row + r0) * p.input_size + column) =
         *reinterpret_cast<device const uint4 *>(codes + ulong(source) * p.input_size + column);
-    if (lane < 4) {
-      const uint g = group.y * 4 + lane;
-      grouped_scales[ulong(g) * p.routes + row] = scales[ulong(g) * p.rows + source];
+  }
+  const uint r1 = r0 + 16u;
+  if (r1 < tile.rows) {
+    const uint source = src_rows[r1];
+    *reinterpret_cast<device uint4 *>(grouped_codes + ulong(tile.first_row + r1) * p.input_size + column) =
+        *reinterpret_cast<device const uint4 *>(codes + ulong(source) * p.input_size + column);
+  }
+  if (thread_index < 128u) {
+    const uint r = thread_index & 31u;
+    if (r < tile.rows) {
+      const uint g = group.y * 4u + (thread_index >> 5);
+      grouped_scales[ulong(g) * p.routes + tile.first_row + r] = scales[ulong(g) * p.rows + src_rows[r]];
     }
   }
 }

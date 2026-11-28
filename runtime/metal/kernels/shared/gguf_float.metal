@@ -311,10 +311,11 @@ constant constexpr ushort kColumns = 32;
 constant constexpr ushort kStep = 32;   // inputs per stage
 constant constexpr ushort kPerThread = kColumns * kStep / (kSimdgroups * 32);
 constant constexpr uint kPlane = kColumns * kStep;
-// The bf16 parts of a weight of type W, one for BF16 values and three for fp32 ones (F32 values, a quantized format's
-// decoded), and the stage of a K step's (two such stages alternate).
-template <typename W> constant constexpr ushort kParts = is_same_v<W, bfloat> ? 1 : 3;
-template <typename W> constant constexpr uint kBuffer = kParts<W> * kPlane;
+// The bf16 parts of a weight of type W, one for BF16 values and up to MaxParts
+// (3 for exact fp32, 2 for ~1e-5 router scoring) for fp32/decoded values, and
+// the stage of a K step's (two such stages alternate).
+template <typename W, ushort MaxParts = 3> constant constexpr ushort kParts = is_same_v<W, bfloat> ? 1 : MaxParts;
+template <typename W, ushort MaxParts = 3> constant constexpr uint kBuffer = kParts<W, MaxParts> * kPlane;
 using gguf_float::Eight;
 static_assert(kPerThread == 8, "a thread stages one run of 8 weights of a step");
 
@@ -328,16 +329,23 @@ inline ushort3 split(float w) {
   return ushort3(ushort(hi >> 16), ushort(mid >> 16), ushort(as_type<uint>(lo) >> 16));
 }
 
+inline ushort2 split2(float w) {
+  const uint hi = as_type<uint>(w) & 0xFFFF0000u;
+  const float r = w - as_type<float>(hi);
+  const uint mid = as_type<uint>(r) & 0xFFFF0000u;
+  return ushort2(ushort(hi >> 16), ushort(mid >> 16));
+}
+
 // One threadgroup: kColumns output columns of kRows rows, kRowsPerSimdgroup per simdgroup. Every thread splits
 // kPerThread weights of a K step into the stage's bf16 planes [part][column][input] (columns past the output stay
 // zero); after the barrier each simdgroup with live rows runs a matmul per part, and one past the rows only stages. A
 // simdgroup whose rows cross p.rows computes the 16 rows ending at p.rows instead and stores its own, so no row past
 // the input is read (p.rows >= 16).
-template <typename W, typename T>
+template <typename W, typename T, ushort MaxParts = 3>
 inline void project(device bfloat *input, FloatProjection<T> projection, constant GgufFloatParams &p, uint y,
                     ushort sg, ushort lane, threadgroup bfloat *stage) {
-  constexpr ushort Parts = kParts<W>;
-  constexpr uint Buffer = kBuffer<W>;
+  constexpr ushort Parts = kParts<W, MaxParts>;
+  constexpr uint Buffer = kBuffer<W, MaxParts>;
   const uint K = p.input_size, steps = K / kStep;
   const uint row0 = y * kRows + sg * kRowsPerSimdgroup, first_row = min(row0, p.rows - kRowsPerSimdgroup);
   const uint col0 = projection.tile * kColumns;
@@ -355,7 +363,7 @@ inline void project(device bfloat *input, FloatProjection<T> projection, constan
   };
   // A weight of one part has no mid and lo planes: their views alias its one, and no matmul runs them. Its products
   // never reach `low`, which keeps the +0 that the F32 tensor of its values sums from its zero parts.
-  constexpr uint mid = Parts == 3 ? 1 : 0, lo = Parts == 3 ? 2 : 0;
+  constexpr uint mid = Parts >= 2 ? 1 : 0, lo = Parts == 3 ? 2 : 0;
   auto h0 = plane(0, 0), m0 = plane(0, mid), l0 = plane(0, lo), h1 = plane(1, 0), m1 = plane(1, mid), l1 = plane(1, lo);
   auto a0 = a.template slice<kStep, kRowsPerSimdgroup>(0, 0);
   auto high = operation.template get_destination_cooperative_tensor<decltype(a0), decltype(h0), float>();
@@ -370,6 +378,14 @@ inline void project(device bfloat *input, FloatProjection<T> projection, constan
     if constexpr (Parts == 1) {
       *reinterpret_cast<threadgroup uint2 *>(parts) = next.pairs.xy;
       *reinterpret_cast<threadgroup uint2 *>(parts + 4) = next.pairs.zw;
+    } else if constexpr (Parts == 2) {
+#pragma unroll
+      for (ushort j = 0; j < kPerThread / 4; ++j) {
+        const ushort2 x = split2(next[4 * j]), y = split2(next[4 * j + 1]), z = split2(next[4 * j + 2]),
+                      v = split2(next[4 * j + 3]);
+        *reinterpret_cast<threadgroup ushort4 *>(parts + 4 * j) = ushort4(x.x, y.x, z.x, v.x);
+        *reinterpret_cast<threadgroup ushort4 *>(parts + kPlane + 4 * j) = ushort4(x.y, y.y, z.y, v.y);
+      }
     } else {
 #pragma unroll
       for (ushort j = 0; j < kPerThread / 4; ++j) {
@@ -387,16 +403,12 @@ inline void project(device bfloat *input, FloatProjection<T> projection, constan
       auto slice = a.template slice<kStep, kRowsPerSimdgroup>(step * kStep, 0);
       if (step & 1) {
         operation.run(slice, h1, high);
-        if constexpr (Parts == 3) {
-          operation.run(slice, m1, low);
-          operation.run(slice, l1, low);
-        }
+        if constexpr (Parts >= 2) operation.run(slice, m1, low);
+        if constexpr (Parts == 3) operation.run(slice, l1, low);
       } else {
         operation.run(slice, h0, high);
-        if constexpr (Parts == 3) {
-          operation.run(slice, m0, low);
-          operation.run(slice, l0, low);
-        }
+        if constexpr (Parts >= 2) operation.run(slice, m0, low);
+        if constexpr (Parts == 3) operation.run(slice, l0, low);
       }
     }
   }
@@ -417,24 +429,26 @@ static_assert(gguf_float_na::kStep % gguf_float_na::kPerThread == 0, "a thread s
 
 // Grid (the projections' ceil(output_size / 32) summed, ceil(rows / 64)), 128 threads; rows >= 16, input_size a
 // multiple of 32; named by the weights' and the output's types.
-#define GGUF_FLOAT_NA_KERNEL(Name, W, T)                                                                       \
+#define GGUF_FLOAT_NA_KERNEL(Name, W, T, MaxParts)                                                             \
   kernel void Name(device bfloat *input [[buffer(0)]], device const uchar *weights0 [[buffer(1)]],            \
                    device T *output0 [[buffer(2)]], device const uchar *weights1 [[buffer(3)]],               \
                    device T *output1 [[buffer(4)]], constant GgufFloatParams &p [[buffer(5)]],                \
                    uint2 tg [[threadgroup_position_in_grid]], ushort sg [[simdgroup_index_in_threadgroup]],   \
                    ushort lane [[thread_index_in_simdgroup]]) {                                               \
-    threadgroup bfloat stage[2 * gguf_float_na::kBuffer<W>];                                                   \
-    gguf_float_na::project<W, T>(input,                                                                       \
-                                 float_projection(p, tg.x, gguf_float_na::kColumns, weights0, output0,        \
-                                                  weights1, output1),                                         \
-                                 p, tg.y, sg, lane, stage);                                                   \
+    threadgroup bfloat stage[2 * gguf_float_na::kBuffer<W, MaxParts>];                                        \
+    gguf_float_na::project<W, T, MaxParts>(                                                                   \
+        input, float_projection(p, tg.x, gguf_float_na::kColumns, weights0, output0, weights1, output1),      \
+        p, tg.y, sg, lane, stage);                                                                            \
   }
-GGUF_FLOAT_NA_KERNEL(gguf_float_na_f32_bf16, float, bfloat)
-GGUF_FLOAT_NA_KERNEL(gguf_float_na_f32_f32, float, float)
-GGUF_FLOAT_NA_KERNEL(gguf_float_na_bf16_bf16, bfloat, bfloat)
-GGUF_FLOAT_NA_KERNEL(gguf_float_na_bf16_f32, bfloat, float)
-// A quantized format's rows into fp32: gguf_float_na_<token>_f32.
-#define GGUF_FLOAT_NA_NATIVE(f, F) GGUF_FLOAT_NA_KERNEL(gguf_float_na_##f##_f32, Native<F>, float)
+GGUF_FLOAT_NA_KERNEL(gguf_float_na_f32_bf16, float, bfloat, 3)
+GGUF_FLOAT_NA_KERNEL(gguf_float_na_f32_f32, float, float, 3)
+GGUF_FLOAT_NA_KERNEL(gguf_float_na2_f32_f32, float, float, 2)
+GGUF_FLOAT_NA_KERNEL(gguf_float_na_bf16_bf16, bfloat, bfloat, 1)
+GGUF_FLOAT_NA_KERNEL(gguf_float_na_bf16_f32, bfloat, float, 1)
+// A quantized format's rows into fp32: gguf_float_na_<token>_f32 (3-part exact) and gguf_float_na2_<token>_f32 (2-part router).
+#define GGUF_FLOAT_NA_NATIVE(f, F)                                                                             \
+  GGUF_FLOAT_NA_KERNEL(gguf_float_na_##f##_f32, Native<F>, float, 3)                                          \
+  GGUF_FLOAT_NA_KERNEL(gguf_float_na2_##f##_f32, Native<F>, float, 2)
 GGUF_QUANTIZED_EMBEDDING_FORMATS(GGUF_FLOAT_NA_NATIVE)
 #undef GGUF_FLOAT_NA_NATIVE
 #undef GGUF_FLOAT_NA_KERNEL

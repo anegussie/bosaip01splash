@@ -444,15 +444,20 @@ kernel void moe_gather_rows(device const bfloat *input [[buffer(0)]],
                             constant MoeGatherParams &params [[buffer(5)]],
                             uint2 group [[threadgroup_position_in_grid]],
                             uint thread_index [[thread_index_in_threadgroup]]) {
-  if (group.x >= *tile_count)
+  const uint first_tile = params.tiles == MOE_TILES_LOADED ? tile_count[1] : 0u;
+  const uint end_tile = params.tiles == MOE_TILES_RESIDENT ? tile_count[1] : tile_count[0];
+  const uint t = first_tile + group.x;
+  if (t >= end_tile)
     return;
-  const MoeTileDescriptor tile = tiles[group.x];
+  const MoeTileDescriptor tile = tiles[t];
+  threadgroup uint src_rows[64];
+  if (thread_index < tile.rows)
+    src_rows[thread_index] = grouped_routes[tile.first_row + thread_index] / params.routes_per_row;
+  threadgroup_barrier(mem_flags::mem_threadgroup);
   const uint column = group.y * 256 + (thread_index % 32) * 8;
-  for (uint row = tile.first_row + thread_index / 32; row < tile.first_row + tile.rows; row += 8) {
-    const uint route = grouped_routes[row];
-    *reinterpret_cast<device uint4 *>(grouped_input + ulong(row) * params.input_size + column) =
-        *reinterpret_cast<device const uint4 *>(input + ulong(route / params.routes_per_row) * params.input_size +
-                                                column);
+  for (uint r = thread_index / 32; r < tile.rows; r += 8) {
+    *reinterpret_cast<device uint4 *>(grouped_input + ulong(tile.first_row + r) * params.input_size + column) =
+        *reinterpret_cast<device const uint4 *>(input + ulong(src_rows[r]) * params.input_size + column);
   }
 }
 
@@ -484,12 +489,45 @@ kernel void moe_combine(
     constant MoeCombineParams &params [[buffer(5)]],
     uint2 group [[threadgroup_position_in_grid]],
     uint thread_index [[thread_index_in_threadgroup]]) {
-  uint row = group.x;
-  uint dimension = group.y * 256 + thread_index;
-  if (row >= params.rows || dimension >= params.hidden_size)
+  if (thread_index >= 64u)
     return;
-  output[ulong(row) * params.hidden_size + dimension] =
-      bfloat(moe_combine_value(expert_output, route_rows, routing_weights, residual, params, row, dimension));
+  const uint row = group.x;
+  const uint dim4 = group.y * 64u + thread_index;
+  const uint hidden4 = params.hidden_size >> 2;
+  if (row >= params.rows || dim4 >= hidden4)
+    return;
+  device const bfloat4 *expert4 = reinterpret_cast<device const bfloat4 *>(expert_output);
+  device const bfloat4 *res4 = reinterpret_cast<device const bfloat4 *>(residual);
+  device bfloat4 *out4 = reinterpret_cast<device bfloat4 *>(output);
+  float4 acc = float4(res4[ulong(row) * hidden4 + dim4]);
+  const ulong route = ulong(row) * params.routes_per_row;
+  const uint routes = params.routes_per_row;
+  uint slot = 0;
+  for (; slot + 3u < routes; slot += 4u) {
+    const uint g0 = route_rows[route + slot];
+    const uint g1 = route_rows[route + slot + 1u];
+    const uint g2 = route_rows[route + slot + 2u];
+    const uint g3 = route_rows[route + slot + 3u];
+    const float w0 = routing_weights[route + slot];
+    const float w1 = routing_weights[route + slot + 1u];
+    const float w2 = routing_weights[route + slot + 2u];
+    const float w3 = routing_weights[route + slot + 3u];
+    const bfloat4 v0 = g0 != ~0u ? expert4[ulong(g0) * hidden4 + dim4] : bfloat4(0.0bf);
+    const bfloat4 v1 = g1 != ~0u ? expert4[ulong(g1) * hidden4 + dim4] : bfloat4(0.0bf);
+    const bfloat4 v2 = g2 != ~0u ? expert4[ulong(g2) * hidden4 + dim4] : bfloat4(0.0bf);
+    const bfloat4 v3 = g3 != ~0u ? expert4[ulong(g3) * hidden4 + dim4] : bfloat4(0.0bf);
+    if (g0 != ~0u) acc += w0 * float4(v0);
+    if (g1 != ~0u) acc += w1 * float4(v1);
+    if (g2 != ~0u) acc += w2 * float4(v2);
+    if (g3 != ~0u) acc += w3 * float4(v3);
+  }
+  for (; slot < routes; ++slot) {
+    const uint g = route_rows[route + slot];
+    if (g == ~0u)
+      continue;
+    acc += routing_weights[route + slot] * float4(expert4[ulong(g) * hidden4 + dim4]);
+  }
+  out4[ulong(row) * hidden4 + dim4] = bfloat4(acc);
 }
 
 // A verify step's combine and the short convolution of its rows

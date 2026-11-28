@@ -37,8 +37,10 @@ constexpr uint32_t kNoSlot = UINT32_MAX;
 // is the pieces its readers took. Four readers of such pieces reach nearly
 // the SSD's full bandwidth, and a piece takes about 280 us, a quarter of
 // what it takes on eighteen.
-constexpr uint64_t kAheadPieceBytes = 512 << 10;
-constexpr unsigned kAheadReaders = 6;
+constexpr uint64_t kDecodeAheadPieceBytes = 256 << 10;
+constexpr uint64_t kPrefillAheadPieceBytes = 512 << 10;
+constexpr unsigned kDecodeAheadReaders = 8;
+constexpr unsigned kPrefillAheadReaders = 14;
 // The rows a load stages its experts for in one round (Impl::cycleLoad),
 // predicting the next block's and keeping the GPU awake as a decode step's
 // load does: four lanes of a draft's block. On a 48 GB M5 Pro, staging for
@@ -284,6 +286,9 @@ struct ExpertStore::Impl {
     // initialized with a mild optimistic prior so cold layers start enabled.
     float aheadUsed = 4.0f;
     float aheadTotal = 5.0f;
+    // Counter for 1-in-16 probe cycles when a noisy layer's EWMA precision
+    // drops below the skip floor (< 0.35).
+    uint32_t aheadSkipCount = 0;
   };
   // A step's tiles (ops::MoeLoadPart): the grouping's descriptors and count.
   struct PartTiles final {
@@ -339,10 +344,11 @@ struct ExpertStore::Impl {
   [[nodiscard]] uint64_t routable(uint32_t rows) const noexcept {
     return std::min<uint64_t>(shape.experts, uint64_t{rows} * shape.expertsPerToken);
   }
-  // The places a round of a load of `rows` rows stages: every place for a
-  // cycle's load, which they hold, else half of them.
-  [[nodiscard]] uint32_t roundPlaces(uint32_t rows) const noexcept {
-    return cycleLoad(rows) ? places.count : places.count / 2;
+  // The places a round of a load of `rows` rows stages: all places in the
+  // staging buffer, cutting prefill rounds in half (e.g. 2 rounds instead of 4
+  // on Flash-Next) to halve GPU-CPU host-step syncs and coalesce SSD reads.
+  [[nodiscard]] uint32_t roundPlaces(uint32_t /*rows*/) const noexcept {
+    return places.count;
   }
   [[nodiscard]] bool streams(uint32_t block) const noexcept { return sizes[blocks[block].size].streams; }
   // Adds to `reads` a group of the experts from `expert` on at the places
@@ -365,7 +371,8 @@ struct ExpertStore::Impl {
   }
   void readPiece(const Group &group, const Piece &piece) const;
   void stage(uint32_t block, uint32_t capacity, ExpertStoreStats::Use &use);
-  std::span<const uint32_t> predictedExperts(uint32_t rows, const RoutedRows &routed, uint32_t nextBlock);
+  std::span<const uint32_t> predictedExperts(uint32_t rows, const RoutedRows &routed, uint32_t nextBlock,
+                                             LoadUse loadUse);
   void planAhead(uint32_t block, std::span<const uint32_t> experts, ExpertStoreStats::Use &use);
   void startAhead();
   // The host step after a long chunk's load for `use`: block `block`'s
@@ -649,7 +656,7 @@ void ExpertStore::Impl::stage(uint32_t index, uint32_t capacity, ExpertStoreStat
     const bool routed = ahead.block == index && waiting[group.expert];
     bool ended = true;
     for (size_t rest = piece; rest < end; ++rest) {
-      while (routed && reading(rest)) std::this_thread::yield();
+      while ((routed || capacity == places.count) && reading(rest)) std::this_thread::yield();
       ended = ended && !reading(rest);
     }
     if (!ended) {
@@ -722,7 +729,7 @@ void ExpertStore::Impl::stage(uint32_t index, uint32_t capacity, ExpertStoreStat
 // decode read-ahead precision EWMA so high-precision layers prefetch cleanly
 // while noisy layers do not saturate SSD bandwidth with unused tail reads.
 std::span<const uint32_t> ExpertStore::Impl::predictedExperts(uint32_t rows, const RoutedRows &routed,
-                                                              uint32_t nextBlock) {
+                                                              uint32_t nextBlock, LoadUse loadUse) {
   const auto *selected = static_cast<const uint32_t *>(predictionRoutes.contents());
   const auto *weights = static_cast<const float *>(predictionWeights.contents());
   const uint32_t routes = shape.routesPerToken();
@@ -747,21 +754,41 @@ std::span<const uint32_t> ExpertStore::Impl::predictedExperts(uint32_t rows, con
   std::ranges::stable_sort(predictionOrder, std::ranges::greater{},
                            [&](uint32_t expert) { return predictionSum[expert]; });
   size_t keep = predictionOrder.size();
-  const Block &nb = blocks[nextBlock];
-  const float precision = nb.aheadTotal > 0.0f ? nb.aheadUsed / nb.aheadTotal : 0.75f;
-  // High-precision layers (>=75%) keep 0.72 mass; medium layers scale down
-  // smoothly; noisy layers (<45%) cap to the top half of expertsPerToken so
-  // they keep probing without burning SSD bandwidth.
-  const double massShare = std::clamp<double>(0.35 + 0.50 * precision, 0.45, 0.72);
-  const size_t minKeep = precision < 0.45f ? std::max<size_t>(1, shape.expertsPerToken / 2) : shape.expertsPerToken;
-  if (totalWeight > 0.0 && predictionOrder.size() > minKeep) {
-    const double cutoff = massShare * totalWeight;
-    double cumulative = 0.0;
-    keep = 0;
-    for (const uint32_t expert : predictionOrder) {
-      ++keep;
-      cumulative += std::max(0.0f, predictionSum[expert]);
-      if (keep >= minKeep && cumulative >= cutoff) break;
+  if (loadUse == LoadUse::Decode) {
+    Block &nb = blocks[nextBlock];
+    const float precision = nb.aheadTotal > 0.0f ? nb.aheadUsed / nb.aheadTotal : 0.75f;
+    // Skip read-ahead on chronically noisy layers (< 35% EWMA precision) except
+    // for a 1-in-16 probe cycle so the layer can recover if routing stabilizes.
+    if (precision < 0.35f) {
+      const bool probe = (nb.aheadSkipCount++ & 15u) == 0u;
+      if (!probe) {
+        for (const uint32_t expert : predictionOrder) predictionSum[expert] = -1;
+        predictionOrder.clear();
+        return predictionOrder;
+      }
+    } else {
+      nb.aheadSkipCount = 0;
+    }
+    // High-precision layers (>=75%) keep up to 0.78 mass to maximize decode
+    // prefetch coverage with 8 decode readers while limiting unused SSD reads;
+    // medium layers scale down smoothly; noisy layers (<45%) cap to the top
+    // half of expertsPerToken. Scale the per-expert weight floor inversely with
+    // rows (2.8% at 1 row down to 1.375% at 8-row verify).
+    const double massShare = std::clamp<double>(0.35 + 0.56 * precision, 0.45, 0.78);
+    const double minShare = std::min(0.028, 0.11 / std::max<uint32_t>(rows, 1u));
+    const double minExpertWeight = minShare * totalWeight;
+    const size_t minKeep = precision < 0.45f ? std::max<size_t>(1, shape.expertsPerToken / 2) : shape.expertsPerToken;
+    if (totalWeight > 0.0 && !predictionOrder.empty()) {
+      const double cutoff = massShare * totalWeight;
+      double cumulative = 0.0;
+      keep = 0;
+      for (const uint32_t expert : predictionOrder) {
+        const double w = std::max(0.0f, predictionSum[expert]);
+        if (keep >= 1 && w < minExpertWeight) break;
+        ++keep;
+        cumulative += w;
+        if (keep >= minKeep && cumulative >= cutoff) break;
+      }
     }
   }
   for (const uint32_t expert : predictionOrder) predictionSum[expert] = -1;
@@ -789,26 +816,30 @@ void ExpertStore::Impl::startAhead() {
   if (plan.block == kNoSlot) return;
   try {
     retireAhead();
+    const bool isPrefill = plan.use == &counters.uses[static_cast<size_t>(LoadUse::Prefill)];
+    const uint64_t pieceBytes = isPrefill ? kPrefillAheadPieceBytes : kDecodeAheadPieceBytes;
     uint32_t place = 0;
     for (const uint32_t expert : plan.experts) {
       while (place < places.count && taken[place]) ++place;
       if (place == places.count) break;
       // Expert after expert, so that the experts a round finds read whole
       // are the likeliest; a piece starts on a page and so ends on one.
-      addGroup(ahead.reads, plan.block, expert, 1, place++, places, kAheadPieceBytes);
+      addGroup(ahead.reads, plan.block, expert, 1, place++, places, pieceBytes);
     }
     const uint32_t block = std::exchange(plan.block, kNoSlot);
     if (ahead.reads.groups.empty()) return;
     ahead.block = block;
     ahead.use = plan.use;
     ahead.counted.assign(ahead.reads.groups.size(), 0);
+    const unsigned aheadReaders =
+        ahead.use == &counters.uses[static_cast<size_t>(LoadUse::Prefill)] ? kPrefillAheadReaders : kDecodeAheadReaders;
     ahead.batch = readers->start(
         ahead.reads.pieces.size(),
         [this](size_t task) {
           const Piece &piece = ahead.reads.pieces[task];
           readPiece(ahead.reads.groups[piece.group], piece);
         },
-        kAheadReaders);
+        aheadReaders);
   } catch (const std::exception &error) {
     plan.block = kNoSlot;
     if (failure.empty()) failure = std::string("reading experts ahead failed: ") + error.what();
@@ -1147,7 +1178,7 @@ void ExpertStore::Impl::load(uint32_t index, LoadUse loadUse, uint32_t rows, boo
     // last repack (readBlockAhead).
     if (predicted) {
       std::vector<uint32_t> experts;
-      for (const uint32_t expert : predictedExperts(rows, routed, index + 1))
+      for (const uint32_t expert : predictedExperts(rows, routed, index + 1, loadUse))
         if (blocks[index + 1].slot[expert] == kNoSlot) experts.push_back(expert);
       planAhead(index + 1, experts, use);
     }
