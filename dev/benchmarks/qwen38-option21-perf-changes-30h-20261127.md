@@ -201,3 +201,29 @@ Command:
 | `iq4xs` | `10.72 ms` | **`9.64 ms`** | `9.46 ms` | **`-10.0%`** |
 | `q80` | `11.31 ms` | **`9.64 ms`** | `9.51 ms` | **`-14.8%`** |
 | `q4k` | **`9.78 ms`** | *(reverted — BF16 faster)* | — | — |
+
+---
+
+## 7. 2026-11-28 Follow-Up (`40dde1cc`..`c11671bf`): Cold-SSD Overlap, Mixed-Format INT8 & Live Verification
+
+### Commits Added (`5` commits above `5371175e`)
+1. **`40dde1cc`** — Coalesced up to `8` consecutive experts (`kPrefillAheadMaxCoalesce = 8`, `225` exact 16 KiB pages for `Q2_0`) in `ExpertStore::Impl::startAhead()`, reserving all `group.count` places when routed and crediting `group.count` in `countAhead`.
+2. **`511d3add`** — Switched `readBlockAhead` host step in `ExpertStore.cpp` from `HostStepGpu::Idle` to `HostStepGpu::Awake`, eliminating 47 GPU sleep/wake transitions per prefill chunk (`-82.2 ms` fused-minus-separate overhead: `1023.1 -> 940.9 ms`).
+3. **`c11492bb`** — Raised `kPrefillAheadPieceBytes` from `512 KiB` to `1536 KiB` (`1.5 MiB`) so each coalesced 8-expert `Q2_0` projection (`1.17 MiB`) issues as a single `pread()`, cutting prefill read-ahead syscalls by `3x` (`288 -> 96` per block).
+4. **`9a93d1b1`** — Enabled mixed-format INT8 prefill for fused projections (`KernelSelection.cpp`, `LinearGguf.cpp`), moving 19 remaining `IQ4_XS` (`76.6 ms`), `Q3_K` (`61.0 ms`), and `Q2_0` (`23.0 ms`) segments off BF16 `prefill128` onto `gguf_prefill_int8_*` (`-22.45 ms` net on moved kernels; new GPU-only prefill record `3216.18 ms` / `636.8 tok/s`).
+5. **`c11671bf`** — Restored full 32-row expert staging (`240 -> 320` places, `+80` prefetched experts/block for `+41 MiB` on `Q2_0`) for single-lane live runtimes (`RuntimeResources.mm`) and tightened decode read-ahead gating (`massShare <= 0.74`, `minShare = min(0.032, 0.125 / rows)` in `ExpertStore.cpp`): `-6.8 MiB/cycle` decode SSD reads, GPU-only prefill **`3206.88 ms`** (**`638.6 tok/s`**).
+
+### Tested & Reverted
+- `Q8_0` 128-row TG-staged INT8 prefill (`+7.9%` relative regression on small-`N` dispatches).
+- `prefill_gdn_scan` register-reduction rewrite (`+0.5%`, within noise — bound by `simd_shuffle_xor` dependency chain).
+- `Q3_K` / `IQ4_XS` row-pointer hoisting + `uint2` activation loads (`+0.8 ms` / `+2.6 ms` register pressure).
+
+### Verified Live Server Progression (`memory=warning`, `thermal=fair`, `0` Errors / `0` KV Spills)
+| Live Run | Commit | 5-min `[PERF]` PP | 10-min `[PERF]` PP | Peak Live PP (`~9.9K` new @ `14.2K` ctx) | Per-req PP (`new >= 2K`) | `[PERF]` TPS |
+|---|---|---:|---:|---:|---:|---:|
+| `20261127-234027` | `3779ad89` | `260.9 tok/s` | `270.7 tok/s` | `437.1 tok/s` | `265.4` avg / `261.6` med | `15.6 tok/s` (`15.1–17.0`) |
+| `20261128-003020` | `c11492bb` | `292.1 tok/s` | — | `425.0 tok/s` | `345.0` avg | `16.7 tok/s` |
+| `20261128-004906` | `9a93d1b1` | `294.9 tok/s` | `278.5 tok/s` | `426.9 tok/s` (`23.2s` TTFT) | `296.6` avg / `277.1` med | `16.8 tok/s` (`16.6–16.9`) |
+| **`20261128-010948`** | **`c11671bf`** | **`316.7 tok/s`** (`+21.4%`) | **`303.1 tok/s`** (`+12.0%`) | **`454.8 tok/s`** (`21.9s` TTFT) | **`362.9` avg / `356.2` med** | **`16.3–17.6 tok/s`** |
+
+- Live `/status` (`c11671bf`): `staging_bytes = 450 MiB` (`320` places), `2,983 / 24,576` resident experts, prefill `work_ms p50 = 0.008 ms`, `resume_ms p50 = 0.256 ms`, decode `hit_rate = 62.5%`, decode read-ahead precision **`72.5%`**, `work_ms p50 = 1.024 ms` / `p95 = 8.192 ms`.
