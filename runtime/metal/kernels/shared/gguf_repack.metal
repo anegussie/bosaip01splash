@@ -313,14 +313,96 @@ kernel void moe_expert_load(device const uchar *staging [[buffer(0)]], device co
                             uint index [[thread_index_in_threadgroup]]) {
   constant MoeExpertLoadProjection &q = p.projections[group.z];
   const uint G = q.columns / 32, spans = (G + MOE_EXPERT_LOAD_SPAN - 1) / MOE_EXPERT_LOAD_SPAN;
-  const uint n = group.x / spans * QUANT_TILE_ROWS + index % QUANT_TILE_ROWS;
+  const uint tile_id = group.x / spans;
+  const uint row0 = tile_id * QUANT_TILE_ROWS;
+  if (row0 >= q.rows) return;
   const uint first = group.x % spans * MOE_EXPERT_LOAD_SPAN, end = min(G, first + MOE_EXPERT_LOAD_SPAN);
-  if (n >= q.rows) return;
   const MoeExpertChunk c = moe_expert_chunk(chunks, p.floor_slots, p.chunk_slots, slots[group.y], group.z);
   const ulong local = c.local;
   device uchar *w0 = c.w0 + local * q.slot_bytes[0], *w1 = c.w1 + local * q.slot_bytes[1],
                *meta = c.meta + local * q.slot_bytes[2];
   device const ulong *at = sources + (ulong(group.y) * 3 + group.z) * p.source_planes;
+  if (q.format == GGUF_FMT_Q20 && !q.stored_bytes[0]) {
+    // 32 rows x up to 16 Q2_0 blocks (32 groups = MOE_EXPERT_LOAD_SPAN, 72 uints/row, padded to 73 for 0 bank conflicts).
+    // 32 * 73 * 4 = 9,344 bytes (<= 9.2 KiB -> 3 TGs/core in 32 KiB TG memory).
+    threadgroup uint tile_buf[32u * 73u];
+    const uint rows_in_tile = min(QUANT_TILE_ROWS, q.rows - row0);
+    const uint b_first = first >> 1, b_end = end >> 1, n_blocks = b_end - b_first;
+    const uint n_ushorts = n_blocks * 9u;
+    const uint simd_id = index >> 5, lane = index & 31u;
+    device const uchar *src_base = staging + at[0];
+    device uint2 *w0_tile = (device uint2 *)w0 + ulong(tile_id) * G * QUANT_TILE_ROWS;
+    device ushort *meta_tile = (device ushort *)meta + ulong(tile_id) * (G >> 1) * QUANT_TILE_ROWS;
+    const bool aligned4 = (q.row_bytes & 3u) == 0u;
+    const bool aligned16 = (q.row_bytes & 15u) == 0u && ((b_first * 18u) & 15u) == 0u && ((n_blocks * 18u) & 15u) == 0u;
+    for (uint r_half = 0u; r_half < rows_in_tile; r_half += 32u) {
+      const uint nh = min(32u, rows_in_tile - r_half);
+      const uint base_row = row0 + r_half;
+      const bool flat_v4 = spans == 1u && ((nh * q.row_bytes) & 15u) == 0u && ((base_row * q.row_bytes) & 15u) == 0u;
+      if (flat_v4) {
+        device const uint4 *src4 = (device const uint4 *)(src_base + ulong(base_row) * q.row_bytes);
+        const uint total_v4 = (nh * q.row_bytes) >> 4;
+        for (uint i = index; i < total_v4; i += MOE_EXPERT_LOAD_THREADS) {
+          const uint4 v = src4[i];
+          const uint dst_i = i << 2;
+          tile_buf[dst_i] = v.x;
+          tile_buf[dst_i + 1u] = v.y;
+          tile_buf[dst_i + 2u] = v.z;
+          tile_buf[dst_i + 3u] = v.w;
+        }
+      } else if (aligned16) {
+        const uint v4_per_row = (n_blocks * 18u) >> 4;
+        const uint total_v4 = nh * v4_per_row;
+        device const uchar *chunk_base = src_base + ulong(base_row) * q.row_bytes + ulong(b_first) * 18u;
+        for (uint i = index; i < total_v4; i += MOE_EXPERT_LOAD_THREADS) {
+          const uint rr = i / v4_per_row, w = i - rr * v4_per_row;
+          const uint4 v = ((device const uint4 *)(chunk_base + ulong(rr) * q.row_bytes))[w];
+          const uint dst_w = rr * 73u + (w << 2);
+          tile_buf[dst_w] = v.x;
+          tile_buf[dst_w + 1u] = v.y;
+          tile_buf[dst_w + 2u] = v.z;
+          tile_buf[dst_w + 3u] = v.w;
+        }
+      } else if (aligned4 && (n_blocks & 1u) == 0u) {
+        const uint n_words = n_ushorts >> 1;
+        for (uint rr = simd_id; rr < nh; rr += 8u) {
+          device const uint *src =
+              (device const uint *)(src_base + ulong(base_row + rr) * q.row_bytes + ulong(b_first) * 18u);
+          threadgroup uint *dst = tile_buf + rr * 73u;
+          for (uint w = lane; w < n_words; w += 32u) dst[w] = src[w];
+        }
+      } else {
+        for (uint rr = simd_id; rr < nh; rr += 8u) {
+          device const ushort *src =
+              (device const ushort *)(src_base + ulong(base_row + rr) * q.row_bytes + ulong(b_first) * 18u);
+          threadgroup ushort *dst = (threadgroup ushort *)(tile_buf + rr * 73u);
+          for (uint w = lane; w < n_ushorts; w += 32u) dst[w] = src[w];
+        }
+      }
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      if (lane < nh) {
+        threadgroup const ushort *row_tg =
+            flat_v4 ? ((threadgroup const ushort *)tile_buf + lane * n_ushorts)
+                    : (threadgroup const ushort *)(tile_buf + lane * 73u);
+        device uint2 *w0_row = w0_tile + r_half + lane;
+        device ushort *meta_row = meta_tile + r_half + lane;
+        for (uint dg = simd_id; dg < n_blocks * 2u; dg += 8u) {
+          const uint db = dg >> 1, j = dg & 1u;
+          threadgroup const ushort *blk = row_tg + db * 9u;
+          threadgroup const ushort *qs = blk + 1u + 4u * j;
+          const uint q0 = qs[0], q1 = qs[1], q2 = qs[2], q3 = qs[3];
+          w0_row[ulong((b_first << 1) + dg) * QUANT_TILE_ROWS] =
+              uint2((q0 & 0xFFu) | (q2 & 0xFFu) << 8 | (q0 >> 8) << 16 | (q2 >> 8) << 24,
+                    (q1 & 0xFFu) | (q3 & 0xFFu) << 8 | (q1 >> 8) << 16 | (q3 >> 8) << 24);
+          if (j == 0) meta_row[ulong(b_first + db) * QUANT_TILE_ROWS] = blk[0];
+        }
+      }
+      if (r_half + 32u < rows_in_tile) threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    return;
+  }
+  const uint n = row0 + index % QUANT_TILE_ROWS;
+  if (n >= q.rows) return;
   for (uint g = first + index / QUANT_TILE_ROWS; g < end; g += MOE_EXPERT_LOAD_THREADS / QUANT_TILE_ROWS) {
     if (q.stored_bytes[0])
       gguf_repack_stored_group(staging + at[0], staging + at[1], staging + at[2], q.stored_bytes, q.format, G, n, g,
